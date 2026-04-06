@@ -116,6 +116,12 @@ class ActionHandler:
         # This will call the Economy module
         return True
 
+    async def action_setup_trigger_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> bool:
+        """Setup trigger role system via AI"""
+        from modules.trigger_roles import TriggerRoles
+        system = TriggerRoles(self.bot)
+        return await system.setup(interaction, params)
+
     # --- Execution Logic ---
 
     async def execute_custom_command(self, message: discord.Interaction, code: str):
@@ -139,8 +145,12 @@ class ActionHandler:
                 
                 if command_type == "application_status":
                     return await self.handle_application_status(message)
+                elif command_type == "appeal_status":
+                    return await self.handle_appeal_status(message)
                 elif command_type == "help_embed":
                     return await self.send_help_embed(message, data)
+                elif command_type == "list_triggers":
+                    return await self.list_triggers(message)
                 else:
                     # Unknown dict type, fall back to sending as string
                     await message.channel.send(content=code)
@@ -214,6 +224,29 @@ class ActionHandler:
                 name=field.get("name", ""),
                 value=field.get("value", ""),
                 inline=field.get("inline", False)
+            )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return True
+
+    async def list_triggers(self, interaction: discord.Interaction) -> bool:
+        """List all active trigger words for the guild"""
+        guild_id = interaction.guild.id
+        triggers = dm.get_guild_data(guild_id, "trigger_roles", {})
+        
+        if not triggers:
+            await interaction.response.send_message("No trigger words are currently set up.", ephemeral=True)
+            return True
+            
+        embed = discord.Embed(title="Active Trigger Words", color=discord.Color.blue())
+        
+        for word, role_id in triggers.items():
+            role = interaction.guild.get_role(role_id)
+            role_name = role.name if role else f"Unknown Role (ID: {role_id})"
+            embed.add_field(
+                name=f"Trigger: `{word}`",
+                value=f"Assigns role: **{role_name}**",
+                inline=False
             )
         
         await interaction.response.send_message(embed=embed, ephemeral=True)

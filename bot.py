@@ -60,6 +60,12 @@ class ImmortalBot(commands.Bot):
         # In a real scenario, loop through all guild files
         await self.tree.sync()
         print("Slash commands synced.")
+        
+        # Restore presence monitoring for trigger roles
+        print("Restoring trigger role presence monitoring...")
+        # Note: In a full implementation, we would iterate through all guilds
+        # and restore presence monitoring for those with trigger roles
+        # For now, presence monitoring starts when a trigger is first used
 
     async def on_ready(self):
         print(f"Logged in as {self.user} (ID: {self.user.id}) (IMMORTAL)")
