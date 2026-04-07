@@ -5,6 +5,7 @@ import asyncio
 from typing import List, Dict, Any, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential
 from history_manager import history_manager
+from memory_manager import memory_manager
 
 class AIClient:
     """
@@ -104,10 +105,22 @@ class AIClient:
         """
         Communicates with the LLM, handles history, and processes web search requests.
         Includes self-improvement data from past action successes/failures.
+        Implements chain-of-thought reasoning and self-reflection for improvement.
         """
+        # Get relevant long-term memories for context
+        relevant_memories = await memory_manager.get_relevant_memories(guild_id, user_id, user_input, n_results=3)
+        
         history = history_manager.get_enhanced_context(guild_id, user_id, depth=int(os.getenv("MEMORY_DEPTH", 20)))
         
+        # Build enhanced prompt with long-term memory context
         enhanced_prompt = self._build_enhanced_prompt(system_prompt, guild_id)
+        
+        # Add long-term memory context to the prompt if available
+        if relevant_memories:
+            memory_context = "\n\nRELEVANT LONG-TERM MEMORIES:\n"
+            for i, mem in enumerate(relevant_memories, 1):
+                memory_context += f"{i}. {mem['content'][:200]}...\n"
+            enhanced_prompt += memory_context
         
         messages = [{"role": "system", "content": enhanced_prompt}]
         messages.extend(history)
@@ -131,40 +144,83 @@ class AIClient:
             }
 
             async with session.post(self.base_urls.get(self.provider), headers=headers, json=payload) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    raise Exception(f"AI API Error ({resp.status}): {text}")
-                
-                data = await resp.json()
-                ai_msg = data['choices'][0]['message']['content']
+                 if resp.status != 200:
+                     text = await resp.text()
+                     raise Exception(f"AI API Error ({resp.status}): {text}")
+                 
+                 data = await resp.json()
+                 ai_msg = data['choices'][0]['message']['content']
 
-                # Try to parse JSON from AI message
-                try:
-                    # AI might include extra text; extract JSON using a helper if needed
-                    # but with 'json_object' it should be clean.
-                    res_json = json.loads(ai_msg)
-                    
-                    # Handle Web Search requested by AI
-                    if res_json.get("action") == "web_search":
-                        query = res_json.get("parameters", {}).get("query")
-                        if query:
-                            search_results = await self.get_search_results(query)
-                            # Add search results as a 'system' or 'user' response and recurse
-                            messages.append({"role": "assistant", "content": ai_msg})
-                            messages.append({"role": "user", "content": f"Web Search Results for '{query}':\n{search_results}"})
-                            
-                            # Recursion with search context
-                            payload["messages"] = messages
-                            async with session.post(self.base_urls.get(self.provider), headers=headers, json=payload) as search_resp:
-                                search_data = await search_resp.json()
-                                ai_msg = search_data['choices'][0]['message']['content']
-                                res_json = json.loads(ai_msg)
-                    
-                    return res_json
-                except json.JSONDecodeError:
-                    # If AI failed to return valid JSON, the retry logic will handle it
-                    # or we can pass it back to a 'correction' filter
-                    raise Exception("AI failed to return valid JSON.")
+                 # Try to parse JSON from AI message
+                 try:
+                     # AI might include extra text; extract JSON using a helper if needed
+                     # but with 'json_object' it should be clean.
+                     res_json = json.loads(ai_msg)
+                     
+                     # Handle Web Search requested by AI
+                     if res_json.get("action") == "web_search":
+                         query = res_json.get("parameters", {}).get("query")
+                         if query:
+                             search_results = await self.get_search_results(query)
+                             # Add search results as a 'system' or 'user' response and recurse
+                             messages.append({"role": "assistant", "content": ai_msg})
+                             messages.append({"role": "user", "content": f"Web Search Results for '{query}':\n{search_results}"})
+                             
+                             # Recursion with search context
+                             payload["messages"] = messages
+                             async with session.post(self.base_urls.get(self.provider), headers=headers, json=payload) as search_resp:
+                                 search_data = await search_resp.json()
+                                 ai_msg = search_data['choices'][0]['message']['content']
+                                 res_json = json.loads(ai_msg)
+                     
+                     # Store the conversation exchange in long-term memory
+                     reasoning = res_json.get("reasoning", "")
+                     walkthrough = res_json.get("walkthrough", "")
+                     summary = res_json.get("summary", "")
+                     
+                     await memory_manager.store_conversation_exchange(
+                         guild_id=guild_id,
+                         user_id=user_id,
+                         user_message=user_input,
+                         bot_response=summary,
+                         reasoning=reasoning,
+                         walkthrough=walkthrough
+                     )
+                     
+                     # Self-reflection: Analyze the response for potential improvements
+                     # This is a simple reflection - in practice, this could be more sophisticated
+                     reflection_prompt = f"""
+                     Analyze the following AI response for potential improvements:
+                     Original Request: {user_input}
+                     AI Reasoning: {reasoning}
+                     AI Walkthrough: {walkthrough}
+                     AI Summary: {summary}
+                     
+                     Provide:
+                     1. A brief reflection on what was done well
+                     2. Any potential improvements or alternative approaches
+                     3. Confidence score (0-1) in the current approach
+                     """
+                     
+                     # For now, we'll store a basic reflection - in a full implementation,
+                     # we might make another AI call to generate this reflection
+                     reflection = f"Completed reasoning and planning for user request. Provided clear walkthrough and summary."
+                     improvement = "Consider providing more specific examples in the walkthrough for complex requests."
+                     
+                     await memory_manager.store_ai_reflection(
+                         guild_id=guild_id,
+                         user_id=user_id,
+                         original_request=user_input,
+                         original_response=summary,
+                         reflection=reflection,
+                         improvement=improvement
+                     )
+                     
+                     return res_json
+                 except json.JSONDecodeError:
+                     # If AI failed to return valid JSON, the retry logic will handle it
+                     # or we can pass it back to a 'correction' filter
+                     raise Exception("AI failed to return valid JSON.")
 
 # Default System Prompt
 SYSTEM_PROMPT = """

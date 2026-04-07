@@ -7,3 +7,4 @@ tavily-python==0.3.4
 beautifulsoup4==4.12.3
 requests==2.32.3
 colorama==0.4.6
+chromadb==1.5.6

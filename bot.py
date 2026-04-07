@@ -427,40 +427,40 @@ class ImmortalBot(commands.Bot):
             
             # Analyze common error patterns
             for cmd_name, failure_data in command_failures.items():
-                if failure_data["count"] >= 5:  # Need sufficient failure data
-                    errors = failure_data["errors"]
-                    if errors:
-                        # Count error types
-                        error_counts = {}
-                        for error in errors:
-                            # Simplify error message for grouping
-                            simple_error = error.lower()
-                            if "missing" in simple_error and "argument" in simple_error:
-                                error_type = "missing_argument"
-                            elif "not found" in simple_error:
-                                error_type = "not_found"
-                            elif "permission" in simple_error:
-                                error_type = "permission"
-                            else:
-                                error_type = "other"
-                            
-                            error_counts[error_type] = error_counts.get(error_type, 0) + 1
-                        
-                        # Find most common error type
-                        if error_counts:
-                            most_common_error = max(error_counts, key=error_counts.get)
-                            count = error_counts[most_common_error]
-                            if count >= 3:  # At least 3 occurrences
-                suggestions.append({
-                    "type": "error_pattern",
-                    "command": cmd_name,
-                    "error_type": most_common_error,
-                    "frequency": count,
-                    "total_failures": failure_data["count"],
-                    "suggestion": self._generate_error_suggestion(cmd_name, most_common_error),
-                    "confidence": min(0.9, count / failure_data["count"]),
-                    "severity": count / failure_data["count"]  # For auto-action threshold
-                })
+                 if failure_data["count"] >= 5:  # Need sufficient failure data
+                     errors = failure_data["errors"]
+                     if errors:
+                         # Count error types
+                         error_counts = {}
+                         for error in errors:
+                             # Simplify error message for grouping
+                             simple_error = error.lower()
+                             if "missing" in simple_error and "argument" in simple_error:
+                                 error_type = "missing_argument"
+                             elif "not found" in simple_error:
+                                 error_type = "not_found"
+                             elif "permission" in simple_error:
+                                 error_type = "permission"
+                             else:
+                                 error_type = "other"
+                               
+                             error_counts[error_type] = error_counts.get(error_type, 0) + 1
+                          
+                         # Find most common error type
+                         if error_counts:
+                             most_common_error = max(error_counts, key=error_counts.get)
+                             count = error_counts[most_common_error]
+                             if count >= 3:  # At least 3 occurrences
+                                 suggestions.append({
+                                     "type": "error_pattern",
+                                     "command": cmd_name,
+                                     "error_type": most_common_error,
+                                     "frequency": count,
+                                     "total_failures": failure_data["count"],
+                                     "suggestion": self._generate_error_suggestion(cmd_name, most_common_error),
+                                     "confidence": min(0.9, count / failure_data["count"]),
+                                     "severity": count / failure_data["count"]  # For auto-action threshold
+                                 })
             
             # Save suggestions for review AND auto-apply high confidence ones
             if suggestions:
