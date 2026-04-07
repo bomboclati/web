@@ -6,6 +6,8 @@ import asyncio
 import datetime
 import random
 import signal
+import json
+import time
 from dotenv import load_dotenv
 from data_manager import dm
 from history_manager import history_manager
@@ -47,6 +49,7 @@ class ImmortalBot(commands.Bot):
         self.pending_confirms = {} # user_id -> {action_data, message_obj}
         self._bot_cooldowns = {}  # user_id -> timestamp
         self._bot_cooldown_seconds = 30
+        self.ai_sessions = {}     # user_id -> {messages: [...], last_interaction: interaction, original_request: str}
         
         # Internal Systems
         self.economy = Economy(self)
@@ -70,8 +73,19 @@ class ImmortalBot(commands.Bot):
     async def on_ready(self):
         logger.info("Logged in as %s (ID: %s) (IMMORTAL)", self.user, self.user.id)
         self.loop.create_task(self._auto_backup_loop())
+        self.loop.create_task(self._cleanup_expired_sessions())
         self._setup_crash_recovery()
         self._setup_signal_handlers()
+
+    async def _cleanup_expired_sessions(self):
+        """Remove expired AI conversation sessions."""
+        while True:
+            now = time.time()
+            expired = [uid for uid, sess in self.ai_sessions.items() if sess.get("expires_at", 0) < now]
+            for uid in expired:
+                del self.ai_sessions[uid]
+                logger.info("Expired AI session for user %d", uid)
+            await asyncio.sleep(60)
 
     def _setup_crash_recovery(self):
         """Check for incomplete setups from previous crashes and clean up."""
@@ -186,12 +200,24 @@ class ImmortalBot(commands.Bot):
 # Initialize Bot
 bot = ImmortalBot()
 
+class AIReplyModal(ui.Modal, title='Reply to AI'):
+    """Modal for users to answer AI clarifying questions."""
+    def __init__(self, question: str):
+        super().__init__()
+        self.add_item(ui.TextInput(
+            label=question,
+            style=discord.TextStyle.paragraph,
+            placeholder="Type your answer here..."
+        ))
+    
+    answer: ui.TextInput
+
 # --- Slash Commands ---
 
 @bot.tree.command(name="bot", description="AI-powered server management")
 @app_commands.describe(text="What do you want me to do?")
 async def slash_bot(interaction: discord.Interaction, text: str):
-    """The main AI portal."""
+    """The main AI portal with multi-step conversation support."""
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("Only Administrators can use AI commands.", ephemeral=True)
         return
@@ -209,21 +235,91 @@ async def slash_bot(interaction: discord.Interaction, text: str):
     await interaction.response.defer(ephemeral=True)
     
     try:
-        # 1. Reasoning & Walkthrough
-        res = await bot.ai.chat(interaction.guild.id, interaction.user.id, text, SYSTEM_PROMPT)
-        
-        reasoning = res.get("reasoning", "Thinking...")
-        walkthrough = res.get("walkthrough", "Planning...")
-        summary = res.get("summary", "Ready to proceed.")
+        await _process_ai_turn(interaction, text)
+    except Exception as e:
+        await interaction.followup.send(f"Error: {str(e)}", ephemeral=True)
 
-        # Store for confirmation
-        bot.pending_confirms[interaction.user.id] = {
-            "actions": res.get("actions", []),
+async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
+    """Process a single turn of the AI conversation."""
+    guild_id = interaction.guild.id
+    user_id = interaction.user.id
+    
+    res = await bot.ai.chat(guild_id, user_id, user_input, SYSTEM_PROMPT)
+    
+    reasoning = res.get("reasoning", "Thinking...")
+    walkthrough = res.get("walkthrough", "Planning...")
+    summary = res.get("summary", "Ready to proceed.")
+    needs_input = res.get("needs_input", False)
+    question = res.get("question", "")
+    
+    if needs_input and question:
+        bot.ai_sessions[user_id] = {
+            "messages": [{"role": "assistant", "content": json.dumps(res)}],
+            "last_interaction": interaction,
+            "original_request": user_input,
+            "question": question,
+            "expires_at": time.time() + 300
+        }
+        
+        embed = discord.Embed(
+            title="AI Needs More Info",
+            description=f"**Reasoning:**\n{reasoning}\n\n**Question:**\n{question}",
+            color=discord.Color.orange()
+        )
+        
+        view = discord.ui.View()
+        reply_btn = discord.ui.Button(label="Reply", style=discord.ButtonStyle.primary, custom_id="ai_reply")
+        skip_btn = discord.ui.Button(label="Skip / Use Defaults", style=discord.ButtonStyle.secondary, custom_id="ai_skip")
+        
+        async def reply_callback(it: discord.Interaction):
+            if it.user.id != user_id:
+                return await it.response.send_message("This isn't your interaction.", ephemeral=True)
+            
+            modal = AIReplyModal(question=question)
+            await it.response.send_modal(modal)
+            
+            async def on_submit_wrapper(modal_it: discord.Interaction):
+                answer = modal.answer.value
+                
+                if user_id in bot.ai_sessions:
+                    del bot.ai_sessions[user_id]
+                
+                await modal_it.response.send_message("🔄 Processing your answer...", ephemeral=True)
+                await _process_ai_turn(modal_it, f"[User answered your question]: {answer}")
+            
+            modal.on_submit = on_submit_wrapper
+        
+        async def skip_callback(it: discord.Interaction):
+            if it.user.id != user_id:
+                return await it.response.send_message("This isn't your interaction.", ephemeral=True)
+            
+            if user_id in bot.ai_sessions:
+                del bot.ai_sessions[user_id]
+            
+            await it.response.edit_message(content="🔄 Proceeding with defaults...", embed=None, view=None)
+            await _process_ai_turn(it, "[User said to use defaults]")
+        
+        reply_btn.callback = reply_callback
+        skip_btn.callback = skip_callback
+        view.add_item(reply_btn)
+        view.add_item(skip_btn)
+        
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+    else:
+        actions = res.get("actions", [])
+        
+        if not actions:
+            embed = discord.Embed(title="AI Response", description=summary, color=discord.Color.blue())
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            history_manager.add_exchange(guild_id, user_id, user_input, summary)
+            return
+        
+        bot.pending_confirms[user_id] = {
+            "actions": actions,
             "summary": summary,
             "interaction": interaction
         }
-
-        # Build Embed with Buttons
+        
         embed = discord.Embed(title="AI Reasoning & Plan", description=f"**Reasoning:**\n{reasoning}\n\n**Walkthrough:**\n{walkthrough}", color=discord.Color.blue())
         
         view = discord.ui.View()
@@ -231,19 +327,19 @@ async def slash_bot(interaction: discord.Interaction, text: str):
         cancel_btn = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.danger, custom_id="cancel")
         
         async def proceed_callback(it: discord.Interaction):
-            if it.user.id != interaction.user.id:
+            if it.user.id != user_id:
                 return await it.response.send_message("This isn't your interaction.", ephemeral=True)
             
             await it.response.edit_message(content="🔄 Execution in progress...", embed=None, view=None)
             
             from actions import ActionHandler
             handler = ActionHandler(bot)
-            result = await handler.execute_sequence(interaction, bot.pending_confirms[interaction.user.id]["actions"])
+            result = await handler.execute_sequence(it, bot.pending_confirms[user_id]["actions"])
             
             summary_text = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in result["results"]])
             
             if result["success"]:
-                final_msg = f"**Execution Summary:**\n{summary_text}\n\n{bot.pending_confirms[interaction.user.id]['summary']}"
+                final_msg = f"**Execution Summary:**\n{summary_text}\n\n{bot.pending_confirms[user_id]['summary']}"
             else:
                 rollback_text = ""
                 if result["rolled_back"]:
@@ -252,24 +348,19 @@ async def slash_bot(interaction: discord.Interaction, text: str):
                 final_msg = f"**Failed at step {result['failed_at'] + 1}: `{result['failed_action']}`**\nError: {result['error']}\n\n**Executed:**\n{summary_text}{rollback_text}"
             
             await it.followup.send(final_msg, ephemeral=True)
-            
-            history_manager.add_exchange(interaction.guild.id, interaction.user.id, text, summary)
-            
-            del bot.pending_confirms[interaction.user.id]
-
+            history_manager.add_exchange(guild_id, user_id, user_input, summary)
+            del bot.pending_confirms[user_id]
+        
         async def cancel_callback(it: discord.Interaction):
             await it.response.edit_message(content="❌ Action cancelled.", embed=None, view=None)
-            del bot.pending_confirms[interaction.user.id]
-
+            del bot.pending_confirms[user_id]
+        
         proceed_btn.callback = proceed_callback
         cancel_btn.callback = cancel_callback
         view.add_item(proceed_btn)
         view.add_item(cancel_btn)
-
+        
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-
-    except Exception as e:
-        await interaction.followup.send(f"Error: {str(e)}", ephemeral=True)
 
 # --- Utility Commands ---
 
