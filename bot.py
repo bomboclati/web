@@ -273,7 +273,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
         
         async def reply_callback(it: discord.Interaction):
             if it.user.id != user_id:
-                return await it.response.send_message("This isn't your interaction.", ephemeral=True)
+                return await it.response.send_message("Only the user who started this can reply.", ephemeral=True)
             
             modal = AIReplyModal(question=question)
             await it.response.send_modal(modal)
@@ -291,7 +291,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
         
         async def skip_callback(it: discord.Interaction):
             if it.user.id != user_id:
-                return await it.response.send_message("This isn't your interaction.", ephemeral=True)
+                return await it.response.send_message("Only the user who started this can skip.", ephemeral=True)
             
             if user_id in bot.ai_sessions:
                 del bot.ai_sessions[user_id]
@@ -328,7 +328,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
         
         async def proceed_callback(it: discord.Interaction):
             if it.user.id != user_id:
-                return await it.response.send_message("This isn't your interaction.", ephemeral=True)
+                return await it.response.send_message("Only the user who started this can proceed.", ephemeral=True)
             
             await it.response.edit_message(content="🔄 Execution in progress...", embed=None, view=None)
             
@@ -352,6 +352,8 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
             del bot.pending_confirms[user_id]
         
         async def cancel_callback(it: discord.Interaction):
+            if it.user.id != user_id:
+                return await it.response.send_message("Only the user who started this can cancel.", ephemeral=True)
             await it.response.edit_message(content="❌ Action cancelled.", embed=None, view=None)
             del bot.pending_confirms[user_id]
         
