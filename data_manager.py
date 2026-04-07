@@ -232,6 +232,58 @@ class DataManager:
         data = self.load_json(filename)
         return data.get(key, default)
 
+    def record_global_action_result(self, action_name: str, success: bool, error: str = None):
+        """Record anonymized action result for cross-server intelligence sharing."""
+        intelligence = self.load_json("global_intelligence", default={})
+        
+        if "actions" not in intelligence:
+            intelligence["actions"] = {}
+        
+        if action_name not in intelligence["actions"]:
+            intelligence["actions"][action_name] = {
+                "successes": 0,
+                "failures": 0,
+                "total_guilds": 0,
+                "errors": {},
+                "last_updated": 0
+            }
+        
+        action_data = intelligence["actions"][action_name]
+        
+        if success:
+            action_data["successes"] += 1
+        else:
+            action_data["failures"] += 1
+            if error:
+                error_key = error[:100]
+                if error_key not in action_data["errors"]:
+                    action_data["errors"][error_key] = 0
+                action_data["errors"][error_key] += 1
+        
+        action_data["total_guilds"] = action_data["successes"] + action_data["failures"]
+        action_data["last_updated"] = time.time()
+        
+        self.save_json("global_intelligence", intelligence)
+
+    def get_global_intelligence(self, min_guilds: int = 1) -> Dict[str, Any]:
+        """Get aggregated cross-server intelligence for AI prompt injection."""
+        intelligence = self.load_json("global_intelligence", default={"actions": {}})
+        actions = intelligence.get("actions", {})
+        
+        filtered = {}
+        for action_name, data in actions.items():
+            if data["total_guilds"] >= min_guilds:
+                success_rate = data["successes"] / max(data["total_guilds"], 1)
+                top_errors = sorted(data.get("errors", {}).items(), key=lambda x: x[1], reverse=True)[:3]
+                
+                filtered[action_name] = {
+                    "success_rate": round(success_rate, 2),
+                    "total_uses": data["total_guilds"],
+                    "top_errors": [{"error": e, "count": c} for e, c in top_errors] if top_errors else []
+                }
+        
+        return filtered
+
     def backup_data(self, backup_dir: str = "backups"):
         if not os.path.exists(backup_dir):
             os.makedirs(backup_dir)

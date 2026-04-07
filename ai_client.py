@@ -53,23 +53,34 @@ class AIClient:
         
         successes = dm.get_guild_data(guild_id, "action_successes", {})
         failures = dm.get_guild_data(guild_id, "action_failures", {})
+        global_intel = dm.get_global_intelligence(min_guilds=2)
         
-        if not successes and not failures:
+        if not successes and not failures and not global_intel:
             return system_prompt
         
         improvement_data = "\n\nACTION PERFORMANCE HISTORY (use this to improve your plans):\n"
         
         if failures:
-            improvement_data += "Previously failed actions (avoid or adjust):\n"
-            for action, data in sorted(failures.items(), key=lambda x: x[1]["count"], reverse=True)[:10]:
+            improvement_data += "Your previously failed actions on this server (avoid or adjust):\n"
+            for action, data in sorted(failures.items(), key=lambda x: x[1]["count"], reverse=True)[:5]:
                 improvement_data += f"- `{action}`: Failed {data['count']} time(s). Last error: {data['last_error']}\n"
         
         if successes:
-            improvement_data += "Previously successful actions (safe to reuse):\n"
-            for action, count in sorted(successes.items(), key=lambda x: x[1], reverse=True)[:10]:
+            improvement_data += "Your previously successful actions on this server (safe to reuse):\n"
+            for action, count in sorted(successes.items(), key=lambda x: x[1], reverse=True)[:5]:
                 improvement_data += f"- `{action}`: Succeeded {count} time(s)\n"
         
-        improvement_data += "\nUse this data to avoid repeating mistakes and prefer proven action sequences."
+        if global_intel:
+            improvement_data += "\nCross-server intelligence (aggregated from all servers):\n"
+            for action, data in sorted(global_intel.items(), key=lambda x: x[1]["total_uses"], reverse=True)[:10]:
+                rate = data["success_rate"]
+                status = "HIGHLY RELIABLE" if rate >= 0.9 else "MODERATE" if rate >= 0.7 else "UNRELIABLE - AVOID"
+                improvement_data += f"- `{action}`: {rate*100:.0f}% success rate across {data['total_uses']} uses [{status}]\n"
+                if data["top_errors"]:
+                    for err in data["top_errors"]:
+                        improvement_data += f"  Common error: {err['error']} ({err['count']}x)\n"
+        
+        improvement_data += "\nUse this data to avoid repeating mistakes, prefer proven action sequences, and learn from the broader community."
         
         return system_prompt + improvement_data
 

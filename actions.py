@@ -108,6 +108,8 @@ class ActionHandler:
         if len(failures[action_name]["errors"]) < 10:
             failures[action_name]["errors"].append(error[:200])
         dm.update_guild_data(guild_id, "action_failures", failures)
+        
+        dm.record_global_action_result(action_name, False, error)
 
     def _record_successes(self, guild_id: int, action_names: List[str]):
         """Record action successes for AI self-improvement."""
@@ -117,6 +119,9 @@ class ActionHandler:
                 successes[name] = 0
             successes[name] += 1
         dm.update_guild_data(guild_id, "action_successes", successes)
+        
+        for name in action_names:
+            dm.record_global_action_result(name, True)
 
     async def dispatch(self, interaction: discord.Interaction, name: str, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Routes action names to specific methods. Returns (success, undo_data)."""
