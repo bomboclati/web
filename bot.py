@@ -160,18 +160,25 @@ async def slash_bot(interaction: discord.Interaction, text: str):
             if it.user.id != interaction.user.id:
                 return await it.response.send_message("This isn't your interaction.", ephemeral=True)
             
-            # Start Execution
             await it.response.edit_message(content="🔄 Execution in progress...", embed=None, view=None)
             
             from actions import ActionHandler
             handler = ActionHandler(bot)
-            results = await handler.execute_sequence(interaction, bot.pending_confirms[interaction.user.id]["actions"])
+            result = await handler.execute_sequence(interaction, bot.pending_confirms[interaction.user.id]["actions"])
             
-            # Final Summary
-            summary_text = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in results])
-            await it.followup.send(f"**Execution Summary:**\n{summary_text}\n\n{bot.pending_confirms[interaction.user.id]['summary']}", ephemeral=True)
+            summary_text = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in result["results"]])
             
-            # Record in history
+            if result["success"]:
+                final_msg = f"**Execution Summary:**\n{summary_text}\n\n{bot.pending_confirms[interaction.user.id]['summary']}"
+            else:
+                rollback_text = ""
+                if result["rolled_back"]:
+                    rb = "\n".join([f"{'✅' if s else '⚠️'} {n}" for n, s in result["rolled_back"]])
+                    rollback_text = f"\n\n**Auto-Rollback ({len(result['rolled_back'])} actions):**\n{rb}"
+                final_msg = f"**Failed at step {result['failed_at'] + 1}: `{result['failed_action']}`**\nError: {result['error']}\n\n**Executed:**\n{summary_text}{rollback_text}"
+            
+            await it.followup.send(final_msg, ephemeral=True)
+            
             history_manager.add_exchange(interaction.guild.id, interaction.user.id, text, summary)
             
             del bot.pending_confirms[interaction.user.id]

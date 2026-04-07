@@ -11,20 +11,30 @@ class ActionHandler:
         self.bot = bot
         self._action_log = []
 
-    async def execute_sequence(self, interaction: discord.Interaction, actions: List[Dict[str, Any]]) -> List[Tuple[str, bool]]:
-        """Executes a list of actions and returns success/failure for each."""
+    async def execute_sequence(self, interaction: discord.Interaction, actions: List[Dict[str, Any]], auto_rollback: bool = True) -> Dict[str, Any]:
+        """Executes a list of actions with automatic rollback on failure.
+        
+        Returns:
+            {
+                "results": [(name, success), ...],
+                "rolled_back": [(name, success), ...],
+                "failed_at": index or None,
+                "success": bool
+            }
+        """
         results = []
         self._action_log = []
         guild_id = interaction.guild.id
         user_id = interaction.user.id
 
-        for action in actions:
+        for i, action in enumerate(actions):
             name = action.get("name")
             params = action.get("parameters", {})
             
             try:
                 success, undo_data = await self.dispatch(interaction, name, params)
                 results.append((name, success))
+                
                 if success and undo_data:
                     self._action_log.append({
                         "action": name,
@@ -33,16 +43,80 @@ class ActionHandler:
                         "user_id": user_id,
                         "timestamp": time.time()
                     })
+                elif not success:
+                    raise Exception(f"Action returned failure: {name}")
             except Exception as e:
-                print(f"Action Error ({name}): {str(e)}")
+                error_msg = str(e)
+                print(f"Action Error ({name}): {error_msg}")
                 results.append((name, False))
+                
+                self._record_failure(guild_id, name, error_msg)
+                
+                if auto_rollback and self._action_log:
+                    rollback_results = await self._rollback_sequence(interaction)
+                    return {
+                        "results": results,
+                        "rolled_back": rollback_results,
+                        "failed_at": i,
+                        "failed_action": name,
+                        "error": error_msg,
+                        "success": False
+                    }
+                else:
+                    return {
+                        "results": results,
+                        "rolled_back": [],
+                        "failed_at": i,
+                        "failed_action": name,
+                        "error": error_msg,
+                        "success": False
+                    }
 
         if self._action_log:
             action_logs = dm.get_guild_data(guild_id, "action_logs", [])
             action_logs.extend(self._action_log)
             dm.update_guild_data(guild_id, "action_logs", action_logs)
 
-        return results
+        self._record_successes(guild_id, [a.get("name") for a in actions])
+
+        return {
+            "results": results,
+            "rolled_back": [],
+            "failed_at": None,
+            "success": True
+        }
+
+    async def _rollback_sequence(self, interaction: discord.Interaction) -> List[Tuple[str, bool]]:
+        """Rollback all successfully executed actions in reverse order."""
+        rollback_results = []
+        for log_entry in reversed(self._action_log):
+            undo_data = log_entry.get("undo_data", {})
+            undo_action = undo_data.get("action")
+            success = await self._execute_undo(interaction, undo_action, undo_data)
+            rollback_results.append((log_entry.get("action", "unknown"), success))
+        
+        self._action_log = []
+        return rollback_results
+
+    def _record_failure(self, guild_id: int, action_name: str, error: str):
+        """Record action failure for AI self-improvement."""
+        failures = dm.get_guild_data(guild_id, "action_failures", {})
+        if action_name not in failures:
+            failures[action_name] = {"count": 0, "errors": [], "last_error": None}
+        failures[action_name]["count"] += 1
+        failures[action_name]["last_error"] = error[:200]
+        if len(failures[action_name]["errors"]) < 10:
+            failures[action_name]["errors"].append(error[:200])
+        dm.update_guild_data(guild_id, "action_failures", failures)
+
+    def _record_successes(self, guild_id: int, action_names: List[str]):
+        """Record action successes for AI self-improvement."""
+        successes = dm.get_guild_data(guild_id, "action_successes", {})
+        for name in action_names:
+            if name not in successes:
+                successes[name] = 0
+            successes[name] += 1
+        dm.update_guild_data(guild_id, "action_successes", successes)
 
     async def dispatch(self, interaction: discord.Interaction, name: str, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Routes action names to specific methods. Returns (success, undo_data)."""

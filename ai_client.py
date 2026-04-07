@@ -47,15 +47,43 @@ class AIClient:
             except Exception as e:
                 return f"Web search failed: {str(e)}"
 
+    def _build_enhanced_prompt(self, system_prompt: str, guild_id: int) -> str:
+        """Build system prompt with action success/failure data for self-improvement."""
+        from data_manager import dm
+        
+        successes = dm.get_guild_data(guild_id, "action_successes", {})
+        failures = dm.get_guild_data(guild_id, "action_failures", {})
+        
+        if not successes and not failures:
+            return system_prompt
+        
+        improvement_data = "\n\nACTION PERFORMANCE HISTORY (use this to improve your plans):\n"
+        
+        if failures:
+            improvement_data += "Previously failed actions (avoid or adjust):\n"
+            for action, data in sorted(failures.items(), key=lambda x: x[1]["count"], reverse=True)[:10]:
+                improvement_data += f"- `{action}`: Failed {data['count']} time(s). Last error: {data['last_error']}\n"
+        
+        if successes:
+            improvement_data += "Previously successful actions (safe to reuse):\n"
+            for action, count in sorted(successes.items(), key=lambda x: x[1], reverse=True)[:10]:
+                improvement_data += f"- `{action}`: Succeeded {count} time(s)\n"
+        
+        improvement_data += "\nUse this data to avoid repeating mistakes and prefer proven action sequences."
+        
+        return system_prompt + improvement_data
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def chat(self, guild_id: int, user_id: int, user_input: str, system_prompt: str) -> Dict[str, Any]:
         """
         Communicates with the LLM, handles history, and processes web search requests.
+        Includes self-improvement data from past action successes/failures.
         """
-        # Use enhanced context that leverages hierarchical memory system
         history = history_manager.get_enhanced_context(guild_id, user_id, depth=int(os.getenv("MEMORY_DEPTH", 20)))
         
-        messages = [{"role": "system", "content": system_prompt}]
+        enhanced_prompt = self._build_enhanced_prompt(system_prompt, guild_id)
+        
+        messages = [{"role": "system", "content": enhanced_prompt}]
         messages.extend(history)
         messages.append({"role": "user", "content": user_input})
 
