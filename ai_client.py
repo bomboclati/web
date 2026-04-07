@@ -11,7 +11,7 @@ class AIClient:
     Handles deep reasoning, web searches, and JSON extraction.
     Ensures the bot thinks before acting and provides a walkthrough.
     """
-    def __init__(self, api_key: str, provider: str = "openrouter", model: str = None):
+    def __init__(self, api_key: str, provider: str = "openrouter", model: Optional[str] = None):
         self.api_key = api_key
         self.provider = provider
         self.model = model or "meta-llama/llama-3.1-405b-instruct"
@@ -52,7 +52,8 @@ class AIClient:
         """
         Communicates with the LLM, handles history, and processes web search requests.
         """
-        history = history_manager.get_context(guild_id, user_id, depth=int(os.getenv("MEMORY_DEPTH", 20)))
+        # Use enhanced context that leverages hierarchical memory system
+        history = history_manager.get_enhanced_context(guild_id, user_id, depth=int(os.getenv("MEMORY_DEPTH", 20)))
         
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(history)
