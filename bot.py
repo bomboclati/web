@@ -300,30 +300,6 @@ async def undo_cmd(interaction: discord.Interaction, count: int = 1):
     summary = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in results])
     await interaction.followup.send(f"**Undo Summary:**\n{summary}", ephemeral=True)
 
-@bot.tree.command(name="intelligence", description="View cross-server AI intelligence data")
-async def intelligence_cmd(interaction: discord.Interaction):
-    if not interaction.user.guild_permissions.administrator:
-        return await interaction.response.send_message("Admin only.", ephemeral=True)
-    
-    await interaction.response.defer(ephemeral=True)
-    
-    global_intel = dm.get_global_intelligence(min_guilds=1)
-    
-    if not global_intel:
-        return await interaction.followup.send("No intelligence data collected yet.", ephemeral=True)
-    
-    embed = discord.Embed(title="Cross-Server AI Intelligence", description="Aggregated action performance across all servers.", color=discord.Color.teal())
-    
-    for action, data in sorted(global_intel.items(), key=lambda x: x[1]["total_uses"], reverse=True)[:15]:
-        rate = data["success_rate"]
-        emoji = "🟢" if rate >= 0.9 else "🟡" if rate >= 0.7 else "🔴"
-        value = f"{emoji} {rate*100:.0f}% success ({data['total_uses']} uses)"
-        if data["top_errors"]:
-            value += f"\n⚠️ {data['top_errors'][0]['error'][:80]}"
-        embed.add_field(name=action, value=value, inline=True)
-    
-    await interaction.followup.send(embed=embed, ephemeral=True)
-
 # Main Execution
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
