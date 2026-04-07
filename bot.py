@@ -5,10 +5,13 @@ from discord import app_commands, ui
 import asyncio
 import datetime
 import random
+import signal
 from dotenv import load_dotenv
 from data_manager import dm
 from history_manager import history_manager
 from ai_client import AIClient, SYSTEM_PROMPT
+from logger import logger
+from task_scheduler import TaskScheduler
 
 # Import Modules
 from modules.economy import Economy
@@ -50,6 +53,7 @@ class ImmortalBot(commands.Bot):
         self.leveling = Leveling(self)
         self.appeals = Appeals(self)
         self.trigger_roles = TriggerRoles(self)
+        self.scheduler = TaskScheduler(self)
 
     async def get_dynamic_prefix(self, bot, message):
         if not message.guild:
@@ -57,21 +61,75 @@ class ImmortalBot(commands.Bot):
         return dm.get_guild_data(message.guild.id, "prefix", "!")
 
     async def setup_hook(self):
-        print("Recovering immortal state...")
-        # Load all guild data and recover state
-        # In a real scenario, loop through all guild files
+        logger.info("Recovering immortal state...")
         await self.tree.sync()
-        print("Slash commands synced.")
-        
-        # Restore presence monitoring for trigger roles
-        print("Restoring trigger role presence monitoring...")
-        # Note: In a full implementation, we would iterate through all guilds
-        # and restore presence monitoring for those with trigger roles
-        # For now, presence monitoring starts when a trigger is first used
+        logger.info("Slash commands synced.")
+        logger.info("Restoring trigger role presence monitoring...")
+        await self.scheduler.start()
 
     async def on_ready(self):
-        print(f"Logged in as {self.user} (ID: {self.user.id}) (IMMORTAL)")
+        logger.info("Logged in as %s (ID: %s) (IMMORTAL)", self.user, self.user.id)
         self.loop.create_task(self._auto_backup_loop())
+        self._setup_crash_recovery()
+        self._setup_signal_handlers()
+
+    def _setup_crash_recovery(self):
+        """Check for incomplete setups from previous crashes and clean up."""
+        pending_setups = dm.load_json("pending_setups", default={})
+        for setup_id, setup_data in pending_setups.items():
+            logger.warning("Found incomplete setup %s from crash - cleaning up", setup_id)
+            guild_id = setup_data.get("guild_id")
+            actions_taken = setup_data.get("actions_taken", [])
+            self._cleanup_crash_setup(guild_id, actions_taken)
+            del pending_setups[setup_id]
+        if pending_setups:
+            dm.save_json("pending_setups", pending_setups)
+        logger.info("Crash recovery check completed")
+
+    def _cleanup_crash_setup(self, guild_id: int, actions_taken: list):
+        """Clean up half-built setups from a crash."""
+        guild = self.get_guild(guild_id)
+        if not guild:
+            return
+        for action in actions_taken:
+            try:
+                if action.get("type") == "channel" and "id" in action:
+                    channel = guild.get_channel(action["id"])
+                    if channel:
+                        asyncio.create_task(channel.delete())
+                        logger.info("Cleaned up orphaned channel: %s", channel.name)
+                elif action.get("type") == "role" and "id" in action:
+                    role = guild.get_role(action["id"])
+                    if role:
+                        asyncio.create_task(role.delete())
+                        logger.info("Cleaned up orphaned role: %s", role.name)
+            except Exception as e:
+                logger.error("Failed to clean up crash artifact: %s", e)
+
+    def _setup_signal_handlers(self):
+        """Set up graceful shutdown on SIGINT/SIGTERM."""
+        try:
+            loop = asyncio.get_event_loop()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                loop.add_signal_handler(sig, lambda: asyncio.create_task(self._graceful_shutdown()))
+            logger.info("Signal handlers registered for graceful shutdown")
+        except (NotImplementedError, ValueError):
+            logger.warning("Signal handlers not supported on this platform")
+
+    async def _graceful_shutdown(self):
+        """Flush all state and shut down cleanly."""
+        logger.info("Graceful shutdown initiated...")
+        try:
+            await self.scheduler.stop()
+            dm.backup_data()
+            logger.info("State flushed to disk, backup completed")
+            logger.info("Shutting down bot...")
+            await self.close()
+        except Exception as e:
+            logger.error("Error during graceful shutdown: %s", e)
+        finally:
+            import sys
+            sys.exit(0)
 
     async def _auto_backup_loop(self):
         """Run automatic backups every 6 hours."""
@@ -80,9 +138,9 @@ class ImmortalBot(commands.Bot):
         while True:
             try:
                 dm.backup_data()
-                print(f"[{datetime.datetime.now()}] Automatic backup completed.")
+                logger.info("Automatic backup completed.")
             except Exception as e:
-                print(f"[{datetime.datetime.now()}] Automatic backup failed: {e}")
+                logger.error("Automatic backup failed: %s", e)
             await asyncio.sleep(backup_interval)
 
     async def on_message(self, message):
@@ -102,12 +160,28 @@ class ImmortalBot(commands.Bot):
             
             guild_cmds = dm.get_guild_data(message.guild.id, "custom_commands", {})
             if cmd_name in guild_cmds:
+                self._track_command_usage(message.guild.id, cmd_name)
                 from actions import ActionHandler
                 handler = ActionHandler(self)
                 await handler.execute_custom_command(message, guild_cmds[cmd_name])
                 return
 
         await self.process_commands(message)
+
+    def _track_command_usage(self, guild_id: int, cmd_name: str):
+        """Track ! command usage for AI feedback loop."""
+        usage = dm.get_guild_data(guild_id, "command_usage", {})
+        if cmd_name not in usage:
+            usage[cmd_name] = {"count": 0, "last_used": 0, "users": set()}
+        usage[cmd_name]["count"] = usage[cmd_name].get("count", 0) + 1
+        import time
+        usage[cmd_name]["last_used"] = time.time()
+        users = usage[cmd_name].get("users", [])
+        if not isinstance(users, list):
+            users = []
+        users.append(cmd_name)
+        usage[cmd_name]["users"] = users[-100:]
+        dm.update_guild_data(guild_id, "command_usage", usage)
 
 # Initialize Bot
 bot = ImmortalBot()
@@ -304,12 +378,12 @@ async def undo_cmd(interaction: discord.Interaction, count: int = 1):
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
     if not token:
-        print("ERROR: DISCORD_TOKEN not found in environment or .env file.")
-        print("Please copy .env.example to .env and add your bot token.")
+        logger.critical("DISCORD_TOKEN not found in environment or .env file.")
+        logger.critical("Please copy .env.example to .env and add your bot token.")
         exit(1)
     
     ai_key = os.getenv("AI_API_KEY")
     if not ai_key:
-        print("WARNING: AI_API_KEY not found. The /bot command will not work.")
+        logger.warning("AI_API_KEY not found. The /bot command will not work.")
     
     bot.run(token)

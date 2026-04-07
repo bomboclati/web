@@ -5,27 +5,35 @@ import time
 import datetime
 from typing import List, Dict, Any, Tuple, Optional
 from data_manager import dm
+from logger import logger
 
 class ActionHandler:
     def __init__(self, bot):
         self.bot = bot
         self._action_log = []
+        self._setup_id = None
+        self._artifacts = []
 
     async def execute_sequence(self, interaction: discord.Interaction, actions: List[Dict[str, Any]], auto_rollback: bool = True) -> Dict[str, Any]:
-        """Executes a list of actions with automatic rollback on failure.
-        
-        Returns:
-            {
-                "results": [(name, success), ...],
-                "rolled_back": [(name, success), ...],
-                "failed_at": index or None,
-                "success": bool
-            }
-        """
+        """Executes a list of actions with automatic rollback on failure and crash recovery tracking."""
+        import uuid
+        setup_id = str(uuid.uuid4())
         results = []
         self._action_log = []
         guild_id = interaction.guild.id
         user_id = interaction.user.id
+
+        pending_setups = dm.load_json("pending_setups", default={})
+        pending_setups[setup_id] = {
+            "guild_id": guild_id,
+            "user_id": user_id,
+            "actions_count": len(actions),
+            "actions_taken": [],
+            "started_at": time.time()
+        }
+        dm.save_json("pending_setups", pending_setups)
+        self._setup_id = setup_id
+        self._artifacts = []
 
         for i, action in enumerate(actions):
             name = action.get("name")
@@ -47,7 +55,7 @@ class ActionHandler:
                     raise Exception(f"Action returned failure: {name}")
             except Exception as e:
                 error_msg = str(e)
-                print(f"Action Error ({name}): {error_msg}")
+                logger.error("Action Error (%s): %s", name, error_msg)
                 results.append((name, False))
                 
                 self._record_failure(guild_id, name, error_msg)
@@ -78,6 +86,10 @@ class ActionHandler:
             dm.update_guild_data(guild_id, "action_logs", action_logs)
 
         self._record_successes(guild_id, [a.get("name") for a in actions])
+        
+        pending_setups = dm.load_json("pending_setups", default={})
+        pending_setups.pop(setup_id, None)
+        dm.save_json("pending_setups", pending_setups)
 
         return {
             "results": results,
@@ -123,6 +135,17 @@ class ActionHandler:
         for name in action_names:
             dm.record_global_action_result(name, True)
 
+    def _track_artifact(self, artifact_type: str, artifact_id: int, name: str):
+        """Track a created artifact for crash recovery."""
+        if self._setup_id:
+            self._artifacts.append({"type": artifact_type, "id": artifact_id, "name": name})
+            pending_setups = dm.load_json("pending_setups", default={})
+            if self._setup_id in pending_setups:
+                pending_setups[self._setup_id]["actions_taken"].append(
+                    {"type": artifact_type, "id": artifact_id, "name": name}
+                )
+                dm.save_json("pending_setups", pending_setups)
+
     async def dispatch(self, interaction: discord.Interaction, name: str, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Routes action names to specific methods. Returns (success, undo_data)."""
         method_name = f"action_{name}"
@@ -130,7 +153,7 @@ class ActionHandler:
             method = getattr(self, method_name)
             return await method(interaction, params)
         else:
-            print(f"Unknown action: {name}")
+            logger.warning("Unknown action: %s", name)
             return False, None
 
     # --- Basic Actions ---
@@ -154,7 +177,8 @@ class ActionHandler:
         else:
             return False, None
             
-        print(f"Created channel: {channel.name}")
+        self._track_artifact("channel", channel.id, channel.name)
+        logger.info("Created channel: %s", channel.name)
         return True, {"action": "delete_channel", "channel_id": channel.id}
 
     async def action_create_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
@@ -164,6 +188,7 @@ class ActionHandler:
         color = discord.Color(int(color_hex, 16))
         
         role = await guild.create_role(name=name, color=color, reason="AI Action")
+        self._track_artifact("role", role.id, role.name)
         return True, {"action": "delete_role", "role_id": role.id}
 
     async def action_assign_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
@@ -269,7 +294,7 @@ class ActionHandler:
             await message.channel.send(content=code)
             return True
         except Exception as e:
-            print(f"Error executing custom command: {e}")
+            logger.error("Error executing custom command: %s", e)
             await message.channel.send("An error occurred while executing this command.")
             return False
 
@@ -473,7 +498,7 @@ class ActionHandler:
                 
             return False
         except Exception as e:
-            print(f"Undo Error ({undo_action}): {str(e)}")
+            logger.error("Undo Error (%s): %s", undo_action, e)
             return False
 
     async def _undo_system_setup(self, guild: discord.Guild, undo_action: str) -> bool:
@@ -503,5 +528,5 @@ class ActionHandler:
             
             return True
         except Exception as e:
-            print(f"System Undo Error ({undo_action}): {str(e)}")
+            logger.error("System Undo Error (%s): %s", undo_action, e)
             return False

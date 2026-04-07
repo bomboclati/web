@@ -48,14 +48,15 @@ class AIClient:
                 return f"Web search failed: {str(e)}"
 
     def _build_enhanced_prompt(self, system_prompt: str, guild_id: int) -> str:
-        """Build system prompt with action success/failure data for self-improvement."""
+        """Build system prompt with action success/failure data and command usage for self-improvement."""
         from data_manager import dm
         
         successes = dm.get_guild_data(guild_id, "action_successes", {})
         failures = dm.get_guild_data(guild_id, "action_failures", {})
         global_intel = dm.get_global_intelligence(min_guilds=2)
+        command_usage = dm.get_guild_data(guild_id, "command_usage", {})
         
-        if not successes and not failures and not global_intel:
+        if not successes and not failures and not global_intel and not command_usage:
             return system_prompt
         
         improvement_data = "\n\nACTION PERFORMANCE HISTORY (use this to improve your plans):\n"
@@ -80,7 +81,21 @@ class AIClient:
                     for err in data["top_errors"]:
                         improvement_data += f"  Common error: {err['error']} ({err['count']}x)\n"
         
-        improvement_data += "\nUse this data to avoid repeating mistakes, prefer proven action sequences, and learn from the broader community."
+        if command_usage:
+            improvement_data += "\nCommand usage on this server (creates commands users actually want):\n"
+            sorted_cmds = sorted(command_usage.items(), key=lambda x: x[1].get("count", 0), reverse=True)
+            popular = [(name, data) for name, data in sorted_cmds if data.get("count", 0) > 2]
+            unused = [(name, data) for name, data in sorted_cmds if data.get("count", 0) <= 2]
+            if popular:
+                improvement_data += "Frequently used commands (create similar ones):\n"
+                for name, data in popular[:5]:
+                    improvement_data += f"- `!{name}`: Used {data['count']} times\n"
+            if unused:
+                improvement_data += "Rarely used commands (avoid creating similar ones):\n"
+                for name, data in unused[:5]:
+                    improvement_data += f"- `!{name}`: Used only {data.get('count', 0)} times\n"
+        
+        improvement_data += "\nUse this data to avoid repeating mistakes, prefer proven action sequences, and create commands users actually want."
         
         return system_prompt + improvement_data
 

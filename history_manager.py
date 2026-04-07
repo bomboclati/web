@@ -5,6 +5,7 @@ from typing import List, Dict, Optional
 from data_manager import dm
 import time
 import re
+from logger import logger
 
 class HistoryManager:
     """
@@ -134,7 +135,7 @@ class HistoryManager:
                 return True
                 
         except Exception as e:
-            print(f"Error creating summary: {e}")
+            logger.error("Error creating summary: %s", e)
             return False
 
     def add_exchange(self, guild_id: int, user_id: int, user_msg: str, bot_response: str):

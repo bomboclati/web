@@ -3,6 +3,7 @@ from data_manager import dm
 import json
 import asyncio
 from typing import Dict, Set, Optional
+from logger import logger
 
 class TriggerRoles:
     """
@@ -208,7 +209,7 @@ class TriggerRoles:
                                 # Optional: log or debug
                                 
             except Exception as e:
-                print(f"Error in presence monitor for guild {guild_id}: {e}")
+                logger.error("Error in presence monitor for guild %s: %s", guild_id, e)
                 
             # Check every 30 seconds
             await asyncio.sleep(30)
