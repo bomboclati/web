@@ -61,19 +61,6 @@ class Economy:
         economy_channel = await guild.create_text_channel("economy")
         shop_channel = await guild.create_text_channel("shop")
         
-        embed = discord.Embed(title="Economy System", description="Earn coins by chatting, claim daily rewards, and trade with others!", color=discord.Color.gold())
-        embed.add_field(name="!daily", value="Claim your daily coin reward.", inline=False)
-        embed.add_field(name="!balance", value="Check your coin balance.", inline=False)
-        embed.add_field(name="!transfer <user> <amount>", value="Send coins to another user.", inline=False)
-        embed.add_field(name="!help economy", value="Show this help message.", inline=False)
-        await economy_channel.send(embed=embed)
-        
-        shop_embed = discord.Embed(title="Premium Shop", description="Spend your gems here!", color=discord.Color.purple())
-        shop_embed.add_field(name="!shop", value="Browse available items.", inline=False)
-        shop_embed.add_field(name="!buy <item>", value="Purchase an item.", inline=False)
-        shop_embed.add_field(name="!help shop", value="Show shop help.", inline=False)
-        await shop_channel.send(embed=shop_embed)
-        
         custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
         
         custom_cmds["daily"] = json.dumps({

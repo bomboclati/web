@@ -226,6 +226,33 @@ class ActionHandler:
         msg = await channel.send(embed=embed)
         return True, {"action": "delete_message", "channel_id": channel.id, "message_id": msg.id}
 
+    async def action_post_documentation(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Posts a comprehensive, multi-section documentation embed for a newly created system."""
+        channel_name = params.get("channel")
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name) or interaction.channel
+        
+        title = params.get("title", "System Documentation")
+        description = params.get("description", "")
+        sections = params.get("sections", [])
+        footer = params.get("footer", "")
+        color = params.get("color", 0x5865F2)
+        
+        embed = discord.Embed(title=title, description=description, color=color)
+        
+        for section in sections:
+            section_title = section.get("title", "")
+            section_content = section.get("content", "")
+            if section_title and section_content:
+                embed.add_field(name=section_title, value=section_content, inline=False)
+        
+        if footer:
+            embed.set_footer(text=footer)
+        
+        embed.timestamp = datetime.datetime.utcnow()
+        
+        msg = await channel.send(embed=embed)
+        return True, {"action": "delete_message", "channel_id": channel.id, "message_id": msg.id}
+
     # --- Specialized Systems ---
 
     async def action_setup_staff_system(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
