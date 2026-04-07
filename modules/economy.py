@@ -2,6 +2,7 @@ import discord
 from data_manager import dm
 import random
 import datetime
+import json
 
 class Economy:
     """
@@ -53,3 +54,58 @@ class Economy:
         self.add_coins(guild_id, target.id, amount)
         
         await interaction.response.send_message(f"💸 Transferred **{amount} coins** to {target.mention}.")
+
+    async def setup(self, interaction: discord.Interaction, params: dict = None) -> bool:
+        guild = interaction.guild
+        
+        economy_channel = await guild.create_text_channel("economy")
+        shop_channel = await guild.create_text_channel("shop")
+        
+        embed = discord.Embed(title="Economy System", description="Earn coins by chatting, claim daily rewards, and trade with others!", color=discord.Color.gold())
+        embed.add_field(name="!daily", value="Claim your daily coin reward.", inline=False)
+        embed.add_field(name="!balance", value="Check your coin balance.", inline=False)
+        embed.add_field(name="!transfer <user> <amount>", value="Send coins to another user.", inline=False)
+        embed.add_field(name="!help economy", value="Show this help message.", inline=False)
+        await economy_channel.send(embed=embed)
+        
+        shop_embed = discord.Embed(title="Premium Shop", description="Spend your gems here!", color=discord.Color.purple())
+        shop_embed.add_field(name="!shop", value="Browse available items.", inline=False)
+        shop_embed.add_field(name="!buy <item>", value="Purchase an item.", inline=False)
+        shop_embed.add_field(name="!help shop", value="Show shop help.", inline=False)
+        await shop_channel.send(embed=shop_embed)
+        
+        custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
+        
+        custom_cmds["daily"] = json.dumps({
+            "command_type": "economy_daily"
+        })
+        
+        custom_cmds["balance"] = json.dumps({
+            "command_type": "economy_balance"
+        })
+        
+        custom_cmds["help economy"] = json.dumps({
+            "command_type": "help_embed",
+            "title": "Economy System Help",
+            "description": "Manage your coins and trade with others.",
+            "fields": [
+                {"name": "!daily", "value": "Claim your daily coin reward.", "inline": False},
+                {"name": "!balance", "value": "Check your coin balance.", "inline": False},
+                {"name": "!transfer <user> <amount>", "value": "Send coins to another user.", "inline": False},
+                {"name": "!help economy", "value": "Show this help message.", "inline": False}
+            ]
+        })
+        
+        custom_cmds["shop"] = json.dumps({
+            "command_type": "help_embed",
+            "title": "Premium Shop",
+            "description": "Spend your gems on exclusive items.",
+            "fields": [
+                {"name": "!shop", "value": "Browse available items.", "inline": False},
+                {"name": "!buy <item>", "value": "Purchase an item.", "inline": False},
+                {"name": "!help shop", "value": "Show shop help.", "inline": False}
+            ]
+        })
+        
+        dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
+        return True

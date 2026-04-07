@@ -203,26 +203,29 @@ class HistoryManager:
     def get_enhanced_context(self, guild_id: int, user_id: int, depth: int = 20) -> List[Dict[str, str]]:
         """Get context enhanced with summaries for better memory utilization"""
         if not dm.use_sqlite:
-            # Fall back to regular context for JSON backend
             return self.get_context(guild_id, user_id, depth)
             
-        # Get recent exchanges
         recent_exchanges = dm.load_exchanges(guild_id, user_id, limit=depth*2)
-        
-        # Get summaries to add contextual understanding
         summaries = dm.load_conversation_summaries(guild_id, user_id)
         
-        # Format recent exchanges
         formatted_exchanges = []
-        for exchange in reversed(recent_exchanges):  # Chronological order
+        
+        if summaries:
+            summary_parts = []
+            for s in summaries[-5:]:
+                summary_parts.append(s["summary_text"])
+            combined_summary = "\nPrevious conversation summary:\n" + "\n".join(summary_parts)
+            formatted_exchanges.append({
+                "role": "system",
+                "content": combined_summary
+            })
+        
+        for exchange in reversed(recent_exchanges):
             formatted_exchanges.append({
                 "role": exchange["role"],
                 "content": exchange["content"]
             })
         
-        # If we have summaries and space, we could inject summary context
-        # For now, we return just the recent exchanges to maintain compatibility
-        # In a full implementation, we might prepend summary information
         return formatted_exchanges
 
     def search_history(self, guild_id: int, user_id: int, query: str, 

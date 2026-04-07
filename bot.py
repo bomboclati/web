@@ -42,6 +42,8 @@ class ImmortalBot(commands.Bot):
         self.custom_commands = {} # guild_id -> {prefix_cmd_name: code}
         self.active_tasks = {}    # guild_id -> {task_id: task_obj}
         self.pending_confirms = {} # user_id -> {action_data, message_obj}
+        self._bot_cooldowns = {}  # user_id -> timestamp
+        self._bot_cooldown_seconds = 30
         
         # Internal Systems
         self.economy = Economy(self)
@@ -69,6 +71,19 @@ class ImmortalBot(commands.Bot):
 
     async def on_ready(self):
         print(f"Logged in as {self.user} (ID: {self.user.id}) (IMMORTAL)")
+        self.loop.create_task(self._auto_backup_loop())
+
+    async def _auto_backup_loop(self):
+        """Run automatic backups every 6 hours."""
+        backup_interval = int(os.getenv("BACKUP_INTERVAL_HOURS", 6)) * 3600
+        await asyncio.sleep(60)
+        while True:
+            try:
+                dm.backup_data()
+                print(f"[{datetime.datetime.now()}] Automatic backup completed.")
+            except Exception as e:
+                print(f"[{datetime.datetime.now()}] Automatic backup failed: {e}")
+            await asyncio.sleep(backup_interval)
 
     async def on_message(self, message):
         if message.author.bot:
@@ -106,6 +121,16 @@ async def slash_bot(interaction: discord.Interaction, text: str):
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("Only Administrators can use AI commands.", ephemeral=True)
         return
+
+    now = datetime.datetime.now().timestamp()
+    last_use = bot._bot_cooldowns.get(interaction.user.id, 0)
+    remaining = bot._bot_cooldown_seconds - (now - last_use)
+    if remaining > 0:
+        return await interaction.response.send_message(
+            f"Please wait {int(remaining)}s before using /bot again.",
+            ephemeral=True
+        )
+    bot._bot_cooldowns[interaction.user.id] = now
 
     await interaction.response.defer(ephemeral=True)
     
@@ -202,12 +227,82 @@ async def config_cmd(interaction: discord.Interaction):
         return await interaction.response.send_message("Admin only.", ephemeral=True)
         
     embed = discord.Embed(title="Bot Configuration", description="Use subcommands to adjust settings.", color=discord.Color.dark_grey())
+    embed.add_field(name="/config model <name>", value="Set AI model (e.g. gpt-4, claude-3)", inline=False)
+    embed.add_field(name="/config provider <name>", value="Set AI provider (openrouter, openai, gemini)", inline=False)
+    embed.add_field(name="/config prefix <char>", value="Set server prefix", inline=False)
+    embed.add_field(name="/config depth <number>", value="Set memory depth", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@bot.tree.command(name="config_model", description="Set the AI model")
+@app_commands.describe(model="Model name (e.g. gpt-4, claude-3)")
+async def config_model(interaction: discord.Interaction, model: str):
+    if not interaction.user.guild_permissions.administrator:
+        return await interaction.response.send_message("Admin only.", ephemeral=True)
+    bot.ai.model = model
+    await interaction.response.send_message(f"AI model set to **{model}**.", ephemeral=True)
+
+@bot.tree.command(name="config_provider", description="Set the AI provider")
+@app_commands.choices(provider=[
+    app_commands.Choice(name="OpenRouter", value="openrouter"),
+    app_commands.Choice(name="OpenAI", value="openai"),
+    app_commands.Choice(name="Gemini", value="gemini"),
+])
+async def config_provider(interaction: discord.Interaction, provider: str):
+    if not interaction.user.guild_permissions.administrator:
+        return await interaction.response.send_message("Admin only.", ephemeral=True)
+    if provider not in bot.ai.base_urls:
+        return await interaction.response.send_message(f"Unknown provider. Valid: {', '.join(bot.ai.base_urls.keys())}", ephemeral=True)
+    bot.ai.provider = provider
+    await interaction.response.send_message(f"AI provider set to **{provider}**.", ephemeral=True)
+
+@bot.tree.command(name="config_prefix", description="Set the server prefix")
+@app_commands.describe(prefix="New prefix character")
+async def config_prefix(interaction: discord.Interaction, prefix: str):
+    if not interaction.user.guild_permissions.administrator:
+        return await interaction.response.send_message("Admin only.", ephemeral=True)
+    if len(prefix) > 5:
+        return await interaction.response.send_message("Prefix must be 5 characters or less.", ephemeral=True)
+    dm.update_guild_data(interaction.guild.id, "prefix", prefix)
+    await interaction.response.send_message(f"Server prefix set to **{prefix}**.", ephemeral=True)
+
+@bot.tree.command(name="config_depth", description="Set memory depth")
+@app_commands.describe(depth="Number of messages to remember")
+async def config_depth(interaction: discord.Interaction, depth: int):
+    if not interaction.user.guild_permissions.administrator:
+        return await interaction.response.send_message("Admin only.", ephemeral=True)
+    if depth < 5 or depth > 100:
+        return await interaction.response.send_message("Depth must be between 5 and 100.", ephemeral=True)
+    dm.update_guild_data(interaction.guild.id, "memory_depth", depth)
+    await interaction.response.send_message(f"Memory depth set to **{depth}**.", ephemeral=True)
+
 @bot.tree.command(name="undo", description="Reverse latest actions")
-async def undo_cmd(interaction: discord.Interaction):
-    await interaction.response.send_message("Undo logic pending implementation history storage.", ephemeral=True)
+@app_commands.describe(count="Number of action groups to undo (default: 1)")
+async def undo_cmd(interaction: discord.Interaction, count: int = 1):
+    if not interaction.user.guild_permissions.administrator:
+        return await interaction.response.send_message("Admin only.", ephemeral=True)
+    
+    if count < 1 or count > 10:
+        return await interaction.response.send_message("Count must be between 1 and 10.", ephemeral=True)
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    from actions import ActionHandler
+    handler = ActionHandler(bot)
+    results = await handler.undo_last_actions(interaction, count)
+    
+    summary = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in results])
+    await interaction.followup.send(f"**Undo Summary:**\n{summary}", ephemeral=True)
 
 # Main Execution
 if __name__ == "__main__":
-    bot.run(os.getenv("DISCORD_TOKEN"))
+    token = os.getenv("DISCORD_TOKEN")
+    if not token:
+        print("ERROR: DISCORD_TOKEN not found in environment or .env file.")
+        print("Please copy .env.example to .env and add your bot token.")
+        exit(1)
+    
+    ai_key = os.getenv("AI_API_KEY")
+    if not ai_key:
+        print("WARNING: AI_API_KEY not found. The /bot command will not work.")
+    
+    bot.run(token)
