@@ -74,6 +74,7 @@ class ImmortalBot(commands.Bot):
         logger.info("Logged in as %s (ID: %s) (IMMORTAL)", self.user, self.user.id)
         self.loop.create_task(self._auto_backup_loop())
         self.loop.create_task(self._cleanup_expired_sessions())
+        self.loop.create_task(self._command_refinement_loop())
         self._setup_crash_recovery()
         self._setup_signal_handlers()
 
@@ -157,6 +158,17 @@ class ImmortalBot(commands.Bot):
                 logger.error("Automatic backup failed: %s", e)
             await asyncio.sleep(backup_interval)
 
+    async def _command_refinement_loop(self):
+        """Periodically analyze command usage and generate improvement suggestions."""
+        await asyncio.sleep(300)  # Wait 5 minutes after startup
+        analysis_interval = int(os.getenv("COMMAND_ANALYSIS_INTERVAL_HOURS", 24)) * 3600
+        while True:
+            try:
+                await self.analyze_command_usage_and_suggest_improvements()
+            except Exception as e:
+                logger.error("Command refinement analysis failed: %s", e)
+            await asyncio.sleep(analysis_interval)
+
     async def on_message(self, message):
         if message.author.bot:
             return
@@ -174,28 +186,477 @@ class ImmortalBot(commands.Bot):
             
             guild_cmds = dm.get_guild_data(message.guild.id, "custom_commands", {})
             if cmd_name in guild_cmds:
-                self._track_command_usage(message.guild.id, cmd_name)
+                # Track command chain (what was run before this)
+                prev_cmd = self.track_command_chain(message.author.id, cmd_name)
+                
+                # Track command with context for AI improvement
+                context = {
+                    "user_id": message.author.id,
+                    "guild_id": message.guild.id,
+                    "channel_id": message.channel.id,
+                    "message_content": message.content,
+                    "timestamp": message.created_at.timestamp(),
+                    "previous_command": prev_cmd
+                }
+                self._track_command_usage(message.guild.id, cmd_name, True, context)
                 from actions import ActionHandler
                 handler = ActionHandler(self)
-                await handler.execute_custom_command(message, guild_cmds[cmd_name])
+                await handler.execute_custom_command(message, guild_cmds[cmd_name], cmd_name)
                 return
 
         await self.process_commands(message)
 
-    def _track_command_usage(self, guild_id: int, cmd_name: str):
-        """Track ! command usage for AI feedback loop."""
+    def _track_command_usage(self, guild_id: int, cmd_name: str, success: bool = True, context: dict = None):
+        """Track ! command usage for AI feedback loop with enhanced data."""
         usage = dm.get_guild_data(guild_id, "command_usage", {})
         if cmd_name not in usage:
-            usage[cmd_name] = {"count": 0, "last_used": 0, "users": set()}
+            usage[cmd_name] = {
+                "count": 0, 
+                "last_used": 0, 
+                "users": [], 
+                "failures": 0,
+                "contexts": [],
+                "command_chains": []
+            }
         usage[cmd_name]["count"] = usage[cmd_name].get("count", 0) + 1
-        import time
+        if not success:
+            usage[cmd_name]["failures"] = usage[cmd_name].get("failures", 0) + 1
         usage[cmd_name]["last_used"] = time.time()
+        
+        # Track user usage (last 100 users)
         users = usage[cmd_name].get("users", [])
         if not isinstance(users, list):
             users = []
-        users.append(cmd_name)
+        user_id_str = str(guild_id) + "_" + str(context.get("user_id", "unknown")) if context else str(guild_id) + "_unknown"
+        if user_id_str not in users[-100:]:  # Avoid duplicates in recent history
+            users.append(user_id_str)
         usage[cmd_name]["users"] = users[-100:]
+        
+        # Track context if provided
+        if context:
+            contexts = usage[cmd_name].get("contexts", [])
+            if not isinstance(contexts, list):
+                contexts = []
+            # Keep only last 50 contexts
+            contexts.append({
+                "timestamp": time.time(),
+                "user_id": context.get("user_id"),
+                "guild_id": guild_id,
+                "data": context.get("data", {})
+            })
+            usage[cmd_name]["contexts"] = contexts[-50:]
+            
+            # Track command chains (what command was run before this one)
+            prev_cmd = context.get("previous_command")
+            if prev_cmd:
+                chains = usage[cmd_name].get("command_chains", [])
+                if not isinstance(chains, list):
+                    chains = []
+                chains.append({
+                    "previous_command": prev_cmd,
+                    "timestamp": time.time(),
+                    "user_id": context.get("user_id")
+                })
+                # Keep only last 100 chains
+                usage[cmd_name]["command_chains"] = chains[-100:]
+        
         dm.update_guild_data(guild_id, "command_usage", usage)
+        
+        # Also track globally for cross-server intelligence
+        self._track_global_command_usage(cmd_name, success, context)
+    
+    def _track_global_command_usage(self, cmd_name: str, success: bool = True, context: dict = None):
+        """Track command usage globally for cross-server intelligence."""
+        global_usage = dm.load_json("global_command_usage", default={})
+        if cmd_name not in global_usage:
+            global_usage[cmd_name] = {
+                "total_count": 0,
+                "success_count": 0,
+                "failure_count": 0,
+                "guilds_used": set(),
+                "last_used": 0
+            }
+        
+        global_usage[cmd_name]["total_count"] = global_usage[cmd_name].get("total_count", 0) + 1
+        if success:
+            global_usage[cmd_name]["success_count"] = global_usage[cmd_name].get("success_count", 0) + 1
+        else:
+            global_usage[cmd_name]["failure_count"] = global_usage[cmd_name].get("failure_count", 0) + 1
+            
+        global_usage[cmd_name]["last_used"] = time.time()
+        
+        # Track which guilds use this command (anonymized)
+        guilds_used = global_usage[cmd_name].get("guilds_used", set())
+        if isinstance(guilds_used, list):
+            guilds_used = set(guilds_used)
+        if context and context.get("guild_id"):
+            guilds_used.add(str(context["guild_id"]))  # Store as string for JSON serialization
+        global_usage[cmd_name]["guilds_used"] = list(guilds_used)[-1000:]  # Keep last 1000 guilds
+        
+        dm.save_json("global_command_usage", global_usage)
+    
+    def track_failed_command(self, guild_id: int, cmd_name: str, user_id: int = None, error_message: str = None):
+        """Track a failed command execution for AI analysis."""
+        self._track_command_usage(guild_id, cmd_name, success=False, context={
+            "user_id": user_id,
+            "guild_id": guild_id,
+            "error": error_message
+        })
+        
+        # Also track in action_failures for the analysis system
+        failures = dm.get_guild_data(guild_id, "action_failures", {})
+        if cmd_name not in failures:
+            failures[cmd_name] = {"count": 0, "errors": [], "last_error": None}
+        failures[cmd_name]["count"] += 1
+        if error_message:
+            failures[cmd_name]["last_error"] = error_message[:200]
+            if len(failures[cmd_name]["errors"]) < 10:
+                failures[cmd_name]["errors"].append(error_message[:200])
+        dm.update_guild_data(guild_id, "action_failures", failures)
+    
+    # Store recent command executions for chain detection
+    _recent_commands = {}  # user_id -> {"command": str, "timestamp": float}
+    _command_chain_window = 60  # 60 seconds between commands counts as a chain
+    
+    def track_command_chain(self, user_id: int, command: str):
+        """Track command chain - what command was run before this one."""
+        now = time.time()
+        prev_command = None
+        
+        if user_id in self._recent_commands:
+            prev_data = self._recent_commands[user_id]
+            if now - prev_data.get("timestamp", 0) < self._command_chain_window:
+                prev_command = prev_data.get("command")
+        
+        # Update recent command
+        self._recent_commands[user_id] = {"command": command, "timestamp": now}
+        
+        return prev_command
+    
+    async def analyze_command_usage_and_suggest_improvements(self):
+        """Periodically analyze command usage and suggest improvements."""
+        try:
+            logger.info("Starting command usage analysis for improvement suggestions...")
+            
+            # Get global command usage data
+            global_usage = dm.load_json("global_command_usage", default={})
+            
+            # Get command failure data from all guilds
+            command_failures = {}
+            command_successes = {}
+            command_chains = {}
+            
+            # Scan all guild data files for command usage patterns
+            data_dir = "data"
+            if os.path.exists(data_dir):
+                for filename in os.listdir(data_dir):
+                    if filename.startswith("guild_") and filename.endswith(".json"):
+                        try:
+                            guild_data = dm.load_json(filename[:-5])  # Remove .json extension
+                            guild_id = filename[6:-5]  # Extract guild ID
+                            
+                            # Collect failure data
+                            failures = guild_data.get("action_failures", {})
+                            for cmd, data in failures.items():
+                                if cmd not in command_failures:
+                                    command_failures[cmd] = {"count": 0, "errors": []}
+                                command_failures[cmd]["count"] += data.get("count", 0)
+                                command_failures[cmd]["errors"].extend(data.get("errors", []))
+                            
+                            # Collect success data
+                            successes = guild_data.get("action_successes", {})
+                            for cmd, count in successes.items():
+                                if cmd not in command_successes:
+                                    command_successes[cmd] = 0
+                                command_successes[cmd] += count
+                            
+                            # Collect command chains
+                            usage = guild_data.get("command_usage", {})
+                            for cmd, data in usage.items():
+                                chains = data.get("command_chains", [])
+                                if chains:
+                                    if cmd not in command_chains:
+                                        command_chains[cmd] = []
+                                    command_chains[cmd].extend(chains)
+                        except Exception as e:
+                            logger.error("Error processing guild data file %s: %s", filename, e)
+            
+            # Generate improvement suggestions
+            suggestions = []
+            
+            # Analyze high failure rate commands
+            for cmd_name, usage_data in global_usage.items():
+                total_count = usage_data.get("total_count", 0)
+                failure_count = usage_data.get("failure_count", 0)
+                if total_count >= 10:  # Only analyze commands with sufficient usage
+                    failure_rate = failure_count / total_count if total_count > 0 else 0
+                    if failure_rate > 0.3:  # More than 30% failure rate
+                        suggestions.append({
+                            "type": "high_failure_rate",
+                            "command": cmd_name,
+                            "failure_rate": failure_rate,
+                            "total_uses": total_count,
+                            "suggestion": f"Users frequently fail when using !{cmd_name}. Consider improving command clarity or adding better error handling.",
+                            "confidence": min(0.9, failure_rate * 2)  # Higher failure rate = higher confidence
+                        })
+            
+            # Analyze command chains for common patterns
+            for cmd_name, chains in command_chains.items():
+                if len(chains) >= 5:  # Need sufficient data
+                    # Count what commands come before this one
+                    prev_cmd_counts = {}
+                    for chain in chains:
+                        prev_cmd = chain.get("previous_command")
+                        if prev_cmd:
+                            prev_cmd_counts[prev_cmd] = prev_cmd_counts.get(prev_cmd, 0) + 1
+                    
+                    # Find most common previous command
+                    if prev_cmd_counts:
+                        most_common_prev = max(prev_cmd_counts, key=prev_cmd_counts.get)
+                        count = prev_cmd_counts[most_common_prev]
+                        if count >= 3 and count / len(chains) > 0.5:  # At least 3 times and >50% of the time
+                            suggestions.append({
+                                "type": "command_chain",
+                                "command": cmd_name,
+                                "previous_command": most_common_prev,
+                                "frequency": count,
+                                "total_chains": len(chains),
+                                "suggestion": f"Users often run !{most_common_prev} before !{cmd_name}. Consider creating a command chain or adding !{most_common_prev} as a subcommand.",
+                                "confidence": min(0.9, count / len(chains))
+                            })
+            
+            # Analyze common error patterns
+            for cmd_name, failure_data in command_failures.items():
+                if failure_data["count"] >= 5:  # Need sufficient failure data
+                    errors = failure_data["errors"]
+                    if errors:
+                        # Count error types
+                        error_counts = {}
+                        for error in errors:
+                            # Simplify error message for grouping
+                            simple_error = error.lower()
+                            if "missing" in simple_error and "argument" in simple_error:
+                                error_type = "missing_argument"
+                            elif "not found" in simple_error:
+                                error_type = "not_found"
+                            elif "permission" in simple_error:
+                                error_type = "permission"
+                            else:
+                                error_type = "other"
+                            
+                            error_counts[error_type] = error_counts.get(error_type, 0) + 1
+                        
+                        # Find most common error type
+                        if error_counts:
+                            most_common_error = max(error_counts, key=error_counts.get)
+                            count = error_counts[most_common_error]
+                            if count >= 3:  # At least 3 occurrences
+                suggestions.append({
+                    "type": "error_pattern",
+                    "command": cmd_name,
+                    "error_type": most_common_error,
+                    "frequency": count,
+                    "total_failures": failure_data["count"],
+                    "suggestion": self._generate_error_suggestion(cmd_name, most_common_error),
+                    "confidence": min(0.9, count / failure_data["count"]),
+                    "severity": count / failure_data["count"]  # For auto-action threshold
+                })
+            
+            # Save suggestions for review AND auto-apply high confidence ones
+            if suggestions:
+                # Sort by confidence and type priority
+                suggestions.sort(key=lambda x: (x["confidence"], x["type"] == "high_failure_rate"), reverse=True)
+                
+                # Separate high confidence (auto-apply) and low confidence (store for review)
+                auto_apply_threshold = 0.8
+                auto_apply = []
+                for_review = []
+                
+                for s in suggestions:
+                    if s.get("confidence", 0) >= auto_apply_threshold:
+                        auto_apply.append(s)
+                    else:
+                        for_review.append(s)
+                
+                # Auto-apply high confidence suggestions AND error prevention
+                for s in auto_apply:
+                    try:
+                        cmd_name = s.get("command")
+                        suggestion_text = s.get("suggestion", "")
+                        suggestion_type = s.get("type")
+                        error_type = s.get("error_type")
+                        severity = s.get("severity", 0)
+                        
+                        logger.info(f"Auto-applying improvement for !{cmd_name}: {s.get('type')} ({int(s['confidence']*100)}% confidence)")
+                        
+                        # Apply to all guilds using this command
+                        data_dir = "data"
+                        if os.path.exists(data_dir):
+                            for filename in os.listdir(data_dir):
+                                if filename.startswith("guild_") and filename.endswith(".json"):
+                                    try:
+                                        guild_id = filename[6:-5]
+                                        custom_cmds = dm.get_guild_data(int(guild_id), "custom_commands", {})
+                                        
+                                        if cmd_name in custom_cmds:
+                                            cmd_data = custom_cmds[cmd_name]
+                                            try:
+                                                cmd_dict = json.loads(cmd_data) if isinstance(cmd_data, str) else cmd_data
+                                                if isinstance(cmd_dict, dict):
+                                                    if "improvements" not in cmd_dict:
+                                                        cmd_dict["improvements"] = []
+                                                    
+                                                    # Add error prevention based on error type
+                                                    prevention = self._generate_prevention(error_type, cmd_name)
+                                                    if prevention:
+                                                        cmd_dict["error_prevention"] = prevention
+                                                    
+                                                    cmd_dict["improvements"].append({
+                                                        "type": suggestion_type,
+                                                        "suggestion": suggestion_text,
+                                                        "confidence": s.get("confidence"),
+                                                        "applied_at": time.time(),
+                                                        "auto_applied": True,
+                                                        "prevention_added": bool(prevention)
+                                                    })
+                                                    custom_cmds[cmd_name] = json.dumps(cmd_dict)
+                                                    dm.update_guild_data(int(guild_id), "custom_commands", custom_cmds)
+                                            except:
+                                                new_doc = {"original": cmd_data, "improvements": [{"type": suggestion_type, "suggestion": suggestion_text, "auto_applied": True, "applied_at": time.time()}]}
+                                                if error_type:
+                                                    new_doc["error_prevention"] = self._generate_prevention(error_type, cmd_name)
+                                                custom_cmds[cmd_name] = json.dumps(new_doc)
+                                                dm.update_guild_data(int(guild_id), "custom_commands", custom_cmds)
+                                    except Exception as e:
+                                        logger.error(f"Error applying suggestion to guild {filename}: {e}")
+                        
+                        # Record auto-applied suggestion
+                        auto_log = dm.load_json("auto_applied_improvements", default=[])
+                        if not isinstance(auto_log, list):
+                            auto_log = []
+                        auto_log.append({
+                            "command": cmd_name,
+                            "type": suggestion_type,
+                            "error_type": error_type,
+                            "suggestion": suggestion_text,
+                            "confidence": s.get("confidence"),
+                            "applied_at": time.time()
+                        })
+                        dm.save_json("auto_applied_improvements", auto_log)
+                        
+                        # Notify all guilds with improved commands
+                        await self._notify_command_improvements(cmd_name, suggestion_text, suggestion_type, s.get("confidence"))
+                        
+                    except Exception as e:
+                        logger.error(f"Error auto-applying suggestion: {e}")
+                
+                # Save remaining lower confidence suggestions for potential manual review
+                if for_review:
+                    dm.save_json("command_improvement_suggestions", {
+                        "timestamp": time.time(),
+                        "suggestions": for_review[:10]
+                    })
+                    logger.info("Stored %d lower-confidence suggestions for review", len(for_review))
+                else:
+                    # Clear old suggestions if all were auto-applied
+                    dm.save_json("command_improvement_suggestions", {
+                        "timestamp": time.time(),
+                        "suggestions": []
+                    })
+                    
+                logger.info(f"Auto-applied {len(auto_apply)} command improvements")
+                
+            else:
+                logger.info("No command improvement suggestions generated")
+                
+        except Exception as e:
+            logger.error("Error analyzing command usage: %s", e)
+    
+    def _generate_error_suggestion(self, cmd_name: str, error_type: str) -> str:
+        """Generate a specific suggestion based on error type."""
+        if error_type == "missing_argument":
+            return f"Users often forget required arguments when using !{cmd_name}. Consider adding argument prompts or making arguments optional with defaults."
+        elif error_type == "not_found":
+            return f"Users often reference non-existent items with !{cmd_name}. Consider adding a list command or autocomplete suggestions."
+        elif error_type == "permission":
+            return f"Users often lack permissions for !{cmd_name}. Consider adding permission checks with helpful error messages."
+        else:
+            return f"Users frequently encounter errors with !{cmd_name}. Review command documentation and error handling."
+    
+    def _generate_prevention(self, error_type: str, cmd_name: str) -> dict:
+        """Generate automatic prevention for common error types."""
+        if not error_type:
+            return None
+        
+        prevention = {
+            "error_type": error_type,
+            "prevention_enabled": True
+        }
+        
+        if error_type == "missing_argument":
+            prevention["action"] = "prompt_missing_args"
+            prevention["message"] = f"Missing required argument! Usage: !{cmd_name} <required_arg> [optional_args]"
+            prevention["auto_suggest"] = True
+        
+        elif error_type == "not_found":
+            prevention["action"] = "suggest_alternatives"
+            prevention["message"] = f"Item not found. Try: !{cmd_name} list to see available options."
+            prevention["show_similar"] = True
+        
+        elif error_type == "permission":
+            prevention["action"] = "clear_permission_guide"
+            prevention["message"] = f"You need permission to use !{cmd_name}. Contact an admin for access."
+            prevention["show_required_role"] = True
+        
+        else:
+            prevention["action"] = "enhanced_error_message"
+            prevention["message"] = f"Error using !{cmd_name}. Check: !help {cmd_name}"
+            prevention["show_usage"] = True
+        
+        return prevention
+    
+    async def _notify_command_improvements(self, cmd_name: str, suggestion: str, suggestion_type: str, confidence: float):
+        """Notify guilds when a command has been auto-improved."""
+        import datetime
+        conf_pct = int(confidence * 100)
+        type_label = suggestion_type.replace("_", " ").title()
+        
+        embed = discord.Embed(
+            title=f"⚡ Command Auto-Improved: !{cmd_name}",
+            description=f"The AI has automatically improved this command based on usage patterns.",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Improvement Type", value=type_label, inline=True)
+        embed.add_field(name="Confidence", value=f"{conf_pct}%", inline=True)
+        embed.add_field(name="Change Applied", value=suggestion, inline=False)
+        embed.timestamp = datetime.datetime.now()
+        embed.set_footer(text="Adaptive Command Refinement • AI Self-Improvement")
+        
+        # Find all guilds that have this command and notify
+        data_dir = "data"
+        notified_guilds = []
+        
+        if os.path.exists(data_dir):
+            for filename in os.listdir(data_dir):
+                if filename.startswith("guild_") and filename.endswith(".json"):
+                    try:
+                        guild_id = int(filename[6:-5])
+                        custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
+                        
+                        if cmd_name in custom_cmds:
+                            guild = self.get_guild(guild_id)
+                            if guild:
+                                log_channel_id = dm.get_guild_data(guild_id, "log_channel")
+                                if log_channel_id:
+                                    channel = guild.get_channel(log_channel_id)
+                                    if channel:
+                                        await channel.send(embed=embed)
+                                        notified_guilds.append(guild.name)
+                    except Exception as e:
+                        logger.error(f"Error notifying guild {filename}: {e}")
+        
+        if notified_guilds:
+            logger.info(f"Notified {len(notified_guilds)} guilds about !{cmd_name} improvement")
 
 # Initialize Bot
 bot = ImmortalBot()

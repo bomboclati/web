@@ -275,13 +275,18 @@ class ActionHandler:
 
     # --- Execution Logic ---
 
-    async def execute_custom_command(self, message: discord.Interaction, code: str):
+    async def execute_custom_command(self, message: discord.Interaction, code: str, cmd_name: str = None):
         """
         Executes a custom '!' command's stored code.
         Can be a simple string, a list of actions, or a special command object.
+        Includes error prevention based on learned patterns.
         """
+        guild_id = message.guild.id
+        cmd_data_obj = None
+        
         try:
             data = json.loads(code)
+            cmd_data_obj = data
             
             # Handle list of actions (existing functionality)
             if isinstance(data, list):
@@ -322,8 +327,40 @@ class ActionHandler:
             return True
         except Exception as e:
             logger.error("Error executing custom command: %s", e)
-            await message.channel.send("An error occurred while executing this command.")
+            
+            # Check for error prevention
+            prevention = self._get_error_prevention(guild_id, cmd_name, cmd_data_obj, str(e))
+            if prevention:
+                await message.channel.send(prevention.get("message", "An error occurred. Try: !help " + (cmd_name or "help")))
+            else:
+                await message.channel.send("An error occurred while executing this command.")
             return False
+    
+    def _get_error_prevention(self, guild_id: int, cmd_name: str, cmd_data: dict, error_msg: str) -> dict:
+        """Get error prevention measures based on learned patterns."""
+        if not cmd_name:
+            return None
+        
+        # Check if command has pre-configured prevention
+        if cmd_data and isinstance(cmd_data, dict):
+            prevention = cmd_data.get("error_prevention")
+            if prevention and prevention.get("prevention_enabled"):
+                return prevention
+        
+        # Check stored prevention from AI analysis
+        custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
+        if cmd_name in custom_cmds:
+            stored = custom_cmds[cmd_name]
+            try:
+                stored_data = json.loads(stored) if isinstance(stored, str) else stored
+                if isinstance(stored_data, dict):
+                    prevention = stored_data.get("error_prevention")
+                    if prevention and prevention.get("prevention_enabled"):
+                        return prevention
+            except:
+                pass
+        
+        return None
 
     async def handle_application_status(self, interaction: discord.Interaction) -> bool:
         """Handle !apply status command"""
