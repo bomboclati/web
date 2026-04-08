@@ -5,6 +5,7 @@ import asyncio
 from typing import List, Dict, Any, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential
 from history_manager import history_manager
+from vector_memory import vector_memory
 
 class AIClient:
     """
@@ -106,7 +107,34 @@ class AIClient:
         Includes self-improvement data from past action successes/failures.
         Now includes self-consistency checks for improved reasoning quality.
         """
-        history = history_manager.get_enhanced_context(guild_id, user_id, depth=int(os.getenv("MEMORY_DEPTH", 20)))
+        # Get recent history
+        history_depth = int(os.getenv("MEMORY_DEPTH", 20))
+        history = history_manager.get_enhanced_context(guild_id, user_id, depth=history_depth)
+        
+        # Retrieve semantically similar conversations from vector memory
+        vector_results = vector_memory.retrieve_relevant_conversations(
+            guild_id=guild_id,
+            user_id=user_id,
+            query=user_input,
+            n_results=int(os.getenv("VECTOR_MEMORY_RESULTS", 3)),
+            min_importance=float(os.getenv("VECTOR_MEMORY_MIN_IMPORTANCE", 0.3))
+        )
+        
+        # Format vector memory results as context messages
+        vector_context = []
+        for result in vector_results:
+            # Extract conversation text from the document
+            doc = result["document"]
+            similarity = result["similarity"]
+            # Add as a system message with similarity score for context
+            vector_context.append({
+                "role": "system",
+                "content": f"[Relevant past conversation (similarity: {similarity:.2f})]\n{doc}"
+            })
+        
+        # Combine history and vector memory context
+        # Adjust depth to accommodate vector results if needed
+        combined_context = history + vector_context
         
         enhanced_prompt = self._build_enhanced_prompt(system_prompt, guild_id)
         
@@ -114,7 +142,7 @@ class AIClient:
         responses = []
         for i in range(3):  # Generate 3 responses for self-consistency check
             messages = [{"role": "system", "content": enhanced_prompt}]
-            messages.extend(history)
+            messages.extend(combined_context)
             messages.append({"role": "user", "content": user_input})
 
             async with aiohttp.ClientSession() as session:
@@ -176,7 +204,7 @@ class AIClient:
         if not responses:
             # Original single attempt logic
             messages = [{"role": "system", "content": enhanced_prompt}]
-            messages.extend(history)
+            messages.extend(combined_context)
             messages.append({"role": "user", "content": user_input})
 
             async with aiohttp.ClientSession() as session:
