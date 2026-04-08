@@ -2,7 +2,7 @@ import discord
 import json
 import asyncio
 import time
-import datetime
+from datetime import datetime
 from typing import List, Dict, Any, Tuple, Optional
 from data_manager import dm
 from logger import logger
@@ -321,6 +321,12 @@ class ActionHandler:
                     return await self.handle_achievements_leaderboard(message)
                 elif command_type == "help_all":
                     return await self.handle_help_all(message)
+                elif command_type == "staffpromo_status":
+                    return await self.handle_staffpromo_status(message)
+                elif command_type == "staffpromo_leaderboard":
+                    return await self.handle_staffpromo_leaderboard(message)
+                elif command_type == "staffpromo_config":
+                    return await self.handle_staffpromo_config(message)
                 else:
                     # Unknown dict type, fall back to sending as string
                     await message.channel.send(content=code)
@@ -793,6 +799,103 @@ class ActionHandler:
             )
         
         embed.set_footer(text="Use !help <system> for detailed info • Example: !help achievements")
+        
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_staffpromo_status(self, message: discord.Message) -> bool:
+        guild = message.guild
+        member = message.author
+        staff_promo = self.bot.staff_promo
+        
+        config = staff_promo._get_full_config(guild.id)
+        metrics = config.get("metrics", staff_promo._default_metrics)
+        
+        score = staff_promo._compute_score(guild.id, member.id, member, metrics)
+        tiers = config.get("tiers", staff_promo._default_tiers)
+        
+        current_tier = "None"
+        for tier in tiers:
+            rid = config.get("roles_by_tier", {}).get(tier["name"])
+            if rid and any(r.id == rid for r in member.roles):
+                current_tier = tier["name"]
+                break
+        
+        embed = discord.Embed(title="📊 Your Staff Promotion Status", color=discord.Color.blue())
+        embed.add_field(name="Current Role", value=current_tier, inline=True)
+        embed.add_field(name="Score", value=f"{score*100:.1f}%", inline=True)
+        
+        breakdown = []
+        udata = dm.get_guild_data(guild.id, f"user_{member.id}", {})
+        for metric_name, cfg in metrics.items():
+            if not cfg.get("enabled", True):
+                continue
+            max_val = cfg.get("max", 100)
+            weight = cfg.get("weight", 0)
+            if metric_name == "tenure_days":
+                val = (datetime.utcnow() - (member.joined_at or datetime.utcnow())).days
+            elif metric_name == "achievements":
+                val = len(dm.get_guild_data(guild.id, f"achievements_{member.id}", []))
+            else:
+                val = udata.get(metric_name, 0)
+            normalized = max(0, min(1, val / max_val)) if max_val > 0 else 0
+            breakdown.append(f"• {metric_name}: {val}/{max_val} ({normalized*weight*100:.1f}%)")
+        
+        embed.add_field(name="Score Breakdown", value="\n".join(breakdown), inline=False)
+        embed.set_thumbnail(url=member.display_avatar.url)
+        
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_staffpromo_leaderboard(self, message: discord.Message) -> bool:
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+        
+        config = staff_promo._get_full_config(guild.id)
+        metrics = config.get("metrics", staff_promo._default_metrics)
+        
+        scores = []
+        for member in guild.members:
+            if member.bot:
+                continue
+            score = staff_promo._compute_score(guild.id, member.id, member, metrics)
+            scores.append((member, score))
+        
+        scores.sort(key=lambda x: x[1], reverse=True)
+        top_10 = scores[:10]
+        
+        embed = discord.Embed(title="🏆 Staff Promotion Leaderboard", color=discord.Color.gold())
+        
+        if not top_10:
+            embed.add_field(name="No data", value="No staff members evaluated yet", inline=False)
+        else:
+            for i, (member, score) in enumerate(top_10, 1):
+                embed.add_field(name=f"#{i} {member.display_name}", value=f"Score: {score*100:.1f}%", inline=True)
+        
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_staffpromo_config(self, message: discord.Message) -> bool:
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ This command is only for administrators.")
+            return True
+        
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+        config = staff_promo._get_full_config(guild.id)
+        
+        settings = config.get("settings", staff_promo._default_settings)
+        tiers = config.get("tiers", staff_promo._default_tiers)
+        
+        embed = discord.Embed(title="⚙️ Staff Promo Configuration", color=discord.Color.orange())
+        
+        embed.add_field(name="Auto Promote", value=str(settings.get("auto_promote", True)), inline=True)
+        embed.add_field(name="Auto Demote", value=str(settings.get("auto_demote", False)), inline=True)
+        embed.add_field(name="Min Tenure", value=f"{settings.get('min_tenure_hours', 72)} hours", inline=True)
+        embed.add_field(name="Cooldown", value=f"{settings.get('promotion_cooldown_hours', 24)} hours", inline=True)
+        
+        tiers_text = "\n".join([f"• {t['name']}: {int(t['threshold']*100)}%" for t in tiers])
+        embed.add_field(name="Tiers", value=tiers_text or "None", inline=False)
         
         await message.channel.send(embed=embed)
         return True

@@ -39,6 +39,7 @@ from modules.giveaways import GiveawaySystem
 from modules.anti_raid import AntiRaidSystem
 from modules.auto_publisher import AutoPublisher
 from modules.achievements import AchievementSystem
+from modules.staff_promo import StaffPromotionSystem
 
 load_dotenv()
 
@@ -91,6 +92,7 @@ class ImmortalBot(commands.Bot):
         self.anti_raid = AntiRaidSystem(self)
         self.auto_publisher = AutoPublisher(self)
         self.achievements = AchievementSystem(self)
+        self.staff_promo = StaffPromotionSystem(self)
 
     async def get_dynamic_prefix(self, bot, message):
         if not message.guild:
@@ -272,12 +274,20 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         # 2. Prefix Commands
         prefix = await self.get_dynamic_prefix(self, message)
         if message.content.startswith(prefix):
-            parts = message.content[len(prefix):].split()
-            if not parts: return
-            cmd_name = parts[0]
+            cmd_content = message.content[len(prefix):].strip()
             
-            guild_cmds = dm.get_guild_data(message.guild.id, "custom_commands", {})
-            if cmd_name in guild_cmds:
+            matched_cmd = None
+            matched_data = None
+            
+            for cmd_name in list(guild_cmds.keys()):
+                if cmd_content == cmd_name or cmd_content.startswith(cmd_name + " "):
+                    matched_cmd = cmd_name
+                    matched_data = guild_cmds[cmd_name]
+                    break
+            
+            if matched_cmd:
+                parts = cmd_content.split()
+                cmd_name = matched_cmd
                 # Track command chain (what was run before this)
                 prev_cmd = self.track_command_chain(message.author.id, cmd_name)
                 
@@ -293,7 +303,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 self._track_command_usage(message.guild.id, cmd_name, True, context)
                 from actions import ActionHandler
                 handler = ActionHandler(self)
-                await handler.execute_custom_command(message, guild_cmds[cmd_name], cmd_name)
+                await handler.execute_custom_command(message, matched_data, cmd_name)
                 return
 
         await self.process_commands(message)
