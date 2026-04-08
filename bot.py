@@ -32,6 +32,12 @@ from modules.voice_system import VoiceActivitySystem
 from modules.content_generator import ContentGenerator
 from modules.tournaments import TournamentSystem
 from modules.chat_channels import AIChatSystem
+from modules.starboard import StarboardSystem
+from modules.reminders import ReminderSystem
+from modules.welcome_leave import WelcomeLeaveSystem
+from modules.giveaways import GiveawaySystem
+from modules.anti_raid import AntiRaidSystem
+from modules.auto_publisher import AutoPublisher
 
 load_dotenv()
 
@@ -77,6 +83,12 @@ class ImmortalBot(commands.Bot):
         self.content_generator = ContentGenerator(self)
         self.tournaments = TournamentSystem(self)
         self.chat_channels = AIChatSystem(self)
+        self.starboard = StarboardSystem(self)
+        self.reminders = ReminderSystem(self)
+        self.welcome_leave = WelcomeLeaveSystem(self)
+        self.giveaways = GiveawaySystem(self)
+        self.anti_raid = AntiRaidSystem(self)
+        self.auto_publisher = AutoPublisher(self)
 
     async def get_dynamic_prefix(self, bot, message):
         if not message.guild:
