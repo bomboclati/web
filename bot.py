@@ -14,6 +14,8 @@ from history_manager import history_manager
 from ai_client import AIClient, SYSTEM_PROMPT
 from logger import logger
 from task_scheduler import TaskScheduler
+from vector_memory import vector_memory
+from actions import ActionHandler
 
 # Import Modules
 from modules.economy import Economy
@@ -168,6 +170,59 @@ class ImmortalBot(commands.Bot):
             except Exception as e:
                 logger.error("Command refinement analysis failed: %s", e)
             await asyncio.sleep(analysis_interval)
+
+    async def _self_reflect_on_response(self, guild_id: int, user_id: int, user_input: str, 
+                                      bot_response: str, reasoning: str, walkthrough: str):
+        """
+        Self-reflection mechanism to improve future responses.
+        Analyzes the current interaction and stores insights for future improvement.
+        """
+        try:
+            # Create a reflection prompt for the AI to analyze its own response
+            reflection_prompt = f"""
+You are reviewing a previous interaction to improve future responses.
+
+USER INPUT: {user_input}
+
+YOUR RESPONSE: {bot_response}
+
+YOUR REASONING: {reasoning}
+
+YOUR WALKTHROUGH: {walkthrough}
+
+Please provide a brief self-reflection on:
+1. What went well in this response?
+2. What could be improved?
+3. Any patterns or insights for future similar interactions?
+
+Keep your reflection concise (2-3 sentences) and focus on actionable improvements.
+"""
+            
+            # Get reflection from AI (using a lighter weight prompt)
+            reflection_result = await bot.ai.chat(
+                guild_id=guild_id,
+                user_id=user_id,
+                user_input=reflection_prompt,
+                system_prompt="You are an AI analyzing your own past responses to improve future performance. Be concise and actionable."
+            )
+            
+            reflection_text = reflection_result.get("summary", "No reflection generated.")
+            
+            # Store reflection in vector memory for future reference
+            vector_memory.store_conversation(
+                guild_id=guild_id,
+                user_id=user_id,
+                user_message=f"SELF_REFLECTION_ON: {user_input[:100]}...",
+                bot_response=reflection_text,
+                reasoning="Self-reflection on previous interaction",
+                walkthrough="Analyzing response quality for improvement",
+                importance_score=0.7  # Reflections are moderately important for learning
+            )
+            
+            logger.debug(f"Stored self-reflection for user {user_id} in guild {guild_id}")
+            
+        except Exception as e:
+            logger.error(f"Error in self-reflection mechanism: {e}")
 
     async def on_message(self, message):
         if message.author.bot:
@@ -451,16 +506,16 @@ class ImmortalBot(commands.Bot):
                             most_common_error = max(error_counts, key=error_counts.get)
                             count = error_counts[most_common_error]
                             if count >= 3:  # At least 3 occurrences
-                suggestions.append({
-                    "type": "error_pattern",
-                    "command": cmd_name,
-                    "error_type": most_common_error,
-                    "frequency": count,
-                    "total_failures": failure_data["count"],
-                    "suggestion": self._generate_error_suggestion(cmd_name, most_common_error),
-                    "confidence": min(0.9, count / failure_data["count"]),
-                    "severity": count / failure_data["count"]  # For auto-action threshold
-                })
+                                suggestions.append({
+                                    "type": "error_pattern",
+                                    "command": cmd_name,
+                                    "error_type": most_common_error,
+                                    "frequency": count,
+                                    "total_failures": failure_data["count"],
+                                    "suggestion": self._generate_error_suggestion(cmd_name, most_common_error),
+                                    "confidence": min(0.9, count / failure_data["count"]),
+                                    "severity": count / failure_data["count"]  # For auto-action threshold
+                                })
             
             # Save suggestions for review AND auto-apply high confidence ones
             if suggestions:
@@ -705,7 +760,22 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
     guild_id = interaction.guild.id
     user_id = interaction.user.id
     
-    res = await bot.ai.chat(guild_id, user_id, user_input, SYSTEM_PROMPT)
+    # Retrieve relevant memories for context
+    relevant_memories = vector_memory.retrieve_relevant_conversations(
+        guild_id=guild_id,
+        user_id=user_id,
+        query=user_input,
+        n_results=3
+    )
+    
+    # Add memory context to the system prompt if we have relevant memories
+    memory_context = ""
+    if relevant_memories:
+        memory_context = "\n\nRELEVANT PAST CONVERSATIONS:\n"
+        for i, mem in enumerate(relevant_memories, 1):
+            memory_context += f"\n{i}. Similar conversation (similarity: {mem['similarity']:.2f}):\n{mem['document'][:500]}...\n"
+    
+    res = await bot.ai.chat(guild_id, user_id, user_input, SYSTEM_PROMPT + memory_context)
     
     reasoning = res.get("reasoning", "Thinking...")
     walkthrough = res.get("walkthrough", "Planning...")
@@ -773,6 +843,17 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
             embed = discord.Embed(title="AI Response", description=summary, color=discord.Color.blue())
             await interaction.followup.send(embed=embed, ephemeral=True)
             history_manager.add_exchange(guild_id, user_id, user_input, summary)
+            # Store in vector memory for long-term recall
+            vector_memory.store_conversation(
+                guild_id=guild_id,
+                user_id=user_id,
+                user_message=user_input,
+                bot_response=summary,
+                reasoning=reasoning,
+                walkthrough=walkthrough
+             )
+             # Self-reflection mechanism for response improvement
+             await _self_reflect_on_response(guild_id, user_id, user_input, summary, reasoning, walkthrough)
             return
         
         bot.pending_confirms[user_id] = {
@@ -810,6 +891,15 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
             
             await it.followup.send(final_msg, ephemeral=True)
             history_manager.add_exchange(guild_id, user_id, user_input, summary)
+            # Store in vector memory for long-term recall
+            vector_memory.store_conversation(
+                guild_id=guild_id,
+                user_id=user_id,
+                user_message=user_input,
+                bot_response=summary,
+                reasoning=reasoning,
+                walkthrough=walkthrough
+            )
             del bot.pending_confirms[user_id]
         
         async def cancel_callback(it: discord.Interaction):
