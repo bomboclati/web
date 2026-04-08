@@ -319,6 +319,8 @@ class ActionHandler:
                     return await self.handle_set_title(message)
                 elif command_type == "achievements_leaderboard":
                     return await self.handle_achievements_leaderboard(message)
+                elif command_type == "help_all":
+                    return await self.handle_help_all(message)
                 else:
                     # Unknown dict type, fall back to sending as string
                     await message.channel.send(content=code)
@@ -738,3 +740,59 @@ class ActionHandler:
         except Exception as e:
             logger.error("System Undo Error (%s): %s", undo_action, e)
             return False
+
+    async def handle_help_all(self, message: discord.Message) -> bool:
+        """Handle !help command - shows all available ! commands"""
+        guild_id = message.guild.id
+        custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
+        
+        if not custom_cmds:
+            await message.channel.send("No custom commands available yet!")
+            return True
+        
+        embed = discord.Embed(
+            title="📚 All Available Commands",
+            description=f"Total: {len(custom_cmds)} commands",
+            color=discord.Color.blue()
+        )
+        
+        help_commands = {}
+        other_commands = {}
+        
+        for cmd_name in custom_cmds.keys():
+            if cmd_name.startswith("help "):
+                help_commands[cmd_name] = custom_cmds[cmd_name]
+            else:
+                other_commands[cmd_name] = custom_cmds[cmd_name]
+        
+        if other_commands:
+            cmd_list = []
+            for cmd in sorted(other_commands.keys()):
+                cmd_list.append(f"**!{cmd}**")
+            embed.add_field(
+                name="🎮 Main Commands",
+                value="\n".join(cmd_list[:25]),
+                inline=False
+            )
+            if len(other_commands) > 25:
+                embed.add_field(
+                    name="", 
+                    value="\n".join(sorted(other_commands.keys())[25:]),
+                    inline=False
+                )
+        
+        if help_commands:
+            help_list = []
+            for cmd in sorted(help_commands.keys()):
+                system_name = cmd.replace("help ", "")
+                help_list.append(f"**!help {system_name}**")
+            embed.add_field(
+                name="❓ Help Commands",
+                value="\n".join(help_list),
+                inline=False
+            )
+        
+        embed.set_footer(text="Use !help <system> for detailed info • Example: !help achievements")
+        
+        await message.channel.send(embed=embed)
+        return True

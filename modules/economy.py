@@ -82,6 +82,10 @@ class Economy:
                 {"name": "!help economy", "value": "Show this help message.", "inline": False}
             ]
         })
+
+        custom_cmds["help"] = json.dumps({
+            "command_type": "help_all"
+        })
         
         custom_cmds["shop"] = json.dumps({
             "command_type": "help_embed",
