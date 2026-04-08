@@ -541,7 +541,8 @@ class AchievementSystem:
                 {"name": "!achievements", "value": "View your achievements.", "inline": False},
                 {"name": "!titles", "value": "View your titles.", "inline": False},
                 {"name": "!settitle <name>", "value": "Set your active title.", "inline": False},
-                {"name": "!achievementsleaderboard", "value": "Top collectors.", "inline": False}
+                {"name": "!achievementsleaderboard", "value": "Top collectors.", "inline": False},
+                {"name": "!help achievements", "value": "Show this guide.", "inline": False}
             ]
         })
         

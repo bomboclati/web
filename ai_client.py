@@ -290,7 +290,9 @@ Whenever you create ANY system (channels, roles, commands, economy, tickets, ver
    - Common troubleshooting tips
    - Who to contact for help
 4. Send a quick start message showing the first command to try
-5. Create a '!help <system>' prefix command that shows the same documentation
+5. ALWAYS create a '!help <systemname>' command that shows the documentation
+
+Example help command format: "!help achievements" "!help shop" "!help tickets" (use SPACE between help and system name)
 
 NEVER skip documentation. Even for simple systems, show users how to use it!
 
