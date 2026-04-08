@@ -115,7 +115,9 @@ Walkthrough: {walkthrough}
                 "timestamp": str(timestamp),
                 "importance_score": str(importance_score),
                 "has_reasoning": str(bool(reasoning)),
-                "has_walkthrough": str(bool(walkthrough))
+                "has_walkthrough": str(bool(walkthrough)),
+                "access_count": "0",
+                "last_accessed": str(timestamp)
             }
             
             # Store in collection
@@ -181,14 +183,48 @@ Walkthrough: {walkthrough}
             # Format results
             conversations = []
             if results['ids'] and len(results['ids'][0]) > 0:
+                # Reinforce accessed memories by updating access count and boosting importance
+                to_update = []
                 for i in range(len(results['ids'][0])):
+                    mem_id = results['ids'][0][i]
+                    metadata = results['metadatas'][0][i]
+                    
+                    # Update access tracking
+                    access_count = int(metadata.get('access_count', '0')) + 1
+                    metadata['access_count'] = str(access_count)
+                    metadata['last_accessed'] = str(datetime.now().timestamp())
+                    
+                    # Apply reinforcement: boost importance based on access frequency
+                    # Using logarithmic scaling to prevent runaway importance
+                    importance = float(metadata.get('importance_score', '0.5'))
+                    # Reinforcement factor: more access = higher importance, but with diminishing returns
+                    reinforcement_factor = min(0.5, 0.1 * math.log(access_count + 1))
+                    # Boost importance but cap at 1.0
+                    new_importance = min(1.0, importance + reinforcement_factor)
+                    metadata['importance_score'] = str(new_importance)
+                    
+                    to_update.append({
+                        'id': mem_id,
+                        'metadata': metadata
+                    })
+                    
                     conv = {
-                        "id": results['ids'][0][i],
+                        "id": mem_id,
                         "document": results['documents'][0][i],
-                        "metadata": results['metadatas'][0][i],
+                        "metadata": metadata,
                         "similarity": 1 - results['distances'][0][i]  # Convert distance to similarity
                     }
                     conversations.append(conv)
+                
+                # Update the reinforced memories in the database
+                for update in to_update:
+                    try:
+                        self.collection.update(
+                            ids=[update['id']],
+                            metadatas=[update['metadata']]
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to update memory {update['id']} after reinforcement: {e}")
             
             logger.debug(f"Retrieved {len(conversations)} relevant conversations from vector memory")
             return conversations
@@ -197,12 +233,12 @@ Walkthrough: {walkthrough}
             logger.error(f"Failed to retrieve conversations from vector memory: {e}")
             return []
     
-    def decay_memory(self, decay_rate: float = 0.01, max_age_days: int = 30):
+    def decay_memory(self, half_life_days: float = 7.0, max_age_days: int = 30):
         """
-        Apply memory decay to forget old, low-importance memories.
+        Apply memory decay using half-life formula to forget old, low-importance memories.
         
         Args:
-            decay_rate: Rate at which memories decay per day (0.01 = 1% per day)
+            half_life_days: Number of days for a memory to lose half its importance
             max_age_days: Maximum age in days before considering for deletion
         """
         if not self.client or not self.collection:
@@ -237,9 +273,12 @@ Walkthrough: {walkthrough}
                 age_seconds = current_time - timestamp
                 age_days = age_seconds / (24 * 3600)
                 
-                # Calculate decay factor based on age and importance
-                # Older and less important memories decay faster
-                decay_factor = math.exp(-decay_rate * age_days) * importance
+                # Calculate decay factor based on half-life formula
+                # Importance halves every half_life_days
+                if half_life_days > 0:
+                    decay_factor = importance * (0.5 ** (age_days / half_life_days))
+                else:
+                    decay_factor = importance  # No decay if half_life is 0 or negative
                 
                 # If decayed below threshold or too old, mark for deletion
                 if decay_factor < 0.1 or age_days > max_age_days:
