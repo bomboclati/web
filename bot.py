@@ -23,6 +23,10 @@ from modules.leveling import Leveling
 from modules.staff_system import StaffSystem
 from modules.appeals import Appeals
 from modules.trigger_roles import TriggerRoles
+from modules.moderation import ContextualModeration
+from modules.events import EventScheduler
+from modules.intelligence import ServerIntelligence
+from modules.gamification import AdaptiveGamification
 
 load_dotenv()
 
@@ -59,6 +63,10 @@ class ImmortalBot(commands.Bot):
         self.appeals = Appeals(self)
         self.trigger_roles = TriggerRoles(self)
         self.scheduler = TaskScheduler(self)
+        self.moderation = ContextualModeration(self)
+        self.events = EventScheduler(self)
+        self.intelligence = ServerIntelligence(self)
+        self.gamification = AdaptiveGamification(self)
 
     async def get_dynamic_prefix(self, bot, message):
         if not message.guild:
@@ -231,6 +239,8 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         # 1. Passive Systems (XP & Triggers)
         await self.leveling.handle_message(message)
         await self.trigger_roles.handle_message(message)
+        await self.moderation.analyze_message(message)
+        await self.intelligence.track_message(message)
 
         # 2. Prefix Commands
         prefix = await self.get_dynamic_prefix(self, message)
