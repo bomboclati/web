@@ -327,6 +327,16 @@ class ActionHandler:
                     return await self.handle_staffpromo_leaderboard(message)
                 elif command_type == "staffpromo_config":
                     return await self.handle_staffpromo_config(message)
+                elif command_type == "staffpromo_progress":
+                    return await self.handle_staffpromo_progress(message)
+                elif command_type == "staffpromo_promote":
+                    return await self.handle_staffpromo_promote(message)
+                elif command_type == "staffpromo_demote":
+                    return await self.handle_staffpromo_demote(message)
+                elif command_type == "staffpromo_exclude":
+                    return await self.handle_staffpromo_exclude(message)
+                elif command_type == "staffpromo_roles":
+                    return await self.handle_staffpromo_roles(message)
                 else:
                     # Unknown dict type, fall back to sending as string
                     await message.channel.send(content=code)
@@ -898,4 +908,232 @@ class ActionHandler:
         embed.add_field(name="Tiers", value=tiers_text or "None", inline=False)
         
         await message.channel.send(embed=embed)
+        return True
+
+    async def handle_staffpromo_progress(self, message: discord.Message) -> bool:
+        guild = message.guild
+        member = message.author
+        staff_promo = self.bot.staff_promo
+        
+        config = staff_promo._get_full_config(guild.id)
+        metrics = config.get("metrics", staff_promo._default_metrics)
+        tiers = config.get("tiers", staff_promo._default_tiers)
+        role_ids = dict(config.get("roles_by_tier", {}))
+        
+        for tier in tiers:
+            tier_name = tier.get("name")
+            if tier_name not in role_ids or not role_ids[tier_name]:
+                role_name = tier.get("role_name")
+                if role_name:
+                    r = discord.utils.find(lambda x: x.name == role_name, guild.roles)
+                    if r:
+                        role_ids[tier_name] = r.id
+        
+        score = staff_promo._compute_score(guild.id, member.id, member, metrics)
+        current_index = staff_promo._get_current_tier_index(member, tiers, role_ids)
+        
+        embed = discord.Embed(title="📈 Your Promotion Progress", color=discord.Color.blue())
+        embed.add_field(name="Current Score", value=f"{score*100:.1f}%", inline=True)
+        
+        if current_index < len(tiers) - 1:
+            next_tier = tiers[current_index + 1]
+            next_threshold = next_tier.get("threshold", 0)
+            percent_away = (next_threshold - score) * 100
+            
+            embed.add_field(name="Next Tier", value=next_tier.get("name"), inline=True)
+            embed.add_field(name="Progress", value=f"{percent_away:.1f}% away", inline=True)
+            
+            progress_bar = "█" * int(score * 10) + "░" * (10 - int(score * 10))
+            embed.add_field(name="Progress Bar", value=f"`{progress_bar}` {score*100:.0f}%", inline=False)
+            
+            if percent_away <= 5:
+                embed.add_field(name="🎯 Almost there!", value="You're very close to your next promotion!", inline=False)
+        else:
+            embed.add_field(name="Status", value="You've reached the highest tier!", inline=True)
+        
+        embed.set_thumbnail(url=member.display_avatar.url)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_staffpromo_promote(self, message: discord.Message) -> bool:
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ This command is only for administrators.")
+            return True
+        
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+        
+        parts = message.content.split()
+        if len(parts) < 4:
+            await message.channel.send("Usage: `!staffpromo promote @user <tier>`")
+            return True
+        
+        try:
+            user_id = int(parts[2].strip("<@!>"))
+            target_member = await guild.fetch_member(user_id)
+        except:
+            await message.channel.send("❌ Could not find user. Use `@user` format.")
+            return True
+        
+        tier_name = " ".join(parts[3:])
+        
+        config = staff_promo._get_full_config(guild.id)
+        success, result = await staff_promo.manual_promote(guild, target_member, tier_name, config)
+        
+        if success:
+            await message.channel.send(f"✅ {target_member.mention} {result}")
+        else:
+            await message.channel.send(f"❌ {result}")
+        return True
+
+    async def handle_staffpromo_demote(self, message: discord.Message) -> bool:
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ This command is only for administrators.")
+            return True
+        
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+        
+        parts = message.content.split()
+        if len(parts) < 4:
+            await message.channel.send("Usage: `!staffpromo demote @user <tier>`\nUse `none` to remove all staff roles.")
+            return True
+        
+        try:
+            user_id = int(parts[2].strip("<@!>"))
+            target_member = await guild.fetch_member(user_id)
+        except:
+            await message.channel.send("❌ Could not find user. Use `@user` format.")
+            return True
+        
+        tier_name = " ".join(parts[3:])
+        
+        config = staff_promo._get_full_config(guild.id)
+        success, result = await staff_promo.manual_demote(guild, target_member, tier_name, config)
+        
+        if success:
+            await message.channel.send(f"✅ {target_member.mention} {result}")
+        else:
+            await message.channel.send(f"❌ {result}")
+        return True
+
+    async def handle_staffpromo_exclude(self, message: discord.Message) -> bool:
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ This command is only for administrators.")
+            return True
+        
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+        
+        parts = message.content.split()
+        if len(parts) < 4:
+            await message.channel.send("Usage: `!staffpromo exclude add @user` or `!staffpromo exclude remove @user`")
+            return True
+        
+        action = parts[2].lower()
+        if action not in ["add", "remove"]:
+            await message.channel.send("Usage: `!staffpromo exclude add @user` or `!staffpromo exclude remove @user`")
+            return True
+        
+        try:
+            user_id = int(parts[3].strip("<@!>"))
+            target_member = await guild.fetch_member(user_id)
+        except:
+            await message.channel.send("❌ Could not find user. Use `@user` format.")
+            return True
+        
+        config = staff_promo._get_full_config(guild.id)
+        settings = config.get("settings", staff_promo._default_settings)
+        excluded = settings.get("excluded_users", [])
+        
+        if action == "add":
+            if user_id not in excluded:
+                excluded.append(user_id)
+                await message.channel.send(f"✅ {target_member.mention} added to exclusion list.")
+            else:
+                await message.channel.send(f"ℹ️ {target_member.mention} is already excluded.")
+        else:
+            if user_id in excluded:
+                excluded.remove(user_id)
+                await message.channel.send(f"✅ {target_member.mention} removed from exclusion list.")
+            else:
+                await message.channel.send(f"ℹ️ {target_member.mention} is not in the exclusion list.")
+        
+        settings["excluded_users"] = excluded
+        config["settings"] = settings
+        dm.update_guild_data(guild.id, "staff_promo_config", config)
+        
+        return True
+
+    async def handle_staffpromo_roles(self, message: discord.Message) -> bool:
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ This command is only for administrators.")
+            return True
+        
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+        
+        parts = message.content.split()
+        if len(parts) < 5:
+            await message.channel.send(
+                "Usage: `!staffpromo roles add <tier> @role` or `!staffpromo roles remove <tier> @role`\n"
+                "Example: `!staffpromo roles add Moderator @Moderator`"
+            )
+            return True
+        
+        action = parts[2].lower()
+        if action not in ["add", "remove", "list"]:
+            await message.channel.send("Use: `add`, `remove`, or `list`")
+            return True
+        
+        if action == "list":
+            config = staff_promo._get_full_config(guild.id)
+            role_ids = config.get("roles_by_tier", {})
+            tiers = config.get("tiers", staff_promo._default_tiers)
+            
+            embed = discord.Embed(title="🔗 Role Mappings", color=discord.Color.orange())
+            for tier in tiers:
+                tier_name = tier.get("name")
+                rid = role_ids.get(tier_name)
+                if rid:
+                    role = guild.get_role(rid)
+                    role_mention = role.mention if role else f"Role ID: {rid}"
+                else:
+                    role_mention = "Not set"
+                embed.add_field(name=tier_name, value=role_mention, inline=True)
+            
+            await message.channel.send(embed=embed)
+            return True
+        
+        tier_name = parts[3]
+        
+        try:
+            role_id = int(parts[4].strip("<@&>"))
+            target_role = guild.get_role(role_id)
+        except:
+            await message.channel.send("❌ Could not find role. Use `@role` format.")
+            return True
+        
+        config = staff_promo._get_full_config(guild.id)
+        role_ids = config.get("roles_by_tier", {})
+        
+        tiers = config.get("tiers", staff_promo._default_tiers)
+        valid_tiers = [t.get("name").lower() for t in tiers]
+        
+        if tier_name.lower() not in valid_tiers:
+            valid_list = ", ".join([t.get("name") for t in tiers])
+            await message.channel.send(f"❌ Invalid tier. Valid tiers: {valid_list}")
+            return True
+        
+        if action == "add":
+            role_ids[tier_name] = target_role.id
+            await message.channel.send(f"✅ Mapped **{tier_name}** to {target_role.mention}")
+        else:
+            if tier_name in role_ids:
+                del role_ids[tier_name]
+            await message.channel.send(f"✅ Removed mapping for **{tier_name}**")
+        
+        config["roles_by_tier"] = role_ids
+        dm.update_guild_data(guild.id, "staff_promo_config", config)
+        
         return True
