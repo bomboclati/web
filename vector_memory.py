@@ -1,9 +1,10 @@
 import os
 import json
 import logging
+import math
 from typing import List, Dict, Any, Optional
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 
 try:
     import chromadb
@@ -51,12 +52,19 @@ class VectorMemory:
                 metadata={"hnsw:space": "cosine"}
             )
             
-            logger.info(f"Vector memory initialized with {self.collection.count()} stored conversations")
+            # Get or create collection for conversation summaries
+            self.summary_collection = self.client.get_or_create_collection(
+                name="conversation_summaries",
+                metadata={"hnsw:space": "cosine"}
+            )
+            
+            logger.info(f"Vector memory initialized with {self.collection.count()} stored conversations and {self.summary_collection.count()} summaries")
             
         except Exception as e:
             logger.error(f"Failed to initialize vector memory: {e}")
             self.client = None
             self.collection = None
+            self.summary_collection = None
     
     def _generate_id(self, guild_id: int, user_id: int, timestamp: float) -> str:
         """Generate a unique ID for a conversation entry."""
@@ -189,6 +197,301 @@ Walkthrough: {walkthrough}
             logger.error(f"Failed to retrieve conversations from vector memory: {e}")
             return []
     
+    def decay_memory(self, decay_rate: float = 0.01, max_age_days: int = 30):
+        """
+        Apply memory decay to forget old, low-importance memories.
+        
+        Args:
+            decay_rate: Rate at which memories decay per day (0.01 = 1% per day)
+            max_age_days: Maximum age in days before considering for deletion
+        """
+        if not self.client or not self.collection:
+            return
+            
+        try:
+            # Get all memories with metadata
+            results = self.collection.get(
+                include=["metadatas", "documents", "embeddings"]
+            )
+            
+            if not results['ids']:
+                return
+                
+            current_time = datetime.now().timestamp()
+            max_age_seconds = max_age_days * 24 * 3600
+            
+            # Identify memories to decay or remove
+            to_delete = []
+            to_update = []
+            
+            for i, mem_id in enumerate(results['ids']):
+                metadata = results['metadatas'][i]
+                timestamp = float(metadata.get('timestamp', 0))
+                importance = float(metadata.get('importance_score', 0.5))
+                is_pinned = metadata.get('is_pinned', 'false').lower() == 'true'
+                
+                # Skip pinned memories (they don't decay)
+                if is_pinned:
+                    continue
+                    
+                age_seconds = current_time - timestamp
+                age_days = age_seconds / (24 * 3600)
+                
+                # Calculate decay factor based on age and importance
+                # Older and less important memories decay faster
+                decay_factor = math.exp(-decay_rate * age_days) * importance
+                
+                # If decayed below threshold or too old, mark for deletion
+                if decay_factor < 0.1 or age_days > max_age_days:
+                    to_delete.append(mem_id)
+                elif decay_factor < importance:
+                    # Update importance score with decayed value
+                    to_update.append({
+                        'id': mem_id,
+                        'metadata': {**metadata, 'importance_score': str(decay_factor)}
+                    })
+            
+            # Delete expired memories
+            if to_delete:
+                self.collection.delete(ids=to_delete)
+                logger.info(f"Decayed {len(to_delete)} old memories from vector memory")
+            
+            # Update importance scores for decaying memories
+            for update in to_update:
+                self.collection.update(
+                    ids=[update['id']],
+                    metadatas=[update['metadata']]
+                )
+                
+            logger.debug(f"Applied memory decay: {len(to_delete)} deleted, {len(to_update)} updated")
+            
+        except Exception as e:
+            logger.error(f"Failed to apply memory decay: {e}")
+    
+    def summarize_memories(self, guild_id: int, user_id: Optional[int] = None, 
+                          max_memories: int = 10, similarity_threshold: float = 0.7):
+        """
+        Summarize similar memories to reduce storage and improve retrieval.
+        
+        Args:
+            guild_id: Guild ID to filter memories
+            user_id: Optional user ID for personal memories
+            max_memories: Maximum number of memories to consider for summarization
+            similarity_threshold: Threshold for considering memories similar enough to summarize
+        """
+        if not self.client or not self.collection or not self.summary_collection:
+            return
+            
+        try:
+            # Get recent memories for this guild/user
+            where_conditions = [{"guild_id": {"$eq": str(guild_id)}}]
+            if user_id:
+                where_conditions.append({"user_id": {"$eq": str(user_id)}})
+                
+            where_clause = {"$and": where_conditions} if len(where_conditions) > 1 else where_conditions[0]
+            
+            results = self.collection.query(
+                query_texts=["recent conversation"],  # Generic query to get memories
+                n_results=max_memories,
+                where=where_clause,
+                include=["documents", "metadatas", "distances"]
+            )
+            
+            if not results['ids'] or len(results['ids'][0]) < 2:
+                return  # Need at least 2 memories to summarize
+                
+            # Group similar memories
+            memories = []
+            for i in range(len(results['ids'][0])):
+                mem_id = results['ids'][0][i]
+                document = results['documents'][0][i]
+                metadata = results['metadatas'][0][i]
+                similarity = 1 - results['distances'][0][i]  # Convert distance to similarity
+                
+                memories.append({
+                    'id': mem_id,
+                    'document': document,
+                    'metadata': metadata,
+                    'similarity': similarity
+                })
+            
+            # Simple summarization: combine memories with high similarity
+            summarized_groups = []
+            used_indices = set()
+            
+            for i, mem1 in enumerate(memories):
+                if i in used_indices:
+                    continue
+                    
+                group = [mem1]
+                used_indices.add(i)
+                
+                for j, mem2 in enumerate(memories[i+1:], i+1):
+                    if j in used_indices:
+                        continue
+                        
+                    # Simple similarity check based on shared keywords
+                    # In a real implementation, you'd use embedding similarity
+                    if self._calculate_text_similarity(mem1['document'], mem2['document']) > similarity_threshold:
+                        group.append(mem2)
+                        used_indices.add(j)
+                
+                summarized_groups.append(group)
+            
+            # Create summaries for each group
+            for group in summarized_groups:
+                if len(group) < 2:
+                    continue  # Skip single memories
+                    
+                # Create a summary document
+                combined_text = " ".join([mem['document'] for mem in group])
+                summary_prompt = f"Summarize the following conversation memories concisely:\n\n{combined_text[:1000]}"
+                
+                # For now, create a simple extractive summary
+                # In production, you'd use the AI client to generate this
+                summary_text = f"Summary of {len(group)} related conversations: {combined_text[:200]}..."
+                
+                # Generate ID for summary
+                timestamp = datetime.now().timestamp()
+                summary_id = self._generate_id(guild_id, user_id or 0, timestamp) + "_summary"
+                
+                # Store summary
+                summary_metadata = {
+                    "guild_id": str(guild_id),
+                    "user_id": str(user_id) if user_id else "unknown",
+                    "timestamp": str(timestamp),
+                    "is_summary": "true",
+                    "source_count": str(len(group)),
+                    "importance_score": str(sum([float(m['metadata'].get('importance_score', 0.5)) for m in group]) / len(group))
+                }
+                
+                self.summary_collection.add(
+                    documents=[summary_text],
+                    metadatas=[summary_metadata],
+                    ids=[summary_id]
+                )
+                
+                # Optionally delete original memories after summarization
+                # For safety, we'll just log this action
+                logger.info(f"Created summary for {len(group)} memories in guild {guild_id}")
+                
+        except Exception as e:
+            logger.error(f"Failed to summarize memories: {e}")
+    
+    def _calculate_text_similarity(self, text1: str, text2: str) -> float:
+        """
+        Calculate simple text similarity based on shared words.
+        This is a placeholder - in production you'd use embeddings.
+        """
+        words1 = set(text1.lower().split())
+        words2 = set(text2.lower().split())
+        
+        if not words1 or not words2:
+            return 0.0
+            
+        intersection = words1.intersection(words2)
+        union = words1.union(words2)
+        
+        return len(intersection) / len(union) if union else 0.0
+    
+    def pin_memory(self, memory_id: str, guild_id: int, user_id: int) -> bool:
+        """
+        Pin/flag a memory as important to prevent decay.
+        
+        Args:
+            memory_id: ID of the memory to pin
+            guild_id: Guild ID for verification
+            user_id: User ID for verification
+            
+        Returns:
+            True if successfully pinned, False otherwise
+        """
+        if not self.client or not self.collection:
+            return False
+            
+        try:
+            # First, get the memory to verify ownership
+            results = self.collection.get(
+                ids=[memory_id],
+                include=["metadatas"]
+            )
+            
+            if not results['ids'] or not results['metadatas']:
+                logger.warning(f"Memory {memory_id} not found for pinning")
+                return False
+                
+            metadata = results['metadatas'][0]
+            
+            # Verify ownership
+            if (metadata.get('guild_id') != str(guild_id) or 
+                metadata.get('user_id') != str(user_id)):
+                logger.warning(f"Ownership mismatch for memory {memory_id}")
+                return False
+                
+            # Update metadata to mark as pinned
+            metadata['is_pinned'] = 'true'
+            
+            self.collection.update(
+                ids=[memory_id],
+                metadatas=[metadata]
+            )
+            
+            logger.info(f"Pinned memory {memory_id} for user {user_id} in guild {guild_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to pin memory {memory_id}: {e}")
+            return False
+    
+    def unpin_memory(self, memory_id: str, guild_id: int, user_id: int) -> bool:
+        """
+        Unpin a memory, allowing it to decay normally.
+        
+        Args:
+            memory_id: ID of the memory to unpin
+            guild_id: Guild ID for verification
+            user_id: User ID for verification
+            
+        Returns:
+            True if successfully unpinned, False otherwise
+        """
+        if not self.client or not self.collection:
+            return False
+            
+        try:
+            # First, get the memory to verify ownership
+            results = self.collection.get(
+                ids=[memory_id],
+                include=["metadatas"]
+            )
+            
+            if not results['ids'] or not results['metadatas']:
+                logger.warning(f"Memory {memory_id} not found for unpinning")
+                return False
+                
+            metadata = results['metadatas'][0]
+            
+            # Verify ownership
+            if (metadata.get('guild_id') != str(guild_id) or 
+                metadata.get('user_id') != str(user_id)):
+                logger.warning(f"Ownership mismatch for memory {memory_id}")
+                return False
+                
+            # Update metadata to remove pin
+            metadata['is_pinned'] = 'false'
+            
+            self.collection.update(
+                ids=[memory_id],
+                metadatas=[metadata]
+            )
+            
+            logger.info(f"Unpinned memory {memory_id} for user {user_id} in guild {guild_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to unpin memory {memory_id}: {e}")
+            return False
+    
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get statistics about the vector memory."""
         if not self.client or not self.collection:
@@ -196,9 +499,25 @@ Walkthrough: {walkthrough}
             
         try:
             count = self.collection.count()
+            summary_count = self.summary_collection.count() if self.summary_collection else 0
+            
+            # Get pinned memories count
+            pinned_count = 0
+            if self.collection:
+                try:
+                    pinned_results = self.collection.get(
+                        where={"is_pinned": {"$eq": "true"}},
+                        include=["metadatas"]
+                    )
+                    pinned_count = len(pinned_results['ids']) if pinned_results['ids'] else 0
+                except:
+                    pass  # If query fails, just return 0 for pinned count
+            
             return {
                 "status": "active",
                 "count": count,
+                "summary_count": summary_count,
+                "pinned_count": pinned_count,
                 "persist_directory": self.persist_directory
             }
         except Exception as e:
