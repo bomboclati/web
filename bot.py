@@ -27,6 +27,11 @@ from modules.moderation import ContextualModeration
 from modules.events import EventScheduler
 from modules.intelligence import ServerIntelligence
 from modules.gamification import AdaptiveGamification
+from modules.tickets import AdvancedTickets
+from modules.voice_system import VoiceActivitySystem
+from modules.content_generator import ContentGenerator
+from modules.tournaments import TournamentSystem
+from modules.chat_channels import AIChatSystem
 
 load_dotenv()
 
@@ -67,6 +72,11 @@ class ImmortalBot(commands.Bot):
         self.events = EventScheduler(self)
         self.intelligence = ServerIntelligence(self)
         self.gamification = AdaptiveGamification(self)
+        self.tickets = AdvancedTickets(self)
+        self.voice_system = VoiceActivitySystem(self)
+        self.content_generator = ContentGenerator(self)
+        self.tournaments = TournamentSystem(self)
+        self.chat_channels = AIChatSystem(self)
 
     async def get_dynamic_prefix(self, bot, message):
         if not message.guild:
@@ -241,6 +251,9 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         await self.trigger_roles.handle_message(message)
         await self.moderation.analyze_message(message)
         await self.intelligence.track_message(message)
+        
+        # 2. AI Chat Channels (if message is in an AI chat channel)
+        await self.chat_channels.handle_message(message)
 
         # 2. Prefix Commands
         prefix = await self.get_dynamic_prefix(self, message)
