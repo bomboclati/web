@@ -311,6 +311,14 @@ class ActionHandler:
                     return await self.handle_economy_daily(message)
                 elif command_type == "economy_balance":
                     return await self.handle_economy_balance(message)
+                elif command_type == "list_achievements":
+                    return await self.handle_list_achievements(message)
+                elif command_type == "list_titles":
+                    return await self.handle_list_titles(message)
+                elif command_type == "set_title":
+                    return await self.handle_set_title(message)
+                elif command_type == "achievements_leaderboard":
+                    return await self.handle_achievements_leaderboard(message)
                 else:
                     # Unknown dict type, fall back to sending as string
                     await message.channel.send(content=code)
@@ -486,6 +494,142 @@ class ActionHandler:
         embed.add_field(name="Coins", value=str(coins), inline=True)
         embed.add_field(name="Gems", value=str(gems), inline=True)
         embed.add_field(name="Level", value=f"{level} ({xp} XP)", inline=True)
+        
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_list_achievements(self, message: discord.Message) -> bool:
+        """Handle !achievements command"""
+        from modules.achievements import AchievementSystem
+        achievements = AchievementSystem(self.bot)
+        
+        user_achievements = achievements.get_user_achievements(message.guild.id, message.author.id)
+        
+        if not user_achievements:
+            embed = discord.Embed(
+                title="🎯 Your Achievements",
+                description="No achievements yet! Keep being active to earn some.",
+                color=discord.Color.gold()
+            )
+        else:
+            embed = discord.Embed(
+                title=f"🎯 {message.author.display_name}'s Achievements",
+                description=f"**{len(user_achievements)} achievements earned**",
+                color=discord.Color.gold()
+            )
+            
+            # Group by category
+            by_category = {}
+            for ach in user_achievements:
+                cat = ach.get("category", "other")
+                if cat not in by_category:
+                    by_category[cat] = []
+                by_category[cat].append(ach)
+            
+            for category, achs in by_category.items():
+                ach_list = "\n".join([f"{a['icon']} **{a['name']}** - {a['description']}" for a in achs[:5]])
+                if ach_list:
+                    embed.add_field(
+                        name=f"{category.title()} ({len(achs)})",
+                        value=ach_list,
+                        inline=False
+                    )
+        
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_list_titles(self, message: discord.Message) -> bool:
+        """Handle !titles command"""
+        from modules.achievements import AchievementSystem
+        achievements = AchievementSystem(self.bot)
+        
+        user_titles = achievements.get_user_titles(message.guild.id, message.author.id)
+        active_title = achievements.get_active_title(message.guild.id, message.author.id)
+        
+        if not user_titles:
+            embed = discord.Embed(
+                title="🎖️ Your Titles",
+                description="No titles yet! Keep being active to unlock titles.",
+                color=discord.Color.gold()
+            )
+        else:
+            active_name = f"{active_title['icon']} {active_title['name']}" if active_title else "None"
+            
+            embed = discord.Embed(
+                title=f"🎖️ {message.author.display_name}'s Titles",
+                description=f"Active: **{active_name}**\n" +
+                           f"Total unlocked: **{len(user_titles)}**",
+                color=discord.Color.gold()
+            )
+            
+            titles_list = "\n".join([f"{t['icon']} **{t['name']}**" for t in user_titles])
+            embed.add_field(name="Unlocked Titles", value=titles_list, inline=False)
+        
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_set_title(self, message: discord.Message) -> bool:
+        """Handle !settitle command"""
+        from modules.achievements import AchievementSystem
+        achievements = AchievementSystem(self.bot)
+        
+        # Parse command - get title from message content
+        content = message.content.split(" ", 1)
+        title_input = content[1].strip() if len(content) > 1 else None
+        
+        if not title_input:
+            user_titles = achievements.get_user_titles(message.guild.id, message.author.id)
+            
+            if not user_titles:
+                await message.channel.send("You don't have any titles yet!")
+                return True
+            
+            titles_list = "\n".join([f"• {t['icon']} **{t['name']}**" for t in user_titles])
+            await message.channel.send(f"Available titles:\n{titles_list}\n\nUse `!settitle <name>` to set one.")
+            return True
+        
+        # Find matching title
+        user_titles = achievements.get_user_titles(message.guild.id, message.author.id)
+        
+        matched_title = None
+        for t in user_titles:
+            if title_input.lower() in t['name'].lower() or title_input.lower() == t['id'].lower():
+                matched_title = t
+                break
+        
+        if not matched_title:
+            await message.channel.send(f"No title matching '{title_input}' found. Use `!titles` to see your titles.")
+            return True
+        
+        # Set active title
+        achievements.set_active_title(message.guild.id, message.author.id, matched_title['id'])
+        
+        await message.channel.send(f"✅ Title set to **{matched_title['icon']} {matched_title['name']}**!")
+        return True
+
+    async def handle_achievements_leaderboard(self, message: discord.Message) -> bool:
+        """Handle !achievementsleaderboard command"""
+        from modules.achievements import AchievementSystem
+        achievements = AchievementSystem(self.bot)
+        
+        leaderboard = achievements.get_leaderboard(message.guild.id)
+        
+        if not leaderboard:
+            await message.channel.send("No achievements recorded yet!")
+            return True
+        
+        embed = discord.Embed(
+            title="🏆 Achievement Leaderboard",
+            description="Top achievement collectors in this server:",
+            color=discord.Color.gold()
+        )
+        
+        lb_text = "\n".join([
+            f"**{entry['rank']}.** <@{entry['user_id']}> - {entry['achievements']} achievements"
+            for entry in leaderboard
+        ])
+        
+        embed.add_field(name="Rankings", value=lb_text, inline=False)
         
         await message.channel.send(embed=embed)
         return True

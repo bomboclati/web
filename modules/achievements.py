@@ -426,6 +426,71 @@ class AchievementSystem:
         settings["enabled"] = True
         dm.update_guild_data(guild.id, "achievement_settings", settings)
         
+        # Create a documentation channel
+        try:
+            doc_channel = await guild.create_text_channel("achievements-guide", category=None)
+        except:
+            doc_channel = interaction.channel
+        
+        # Post comprehensive documentation
+        doc_embed = discord.Embed(
+            title="🎯 Achievement System Guide",
+            description="Complete guide to earning achievements, unlocking titles, and getting rewards!",
+            color=discord.Color.gold()
+        )
+        doc_embed.add_field(
+            name="📖 How It Works",
+            value="Complete different activities to earn achievements. Each achievement grants coins/XP rewards. Unlock titles based on milestones.",
+            inline=False
+        )
+        doc_embed.add_field(
+            name="🎮 Available Commands",
+            value="**!achievements** - View all your earned achievements\n" +
+                  "**!titles** - View your unlocked titles\n" +
+                  "**!settitle <title>** - Set your active title (use title name or ID)\n" +
+                  "**!achievementsleaderboard** - See top achievement collectors\n" +
+                  "**!help achievements** - Show this guide",
+            inline=False
+        )
+        doc_embed.add_field(
+            name="🏆 Achievement Categories",
+            value="• **Community**: Join milestones (7d, 30d, 100d)\n" +
+                  "• **Activity**: Messages, commands, voice time\n" +
+                  "• **Gamification**: Quests completed\n" +
+                  "• **Events**: Giveaways won, events joined\n" +
+                  "• **Support**: Tickets created/resolved\n" +
+                  "• **Social**: Reputation given/received\n" +
+                  "• **Progression**: Level milestones\n" +
+                  "• **Economy**: Coins earned",
+            inline=False
+        )
+        doc_embed.add_field(
+            name="🎖️ Available Titles",
+            value="• 🌱 Newcomer (1+ day)\n" +
+                  "• ⭐ Regular (7+ days)\n" +
+                  "• 🏅 Veteran (30+ days)\n" +
+                  "• 👑 Legend (100+ days)\n" +
+                  "• 🛠️ Helper (10+ rep received)\n" +
+                  "• 🏆 Champion (1+ event won)\n" +
+                  "• 💎 Elite (Level 25+)",
+            inline=False
+        )
+        doc_embed.add_field(
+            name="💡 Tips",
+            value="• Check your progress with !achievements\n" +
+                  "• Active titles show next to your name\n" +
+                  "• Some achievements are hidden!\n" +
+                  "• Get notified when you unlock achievements",
+            inline=False
+        )
+        doc_embed.set_footer(text="Created by Immortal AI • Use !help achievements for more info")
+        
+        await doc_channel.send(embed=doc_embed)
+        await doc_channel.send("💡 **Quick Start:** Try these commands:\n" +
+                              "• `!achievements` - See your achievements\n" +
+                              "• `!titles` - See your titles\n" +
+                              "• `!achievementsleaderboard` - Top collectors")
+        
         help_embed = discord.Embed(
             title="🎯 Achievement System",
             description="Earn achievements for activities, unlock titles, and get rewards.",
