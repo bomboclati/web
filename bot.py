@@ -38,6 +38,7 @@ from modules.welcome_leave import WelcomeLeaveSystem
 from modules.giveaways import GiveawaySystem
 from modules.anti_raid import AntiRaidSystem
 from modules.auto_publisher import AutoPublisher
+from modules.achievements import AchievementSystem
 
 load_dotenv()
 
@@ -89,6 +90,7 @@ class ImmortalBot(commands.Bot):
         self.giveaways = GiveawaySystem(self)
         self.anti_raid = AntiRaidSystem(self)
         self.auto_publisher = AutoPublisher(self)
+        self.achievements = AchievementSystem(self)
 
     async def get_dynamic_prefix(self, bot, message):
         if not message.guild:
