@@ -287,21 +287,21 @@ class AntiRaidSystem:
         settings["enabled"] = True
         dm.update_guild_data(guild.id, "anti_raid_settings", settings)
         
-        help_embed = discord.Embed(
-            title="🛡️ Anti-Raid Protection",
-            description="Automatic protection against raids and spam attacks.",
-            color=discord.Color.green()
-        )
-        help_embed.add_field(
-            name="How it works",
-            value="Monitors join patterns, detects mass joins, locks down server, applies verification roles. Also filters suspicious usernames and spam.",
-            inline=False
-        )
-        help_embed.add_field(
-            name="!raidstatus",
-            value="Check current raid protection status.",
-            inline=False
-        )
+        try:
+            doc_channel = await guild.create_text_channel("security-guide", category=None)
+        except:
+            doc_channel = interaction.channel
+        
+        doc_embed = discord.Embed(title="🛡️ Anti-Raid Protection Guide", description="Keep your server safe!", color=discord.Color.red())
+        doc_embed.add_field(name="📖 How It Works", value="Automatically detects suspicious activity like mass joins and spam. Takes protective actions to keep the server safe.", inline=False)
+        doc_embed.add_field(name="Features", value="• Mass join detection\n• Server lockdown\n• Verification roles\n• Suspicious name detection\n• Spam filtering", inline=False)
+        doc_embed.add_field(name="Commands", value="**!raidstatus** - Check protection status\n**!help antiraid** - Show this guide", inline=False)
+        
+        await doc_channel.send(embed=doc_embed)
+        
+        help_embed = discord.Embed(title="🛡️ Anti-Raid Protection", description="Automatic protection against raids and spam attacks.", color=discord.Color.green())
+        help_embed.add_field(name="How it works", value="Monitors join patterns, detects mass joins, locks down server, applies verification roles. Also filters suspicious usernames and spam.", inline=False)
+        help_embed.add_field(name="!raidstatus", value="Check current raid protection status.", inline=False)
         
         await interaction.followup.send(embed=help_embed, ephemeral=True)
         

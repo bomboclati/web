@@ -262,26 +262,23 @@ Respond with JSON only:
         settings["enabled"] = True
         dm.update_guild_data(guild.id, "voice_settings", settings)
         
-        help_embed = discord.Embed(
-            title="🎤 Voice Activity System",
-            description="Earn XP and coins while in voice channels. Join voice events and compete on leaderboards.",
-            color=discord.Color.green()
-        )
-        help_embed.add_field(
-            name="How it works",
-            value="Earn 5 XP and 2 coins per minute in voice. Bonus rewards at 30 minutes. Voice roles unlock based on time spent.",
-            inline=False
-        )
-        help_embed.add_field(
-            name="!voiceleaderboard",
-            value="View voice activity leaderboard.",
-            inline=False
-        )
-        help_embed.add_field(
-            name="!voicestats",
-            value="Check your voice activity stats.",
-            inline=False
-        )
+        try:
+            doc_channel = await guild.create_text_channel("voice-guide", category=None)
+        except:
+            doc_channel = interaction.channel
+        
+        doc_embed = discord.Embed(title="🎤 Voice Activity System Guide", description="Earn rewards while in voice channels!", color=discord.Color.purple())
+        doc_embed.add_field(name="📖 How It Works", value="Earn XP and coins simply by being in voice channels! Rewards scale with time spent.", inline=False)
+        doc_embed.add_field(name="🎮 Available Commands", value="**!voiceleaderboard** - View voice activity leaderboard\n**!voicestats** - Check your voice stats\n**!help voice** - Show this guide", inline=False)
+        doc_embed.add_field(name="💡 Rewards", value="• 5 XP per minute\n• 2 coins per minute\n• Bonus at 30 minutes!\n• Voice roles unlock at milestones", inline=False)
+        
+        await doc_channel.send(embed=doc_embed)
+        await doc_channel.send("💡 **Quick Start:** Just join a voice channel and you'll start earning!")
+        
+        help_embed = discord.Embed(title="🎤 Voice Activity System", description="Earn XP and coins while in voice channels.", color=discord.Color.green())
+        help_embed.add_field(name="How it works", value="Earn 5 XP and 2 coins per minute in voice. Bonus rewards at 30 minutes. Voice roles unlock based on time spent.", inline=False)
+        help_embed.add_field(name="!voiceleaderboard", value="View voice activity leaderboard.", inline=False)
+        help_embed.add_field(name="!voicestats", value="Check your voice activity stats.", inline=False)
         
         await interaction.followup.send(embed=help_embed, ephemeral=True)
         

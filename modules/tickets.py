@@ -392,6 +392,56 @@ Respond with JSON only:
         settings["enabled"] = True
         dm.update_guild_data(guild.id, "ticket_settings", settings)
         
+        # Create documentation channel
+        try:
+            doc_channel = await guild.create_text_channel("tickets-guide", category=None)
+        except:
+            doc_channel = interaction.channel
+        
+        # Post comprehensive documentation
+        doc_embed = discord.Embed(
+            title="🎫 Advanced Ticket System Guide",
+            description="Complete guide to using the AI-powered ticket system with sentiment analysis!",
+            color=discord.Color.blue()
+        )
+        doc_embed.add_field(
+            name="📖 How It Works",
+            value="Create tickets by describing your issue. AI automatically categorizes it, analyzes sentiment (frustrated/happy), and assigns priority. Staff get notified and can respond.",
+            inline=False
+        )
+        doc_embed.add_field(
+            name="🎮 Available Commands",
+            value="**!ticket <message>** - Create a new support ticket\n" +
+                  "**!tickets** - List your active tickets\n" +
+                  "**!close** - Close the current ticket\n" +
+                  "**!help tickets** - Show this guide",
+            inline=False
+        )
+        doc_embed.add_field(
+            name="💡 How to Use",
+            value="1. Type `!ticket I need help with...` describing your issue\n" +
+                  "2. AI categorizes it (support/technical/billing/etc)\n" +
+                  "3. Sentiment is analyzed - urgent issues get priority\n" +
+                  "4. Staff get notified and respond\n" +
+                  "5. Use `!close` when resolved",
+            inline=False
+        )
+        doc_embed.add_field(
+            name="🏷️ Ticket Categories",
+            value="• **general** - General questions\n" +
+                  "• **support** - Technical support\n" +
+                  "• **report** - Report issues\n" +
+                  "• **appeal** - Appeal decisions\n" +
+                  "• **suggestion** - Make suggestions\n" +
+                  "• **technical** - Tech help\n" +
+                  "• **billing** - Payment issues",
+            inline=False
+        )
+        doc_embed.set_footer(text="Created by Immortal AI • Use !help tickets for more info")
+        
+        await doc_channel.send(embed=doc_embed)
+        await doc_channel.send("💡 **Quick Start:** Create a ticket with `!ticket <your message>`")
+        
         help_embed = discord.Embed(
             title="🎫 Advanced Ticket System",
             description="AI-powered ticket system with sentiment analysis and auto-routing.",

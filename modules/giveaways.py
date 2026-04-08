@@ -312,26 +312,23 @@ class GiveawaySystem:
         settings["enabled"] = True
         dm.update_guild_data(guild.id, "giveaway_settings", settings)
         
-        help_embed = discord.Embed(
-            title="🎁 Giveaway System",
-            description="Host giveaways with requirements and multiple winners.",
-            color=discord.Color.green()
-        )
-        help_embed.add_field(
-            name="How it works",
-            value="Create giveaways with role/XP/message requirements. Multiple winners supported. Auto-selects winners when time ends.",
-            inline=False
-        )
-        help_embed.add_field(
-            name="!giveaway",
-            value="List active giveaways.",
-            inline=False
-        )
-        help_embed.add_field(
-            name="!enter <giveaway>",
-            value="Enter a giveaway.",
-            inline=False
-        )
+        try:
+            doc_channel = await guild.create_text_channel("giveaways-guide", category=None)
+        except:
+            doc_channel = interaction.channel
+        
+        doc_embed = discord.Embed(title="🎁 Giveaway System Guide", description="Complete guide to hosting giveaways!", color=discord.Color.gold())
+        doc_embed.add_field(name="📖 How It Works", value="Host giveaways with requirements. Users enter by clicking button. Winners randomly selected when time ends.", inline=False)
+        doc_embed.add_field(name="🎮 Available Commands", value="**!giveaway** - List active giveaways\n**!enter <name>** - Enter a giveaway\n**!help giveaway** - Show this guide", inline=False)
+        doc_embed.add_field(name="💡 How to Host", value="Use `/bot Create a giveaway` to have AI set one up with your prize, requirements, and duration!", inline=False)
+        
+        await doc_channel.send(embed=doc_embed)
+        await doc_channel.send("💡 **Quick Start:** Active giveaways will appear with an Enter button!")
+        
+        help_embed = discord.Embed(title="🎁 Giveaway System", description="Host giveaways with requirements and multiple winners.", color=discord.Color.green())
+        help_embed.add_field(name="How it works", value="Create giveaways with role/XP/message requirements. Multiple winners supported. Auto-selects winners when time ends.", inline=False)
+        help_embed.add_field(name="!giveaway", value="List active giveaways.", inline=False)
+        help_embed.add_field(name="!enter <giveaway>", value="Enter a giveaway.", inline=False)
         
         await interaction.followup.send(embed=help_embed, ephemeral=True)
         

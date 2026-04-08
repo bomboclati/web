@@ -249,6 +249,50 @@ class StarboardSystem:
         settings["enabled"] = True
         dm.update_guild_data(guild.id, "starboard_settings", settings)
         
+        # Create documentation channel
+        try:
+            doc_channel = await guild.create_text_channel("starboard-guide", category=None)
+        except:
+            doc_channel = interaction.channel
+        
+        # Post comprehensive documentation
+        doc_embed = discord.Embed(
+            title="⭐ Starboard & Reaction System Guide",
+            description="Complete guide to starring messages and using reaction roles!",
+            color=discord.Color.gold()
+        )
+        doc_embed.add_field(
+            name="📖 How It Works",
+            value="React to messages with ⭐ to add them to the starboard. When a message gets enough stars, it's posted to the starboard channel for everyone to see!",
+            inline=False
+        )
+        doc_embed.add_field(
+            name="🎮 Available Commands",
+            value="**!starboard** - View top starred messages\n" +
+                  "**!help starboard** - Show this guide",
+            inline=False
+        )
+        doc_embed.add_field(
+            name="💡 How to Use",
+            value="1. Find a message you like\n" +
+                  "2. React with ⭐ (star emoji)\n" +
+                  "3. Once it gets 3+ stars, it goes to starboard\n" +
+                  "4. Highly starred messages (10+) get pinned!\n" +
+                  "5. Message authors earn coins/XP rewards",
+            inline=False
+        )
+        doc_embed.add_field(
+            name="🎁 Rewards",
+            value="• 5 stars: 10 coins, 5 XP\n" +
+                  "• 10 stars: 25 coins, 15 XP\n" +
+                  "• 25 stars: 50 coins, 30 XP",
+            inline=False
+        )
+        doc_embed.set_footer(text="Created by Immortal AI • Use !help starboard for more info")
+        
+        await doc_channel.send(embed=doc_embed)
+        await doc_channel.send("💡 **Quick Start:** React to any message with ⭐ to star it!")
+        
         help_embed = discord.Embed(
             title="⭐ Starboard & Reaction System",
             description="Star messages to add to starboard. Reaction roles and emoji rewards.",

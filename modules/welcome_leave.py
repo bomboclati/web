@@ -174,21 +174,22 @@ Make it fun and welcoming!"""
         settings["enabled"] = True
         dm.update_guild_data(guild.id, "welcome_leave_settings", settings)
         
-        help_embed = discord.Embed(
-            title="👋 Welcome/Leave System",
-            description="Custom welcome and leave messages with role assignment.",
-            color=discord.Color.green()
-        )
-        help_embed.add_field(
-            name="How it works",
-            value="Automatically sends welcome messages when members join/leave. Can assign roles, update member count channels, and send DMs.",
-            inline=False
-        )
-        help_embed.add_field(
-            name="!welcome",
-            value="Test welcome message.",
-            inline=False
-        )
+        try:
+            doc_channel = await guild.create_text_channel("welcome-guide", category=None)
+        except:
+            doc_channel = interaction.channel
+        
+        doc_embed = discord.Embed(title="👋 Welcome/Leave System Guide", description="Complete guide!", color=discord.Color.green())
+        doc_embed.add_field(name="📖 How It Works", value="Automatically welcomes new members and says goodbye when they leave. Can assign roles and send DMs.", inline=False)
+        doc_embed.add_field(name="Available Variables", value="• {user} - Mention user\n• {username} - Username\n• {server} - Server name\n• {member_count} - Total members", inline=False)
+        doc_embed.add_field(name="Features", value="• Custom welcome/leave messages\n• Role assignment on join\n• Member counter channel\n• Welcome DMs", inline=False)
+        
+        await doc_channel.send(embed=doc_embed)
+        await doc_channel.send("💡 **Quick Start:** Members will see welcome messages automatically when they join!")
+        
+        help_embed = discord.Embed(title="👋 Welcome/Leave System", description="Custom welcome and leave messages with role assignment.", color=discord.Color.green())
+        help_embed.add_field(name="How it works", value="Automatically sends welcome messages when members join/leave. Can assign roles, update member count channels, and send DMs.", inline=False)
+        help_embed.add_field(name="!welcome", value="Test welcome message.", inline=False)
         
         await interaction.followup.send(embed=help_embed, ephemeral=True)
         
