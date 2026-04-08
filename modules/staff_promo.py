@@ -45,6 +45,25 @@ class StaffPromotionSystem:
             "announce_channel": None,
             "log_channel": None,
             "progress_notify_channel": None,
+            "review_mode": False,
+            "review_channel": None,
+            "activity_decay_days": 30,
+        }
+        
+        self._default_tier_requirements = {
+            "Trial Moderator": {},
+            "Moderator": {"messages": 200, "achievements": 3},
+            "Senior Moderator": {"messages": 500, "achievements": 8, "tenure_days": 30},
+            "Head Moderator": {"messages": 1000, "achievements": 15, "tenure_days": 60},
+            "Admin": {"messages": 2000, "achievements": 25, "tenure_days": 90},
+        }
+        
+        self._default_achievement_bonuses = {
+            "Helper": 1.2,
+            "Event Organizer": 1.15,
+            "Problem Solver": 1.1,
+            "Active Contributor": 1.1,
+            "Trusted": 1.05,
         }
         
         self._default_rewards = {
@@ -65,6 +84,9 @@ class StaffPromotionSystem:
         cfg.setdefault("settings", self._default_settings)
         cfg.setdefault("rewards", self._default_rewards)
         cfg.setdefault("roles_by_tier", {})
+        cfg.setdefault("tier_requirements", self._default_tier_requirements)
+        cfg.setdefault("achievement_bonuses", self._default_achievement_bonuses)
+        cfg.setdefault("pending_reviews", [])
         return cfg
 
     async def _promotion_loop(self):
@@ -134,6 +156,14 @@ class StaffPromotionSystem:
         target_index = -1 if not target_tier else tiers.index(target_tier)
         
         if target_index > current_index:
+            target_tier_name = target_tier.get("name")
+            if not self._check_tier_requirements(guild.id, member, target_tier_name, config):
+                return
+            
+            if settings.get("review_mode", False):
+                await self._submit_promotion_review(guild, member, target_tier, score, config)
+                return
+            
             await self._promote_member(guild, member, target_tier, tiers, role_ids, current_index, settings, config)
             self._last_promotion_time[cooldown_key] = datetime.utcnow()
         elif settings.get("auto_demote", False) and target_index < current_index and current_index > 0:
@@ -158,6 +188,77 @@ class StaffPromotionSystem:
             if rid and any(r.id == rid for r in member.roles):
                 return idx
         return -1
+
+    def _check_tier_requirements(self, guild_id: int, member: discord.Member, tier_name: str, config: dict) -> bool:
+        requirements = config.get("tier_requirements", self._default_tier_requirements)
+        tier_reqs = requirements.get(tier_name, {})
+        
+        if not tier_reqs:
+            return True
+        
+        udata = dm.get_guild_data(guild_id, f"user_{member.id}", {})
+        joined_at = member.joined_at or datetime.utcnow()
+        tenure_days = (datetime.utcnow() - joined_at).days
+        user_achievements = dm.get_guild_data(guild_id, f"achievements_{member.id}", [])
+        
+        missing = []
+        for req_type, req_value in tier_reqs.items():
+            if req_type == "messages":
+                if udata.get("total_messages", 0) < req_value:
+                    missing.append(f"messages: {udata.get('total_messages', 0)}/{req_value}")
+            elif req_type == "achievements":
+                if len(user_achievements) < req_value:
+                    missing.append(f"achievements: {len(user_achievements)}/{req_value}")
+            elif req_type == "tenure_days":
+                if tenure_days < req_value:
+                    missing.append(f"tenure: {tenure_days}/{req_value} days")
+            elif req_type == "xp":
+                if udata.get("xp", 0) < req_value:
+                    missing.append(f"XP: {udata.get('xp', 0)}/{req_value}")
+        
+        if missing:
+            logger.info(f"StaffPromo[{guild_id}] {member} missing requirements for {tier_name}: {', '.join(missing)}")
+            return False
+        
+        return True
+
+    async def _submit_promotion_review(self, guild: discord.Guild, member: discord.Member, target_tier, score: float, config: dict):
+        pending = config.get("pending_reviews", [])
+        
+        for review in pending:
+            if review.get("user_id") == member.id and review.get("tier_name") == target_tier.get("name"):
+                return
+        
+        review_data = {
+            "user_id": member.id,
+            "user_name": str(member),
+            "tier_name": target_tier.get("name"),
+            "score": score,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        
+        pending.append(review_data)
+        config["pending_reviews"] = pending
+        dm.update_guild_data(guild.id, "staff_promo_config", config)
+        
+        review_ch_id = config.get("settings", {}).get("review_channel")
+        if review_ch_id:
+            channel = guild.get_channel(int(review_ch_id))
+            if channel:
+                embed = discord.Embed(
+                    title="📋 Promotion Review Request",
+                    description=f"{member.mention} is eligible for promotion to **{target_tier.get('name')}**",
+                    color=discord.Color.yellow()
+                )
+                embed.add_field(name="Score", value=f"{score*100:.1f}%", inline=True)
+                embed.add_field(name="Member", value=member.mention, inline=True)
+                embed.add_field(name="Actions", value="`!staffpromo approve @user` or `!staffpromo reject @user`", inline=False)
+                await channel.send(embed=embed)
+        
+        try:
+            await member.send(f"📋 Your promotion to **{target_tier.get('name')}** is pending review.")
+        except:
+            pass
 
     def _compute_score(self, guild_id: int, user_id: int, member: discord.Member, metrics: dict) -> float:
         now = datetime.utcnow()
@@ -185,6 +286,17 @@ class StaffPromotionSystem:
             raw_val = values.get(metric_name, 0)
             normalized = max(0, min(1, raw_val / max_val)) if max_val > 0 else 0
             score += normalized * weight
+        
+        config = self._get_full_config(guild_id)
+        bonuses = config.get("achievement_bonuses", self._default_achievement_bonuses)
+        
+        user_achievements = dm.get_guild_data(guild_id, f"achievements_{user_id}", [])
+        total_bonus = 1.0
+        for ach_name, multiplier in bonuses.items():
+            if ach_name in user_achievements:
+                total_bonus += (multiplier - 1.0)
+        
+        score = score * min(total_bonus, 2.0)
         
         return min(1.0, score)
 
@@ -556,6 +668,11 @@ class StaffPromotionSystem:
         custom_cmds["staffpromo demote"] = json.dumps({"command_type": "staffpromo_demote"})
         custom_cmds["staffpromo exclude"] = json.dumps({"command_type": "staffpromo_exclude"})
         custom_cmds["staffpromo roles"] = json.dumps({"command_type": "staffpromo_roles"})
+        custom_cmds["staffpromo review"] = json.dumps({"command_type": "staffpromo_review"})
+        custom_cmds["staffpromo requirements"] = json.dumps({"command_type": "staffpromo_requirements"})
+        custom_cmds["staffpromo bonuses"] = json.dumps({"command_type": "staffpromo_bonuses"})
+        custom_cmds["staffpromo approve"] = json.dumps({"command_type": "staffpromo_review"})
+        custom_cmds["staffpromo reject"] = json.dumps({"command_type": "staffpromo_review"})
         
         custom_cmds["help staffpromo"] = json.dumps({
             "command_type": "help_embed",
@@ -565,10 +682,16 @@ class StaffPromotionSystem:
                 {"name": "!staffpromo status", "value": "Check your current promotion score.", "inline": False},
                 {"name": "!staffpromo leaderboard", "value": "View top staff members by score.", "inline": False},
                 {"name": "!staffpromo progress", "value": "See progress to next tier.", "inline": False},
+                {"name": "!staffpromo requirements", "value": "View tier requirements.", "inline": False},
+                {"name": "!staffpromo bonuses", "value": "View achievement score bonuses.", "inline": False},
                 {"name": "!staffpromo config", "value": "View configuration (admin).", "inline": False},
                 {"name": "!staffpromo promote @user <tier>", "value": "Manually promote user (admin).", "inline": False},
                 {"name": "!staffpromo demote @user <tier>", "value": "Manually demote user (admin).", "inline": False},
                 {"name": "!staffpromo exclude add/remove @user", "value": "Exclude from auto-promotion (admin).", "inline": False},
+                {"name": "!staffpromo roles add/remove <tier> @role", "value": "Map roles to tiers (admin).", "inline": False},
+                {"name": "!staffpromo review", "value": "View pending reviews (admin).", "inline": False},
+                {"name": "!staffpromo approve @user", "value": "Approve promotion (admin).", "inline": False},
+                {"name": "!staffpromo reject @user", "value": "Reject promotion (admin).", "inline": False},
                 {"name": "!help staffpromo", "value": "Show this help embed.", "inline": False}
             ]
         })

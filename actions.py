@@ -337,6 +337,12 @@ class ActionHandler:
                     return await self.handle_staffpromo_exclude(message)
                 elif command_type == "staffpromo_roles":
                     return await self.handle_staffpromo_roles(message)
+                elif command_type == "staffpromo_review":
+                    return await self.handle_staffpromo_review(message)
+                elif command_type == "staffpromo_requirements":
+                    return await self.handle_staffpromo_requirements(message)
+                elif command_type == "staffpromo_bonuses":
+                    return await self.handle_staffpromo_bonuses(message)
                 else:
                     # Unknown dict type, fall back to sending as string
                     await message.channel.send(content=code)
@@ -1136,4 +1142,151 @@ class ActionHandler:
         config["roles_by_tier"] = role_ids
         dm.update_guild_data(guild.id, "staff_promo_config", config)
         
+        return True
+
+    async def handle_staffpromo_review(self, message: discord.Message) -> bool:
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+        
+        parts = message.content.split()
+        
+        if message.author.guild_permissions.administrator:
+            if len(parts) >= 3:
+                action = parts[2].lower()
+                if action in ["approve", "reject"]:
+                    return await self.handle_promotion_decision(message, action, parts)
+            
+            config = staff_promo._get_full_config(guild.id)
+            pending = config.get("pending_reviews", [])
+            
+            if not pending:
+                await message.channel.send("ℹ️ No pending promotion reviews.")
+                return True
+            
+            embed = discord.Embed(title="📋 Pending Promotion Reviews", color=discord.Color.yellow())
+            for review in pending:
+                user_id = review.get("user_id")
+                tier_name = review.get("tier_name")
+                score = review.get("score", 0)
+                embed.add_field(name=f"User ID: {user_id}", value=f"Tier: {tier_name}, Score: {score*100:.1f}%", inline=False)
+            
+            embed.add_field(name="Actions", value="`!staffpromo approve @user` or `!staffpromo reject @user`", inline=False)
+            await message.channel.send(embed=embed)
+            return True
+        else:
+            config = staff_promo._get_full_config(guild.id)
+            pending = config.get("pending_reviews", [])
+            
+            user_pending = [r for r in pending if r.get("user_id") == message.author.id]
+            if user_pending:
+                for review in user_pending:
+                    await message.channel.send(f"📋 Your promotion to **{review.get('tier_name')}** is pending review. Score: {review.get('score', 0)*100:.1f}%")
+            else:
+                await message.channel.send("ℹ️ You have no pending reviews.")
+            return True
+
+    async def handle_promotion_decision(self, message: discord.Message, decision: str, parts: list) -> bool:
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+        
+        if len(parts) < 3:
+            await message.channel.send(f"Usage: `!staffpromo {decision} @user`")
+            return True
+        
+        try:
+            user_id = int(parts[2].strip("<@!>"))
+            target_member = await guild.fetch_member(user_id)
+        except:
+            await message.channel.send("❌ Could not find user. Use `@user` format.")
+            return True
+        
+        config = staff_promo._get_full_config(guild.id)
+        pending = config.get("pending_reviews", [])
+        
+        review_to_remove = None
+        target_tier_name = None
+        for review in pending:
+            if review.get("user_id") == user_id:
+                review_to_remove = review
+                target_tier_name = review.get("tier_name")
+                break
+        
+        if not review_to_remove:
+            await message.channel.send(f"❌ No pending review found for that user.")
+            return True
+        
+        pending = [r for r in pending if r.get("user_id") != user_id]
+        config["pending_reviews"] = pending
+        dm.update_guild_data(guild.id, "staff_promo_config", config)
+        
+        if decision == "approve":
+            tiers = config.get("tiers", staff_promo._default_tiers)
+            role_ids = dict(config.get("roles_by_tier", {}))
+            
+            for tier in tiers:
+                tier_name = tier.get("name")
+                if tier_name not in role_ids or not role_ids[tier_name]:
+                    role_name = tier.get("role_name")
+                    if role_name:
+                        r = discord.utils.find(lambda x: x.name == role_name, guild.roles)
+                        if r:
+                            role_ids[tier_name] = r.id
+            
+            tier = next((t for t in tiers if t.get("name") == target_tier_name), None)
+            if tier:
+                current_index = staff_promo._get_current_tier_index(target_member, tiers, role_ids)
+                settings = config.get("settings", staff_promo._default_settings)
+                await staff_promo._promote_member(guild, target_member, tier, tiers, role_ids, current_index, settings, config)
+                await message.channel.send(f"✅ Approved! {target_member.mention} promoted to **{target_tier_name}**")
+        else:
+            try:
+                await target_member.send(f"❌ Your promotion to **{target_tier_name}** was rejected.")
+            except:
+                pass
+            await message.channel.send(f"❌ Rejected promotion for {target_member.mention}")
+        
+        return True
+
+    async def handle_staffpromo_requirements(self, message: discord.Message) -> bool:
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+        
+        config = staff_promo._get_full_config(guild.id)
+        requirements = config.get("tier_requirements", staff_promo._default_tier_requirements)
+        tiers = config.get("tiers", staff_promo._default_tiers)
+        
+        embed = discord.Embed(title="📋 Tier Requirements", color=discord.Color.blue())
+        
+        for tier in tiers:
+            tier_name = tier.get("name")
+            tier_reqs = requirements.get(tier_name, {})
+            
+            if tier_reqs:
+                req_text = "\n".join([f"• {k}: {v}" for k, v in tier_reqs.items()])
+            else:
+                req_text = "No requirements"
+            
+            embed.add_field(name=f"{tier_name} ({int(tier.get('threshold', 0)*100)}%)", value=req_text, inline=False)
+        
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_staffpromo_bonuses(self, message: discord.Message) -> bool:
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+        
+        config = staff_promo._get_full_config(guild.id)
+        bonuses = config.get("achievement_bonuses", staff_promo._default_achievement_bonuses)
+        
+        embed = discord.Embed(title="🏆 Achievement Score Bonuses", color=discord.Color.gold())
+        
+        total_bonus = 1.0
+        for ach_name, multiplier in bonuses.items():
+            bonus_pct = (multiplier - 1) * 100
+            embed.add_field(name=ach_name, value=f"+{bonus_pct:.0f}% score multiplier", inline=True)
+            total_bonus += (multiplier - 1)
+        
+        embed.add_field(name="Total Max Bonus", value=f"{((total_bonus - 1) * 100):.0f}%", inline=False)
+        
+        await message.channel.send(embed=embed)
         return True
