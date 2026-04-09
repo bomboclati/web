@@ -43,6 +43,7 @@ from modules.staff_promo import StaffPromotionSystem
 from modules.staff_extras import StaffExtras, StaffExtrasCommands
 from modules.staff_reviews import StaffReviewSystem
 from modules.staff_shift import StaffShiftSystem
+from modules.auto_announcer import AutoAnnouncer
 from modules.conflict_resolution import ConflictResolution
 from modules.community_health import CommunityHealth
 from modules.auto_setup import AutoSetup
@@ -102,6 +103,7 @@ class ImmortalBot(commands.Bot):
         self.staff_extras = StaffExtras(self)
         self.staff_reviews = StaffReviewSystem(self)
         self.staff_shift = StaffShiftSystem(self)
+        self.auto_announcer = AutoAnnouncer(self)
         self.conflict_resolution = ConflictResolution(self)
         self.community_health = CommunityHealth(self)
         self.auto_setup = AutoSetup(self)
@@ -546,6 +548,19 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         
         if command in ["logs", "allactivity"]:
             func = activity_commands[command]
+            await func(message, parts)
+            return
+        
+        announcer_commands = {
+            "announce": self.auto_announcer.handle_announce_create,
+            "announces": self.auto_announcer.handle_announce_list,
+            "remind": self.auto_announcer.handle_remind,
+            "remindme": self.auto_announcer.handle_reminders_list,
+            "remind_user": self.auto_announcer.handle_remind_user,
+        }
+        
+        if command in announcer_commands:
+            func = announcer_commands[command]
             await func(message, parts)
             return
         
