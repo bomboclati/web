@@ -1071,6 +1071,197 @@ class ActionHandler:
         
         return True
 
+class TierManagementView(discord.ui.View):
+    def __init__(self, guild: discord.Guild, staff_promo, config: dict):
+        super().__init__(timeout=300)  # 5 minute timeout
+        self.guild = guild
+        self.staff_promo = staff_promo
+        self.config = config
+    
+    @discord.ui.button(label="Add Tier", style=discord.ButtonStyle.green, emoji="➕")
+    async def add_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(AddTierModal(self.guild, self.staff_promo, self.config))
+    
+    @discord.ui.button(label="Edit Tier", style=discord.ButtonStyle.blue, emoji="✏️")
+    async def edit_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EditTierModal(self.guild, self.staff_promo, self.config))
+    
+    @discord.ui.button(label="Remove Tier", style=discord.ButtonStyle.red, emoji="🗑️")
+    async def remove_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(RemoveTierModal(self.guild, self.staff_promo, self.config))
+
+class AddTierModal(discord.ui.Modal, title="Add Promotion Tier"):
+    def __init__(self, guild: discord.Guild, staff_promo, config: dict):
+        super().__init__()
+        self.guild = guild
+        self.staff_promo = staff_promo
+        self.config = config
+    
+    name = discord.ui.TextInput(label="Tier Name", placeholder="e.g., Senior Moderator", required=True)
+    threshold = discord.ui.TextInput(label="Threshold (%)", placeholder="e.g., 75 for 75%", required=True)
+    role = discord.ui.TextInput(label="Role Name (Optional)", placeholder="Exact role name", required=False)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            threshold_val = float(self.threshold.value) / 100
+            if threshold_val < 0 or threshold_val > 1:
+                await interaction.response.send_message("❌ Threshold must be between 0 and 100", ephemeral=True)
+                return
+            
+            tiers = self.config.get("tiers", self.staff_promo._default_tiers)
+            new_tier = {
+                "name": self.name.value,
+                "threshold": threshold_val,
+                "role_name": self.role.value if self.role.value else None
+            }
+            tiers.append(new_tier)
+            self.config["tiers"] = tiers
+            
+            # Update the data manager
+            from data_manager import dm
+            dm.update_guild_data(self.guild.id, "staff_promo_config", self.config)
+            
+            await interaction.response.send_message(f"✅ Added tier **{self.name.value}** with threshold {self.threshold.value}%", ephemeral=True)
+        except ValueError:
+            await interaction.response.send_message("❌ Invalid threshold value", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error adding tier: {str(e)}", ephemeral=True)
+
+class EditTierModal(discord.ui.Modal, title="Edit Promotion Tier"):
+    def __init__(self, guild: discord.Guild, staff_promo, config: dict):
+        super().__init__()
+        self.guild = guild
+        self.staff_promo = staff_promo
+        self.config = config
+    
+    tier_select = discord.ui.TextInput(
+        label="Tier Name to Edit", 
+        placeholder="Enter exact tier name to edit", 
+        required=True
+    )
+    new_name = discord.ui.TextInput(label="New Tier Name (Optional)", placeholder="Leave blank to keep current", required=False)
+    new_threshold = discord.ui.TextInput(label="New Threshold (%) (Optional)", placeholder="Leave blank to keep current", required=False)
+    new_role = discord.ui.TextInput(label="New Role Name (Optional)", placeholder="Leave blank to keep current", required=False)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            tiers = self.config.get("tiers", self.staff_promo._default_tiers)
+            tier_to_edit = None
+            for tier in tiers:
+                if tier.get("name", "").lower() == self.tier_select.value.lower():
+                    tier_to_edit = tier
+                    break
+            
+            if not tier_to_edit:
+                await interaction.response.send_message(f"❌ Tier '{self.tier_select.value}' not found", ephemeral=True)
+                return
+            
+            # Update fields if provided
+            if self.new_name.value:
+                tier_to_edit["name"] = self.new_name.value
+            if self.new_threshold.value:
+                threshold_val = float(self.new_threshold.value) / 100
+                if threshold_val < 0 or threshold_val > 1:
+                    await interaction.response.send_message("❌ Threshold must be between 0 and 100", ephemeral=True)
+                    return
+                tier_to_edit["threshold"] = threshold_val
+            if self.new_role.value is not None:  # Allow empty string to remove role
+                tier_to_edit["role_name"] = self.new_role.value if self.new_role.value else None
+            
+            self.config["tiers"] = tiers
+            
+            # Update the data manager
+            from data_manager import dm
+            dm.update_guild_data(self.guild.id, "staff_promo_config", self.config)
+            
+            await interaction.response.send_message(f"✅ Updated tier **{self.tier_select.value}**", ephemeral=True)
+        except ValueError:
+            await interaction.response.send_message("❌ Invalid threshold value", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error editing tier: {str(e)}", ephemeral=True)
+
+class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
+    def __init__(self, guild: discord.Guild, staff_promo, config: dict):
+        super().__init__()
+        self.guild = guild
+        self.staff_promo = staff_promo
+        self.config = config
+    
+    tier_select = discord.ui.TextInput(
+        label="Tier Name to Remove", 
+        placeholder="Enter exact tier name to remove", 
+        required=True
+    )
+    confirm = discord.ui.TextInput(
+        label="Type 'CONFIRM' to delete", 
+        placeholder="This action cannot be undone", 
+        required=True
+    )
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            if self.confirm.value != "CONFIRM":
+                await interaction.response.send_message("❌ Confirmation failed. Type 'CONFIRM' to delete.", ephemeral=True)
+                return
+            
+            tiers = self.config.get("tiers", self.staff_promo._default_tiers)
+            tier_to_remove = None
+            for i, tier in enumerate(tiers):
+                if tier.get("name", "").lower() == self.tier_select.value.lower():
+                    tier_to_remove = i
+                    break
+            
+            if tier_to_remove is None:
+                await interaction.response.send_message(f"❌ Tier '{self.tier_select.value}' not found", ephemeral=True)
+                return
+            
+            removed_tier = tiers.pop(tier_to_remove)
+            self.config["tiers"] = tiers
+            
+            # Update the data manager
+            from data_manager import dm
+            dm.update_guild_data(self.guild.id, "staff_promo_config", self.config)
+            
+            await interaction.response.send_message(f"✅ Removed tier **{removed_tier.get('name')}**", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error removing tier: {str(e)}", ephemeral=True)
+
+    async def handle_staffpromo_tiers(self, message: discord.Message) -> bool:
+        """Handle !staffpromo tiers command - Interactive tier management"""
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ This command is only for administrators.")
+            return True
+        
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+        config = staff_promo._get_full_config(guild.id)
+        tiers = config.get("tiers", staff_promo._default_tiers)
+        role_ids = config.get("roles_by_tier", {})
+        
+        # Create embed showing current tiers
+        embed = discord.Embed(
+            title="⚙️ Promotion Tiers Management",
+            description="Manage promotion tiers for this server",
+            color=discord.Color.blue()
+        )
+        
+        if tiers:
+            tiers_text = ""
+            for tier in sorted(tiers, key=lambda t: t.get("threshold", 0)):
+                name = tier.get("name", "Unknown")
+                threshold = int(tier.get("threshold", 0) * 100)
+                role_id = role_ids.get(name)
+                role_mention = f"<@&{role_id}>" if role_id and guild.get_role(role_id) else "Not set"
+                tiers_text += f"**{name}**: {threshold}% → {role_mention}\n"
+            embed.add_field(name="Current Tiers", value=tiers_text or "None", inline=False)
+        else:
+            embed.add_field(name="Current Tiers", value="No tiers configured", inline=False)
+        
+        # Create view with buttons
+        view = TierManagementView(guild, staff_promo, config)
+        await message.channel.send(embed=embed, view=view)
+        return True
+
     async def handle_staffpromo_roles(self, message: discord.Message) -> bool:
         if not message.author.guild_permissions.administrator:
             await message.channel.send("❌ This command is only for administrators.")
