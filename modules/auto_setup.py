@@ -199,6 +199,7 @@ class AutoSetup:
             ("Verification System", self._setup_verification_system),
             ("Rules Channel", self._setup_rules_channel),
             ("Announcements Channel", self._setup_announcements),
+            ("Suggestion System", self._setup_suggestions),
             ("Modmail System", self._setup_modmail_system),
             ("Ticket System", self._setup_ticket_system),
             ("Applications Channel", self._setup_applications),
@@ -379,6 +380,70 @@ class AutoSetup:
         await announcements_channel.send("📢 Announcements will be posted here!")
         
         dm.update_guild_data(guild.id, "announcements_channel", announcements_channel.id)
+        
+        return True
+
+    async def _setup_suggestions(self, guild: discord.Guild) -> bool:
+        category = discord.utils.get(guild.categories, name="Feedback")
+        if not category:
+            try:
+                category = await guild.create_category("Feedback")
+            except:
+                category = None
+        
+        suggestions_channel = discord.utils.get(guild.text_channels, name="suggestions")
+        if not suggestions_channel:
+            suggestions_channel = await guild.create_text_channel(
+                "suggestions",
+                category=category,
+                topic="Submit your ideas for the server!"
+            )
+        
+        embed = discord.Embed(
+            title="💡 Suggestion Box",
+            description="Have an idea to improve the server? Submit it here!",
+            color=discord.Color.green()
+        )
+        embed.add_field(
+            name="How to Submit",
+            value="Click the button below to submit a suggestion",
+            inline=False
+        )
+        embed.add_field(
+            name="Voting",
+            value="React with ✅ to support or ❌ to oppose",
+            inline=False
+        )
+        
+        view = discord.ui.View()
+        
+        submit_btn = discord.ui.Button(
+            label="Submit Suggestion",
+            style=discord.ButtonStyle.primary,
+            custom_id="suggestion_submit_btn"
+        )
+        
+        async def submit_callback(interaction: discord.Interaction):
+            await interaction.response.send_message("Use `/suggest` command to submit a suggestion!", ephemeral=True)
+        
+        submit_btn.callback = submit_callback
+        view.add_item(submit_btn)
+        
+        try:
+            await suggestions_channel.send(embed=embed, view=view)
+        except:
+            pass
+        
+        dm.update_guild_data(guild.id, "suggestions_channel", suggestions_channel.id)
+        
+        suggestion_config = {
+            "enabled": True,
+            "require_approval": True,
+            "anonymous": False,
+            "upvote_emoji": "✅",
+            "downvote_emoji": "❌"
+        }
+        dm.update_guild_data(guild.id, "suggestion_config", suggestion_config)
         
         return True
 
