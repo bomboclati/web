@@ -8,27 +8,27 @@ from data_manager import dm
 from logger import logger
 
 class HelpCommandView(discord.ui.View):
-    """Interactive view for editing !commands"""
+    """Interactive view for editing !help commands created by AI systems"""
     
-    def __init__(self, all_commands: dict, main_commands: dict, help_commands: dict, user_id: int, page: int = 0):
+    def __init__(self, all_commands: dict, help_commands: dict, user_id: int, page: int = 0):
         super().__init__(timeout=180)
         self.all_commands = all_commands
-        self.main_commands = main_commands
         self.help_commands = help_commands
         self.user_id = user_id
         self.page = page
-        self.commands_per_page = 12
+        self.commands_per_page = 10
         
         start_idx = page * self.commands_per_page
         end_idx = start_idx + self.commands_per_page
-        page_commands = sorted(list(main_commands.keys()))[start_idx:end_idx]
+        page_commands = sorted(list(help_commands.keys()))[start_idx:end_idx]
         
         for cmd in page_commands:
-            btn = discord.ui.Button(label=f"!{cmd}", custom_id=f"edit_{cmd}", style=discord.ButtonStyle.secondary)
+            system_name = cmd.replace("help ", "")
+            btn = discord.ui.Button(label=f"{system_name}", custom_id=f"edit_{cmd}", style=discord.ButtonStyle.secondary)
             btn.callback = self.create_callback(cmd)
             self.add_item(btn)
         
-        total_pages = (len(main_commands) + self.commands_per_page - 1) // self.commands_per_page
+        total_pages = (len(help_commands) + self.commands_per_page - 1) // self.commands_per_page
         
         if page > 0:
             prev_btn = discord.ui.Button(label="◀ Prev", custom_id=f"prev_{page}", style=discord.ButtonStyle.primary)
@@ -66,7 +66,7 @@ class HelpCommandView(discord.ui.View):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
                 return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-            view = HelpCommandView(self.all_commands, self.main_commands, self.help_commands, self.user_id, page - 1)
+            view = HelpCommandView(self.all_commands, self.help_commands, self.user_id, page - 1)
             await interaction.response.edit_message(view=view)
         return callback
     
@@ -74,7 +74,7 @@ class HelpCommandView(discord.ui.View):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
                 return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-            view = HelpCommandView(self.all_commands, self.main_commands, self.help_commands, self.user_id, page + 1)
+            view = HelpCommandView(self.all_commands, self.help_commands, self.user_id, page + 1)
             await interaction.response.edit_message(view=view)
         return callback
     
@@ -1195,59 +1195,39 @@ class ActionHandler:
             return False
 
     async def handle_help_all(self, message: discord.Message) -> bool:
-        """Handle !help command - shows interactive embed with edit capability"""
+        """Handle !help command - shows interactive embed for editing help commands (created by AI systems)"""
         guild_id = message.guild.id
         custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
         
-        if not custom_cmds:
-            await message.channel.send("No custom commands available yet!")
+        help_commands = {}
+        for cmd_name, cmd_code in custom_cmds.items():
+            if cmd_name.startswith("help "):
+                help_commands[cmd_name] = cmd_code
+        
+        if not help_commands:
+            await message.channel.send("No system help commands yet! Use /bot to create systems.")
             return True
         
-        help_commands = {}
-        other_commands = {}
-        
-        for cmd_name in custom_cmds.keys():
-            if cmd_name.startswith("help "):
-                help_commands[cmd_name] = custom_cmds[cmd_name]
-            else:
-                other_commands[cmd_name] = custom_cmds[cmd_name]
-        
         embed = discord.Embed(
-            title="📚 All Available Commands",
-            description=f"Total: {len(custom_cmds)} commands\n\nClick a command below to edit it.",
+            title="📚 System Help Commands",
+            description=f"Total: {len(help_commands)} help commands\n\nClick a command below to edit it.",
             color=discord.Color.blue()
         )
         
-        if other_commands:
-            cmd_list = []
-            for cmd in sorted(other_commands.keys())[:25]:
-                cmd_list.append(f"**!{cmd}**")
-            embed.add_field(
-                name="🎮 Main Commands",
-                value="\n".join(cmd_list),
-                inline=False
-            )
-            if len(other_commands) > 25:
-                embed.add_field(
-                    name="", 
-                    value="\n".join(sorted(other_commands.keys())[25:]),
-                    inline=False
-                )
+        cmd_list = []
+        for cmd in sorted(help_commands.keys()):
+            system_name = cmd.replace("help ", "")
+            cmd_list.append(f"**!{cmd}** - {system_name}")
         
-        if help_commands:
-            help_list = []
-            for cmd in sorted(help_commands.keys()):
-                system_name = cmd.replace("help ", "")
-                help_list.append(f"**!help {system_name}**")
-            embed.add_field(
-                name="❓ Help Commands",
-                value="\n".join(help_list),
-                inline=False
-            )
+        embed.add_field(
+            name="❓ Available Help Commands",
+            value="\n".join(cmd_list),
+            inline=False
+        )
         
-        embed.set_footer(text="Click a command to edit • Back to dismiss")
+        embed.set_footer(text="Click a command to edit • Back to close")
         
-        view = HelpCommandView(custom_cmds, other_commands, help_commands, message.author.id)
+        view = HelpCommandView(custom_cmds, help_commands, message.author.id)
         await message.channel.send(embed=embed, view=view)
         return True
 
