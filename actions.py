@@ -1023,6 +1023,205 @@ class ActionHandler:
             await message.channel.send(f"❌ {result}")
         return True
 
+    async def handle_staffpromo_tier(self, message: discord.Message) -> bool:
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ This command is only for administrators.")
+            return True
+
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+
+        parts = message.content.split()
+        if len(parts) < 4:
+            await message.channel.send("Usage: `!staffpromo tier <add|remove|edit|list> [args...]`\n"
+                                     "Examples:\n"
+                                     "• `!staffpromo tier add \"Trial Mod\" 0.2`\n"
+                                     "• `!staffpromo tier remove \"Trial Mod\"`\n"
+                                     "• `!staffpromo tier edit \"Trial Mod\" threshold 0.3`\n"
+                                     "• `!staffpromo tier list`")
+            return True
+
+        subcommand = parts[2].lower()
+        config = staff_promo._get_full_config(guild.id)
+
+        if subcommand == "add":
+            return await self.handle_staffpromo_tier_add(message, config)
+        elif subcommand == "remove":
+            return await self.handle_staffpromo_tier_remove(message, config)
+        elif subcommand == "edit":
+            return await self.handle_staffpromo_tier_edit(message, config)
+        elif subcommand == "list":
+            return await self.handle_staffpromo_tier_list(message, config)
+        else:
+            await message.channel.send(f"❌ Unknown subcommand: {subcommand}\nUse: add, remove, edit, or list")
+            return True
+
+    async def handle_staffpromo_tier_add(self, message: discord.Message, config: dict) -> bool:
+        parts = message.content.split()
+        if len(parts) < 6:
+            await message.channel.send("Usage: `!staffpromo tier add \"<tier_name>\" <threshold>`\n"
+                                     "Example: `!staffpromo tier add \"Trial Moderator\" 0.2`")
+            return True
+
+        # Extract tier name (could be quoted)
+        content = message.content
+        # Find the quoted tier name or use next part
+        import shlex
+        try:
+            args = shlex.split(content)
+            if len(args) < 5 or args[1] != "tier" or args[2] != "add":
+                await message.channel.send("Usage: `!staffpromo tier add \"<tier_name>\" <threshold>`")
+                return True
+            tier_name = args[3]
+            try:
+                threshold = float(args[4])
+            except ValueError:
+                await message.channel.send("❌ Threshold must be a number between 0 and 1")
+                return True
+        except:
+            await message.channel.send("❌ Invalid format. Use quotes around tier name if it contains spaces.")
+            return True
+
+        if threshold < 0 or threshold > 1:
+            await message.channel.send("❌ Threshold must be between 0 and 1")
+            return True
+
+        tiers = config.get("tiers", self.bot.staff_promo._default_tiers)
+        
+        # Check if tier already exists
+        for tier in tiers:
+            if tier.get("name", "").lower() == tier_name.lower():
+                await message.channel.send(f"❌ Tier '{tier_name}' already exists")
+                return True
+
+        # Add new tier
+        new_tier = {
+            "name": tier_name,
+            "threshold": threshold,
+            "role_name": tier_name  # Default role name same as tier name
+        }
+        tiers.append(new_tier)
+        # Sort by threshold
+        tiers.sort(key=lambda t: t.get("threshold", 0))
+
+        config["tiers"] = tiers
+        dm.update_guild_data(guild.id, "staff_promo_config", config)
+        await message.channel.send(f"✅ Added tier '{tier_name}' with threshold {threshold*100:.0f}%")
+        return True
+
+    async def handle_staffpromo_tier_remove(self, message: discord.Message, config: dict) -> bool:
+        parts = message.content.split()
+        if len(parts) < 5:
+            await message.channel.send("Usage: `!staffpromo tier remove \"<tier_name>\"`")
+            return True
+
+        import shlex
+        try:
+            args = shlex.split(message.content)
+            if len(args) < 4 or args[1] != "tier" or args[2] != "remove":
+                await message.channel.send("Usage: `!staffpromo tier remove \"<tier_name>\"`")
+                return True
+            tier_name = args[3]
+        except:
+            await message.channel.send("❌ Invalid format. Use quotes around tier name if it contains spaces.")
+            return True
+
+        tiers = config.get("tiers", self.bot.staff_promo._default_tiers)
+        
+        # Find and remove tier
+        original_count = len(tiers)
+        tiers = [t for t in tiers if t.get("name", "").lower() != tier_name.lower()]
+        
+        if len(tiers) == original_count:
+            await message.channel.send(f"❌ Tier '{tier_name}' not found")
+            return True
+
+        config["tiers"] = tiers
+        dm.update_guild_data(guild.id, "staff_promo_config", config)
+        await message.channel.send(f"✅ Removed tier '{tier_name}'")
+        return True
+
+    async def handle_staffpromo_tier_edit(self, message: discord.Message, config: dict) -> bool:
+        parts = message.content.split()
+        if len(parts) < 6:
+            await message.channel.send("Usage: `!staffpromo tier edit \"<tier_name>\" <field> <value>`\n"
+                                     "Fields: threshold, role_name\n"
+                                     "Example: `!staffpromo tier edit \"Trial Moderator\" threshold 0.3`")
+            return True
+
+        import shlex
+        try:
+            args = shlex.split(message.content)
+            if len(args) < 6 or args[1] != "tier" or args[2] != "edit":
+                await message.channel.send("Usage: `!staffpromo tier edit \"<tier_name>\" <field> <value>`")
+                return True
+            tier_name = args[3]
+            field = args[4]
+            value_str = args[5]
+        except:
+            await message.channel.send("❌ Invalid format. Use quotes around tier name if it contains spaces.")
+            return True
+
+        if field not in ["threshold", "role_name"]:
+            await message.channel.send("❌ Invalid field. Use: threshold or role_name")
+            return True
+
+        tiers = config.get("tiers", self.bot.staff_promo._default_tiers)
+        
+        # Find tier to edit
+        tier_to_edit = None
+        for tier in tiers:
+            if tier.get("name", "").lower() == tier_name.lower():
+                tier_to_edit = tier
+                break
+        
+        if not tier_to_edit:
+            await message.channel.send(f"❌ Tier '{tier_name}' not found")
+            return True
+
+        # Edit the field
+        if field == "threshold":
+            try:
+                value = float(value_str)
+                if value < 0 or value > 1:
+                    await message.channel.send("❌ Threshold must be between 0 and 1")
+                    return True
+                tier_to_edit["threshold"] = value
+            except ValueError:
+                await message.channel.send("❌ Threshold must be a number")
+                return True
+        elif field == "role_name":
+            tier_to_edit["role_name"] = value_str
+
+        # Re-sort by threshold
+        tiers.sort(key=lambda t: t.get("threshold", 0))
+        config["tiers"] = tiers
+        dm.update_guild_data(guild.id, "staff_promo_config", config)
+        await message.channel.send(f"✅ Updated {field} for tier '{tier_name}' to '{value_str}'")
+        return True
+
+    async def handle_staffpromo_tier_list(self, message: discord.Message, config: dict) -> bool:
+        tiers = config.get("tiers", self.bot.staff_promo._default_tiers)
+        
+        if not tiers:
+            await message.channel.send("📊 No tiers configured")
+            return True
+
+        embed = discord.Embed(title="📊 Staff Promotion Tiers", color=discord.Color.blue())
+        
+        tiers_text = []
+        for tier in tiers:
+            name = tier.get("name", "Unknown")
+            threshold = tier.get("threshold", 0)
+            role_name = tier.get("role_name", name)
+            tiers_text.append(f"• **{name}**: {threshold*100:.0f}% (Role: {role_name})")
+        
+        embed.add_field(name="Tiers", value="\n".join(tiers_text), inline=False)
+        embed.add_field(name="Total Tiers", value=str(len(tiers)), inline=True)
+        
+        await message.channel.send(embed=embed)
+        return True
+
     async def handle_staffpromo_exclude(self, message: discord.Message) -> bool:
         if not message.author.guild_permissions.administrator:
             await message.channel.send("❌ This command is only for administrators.")
