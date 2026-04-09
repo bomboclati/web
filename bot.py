@@ -41,6 +41,7 @@ from modules.auto_publisher import AutoPublisher
 from modules.achievements import AchievementSystem
 from modules.staff_promo import StaffPromotionSystem
 from modules.staff_extras import StaffExtras, StaffExtrasCommands
+from modules.staff_reviews import StaffReviewSystem
 from modules.conflict_resolution import ConflictResolution
 from modules.community_health import CommunityHealth
 from modules.auto_setup import AutoSetup
@@ -98,6 +99,7 @@ class ImmortalBot(commands.Bot):
         self.achievements = AchievementSystem(self)
         self.staff_promo = StaffPromotionSystem(self)
         self.staff_extras = StaffExtras(self)
+        self.staff_reviews = StaffReviewSystem(self)
         self.conflict_resolution = ConflictResolution(self)
         self.community_health = CommunityHealth(self)
         self.auto_setup = AutoSetup(self)
@@ -515,6 +517,9 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             "promotionhistory": self.staff_extras.handle_promotion_history,
             "trainingtasks": self.staff_extras.handle_training_tasks,
             "appeal": self.staff_extras.handle_appeal,
+            "staffstats": self.staff_reviews.handle_staff_stats,
+            "probation": self.staff_reviews.handle_probation_status,
+            "vote": self.staff_reviews.handle_peer_vote,
         }
         
         if command in staff_commands:
