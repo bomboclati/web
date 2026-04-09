@@ -539,6 +539,16 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                     await func(message)
                     return
         
+        activity_commands = {
+            "logs": self.staff_shift.handle_activity_logs,
+            "allactivity": self.staff_shift.handle_all_activity,
+        }
+        
+        if command in ["logs", "allactivity"]:
+            func = activity_commands[command]
+            await func(message, parts)
+            return
+        
         task_commands = {
             "task": self.staff_shift.handle_task_assign,
             "tasks": self.staff_shift.handle_task_list,

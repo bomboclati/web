@@ -16,6 +16,7 @@ class StaffShiftSystem:
         self._shifts: Dict[int, Dict[int, dict]] = {}
         self._tasks: Dict[int, Dict[int, dict]] = {}
         self._warnings: Dict[int, Dict[int, dict]] = {}
+        self._activity_logs: Dict[int, List[dict]] = {}
         self._load_data()
 
     def _load_data(self):
@@ -23,12 +24,14 @@ class StaffShiftSystem:
         self._shifts = data.get("shifts", {})
         self._tasks = data.get("tasks", {})
         self._warnings = data.get("warnings", {})
+        self._activity_logs = data.get("activity_logs", {})
 
     def _save_data(self):
         data = {
             "shifts": self._shifts,
             "tasks": self._tasks,
-            "warnings": self._warnings
+            "warnings": self._warnings,
+            "activity_logs": self._activity_logs
         }
         dm.save_json("staff_shifts_tasks", data)
 
@@ -47,7 +50,7 @@ class StaffShiftSystem:
             "active": True
         }
         
-        self._save_data()
+        await self.log_action(guild_id, user_id, "shift_start", "")
         
         await message.channel.send(f"✅ Shift started!")
 
@@ -63,8 +66,9 @@ class StaffShiftSystem:
             duration = time.time() - start_time
             hours = duration / 3600
             
+            await self.log_action(guild_id, user_id, "shift_end", f"{hours:.1f} hours")
+            
             del self._shifts[guild_id][user_id]
-            self._save_data()
             
             await message.channel.send(f"✅ Shift ended! Duration: {hours:.1f} hours")
         else:
@@ -131,7 +135,7 @@ class StaffShiftSystem:
             "completed": False
         }
         
-        self._save_data()
+        await self.log_action(guild_id, user_id, "task_assigned", task_name)
         
         await target.send(f"📋 New task assigned: {task_name}")
         await message.channel.send(f"✅ Task assigned to {target.display_name}")
@@ -146,7 +150,9 @@ class StaffShiftSystem:
             task_data = self._tasks[guild_id][user_id]
             self._tasks[guild_id][user_id]["completed"] = True
             self._tasks[guild_id][user_id]["completed_at"] = time.time()
-            self._save_data()
+            
+            task_name = task_data.get("task", "Unknown")
+            await self.log_action(guild_id, user_id, "task_completed", task_name)
             
             await message.channel.send(f"✅ Task completed: {task_data.get('task', 'Unknown')}")
             
@@ -225,6 +231,8 @@ class StaffShiftSystem:
             "given_by": str(message.author),
             "timestamp": time.time()
         })
+        
+        await self.log_action(guild_id, user_id, "warn", reason)
         
         warning_count = len(self._warnings[guild_id]["warnings"])
         
@@ -338,6 +346,93 @@ class StaffShiftSystem:
                     log_channel = guild.get_channel(channel_id)
                     if log_channel:
                         await log_channel.send(f"📉 {member.display_name} auto-demoted to {new_tier.get('name', 'Staff')} (3 warnings)")
+
+    async def log_action(self, guild_id: int, user_id: int, action_type: str, details: str = ""):
+        if guild_id not in self._activity_logs:
+            self._activity_logs[guild_id] = []
+        
+        self._activity_logs[guild_id].append({
+            "user_id": user_id,
+            "action": action_type,
+            "details": details,
+            "timestamp": time.time()
+        })
+        
+        self._activity_logs[guild_id] = self._activity_logs[guild_id][-200:]
+        self._save_data()
+
+    async def handle_activity_logs(self, message, parts):
+        guild = message.guild
+        guild_id = guild.id
+        
+        target = message.author
+        if len(parts) > 1:
+            user_mention = parts[1]
+            try:
+                user_id = int(user_mention.replace("<@", "").replace(">", ""))
+                target = guild.get_member(user_id)
+            except:
+                pass
+        
+        if not target:
+            await message.channel.send("User not found!")
+            return
+        
+        logs = self._activity_logs.get(guild_id, [])
+        user_logs = [l for l in logs if l.get("user_id") == target.id]
+        
+        if not user_logs:
+            await message.channel.send(f"No activity logs for {target.display_name}!")
+            return
+        
+        embed = discord.Embed(
+            title=f"📋 Activity Log: {target.display_name}",
+            color=discord.Color.blue()
+        )
+        
+        warnings_given = sum(1 for l in user_logs if l.get("action") == "warn")
+        tasks_assigned = sum(1 for l in user_logs if l.get("action") == "task_assigned")
+        tasks_completed = sum(1 for l in user_logs if l.get("action") == "task_completed")
+        shifts_worked = sum(1 for l in user_logs if l.get("action") == "shift")
+        
+        embed.add_field(name="Warnings Given", value=str(warnings_given), inline=True)
+        embed.add_field(name="Tasks Assigned", value=str(tasks_assigned), inline=True)
+        embed.add_field(name="Tasks Completed", value=str(tasks_completed), inline=True)
+        embed.add_field(name="Shifts Worked", value=str(shifts_worked), inline=True)
+        
+        recent = user_logs[-10:]
+        log_text = "\n".join([
+            f"{datetime.fromtimestamp(l.get('timestamp', 0)).strftime('%m/%d %H:%M')} - {l.get('action', 'Unknown')}"
+            for l in recent
+        ])
+        embed.add_field(name="Recent Actions", value=log_text or "No actions", inline=False)
+        
+        await message.channel.send(embed=embed)
+
+    async def handle_all_activity(self, message):
+        guild = message.guild
+        guild_id = guild.id
+        
+        logs = self._activity_logs.get(guild_id, [])
+        
+        if not logs:
+            await message.channel.send("No activity logs yet!")
+            return
+        
+        action_counts = {}
+        for log in logs:
+            action = log.get("action", "unknown")
+            action_counts[action] = action_counts.get(action, 0) + 1
+        
+        embed = discord.Embed(
+            title="📊 All Staff Activity",
+            color=discord.Color.blue()
+        )
+        
+        for action, count in sorted(action_counts.items(), key=lambda x: x[1], reverse=True):
+            embed.add_field(name=action.replace("_", " ").title(), value=str(count), inline=True)
+        
+        await message.channel.send(embed=embed)
 
 
 def setup(bot):
