@@ -424,7 +424,7 @@ class AutoSetup:
         )
         
         async def submit_callback(interaction: discord.Interaction):
-            await interaction.response.send_message("Use `/suggest` command to submit a suggestion!", ephemeral=True)
+            await interaction.response.send_message("Use `!suggest` to submit a suggestion!", ephemeral=True)
         
         submit_btn.callback = submit_callback
         view.add_item(submit_btn)
