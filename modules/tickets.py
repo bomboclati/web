@@ -335,6 +335,13 @@ Respond with JSON only:
         
         self._save_ticket(ticket)
         
+        guild_id = ticket.guild_id
+        staff_id = ticket.staff_id
+        
+        if staff_id:
+            current = dm.get_guild_data(guild_id, f"tickets_resolved_{staff_id}", 0)
+            dm.update_guild_data(guild_id, f"tickets_resolved_{staff_id}", current + 1)
+        
         vector_memory.store_conversation(
             guild_id=ticket.guild_id,
             user_id=ticket.user_id,

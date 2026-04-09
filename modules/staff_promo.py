@@ -27,16 +27,17 @@ class StaffPromotionSystem:
         }
         
         self._default_metrics = {
-            "xp": {"weight": 0.20, "max": 5000, "enabled": True},
-            "tenure_days": {"weight": 0.15, "max": 90, "enabled": True},
-            "messages": {"weight": 0.15, "max": 1000, "enabled": True},
+            "xp": {"weight": 0.15, "max": 5000, "enabled": True},
+            "tenure_days": {"weight": 0.10, "max": 90, "enabled": True},
+            "messages": {"weight": 0.10, "max": 1000, "enabled": True},
+            "tickets_resolved": {"weight": 0.15, "max": 50, "enabled": True},
             "achievements": {"weight": 0.10, "max": 20, "enabled": True},
-            "voice_minutes": {"weight": 0.10, "max": 3600, "enabled": True},
+            "voice_minutes": {"weight": 0.08, "max": 3600, "enabled": True},
             "rep_received": {"weight": 0.08, "max": 100, "enabled": True},
-            "rep_given": {"weight": 0.07, "max": 100, "enabled": True},
-            "gamification_score": {"weight": 0.15, "max": 100, "enabled": True},
+            "rep_given": {"weight": 0.06, "max": 100, "enabled": True},
+            "gamification_score": {"weight": 0.10, "max": 100, "enabled": True},
             "badge_count": {"weight": 0.05, "max": 10, "enabled": True},
-            "level": {"weight": 0.02, "max": 50, "enabled": True}
+            "level": {"weight": 0.03, "max": 50, "enabled": True}
         }
         
         self._default_settings = {
@@ -516,6 +517,7 @@ class StaffPromotionSystem:
             "xp": udata.get("xp", 0),
             "tenure_days": tenure_days,
             "messages": udata.get("total_messages", 0),
+            "tickets_resolved": dm.get_guild_data(guild_id, f"tickets_resolved_{user_id}", 0),
             "achievements": len(dm.get_guild_data(guild_id, f"achievements_{user_id}", [])),
             "voice_minutes": udata.get("voice_minutes", 0),
             "rep_received": udata.get("rep_received", 0),
