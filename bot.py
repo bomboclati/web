@@ -319,6 +319,12 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 await self._handle_scheduled_actions(message, cmd_content)
                 return
             
+            if cmd_content.strip() == "help":
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                await handler.handle_help_all(message)
+                return
+            
             # Handle staff commands
             if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "trainingtasks", "appeal"]):
                 await self._handle_staff_command(message, cmd_content)
