@@ -40,6 +40,7 @@ from modules.anti_raid import AntiRaidSystem
 from modules.auto_publisher import AutoPublisher
 from modules.achievements import AchievementSystem
 from modules.staff_promo import StaffPromotionSystem
+from modules.conflict_resolution import ConflictResolution
 
 load_dotenv()
 
@@ -93,6 +94,7 @@ class ImmortalBot(commands.Bot):
         self.auto_publisher = AutoPublisher(self)
         self.achievements = AchievementSystem(self)
         self.staff_promo = StaffPromotionSystem(self)
+        self.conflict_resolution = ConflictResolution(self)
 
     async def get_dynamic_prefix(self, bot, message):
         if not message.guild:
@@ -267,6 +269,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         await self.trigger_roles.handle_message(message)
         await self.moderation.analyze_message(message)
         await self.intelligence.track_message(message)
+        await self.conflict_resolution.analyze_message(message)
         
         # 2. AI Chat Channels (if message is in an AI chat channel)
         await self.chat_channels.handle_message(message)
