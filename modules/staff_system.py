@@ -3,11 +3,11 @@ from discord import ui
 import datetime
 import json
 from data_manager import dm
-from typing import Dict
+from typing import Dict, Optional
 
-class StaffApplicationModal(ui.Modal, title='Staff Application'):
+class StaffApplicationModal(ui.Modal):
     def __init__(self, bot):
-        super().__init__()
+        super().__init__(title='Staff Application')
         self.bot = bot
         
     q1 = ui.TextInput(label='Why do you want to be staff?', style=discord.TextStyle.paragraph)
@@ -39,20 +39,58 @@ class StaffApplicationModal(ui.Modal, title='Staff Application'):
         async def approve_callback(it: discord.Interaction):
             await interaction.user.send("Your staff application has been approved!")
             await it.response.edit_message(content=f"✅ Approved by {it.user.name}", view=None)
-            
+             
             # Store in applications.json
             apps = dm.load_json("applications", default={})
             apps[str(interaction.user.id)] = {"status": "approved", "timestamp": str(datetime.datetime.now())}
             dm.save_json("applications", apps)
+            
+            # Also track in promotion system for fast-track consideration
+            guild_id = interaction.guild.id
+            promo_config = dm.get_guild_data(guild_id, "staff_promo_config", {})
+            staff_applications = promo_config.get("staff_applications", {})
+            staff_applications[str(interaction.user.id)] = {
+                "status": "approved",
+                "timestamp": str(datetime.datetime.now()),
+                "approved_by": str(it.user.id),
+                "application_data": {
+                    "q1": self.q1.value,
+                    "q2": self.q2.value,
+                    "q3": self.q3.value,
+                    "q4": self.q4.value,
+                    "q5": self.q5.value
+                }
+            }
+            promo_config["staff_applications"] = staff_applications
+            dm.update_guild_data(guild_id, "staff_promo_config", promo_config)
 
         async def deny_callback(it: discord.Interaction):
             await interaction.user.send("Thank you for applying, but your application has been denied at this time.")
             await it.response.edit_message(content=f"❌ Denied by {it.user.name}", view=None)
-            
+             
             # Store in applications.json
             apps = dm.load_json("applications", default={})
             apps[str(interaction.user.id)] = {"status": "denied", "timestamp": str(datetime.datetime.now())}
             dm.save_json("applications", apps)
+            
+            # Also track in promotion system
+            guild_id = interaction.guild.id
+            promo_config = dm.get_guild_data(guild_id, "staff_promo_config", {})
+            staff_applications = promo_config.get("staff_applications", {})
+            staff_applications[str(interaction.user.id)] = {
+                "status": "denied",
+                "timestamp": str(datetime.datetime.now()),
+                "denied_by": str(it.user.id),
+                "application_data": {
+                    "q1": self.q1.value,
+                    "q2": self.q2.value,
+                    "q3": self.q3.value,
+                    "q4": self.q4.value,
+                    "q5": self.q5.value
+                }
+            }
+            promo_config["staff_applications"] = staff_applications
+            dm.update_guild_data(guild_id, "staff_promo_config", promo_config)
 
         approve_btn.callback = approve_callback
         deny_btn.callback = deny_callback
