@@ -32,70 +32,71 @@ class StaffShiftSystem:
         }
         dm.save_json("staff_shifts_tasks", data)
 
-    async def handle_shift_claim(self, message, parts):
-        """Handle !shift claim command"""
+    async def handle_shift_start(self, message, parts):
+        """Handle !shift start command"""
         guild = message.guild
         guild_id = guild.id
-        
-        if len(parts) < 2:
-            await message.channel.send("Usage: !shift claim <time>")
-            return
-        
-        shift_time = parts[1]
         user_id = message.author.id
         
         if guild_id not in self._shifts:
             self._shifts[guild_id] = {}
         
         self._shifts[guild_id][user_id] = {
-            "shift": shift_time,
-            "claimed_at": time.time(),
-            "claimed_by": str(message.author)
+            "started_at": time.time(),
+            "started_by": str(message.author),
+            "active": True
         }
         
         self._save_data()
         
-        await message.channel.send(f"✅ Claimed shift: {shift_time}")
+        await message.channel.send(f"✅ Shift started!")
 
-    async def handle_shift_coverage(self, message):
-        """Handle !shift coverage command"""
+    async def handle_shift_end(self, message):
+        """Handle !shift end command"""
+        guild = message.guild
+        guild_id = guild.id
+        user_id = message.author.id
+        
+        if guild_id in self._shifts and user_id in self._shifts[guild_id]:
+            shift_data = self._shifts[guild_id][user_id]
+            start_time = shift_data.get("started_at", time.time())
+            duration = time.time() - start_time
+            hours = duration / 3600
+            
+            del self._shifts[guild_id][user_id]
+            self._save_data()
+            
+            await message.channel.send(f"✅ Shift ended! Duration: {hours:.1f} hours")
+        else:
+            await message.channel.send("You don't have an active shift!")
+
+    async def handle_show_shifts(self, message):
+        """Handle !show shifts command"""
         guild = message.guild
         guild_id = guild.id
         
         shifts = self._shifts.get(guild_id, {})
         
         if not shifts:
-            await message.channel.send("No shifts currently claimed!")
+            await message.channel.send("No active shifts!")
             return
         
         embed = discord.Embed(
-            title="📅 Shift Coverage",
+            title="📅 Active Shifts",
             color=discord.Color.blue()
         )
         
         for user_id, shift_data in shifts.items():
             member = guild.get_member(user_id)
-            name = member.display_name if member else shift_data.get("claimed_by", "Unknown")
+            name = member.display_name if member else shift_data.get("started_by", "Unknown")
+            started = datetime.fromtimestamp(shift_data.get("started_at", 0)).strftime("%H:%M")
             embed.add_field(
                 name=name,
-                value=shift_data.get("shift", "Unknown"),
+                value=f"Started: {started}",
                 inline=True
             )
         
         await message.channel.send(embed=embed)
-
-    async def handle_shift_drop(self, message):
-        """Handle !shift drop command"""
-        guild = message.guild
-        guild_id = guild.id
-        user_id = message.author.id
-        
-        if guild_id in self._shifts and user_id in self._shifts[guild_id]:
-            del self._shifts[guild_id][user_id]
-            self._save_data()
-            await message.channel.send("✅ Shift dropped!")
-        else:
-            await message.channel.send("You don't have a shift claimed!")
 
     async def handle_task_assign(self, message, parts):
         """Handle !task assign command"""

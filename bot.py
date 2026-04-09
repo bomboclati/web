@@ -515,15 +515,29 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         command = parts[0].lower()
         
         shift_commands = {
-            "shift": self.staff_shift.handle_shift_claim,
-            "coverage": self.staff_shift.handle_shift_coverage,
-            "drop": self.staff_shift.handle_shift_drop,
+            "shift start": self.staff_shift.handle_shift_start,
+            "shift end": self.staff_shift.handle_shift_end,
+            "show shifts": self.staff_shift.handle_show_shifts,
         }
         
-        if command in ["shift", "coverage", "drop"]:
+        if command in ["shift start", "shift end", "show shifts"]:
             func = shift_commands[command]
             await func(message)
             return
+        
+        shift_only_commands = {
+            "start": self.staff_shift.handle_shift_start,
+            "end": self.staff_shift.handle_shift_end,
+            "show": self.staff_shift.handle_show_shifts,
+        }
+        
+        if any(cmd_content.startswith(f"!{cmd}") for cmd in ["shift"]):
+            if command == "shift" and len(parts) > 1:
+                sub_cmd = parts[1].lower()
+                if sub_cmd in shift_only_commands:
+                    func = shift_only_commands[sub_cmd]
+                    await func(message)
+                    return
         
         task_commands = {
             "task": self.staff_shift.handle_task_assign,
