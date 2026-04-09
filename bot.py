@@ -1065,6 +1065,148 @@ async def undo_cmd(interaction: discord.Interaction, count: int = 1):
     summary = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in results])
     await interaction.followup.send(f"**Undo Summary:**\n{summary}", ephemeral=True)
 
+# --- Staff Promotion Tier Management Commands ---
+
+@bot.tree.command(name="promotiere", description="Manage staff promotion tiers")
+@app_commands.default_permissions(administrator=True)
+@app_commands.describe(action="Action to perform", tier_name="Name of the tier", role="Role to assign to threshold", threshold_score="Threshold score (0.0-1.0)", description="Description of the tier")
+@app_commands.choices(action=[
+    app_commands.Choice(name="list", value="list"),
+    app_commands.Choice(name="add", value="add"),
+    app_commands.Choice(name="remove", value="remove"),
+    app_commands.Choice(name="edit", value="edit")
+])
+async def promo_tier_command(interaction: discord.Interaction, action: str, tier_name: str = None, role: discord.Role = None, threshold_score: float = None, description: str = None):
+    """Manage staff promotion tiers"""
+    if not interaction.user.guild_permissions.administrator:
+        return await interaction.response.send_message("Only administrators can manage promotion tiers.", ephemeral=True)
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    # Get the staff promotion system
+    staff_promo = bot.staff_promo
+    config = staff_promo._get_full_config(interaction.guild.id)
+    
+    # Ensure tiers exist in config
+    if "tiers" not in config:
+        config["tiers"] = staff_promo._default_tiers.copy()
+    
+    if action == "list":
+        tiers = config.get("tiers", [])
+        if not tiers:
+            await interaction.followup.send("No promotion tiers configured.", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="Staff Promotion Tiers",
+            color=discord.Color.blue()
+        )
+        
+        for i, tier in enumerate(tiers):
+            name = tier.get("name", "Unknown")
+            # Handle both old and new tier formats
+            role_id = tier.get("role_id")
+            role_name = tier.get("role_name")
+            threshold = tier.get("threshold_score", tier.get("threshold", 0))
+            desc = tier.get("description", "No description")
+            
+            role_mention = f"<@&{role_id}>" if role_id else role_name or "No role assigned"
+            
+            embed.add_field(
+                name=f"{i+1}. {name}",
+                value=f"**Role:** {role_mention}\n**Threshold:** {threshold*100:.1f}%\n**Description:** {desc}",
+                inline=False
+            )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    elif action == "add":
+        if not all([tier_name, role, threshold_score is not None]):
+            await interaction.followup.send("Missing required parameters: tier_name, role, and threshold_score are required for adding a tier.", ephemeral=True)
+            return
+        
+        if threshold_score < 0 or threshold_score > 1:
+            await interaction.followup.send("Threshold score must be between 0.0 and 1.0.", ephemeral=True)
+            return
+        
+        # Check if tier already exists
+        tiers = config.get("tiers", [])
+        if any(tier.get("name", "").lower() == tier_name.lower() for tier in tiers):
+            await interaction.followup.send(f"A tier named '{tier_name}' already exists.", ephemeral=True)
+            return
+        
+        # Add new tier
+        new_tier = {
+            "name": tier_name,
+            "role_id": role.id,
+            "threshold_score": threshold_score,
+            "description": description or f"{tier_name} tier"
+        }
+        
+        tiers.append(new_tier)
+        config["tiers"] = tiers
+        
+        # Save config
+        dm.update_guild_data(interaction.guild.id, "staff_promo_config", config)
+        
+        await interaction.followup.send(f"Added promotion tier '{tier_name}' with role {role.mention} at {threshold_score*100:.1f}% threshold.", ephemeral=True)
+    
+    elif action == "remove":
+        if not tier_name:
+            await interaction.followup.send("Tier name is required for removing a tier.", ephemeral=True)
+            return
+        
+        # Find and remove tier
+        tiers = config.get("tiers", [])
+        original_count = len(tiers)
+        tiers = [tier for tier in tiers if tier.get("name", "").lower() != tier_name.lower()]
+        
+        if len(tiers) == original_count:
+            await interaction.followup.send(f"No tier found with name '{tier_name}'.", ephemeral=True)
+            return
+        
+        config["tiers"] = tiers
+        dm.update_guild_data(interaction.guild.id, "staff_promo_config", config)
+        
+        await interaction.followup.send(f"Removed promotion tier '{tier_name}'.", ephemeral=True)
+    
+    elif action == "edit":
+        if not tier_name:
+            await interaction.followup.send("Tier name is required for editing a tier.", ephemeral=True)
+            return
+        
+        # Find tier to edit
+        tiers = config.get("tiers", [])
+        tier_index = None
+        for i, tier in enumerate(tiers):
+            if tier.get("name", "").lower() == tier_name.lower():
+                tier_index = i
+                break
+        
+        if tier_index is None:
+            await interaction.followup.send(f"No tier found with name '{tier_name}'.", ephemeral=True)
+            return
+        
+        # Update tier fields if provided
+        tier = tiers[tier_index]
+        if role is not None:
+            tier["role_id"] = role.id
+        if threshold_score is not None:
+            if threshold_score < 0 or threshold_score > 1:
+                await interaction.followup.send("Threshold score must be between 0.0 and 1.0.", ephemeral=True)
+                return
+            tier["threshold_score"] = threshold_score
+        if description is not None:
+            tier["description"] = description
+        
+        # Save config
+        dm.update_guild_data(interaction.guild.id, "staff_promo_config", config)
+        
+        await interaction.followup.send(f"Updated promotion tier '{tier_name}'.", ephemeral=True)
+    
+    else:
+        await interaction.followup.send("Invalid action. Use list, add, remove, or edit.", ephemeral=True)
+
 # Main Execution
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")

@@ -13,11 +13,11 @@ class StaffPromotionSystem:
         self.bot = bot
         
         self._default_tiers = [
-            {"name": "Trial Moderator", "threshold": 0.2, "role_name": "Trial Moderator"},
-            {"name": "Moderator", "threshold": 0.4, "role_name": "Moderator"},
-            {"name": "Senior Moderator", "threshold": 0.6, "role_name": "Senior Moderator"},
-            {"name": "Head Moderator", "threshold": 0.8, "role_name": "Head Moderator"},
-            {"name": "Admin", "threshold": 0.95, "role_name": "Admin"},
+            {"name": "Trial Moderator", "threshold_score": 0.2, "role_id": None, "description": "Trial Moderator"},
+            {"name": "Moderator", "threshold_score": 0.4, "role_id": None, "description": "Moderator"},
+            {"name": "Senior Moderator", "threshold_score": 0.6, "role_id": None, "description": "Senior Moderator"},
+            {"name": "Head Moderator", "threshold_score": 0.8, "role_id": None, "description": "Head Moderator"},
+            {"name": "Admin", "threshold_score": 0.95, "role_id": None, "description": "Admin"},
         ]
         
         self._default_metrics = {
@@ -79,7 +79,18 @@ class StaffPromotionSystem:
 
     def _get_full_config(self, guild_id: int) -> dict:
         cfg = dm.get_guild_data(guild_id, "staff_promo_config", {})
-        cfg.setdefault("tiers", self._default_tiers)
+        # Ensure tiers exist and convert old format to new format if needed
+        if "tiers" not in cfg:
+            cfg["tiers"] = self._default_tiers.copy()
+        else:
+            # Convert old tier format to new format if needed
+            for tier in cfg["tiers"]:
+                if "threshold" in tier and "threshold_score" not in tier:
+                    tier["threshold_score"] = tier.pop("threshold")
+                if "role_name" in tier and "role_id" not in tier:
+                    # Keep role_name for backward compatibility but add role_id placeholder
+                    if "role_id" not in tier:
+                        tier["role_id"] = None
         cfg.setdefault("metrics", self._default_metrics)
         cfg.setdefault("settings", self._default_settings)
         cfg.setdefault("rewards", self._default_rewards)
@@ -113,12 +124,23 @@ class StaffPromotionSystem:
         role_ids = dict(config.get("roles_by_tier", {}))
         for tier in tiers:
             tier_name = tier.get("name")
-            if tier_name not in role_ids or not role_ids[tier_name]:
+            # Check if we already have a role_id for this tier
+            role_id = tier.get("role_id")
+            if role_id is None:
+                # Try to get role_id from roles_by_tier or find by role_name
                 role_name = tier.get("role_name")
-                if role_name:
+                if role_name and role_name in role_ids:
+                    # Use existing role_id from roles_by_tier
+                    tier["role_id"] = role_ids[role_name]
+                elif role_name:
+                    # Try to find role by name
                     r = discord.utils.find(lambda x: x.name == role_name, guild.roles)
                     if r:
+                        tier["role_id"] = r.id
                         role_ids[tier_name] = r.id
+            elif tier.get("role_id") not in role_ids:
+                # We have a role_id but it's not in our role_ids dict, add it
+                role_ids[tier_name] = tier.get("role_id")
         
         for member in guild.members:
             if member.bot or member.id in excluded:
@@ -148,8 +170,8 @@ class StaffPromotionSystem:
         
         score = self._compute_score(guild.id, user_id, member, metrics)
         target_tier = None
-        for tier in sorted(tiers, key=lambda t: t.get("threshold", 0)):
-            if score >= tier.get("threshold", 0):
+        for tier in sorted(tiers, key=lambda t: t.get("threshold_score", 0)):
+            if score >= tier.get("threshold_score", 0):
                 target_tier = tier
         
         current_index = self._get_current_tier_index(member, tiers, role_ids)
@@ -175,7 +197,7 @@ class StaffPromotionSystem:
                     return
             
             buffer = settings.get("demotion_threshold_buffer", 0.1)
-            if score < target_tier.get("threshold", 0) - buffer:
+            if score < target_tier.get("threshold_score", 0) - buffer:
                 await self._demote_member(guild, member, target_index, tiers, role_ids, current_index, settings, config)
                 self._last_demotion_time[demotion_cooldown_key] = datetime.utcnow()
         
@@ -617,7 +639,7 @@ class StaffPromotionSystem:
             color=discord.Color.green()
         )
         
-        tiers_text = "\n".join([f"• **{t['name']}**: {int(t['threshold']*100)}%" for t in tiers])
+        tiers_text = "\n".join([f"• **{t['name']}**: {int(t.get('threshold_score', t.get('threshold', 0))*100)}%" for t in tiers])
         embed.add_field(name="📊 Promotion Tiers", value=tiers_text or "No tiers configured", inline=False)
         
         embed.add_field(
