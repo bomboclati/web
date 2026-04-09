@@ -42,6 +42,7 @@ from modules.achievements import AchievementSystem
 from modules.staff_promo import StaffPromotionSystem
 from modules.conflict_resolution import ConflictResolution
 from modules.community_health import CommunityHealth
+from modules.auto_setup import AutoSetup
 
 load_dotenv()
 
@@ -97,6 +98,7 @@ class ImmortalBot(commands.Bot):
         self.staff_promo = StaffPromotionSystem(self)
         self.conflict_resolution = ConflictResolution(self)
         self.community_health = CommunityHealth(self)
+        self.auto_setup = AutoSetup(self)
 
     async def get_dynamic_prefix(self, bot, message):
         if not message.guild:
@@ -117,6 +119,14 @@ class ImmortalBot(commands.Bot):
         self.loop.create_task(self._command_refinement_loop())
         self._setup_crash_recovery()
         self._setup_signal_handlers()
+        self.loop.create_task(self._check_new_guilds())
+
+    async def _check_new_guilds(self):
+        """Check for any guilds the bot just joined"""
+        await asyncio.sleep(5)
+        for guild in self.guilds:
+            if guild.id not in self.auto_setup._pending_setups:
+                await self.auto_setup.on_guild_join(guild)
 
     async def _cleanup_expired_sessions(self):
         """Remove expired AI conversation sessions."""
@@ -1099,6 +1109,16 @@ async def health_cmd(interaction: discord.Interaction):
     embed.set_footer(text="Community Health Analysis")
     
     await interaction.followup.send(embed=embed)
+
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    logger.info(f"Joined guild: {guild.name} (ID: {guild.id})")
+    await bot.auto_setup.on_guild_join(guild)
+
+@bot.event
+async def on_guild_remove(guild: discord.Guild):
+    logger.info(f"Left guild: {guild.name} (ID: {guild.id})")
+    await bot.auto_setup.on_guild_remove(guild)
 
 # Main Execution
 if __name__ == "__main__":
