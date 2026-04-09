@@ -179,6 +179,12 @@ class ActionHandler:
         else:
             return False, None
         
+        # Auto-detect permissions if not specified
+        if not allowed_roles and not denied_roles:
+            auto_perms = self._detect_channel_permissions(name, guild)
+            allowed_roles = auto_perms.get("allowed", [])
+            denied_roles = auto_perms.get("denied", [])
+        
         # Set permissions if specified
         if allowed_roles or denied_roles:
             await self._set_channel_permissions(channel, guild, allowed_roles, denied_roles)
@@ -189,6 +195,61 @@ class ActionHandler:
         self._track_artifact("channel", channel.id, channel.name)
         logger.info("Created channel: %s", channel.name)
         return True, {"action": "delete_channel", "channel_id": channel.id}
+
+    def _detect_channel_permissions(self, channel_name: str, guild) -> dict:
+        """Automatically detect what permissions a channel should have based on its name"""
+        name_lower = channel_name.lower()
+        
+        # Permission rules based on channel keywords
+        channel_rules = {
+            # Staff/Admin channels - only staff can see
+            "staff": {"allowed": ["Moderator", "Admin", "Administrator"], "denied": ["@everyone"]},
+            "modmail": {"allowed": ["Moderator", "Admin", "Administrator"], "denied": ["@everyone"]},
+            "admin": {"allowed": ["Administrator", "Admin"], "denied": ["@everyone"]},
+            "logs": {"allowed": ["Moderator", "Admin", "Administrator"], "denied": ["@everyone"]},
+            "bot-logs": {"allowed": ["Moderator", "Admin"], "denied": ["@everyone"]},
+            
+            # Applications - hidden from regular users until they apply
+            "applications": {"allowed": ["Moderator", "Admin", "Administrator"], "denied": ["@everyone"]},
+            "apply": {"allowed": ["Moderator", "Admin"], "denied": ["@everyone"]},
+            "applications": {"allowed": [], "denied": []},  # Public but use button
+            
+            # Verification - new users need to verify
+            "verify": {"allowed": [], "denied": []},  # Everyone can see, needs button
+            
+            # General channels - everyone can see
+            "general": {"allowed": [], "denied": []},
+            "chat": {"allowed": [], "denied": []},
+            "talk": {"allowed": [], "denied": []},
+            
+            # Public channels - everyone can see
+            "announcements": {"allowed": [], "denied": []},
+            "rules": {"allowed": [], "denied": []},
+            "welcome": {"allowed": [], "denied": []},
+            "suggestions": {"allowed": [], "denied": []},
+            
+            # Support channels
+            "tickets": {"allowed": ["Moderator", "Support"], "denied": ["@everyone"]},
+            "ticket-queue": {"allowed": ["Moderator", "Support"], "denied": ["@everyone"]},
+            
+            # Media channels
+            "media": {"allowed": [], "denied": []},
+            "art": {"allowed": [], "denied": []},
+            "gaming": {"allowed": [], "denied": []},
+            "vc": {"allowed": [], "denied": []},
+            
+            # Voice channels - everyone can join
+            "voice": {"allowed": [], "denied": []},
+            "lounge": {"allowed": [], "denied": []},
+        }
+        
+        # Find matching rule
+        for keyword, perms in channel_rules.items():
+            if keyword in name_lower:
+                return perms
+        
+        # Default: public channel
+        return {"allowed": [], "denied": []}
 
     async def _set_channel_permissions(self, channel, guild, allowed_roles, denied_roles):
         """Set view permissions for roles"""
