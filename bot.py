@@ -41,6 +41,7 @@ from modules.auto_publisher import AutoPublisher
 from modules.achievements import AchievementSystem
 from modules.staff_promo import StaffPromotionSystem
 from modules.conflict_resolution import ConflictResolution
+from modules.community_health import CommunityHealth
 
 load_dotenv()
 
@@ -95,6 +96,7 @@ class ImmortalBot(commands.Bot):
         self.achievements = AchievementSystem(self)
         self.staff_promo = StaffPromotionSystem(self)
         self.conflict_resolution = ConflictResolution(self)
+        self.community_health = CommunityHealth(self)
 
     async def get_dynamic_prefix(self, bot, message):
         if not message.guild:
@@ -270,6 +272,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         await self.moderation.analyze_message(message)
         await self.intelligence.track_message(message)
         await self.conflict_resolution.analyze_message(message)
+        await self.community_health.analyze_interaction(message)
         
         # 2. AI Chat Channels (if message is in an AI chat channel)
         await self.chat_channels.handle_message(message)
@@ -1067,6 +1070,63 @@ async def undo_cmd(interaction: discord.Interaction, count: int = 1):
     
     summary = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in results])
     await interaction.followup.send(f"**Undo Summary:**\n{summary}", ephemeral=True)
+
+@bot.tree.command(name="health", description="View community health report")
+async def health_cmd(interaction: discord.Interaction):
+    await interaction.response.defer()
+    
+    report = await bot.community_health.generate_health_report(interaction.guild.id)
+    
+    if "error" in report:
+        await interaction.followup.send("Unable to generate report. Not enough data yet.")
+        return
+    
+    health = report.get("health_score", 0)
+    color = discord.Color.green() if health > 0.6 else discord.Color.orange() if health > 0.4 else discord.Color.red()
+    
+    embed = discord.Embed(
+        title="📊 Community Health",
+        description=f"Health Score: **{health:.1f}/10**",
+        color=color
+    )
+    embed.add_field(
+        name="Members",
+        value=f"Total: {report.get('member_count', 0)} | Active: {report.get('active_members', 0)} | Isolated: {report.get('isolated_members', 0)}",
+        inline=False
+    )
+    embed.add_field(name="Clusters", value=f"{len(report.get('clusters', []))} active groups", inline=True)
+    embed.timestamp = datetime.now()
+    embed.set_footer(text="Community Health Analysis")
+    
+    await interaction.followup.send(embed=embed)
+
+@bot.tree.command(name="suggest_members", description="Get member connection suggestions")
+@app_commands.describe(user="User to find connections for")
+async def suggest_members_cmd(interaction: discord.Interaction, user: discord.Member = None):
+    target_user = user or interaction.user
+    
+    suggestions = await bot.community_health.suggest_connections(interaction.guild.id, target_user.id)
+    
+    if not suggestions:
+        await interaction.response.send_message("No connection suggestions available yet. Keep chatting!")
+        return
+    
+    embed = discord.Embed(
+        title="🔗 Connection Suggestions",
+        description=f"For {target_user.display_name}:",
+        color=discord.Color.blue()
+    )
+    
+    for user_id, score in suggestions:
+        member = interaction.guild.get_member(user_id)
+        if member:
+            embed.add_field(
+                name=member.display_name,
+                value=f"Compatibility: {score:.1f}",
+                inline=True
+            )
+    
+    await interaction.response.send_message(embed=embed)
 
 # Main Execution
 if __name__ == "__main__":
