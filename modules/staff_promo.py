@@ -7,11 +7,13 @@ from typing import Optional
 
 from data_manager import dm
 from logger import logger
+from modules.promotion_service import PromotionService
 
 
 class StaffPromotionSystem:
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.promotion_service = PromotionService()
         
         self._default_tiers = []  # Auto-detected from server roles
         
@@ -189,7 +191,7 @@ class StaffPromotionSystem:
             if member.bot or member.id in excluded:
                 continue
             
-            if not self._check_tenure(member, settings):
+            if not self.promotion_service._check_tenure(member, settings):
                 continue
             
             await self._evaluate_member(guild, member, tiers, role_ids, metrics, settings, config)
@@ -240,7 +242,7 @@ class StaffPromotionSystem:
         
         if elapsed_time >= trial_seconds:
             # Trial period ended, evaluate performance
-            evaluation_result = await self._evaluate_trial_performance(guild_id, member, trial_settings, config)
+            evaluation_result = await self.promotion_service._evaluate_trial_performance(guild_id, member, trial_settings, config)
             if evaluation_result == "pass":
                 return "complete"
             elif evaluation_result == "fail":
@@ -262,7 +264,7 @@ class StaffPromotionSystem:
         udata = dm.get_guild_data(guild_id, f"user_{member.id}", {})
         
         # Check activity score (from promotion system)
-        current_score = self._compute_score(guild_id, member.id, member, config.get("metrics", self._default_metrics))
+        current_score = self.promotion_service._compute_score(guild_id, member.id, member, config.get("metrics", self._default_metrics))
         activity_score_min = metrics.get("activity_score_min", 0.3)
         
         # Check ticket resolutions (would need ticket system integration)
@@ -326,7 +328,7 @@ class StaffPromotionSystem:
             if (datetime.utcnow() - last).total_seconds() < cooldown_hours * 3600:
                 return
         
-        score = self._compute_score(guild.id, user_id, member, metrics)
+        score = self.promotion_service._compute_score(guild.id, user_id, member, metrics)
         target_tier = None
         for tier in sorted(tiers, key=lambda t: t.get("threshold", 0)):
             if score >= tier.get("threshold", 0):
@@ -349,11 +351,11 @@ class StaffPromotionSystem:
         
         if target_index > current_index:
             target_tier_name = target_tier.get("name")
-            if not self._check_tier_requirements(guild.id, member, target_tier_name, config):
+            if not self.promotion_service._check_tier_requirements(guild.id, member, target_tier_name, config):
                 return
             
             if settings.get("review_mode", False):
-                await self._submit_promotion_review(guild, member, target_tier, score, config)
+                await self.promotion_service._submit_promotion_review(guild, member, target_tier, score, config)
                 return
             
             await self._promote_member(guild, member, target_tier, tiers, role_ids, current_index, settings, config)
@@ -381,174 +383,7 @@ class StaffPromotionSystem:
                 return idx
         return -1
 
-    def _calculate_gamification_score(self, guild_id: int, user_id: int) -> int:
-        """Calculate a gamification score based on badges, quests, and skills"""
-        try:
-            # Import gamification system to access its data
-            from modules.gamification import AdaptiveGamification
-            # Note: In a real implementation, we'd need access to the bot instance
-            # For now, we'll calculate based on available data
-            
-            # Base score from badges
-            badges = dm.get_guild_data(guild_id, f"badges_{user_id}", [])
-            badge_score = len(badges) * 10  # 10 points per badge
-            
-            # Bonus for rare/evolved badges
-            evolved_bonus = 0
-            for badge_data in badges:
-                evolved_level = badge_data.get("evolved_level", 1)
-                if evolved_level > 1:
-                    evolved_bonus += (evolved_level - 1) * 5
-            
-            # Skill points (if available)
-            skills = dm.get_guild_data(guild_id, f"skills_{user_id}", {})
-            skill_score = 0
-            for skill_name, skill_data in skills.items():
-                level = skill_data.get("level", 1)
-                skill_score += level * 2  # 2 points per skill level
-            
-            # Quest completion bonus
-            quests_completed = dm.get_guild_data(guild_id, f"user_{user_id}", {}).get("quests_completed", 0)
-            quest_bonus = quests_completed * 5  # 5 points per completed quest
-            
-            total_score = badge_score + evolved_bonus + skill_score + quest_bonus
-            return min(100, total_score)  # Cap at 100
-        except Exception as e:
-            logger.error(f"Error calculating gamification score: {e}")
-            return 0
 
-    def _get_user_level(self, guild_id: int, user_id: int) -> int:
-        """Get user level from leveling system or calculate from XP"""
-        try:
-            # Try to get from leveling system first
-            level_data = dm.get_guild_data(guild_id, f"level_{user_id}", {})
-            if level_data:
-                return level_data.get("level", 1)
-            
-            # Fallback: calculate from XP
-            user_data = dm.get_guild_data(guild_id, f"user_{user_id}", {})
-            xp = user_data.get("xp", 0)
-            # Simple level calculation: every 1000 XP = 1 level
-            level = max(1, xp // 1000)
-            return min(50, level)  # Cap at 50
-        except Exception as e:
-            logger.error(f"Error getting user level: {e}")
-            return 1
-
-    def _check_tier_requirements(self, guild_id: int, member: discord.Member, tier_name: str, config: dict) -> bool:
-        requirements = config.get("tier_requirements", self._default_tier_requirements)
-        tier_reqs = requirements.get(tier_name, {})
-        
-        if not tier_reqs:
-            return True
-        
-        udata = dm.get_guild_data(guild_id, f"user_{member.id}", {})
-        joined_at = member.joined_at or datetime.utcnow()
-        tenure_days = (datetime.utcnow() - joined_at).days
-        user_achievements = dm.get_guild_data(guild_id, f"achievements_{member.id}", [])
-        
-        missing = []
-        for req_type, req_value in tier_reqs.items():
-            if req_type == "messages":
-                if udata.get("total_messages", 0) < req_value:
-                    missing.append(f"messages: {udata.get('total_messages', 0)}/{req_value}")
-            elif req_type == "achievements":
-                if len(user_achievements) < req_value:
-                    missing.append(f"achievements: {len(user_achievements)}/{req_value}")
-            elif req_type == "tenure_days":
-                if tenure_days < req_value:
-                    missing.append(f"tenure: {tenure_days}/{req_value} days")
-            elif req_type == "xp":
-                if udata.get("xp", 0) < req_value:
-                    missing.append(f"XP: {udata.get('xp', 0)}/{req_value}")
-        
-        if missing:
-            logger.info(f"StaffPromo[{guild_id}] {member} missing requirements for {tier_name}: {', '.join(missing)}")
-            return False
-        
-        return True
-
-    async def _submit_promotion_review(self, guild: discord.Guild, member: discord.Member, target_tier, score: float, config: dict):
-        pending = config.get("pending_reviews", [])
-        
-        for review in pending:
-            if review.get("user_id") == member.id and review.get("tier_name") == target_tier.get("name"):
-                return
-        
-        review_data = {
-            "user_id": member.id,
-            "user_name": str(member),
-            "tier_name": target_tier.get("name"),
-            "score": score,
-            "timestamp": datetime.utcnow().isoformat(),
-        }
-        
-        pending.append(review_data)
-        config["pending_reviews"] = pending
-        dm.update_guild_data(guild.id, "staff_promo_config", config)
-        
-        review_ch_id = config.get("settings", {}).get("review_channel")
-        if review_ch_id:
-            channel = guild.get_channel(int(review_ch_id))
-            if channel:
-                embed = discord.Embed(
-                    title="📋 Promotion Review Request",
-                    description=f"{member.mention} is eligible for promotion to **{target_tier.get('name')}**",
-                    color=discord.Color.yellow()
-                )
-                embed.add_field(name="Score", value=f"{score*100:.1f}%", inline=True)
-                embed.add_field(name="Member", value=member.mention, inline=True)
-                embed.add_field(name="Actions", value="`!staffpromo approve @user` or `!staffpromo reject @user`", inline=False)
-                await channel.send(embed=embed)
-        
-        try:
-            await member.send(f"📋 Your promotion to **{target_tier.get('name')}** is pending review.")
-        except:
-            pass
-
-    def _compute_score(self, guild_id: int, user_id: int, member: discord.Member, metrics: dict) -> float:
-        now = datetime.utcnow()
-        joined = member.joined_at or now
-        tenure_days = (now - joined).days
-        
-        udata = dm.get_guild_data(guild_id, f"user_{user_id}", {})
-        
-        values = {
-            "xp": udata.get("xp", 0),
-            "tenure_days": tenure_days,
-            "messages": udata.get("total_messages", 0),
-            "tickets_resolved": dm.get_guild_data(guild_id, f"tickets_resolved_{user_id}", 0),
-            "achievements": len(dm.get_guild_data(guild_id, f"achievements_{user_id}", [])),
-            "voice_minutes": udata.get("voice_minutes", 0),
-            "rep_received": udata.get("rep_received", 0),
-            "rep_given": udata.get("rep_given", 0),
-            "gamification_score": self._calculate_gamification_score(guild_id, user_id),
-            "badge_count": len(dm.get_guild_data(guild_id, f"badges_{user_id}", [])),
-            "level": self._get_user_level(guild_id, user_id)
-        }
-        
-        score = 0.0
-        for metric_name, config in metrics.items():
-            if not config.get("enabled", True):
-                continue
-            weight = config.get("weight", 0)
-            max_val = config.get("max", 100)
-            raw_val = values.get(metric_name, 0)
-            normalized = max(0, min(1, raw_val / max_val)) if max_val > 0 else 0
-            score += normalized * weight
-        
-        config = self._get_full_config(guild_id)
-        bonuses = config.get("achievement_bonuses", self._default_achievement_bonuses)
-        
-        user_achievements = dm.get_guild_data(guild_id, f"achievements_{user_id}", [])
-        total_bonus = 1.0
-        for ach_name, multiplier in bonuses.items():
-            if ach_name in user_achievements:
-                total_bonus += (multiplier - 1.0)
-        
-        score = score * min(total_bonus, 2.0)
-        
-        return min(1.0, score)
 
     async def _promote_member(self, guild: discord.Guild, member: discord.Member, target_tier, tiers, role_ids, current_index, settings, config):
         new_role_id = role_ids.get(target_tier.get("name"))

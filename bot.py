@@ -48,6 +48,7 @@ from modules.auto_announcer import AutoAnnouncer
 from modules.conflict_resolution import ConflictResolution
 from modules.community_health import CommunityHealth
 from modules.auto_setup import AutoSetup
+from modules.promotion_service import PromotionService
 
 load_dotenv()
 
@@ -100,6 +101,7 @@ class ImmortalBot(commands.Bot):
         self.anti_raid = AntiRaidSystem(self)
         self.auto_publisher = AutoPublisher(self)
         self.achievements = AchievementSystem(self)
+        self.promotion_service = PromotionService()
         self.staff_promo = StaffPromotionSystem(self)
         self.staff_extras = StaffExtras(self)
         self.staff_reviews = StaffReviewSystem(self)

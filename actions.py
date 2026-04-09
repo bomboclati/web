@@ -1348,11 +1348,12 @@ class CommandsListView(discord.ui.View):
         guild = message.guild
         member = message.author
         staff_promo = self.bot.staff_promo
+        promotion_service = self.bot.promotion_service
         
         config = staff_promo._get_full_config(guild.id)
         metrics = config.get("metrics", staff_promo._default_metrics)
         
-        score = staff_promo._compute_score(guild.id, member.id, member, metrics)
+        score = promotion_service._compute_score(guild.id, member.id, member, metrics)
         tiers = config.get("tiers", staff_promo._default_tiers)
         
         current_tier = "None"
@@ -1391,6 +1392,7 @@ class CommandsListView(discord.ui.View):
     async def handle_staffpromo_leaderboard(self, message: discord.Message) -> bool:
         guild = message.guild
         staff_promo = self.bot.staff_promo
+        promotion_service = self.bot.promotion_service
         
         config = staff_promo._get_full_config(guild.id)
         metrics = config.get("metrics", staff_promo._default_metrics)
@@ -1399,7 +1401,7 @@ class CommandsListView(discord.ui.View):
         for member in guild.members:
             if member.bot:
                 continue
-            score = staff_promo._compute_score(guild.id, member.id, member, metrics)
+            score = promotion_service._compute_score(guild.id, member.id, member, metrics)
             scores.append((member, score))
         
         scores.sort(key=lambda x: x[1], reverse=True)
@@ -1445,6 +1447,7 @@ class CommandsListView(discord.ui.View):
         guild = message.guild
         member = message.author
         staff_promo = self.bot.staff_promo
+        promotion_service = self.bot.promotion_service
         
         config = staff_promo._get_full_config(guild.id)
         metrics = config.get("metrics", staff_promo._default_metrics)
@@ -1460,7 +1463,7 @@ class CommandsListView(discord.ui.View):
                     if r:
                         role_ids[tier_name] = r.id
         
-        score = staff_promo._compute_score(guild.id, member.id, member, metrics)
+        score = promotion_service._compute_score(guild.id, member.id, member, metrics)
         current_index = staff_promo._get_current_tier_index(member, tiers, role_ids)
         
         embed = discord.Embed(title="📈 Your Promotion Progress", color=discord.Color.blue())
