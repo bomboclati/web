@@ -292,6 +292,11 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         if message.content.startswith(prefix):
             cmd_content = message.content[len(prefix):].strip()
             
+            # Handle !suggest command
+            if cmd_content.startswith("suggest"):
+                await self._handle_suggest_command(message, cmd_content)
+                return
+            
             matched_cmd = None
             matched_data = None
             
@@ -450,6 +455,44 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         self._recent_commands[user_id] = {"command": command, "timestamp": now}
         
         return prev_command
+    
+    async def _handle_suggest_command(self, message, cmd_content):
+        guild = message.guild
+        if not guild:
+            return
+        
+        parts = cmd_content.split(None, 2)
+        if len(parts) < 3:
+            await message.channel.send("Usage: `!suggest <title> <description>`")
+            return
+        
+        title = parts[1]
+        description = parts[2]
+        
+        suggestions_channel_id = dm.get_guild_data(guild.id, "suggestions_channel")
+        
+        if not suggestions_channel_id:
+            await message.channel.send("No suggestions channel set up yet!")
+            return
+        
+        channel = guild.get_channel(suggestions_channel_id)
+        if not channel:
+            await message.channel.send("Suggestions channel not found!")
+            return
+        
+        embed = discord.Embed(
+            title=f"💡 {title}",
+            description=description,
+            color=discord.Color.blue()
+        )
+        embed.set_footer(text=f"Suggested by {message.author}")
+        embed.add_field(name="Status", value="⏳ Pending Review", inline=False)
+        
+        msg = await channel.send(embed=embed)
+        await msg.add_reaction("✅")
+        await msg.add_reaction("❌")
+        
+        await message.channel.send("✅ Suggestion submitted!")
     
     async def analyze_command_usage_and_suggest_improvements(self):
         """Periodically analyze command usage and suggest improvements."""
@@ -997,6 +1040,35 @@ async def cancel_cmd(interaction: discord.Interaction):
         await interaction.response.send_message("Pending action cancelled.", ephemeral=True)
     else:
         await interaction.response.send_message("No pending action to cancel.", ephemeral=True)
+
+@bot.tree.command(name="suggest", description="Submit a suggestion for the server")
+@app_commands.describe(title="Suggestion title", description="Describe your suggestion")
+async def suggest_cmd(interaction: discord.Interaction, title: str, description: str):
+    guild = interaction.guild
+    suggestions_channel_id = dm.get_guild_data(guild.id, "suggestions_channel")
+    
+    if not suggestions_channel_id:
+        await interaction.response.send_message("No suggestions channel set up yet!", ephemeral=True)
+        return
+    
+    channel = guild.get_channel(suggestions_channel_id)
+    if not channel:
+        await interaction.response.send_message("Suggestions channel not found!", ephemeral=True)
+        return
+    
+    embed = discord.Embed(
+        title=f"💡 {title}",
+        description=description,
+        color=discord.Color.blue()
+    )
+    embed.set_footer(text=f"Suggested by {interaction.user}")
+    embed.add_field(name="Status", value="⏳ Pending Review", inline=False)
+    
+    message = await channel.send(embed=embed)
+    await message.add_reaction("✅")
+    await message.add_reaction("❌")
+    
+    await interaction.response.send_message("✅ Suggestion submitted!", ephemeral=True)
 
 @bot.tree.command(name="list", description="Shows all active automations")
 async def list_cmd(interaction: discord.Interaction):
