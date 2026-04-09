@@ -42,6 +42,7 @@ from modules.achievements import AchievementSystem
 from modules.staff_promo import StaffPromotionSystem
 from modules.staff_extras import StaffExtras, StaffExtrasCommands
 from modules.staff_reviews import StaffReviewSystem
+from modules.staff_shift import StaffShiftSystem
 from modules.conflict_resolution import ConflictResolution
 from modules.community_health import CommunityHealth
 from modules.auto_setup import AutoSetup
@@ -100,6 +101,7 @@ class ImmortalBot(commands.Bot):
         self.staff_promo = StaffPromotionSystem(self)
         self.staff_extras = StaffExtras(self)
         self.staff_reviews = StaffReviewSystem(self)
+        self.staff_shift = StaffShiftSystem(self)
         self.conflict_resolution = ConflictResolution(self)
         self.community_health = CommunityHealth(self)
         self.auto_setup = AutoSetup(self)
@@ -512,6 +514,40 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         
         command = parts[0].lower()
         
+        shift_commands = {
+            "shift": self.staff_shift.handle_shift_claim,
+            "coverage": self.staff_shift.handle_shift_coverage,
+            "drop": self.staff_shift.handle_shift_drop,
+        }
+        
+        if command in ["shift", "coverage", "drop"]:
+            func = shift_commands[command]
+            await func(message)
+            return
+        
+        task_commands = {
+            "task": self.staff_shift.handle_task_assign,
+            "tasks": self.staff_shift.handle_task_list,
+            "complete": self.staff_shift.handle_task_complete,
+        }
+        
+        if command in ["task", "tasks", "complete"]:
+            func = task_commands[command]
+            await func(message, parts)
+            return
+        
+        warning_commands = {
+            "warn": self.staff_shift.handle_warn,
+            "warnings": self.staff_shift.handle_warnings,
+        }
+        
+        if command in ["warn", "warnings"]:
+            if not message.author.guild_permissions.administrator:
+                return
+            func = warning_commands[command]
+            await func(message, parts)
+            return
+        
         staff_commands = {
             "staffleaderboard": self.staff_extras.handle_staff_leaderboard,
             "promotionhistory": self.staff_extras.handle_promotion_history,
@@ -521,6 +557,10 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             "probation": self.staff_reviews.handle_probation_status,
             "vote": self.staff_reviews.handle_peer_vote,
         }
+        
+        if command in staff_commands:
+            cmd_func = staff_commands[command]
+            await cmd_func(message, parts)
         
         if command in staff_commands:
             cmd_func = staff_commands[command]
