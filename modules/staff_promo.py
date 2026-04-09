@@ -13,13 +13,7 @@ class StaffPromotionSystem:
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         
-        self._default_tiers = [
-            {"name": "Trial Moderator", "threshold": 0.2, "role_name": "Trial Moderator"},
-            {"name": "Moderator", "threshold": 0.4, "role_name": "Moderator"},
-            {"name": "Senior Moderator", "threshold": 0.6, "role_name": "Senior Moderator"},
-            {"name": "Head Moderator", "threshold": 0.8, "role_name": "Head Moderator"},
-            {"name": "Admin", "threshold": 0.95, "role_name": "Admin"},
-        ]
+        self._default_tiers = []  # Auto-detected from server roles
         
         self._default_trial_settings = {
             "enabled": True,
@@ -40,9 +34,9 @@ class StaffPromotionSystem:
             "voice_minutes": {"weight": 0.10, "max": 3600, "enabled": True},
             "rep_received": {"weight": 0.08, "max": 100, "enabled": True},
             "rep_given": {"weight": 0.07, "max": 100, "enabled": True},
-            "gamification_score": {"weight": 0.15, "max": 100, "enabled": True},  # New metric for gamification
-            "badge_count": {"weight": 0.05, "max": 10, "enabled": True},      # New metric for badges
-            "level": {"weight": 0.02, "max": 50, "enabled": True}            # New metric for level
+            "gamification_score": {"weight": 0.15, "max": 100, "enabled": True},
+            "badge_count": {"weight": 0.05, "max": 10, "enabled": True},
+            "level": {"weight": 0.02, "max": 50, "enabled": True}
         }
         
         self._default_settings = {
@@ -65,13 +59,7 @@ class StaffPromotionSystem:
             "activity_decay_days": 30,
         }
         
-        self._default_tier_requirements = {
-            "Trial Moderator": {},
-            "Moderator": {"messages": 200, "achievements": 3},
-            "Senior Moderator": {"messages": 500, "achievements": 8, "tenure_days": 30},
-            "Head Moderator": {"messages": 1000, "achievements": 15, "tenure_days": 60},
-            "Admin": {"messages": 2000, "achievements": 25, "tenure_days": 90},
-        }
+        self._default_tier_requirements = {}
         
         self._default_achievement_bonuses = {
             "Helper": 1.2,
@@ -90,23 +78,80 @@ class StaffPromotionSystem:
         self._last_promotion_time = {}
         self._last_demotion_time = {}
         self._last_notification_time = {}
-        # Start the promotion loop only if the bot is ready
-        # This will be handled in the loop itself
+    
+    def _detect_server_roles(self, guild: discord.Guild) -> List[dict]:
+        """Auto-detect existing staff roles in the server"""
+        detected = []
+        
+        server_roles = guild.roles
+        
+        rank_keywords = {
+            "owner": 1.0,
+            "admin": 0.95,
+            "head": 0.8,
+            "senior": 0.6,
+            "lead": 0.75,
+            "mod": 0.4,
+            "trial": 0.2,
+            "helper": 0.15,
+            "trainee": 0.1,
+        }
+        
+        for role in sorted(server_roles, key=lambda x: x.position, reverse=True):
+            role_name_lower = role.name.lower()
+            
+            if any(kw in role_name_lower for kw in rank_keywords):
+                if not role.is_default():
+                    detected.append({
+                        "name": role.name,
+                        "threshold": rank_keywords.get([k for k in rank_keywords if k in role_name_lower][0], 0.3),
+                        "role_name": role.name
+                    })
+        
+        if not detected:
+            detected = [
+                {"name": "Trial Moderator", "threshold": 0.2, "role_name": "Trial Moderator"},
+                {"name": "Moderator", "threshold": 0.4, "role_name": "Moderator"},
+                {"name": "Senior Moderator", "threshold": 0.6, "role_name": "Senior Moderator"},
+                {"name": "Head Moderator", "threshold": 0.8, "role_name": "Head Moderator"},
+            ]
+        
+        detected.sort(key=lambda x: x.get("threshold", 0))
+        return detected
 
     def _get_full_config(self, guild_id: int) -> dict:
+        guild = self.bot.get_guild(guild_id)
+        
         cfg = dm.get_guild_data(guild_id, "staff_promo_config", {})
-        cfg.setdefault("tiers", self._default_tiers)
+        
+        if not cfg.get("tiers") or cfg.get("tiers") == []:
+            if guild:
+                cfg.setdefault("tiers", self._detect_server_roles(guild))
+            else:
+                cfg.setdefault("tiers", self._get_fallback_tiers())
+        
         cfg.setdefault("metrics", self._default_metrics)
         cfg.setdefault("settings", self._default_settings)
         cfg.setdefault("rewards", self._default_rewards)
         cfg.setdefault("roles_by_tier", {})
-        cfg.setdefault("tier_requirements", self._default_tier_requirements)
+        cfg.setdefault("tier_requirements", {})
         cfg.setdefault("achievement_bonuses", self._default_achievement_bonuses)
         cfg.setdefault("pending_reviews", [])
         cfg.setdefault("trial_settings", self._default_trial_settings)
         cfg.setdefault("staff_applications", {})
         cfg.setdefault("application_tracking", {})
+        
         return cfg
+    
+    def _get_fallback_tiers(self) -> List[dict]:
+        """Fallback tiers if no server roles detected"""
+        return [
+            {"name": "Trial Staff", "threshold": 0.2, "role_name": "Trial Staff"},
+            {"name": "Staff", "threshold": 0.4, "role_name": "Staff"},
+            {"name": "Senior Staff", "threshold": 0.6, "role_name": "Senior Staff"},
+            {"name": "Head Staff", "threshold": 0.8, "role_name": "Head Staff"},
+            {"name": "Admin", "threshold": 0.95, "role_name": "Admin"},
+        ]
 
     async def _promotion_loop(self):
         await self.bot.wait_until_ready()
