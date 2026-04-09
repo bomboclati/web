@@ -7,6 +7,114 @@ from typing import List, Dict, Any, Tuple, Optional
 from data_manager import dm
 from logger import logger
 
+class HelpCommandView(discord.ui.View):
+    """Interactive view for editing !commands"""
+    
+    def __init__(self, all_commands: dict, main_commands: dict, help_commands: dict, user_id: int, page: int = 0):
+        super().__init__(timeout=180)
+        self.all_commands = all_commands
+        self.main_commands = main_commands
+        self.help_commands = help_commands
+        self.user_id = user_id
+        self.page = page
+        self.commands_per_page = 12
+        
+        start_idx = page * self.commands_per_page
+        end_idx = start_idx + self.commands_per_page
+        page_commands = sorted(list(main_commands.keys()))[start_idx:end_idx]
+        
+        for cmd in page_commands:
+            btn = discord.ui.Button(label=f"!{cmd}", custom_id=f"edit_{cmd}", style=discord.ButtonStyle.secondary)
+            btn.callback = self.create_callback(cmd)
+            self.add_item(btn)
+        
+        total_pages = (len(main_commands) + self.commands_per_page - 1) // self.commands_per_page
+        
+        if page > 0:
+            prev_btn = discord.ui.Button(label="◀ Prev", custom_id=f"prev_{page}", style=discord.ButtonStyle.primary)
+            prev_btn.callback = self.create_prev_callback(page)
+            self.add_item(prev_btn)
+        
+        if page < total_pages - 1:
+            next_btn = discord.ui.Button(label="Next ▶", custom_id=f"next_{page}", style=discord.ButtonStyle.primary)
+            next_btn.callback = self.create_next_callback(page)
+            self.add_item(next_btn)
+        
+        back_btn = discord.ui.Button(label="✕ Close", custom_id="back_main", style=discord.ButtonStyle.danger)
+        back_btn.callback = self.back_callback
+        self.add_item(back_btn)
+    
+    def create_callback(self, cmd_name: str):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.user_id:
+                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+            
+            cmd_code = self.all_commands.get(cmd_name, "")
+            
+            embed = discord.Embed(
+                title=f"✏️ Edit Command: !{cmd_name}",
+                description=f"Current code:\n```json\n{cmd_code[:1500]}\n```\n\nEnter new code below:",
+                color=discord.Color.orange()
+            )
+            embed.set_footer(text="Submit to save • Back to cancel")
+            
+            modal = EditCommandModal(cmd_name, self.user_id)
+            await interaction.response.send_modal(modal)
+        return callback
+    
+    def create_prev_callback(self, page: int):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.user_id:
+                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+            view = HelpCommandView(self.all_commands, self.main_commands, self.help_commands, self.user_id, page - 1)
+            await interaction.response.edit_message(view=view)
+        return callback
+    
+    def create_next_callback(self, page: int):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.user_id:
+                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+            view = HelpCommandView(self.all_commands, self.main_commands, self.help_commands, self.user_id, page + 1)
+            await interaction.response.edit_message(view=view)
+        return callback
+    
+    async def back_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+        await interaction.response.edit_message(content="📋 Command list closed.", view=None)
+
+class EditCommandModal(discord.ui.Modal):
+    def __init__(self, cmd_name: str, user_id: int):
+        super().__init__(title=f"Edit: !{cmd_name}")
+        self.cmd_name = cmd_name
+        self.user_id = user_id
+        
+        self.code_input = discord.ui.TextInput(
+            label="Command Code (JSON)",
+            style=discord.TextStyle.multiline,
+            placeholder='{"command_type": "..."}',
+            required=True
+        )
+        self.add_item(self.code_input)
+    
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+        
+        new_code = self.code_input.value
+        
+        try:
+            json.loads(new_code)
+        except json.JSONDecodeError:
+            await interaction.response.send_message("❌ Invalid JSON! Please enter valid JSON.", ephemeral=True)
+            return
+        
+        custom_cmds = dm.get_guild_data(interaction.guild.id, "custom_commands", {})
+        custom_cmds[self.cmd_name] = new_code
+        dm.update_guild_data(interaction.guild.id, "custom_commands", custom_cmds)
+        
+        await interaction.response.edit_message(content=f"✅ Command `!{self.cmd_name}` updated!", view=None)
+
 class ActionHandler:
     def __init__(self, bot):
         self.bot = bot
@@ -1087,19 +1195,13 @@ class ActionHandler:
             return False
 
     async def handle_help_all(self, message: discord.Message) -> bool:
-        """Handle !help command - shows all available ! commands"""
+        """Handle !help command - shows interactive embed with edit capability"""
         guild_id = message.guild.id
         custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
         
         if not custom_cmds:
             await message.channel.send("No custom commands available yet!")
             return True
-        
-        embed = discord.Embed(
-            title="📚 All Available Commands",
-            description=f"Total: {len(custom_cmds)} commands",
-            color=discord.Color.blue()
-        )
         
         help_commands = {}
         other_commands = {}
@@ -1110,13 +1212,19 @@ class ActionHandler:
             else:
                 other_commands[cmd_name] = custom_cmds[cmd_name]
         
+        embed = discord.Embed(
+            title="📚 All Available Commands",
+            description=f"Total: {len(custom_cmds)} commands\n\nClick a command below to edit it.",
+            color=discord.Color.blue()
+        )
+        
         if other_commands:
             cmd_list = []
-            for cmd in sorted(other_commands.keys()):
+            for cmd in sorted(other_commands.keys())[:25]:
                 cmd_list.append(f"**!{cmd}**")
             embed.add_field(
                 name="🎮 Main Commands",
-                value="\n".join(cmd_list[:25]),
+                value="\n".join(cmd_list),
                 inline=False
             )
             if len(other_commands) > 25:
@@ -1137,9 +1245,10 @@ class ActionHandler:
                 inline=False
             )
         
-        embed.set_footer(text="Use !help <system> for detailed info • Example: !help achievements")
+        embed.set_footer(text="Click a command to edit • Back to dismiss")
         
-        await message.channel.send(embed=embed)
+        view = HelpCommandView(custom_cmds, other_commands, help_commands, message.author.id)
+        await message.channel.send(embed=embed, view=view)
         return True
 
     async def handle_staffpromo_status(self, message: discord.Message) -> bool:
