@@ -3,6 +3,7 @@ from datetime import datetime
 import json
 import discord
 from discord.ext import commands, tasks
+from typing import Optional
 
 from data_manager import dm
 from logger import logger
@@ -20,14 +21,28 @@ class StaffPromotionSystem:
             {"name": "Admin", "threshold": 0.95, "role_name": "Admin"},
         ]
         
+        self._default_trial_settings = {
+            "enabled": True,
+            "duration_days": 14,
+            "evaluation_metrics": {
+                "activity_score_min": 0.3,
+                "ticket_resolution_min": 5,
+                "voice_hours_min": 10
+            },
+            "auto_revert_on_fail": True
+        }
+        
         self._default_metrics = {
-            "xp": {"weight": 0.25, "max": 5000, "enabled": True},
-            "tenure_days": {"weight": 0.20, "max": 90, "enabled": True},
+            "xp": {"weight": 0.20, "max": 5000, "enabled": True},
+            "tenure_days": {"weight": 0.15, "max": 90, "enabled": True},
             "messages": {"weight": 0.15, "max": 1000, "enabled": True},
-            "achievements": {"weight": 0.15, "max": 20, "enabled": True},
+            "achievements": {"weight": 0.10, "max": 20, "enabled": True},
             "voice_minutes": {"weight": 0.10, "max": 3600, "enabled": True},
             "rep_received": {"weight": 0.08, "max": 100, "enabled": True},
             "rep_given": {"weight": 0.07, "max": 100, "enabled": True},
+            "gamification_score": {"weight": 0.15, "max": 100, "enabled": True},  # New metric for gamification
+            "badge_count": {"weight": 0.05, "max": 10, "enabled": True},      # New metric for badges
+            "level": {"weight": 0.02, "max": 50, "enabled": True}            # New metric for level
         }
         
         self._default_settings = {
@@ -75,7 +90,8 @@ class StaffPromotionSystem:
         self._last_promotion_time = {}
         self._last_demotion_time = {}
         self._last_notification_time = {}
-        self._promotion_loop.start()
+        # Start the promotion loop only if the bot is ready
+        # This will be handled in the loop itself
 
     def _get_full_config(self, guild_id: int) -> dict:
         cfg = dm.get_guild_data(guild_id, "staff_promo_config", {})
@@ -87,6 +103,9 @@ class StaffPromotionSystem:
         cfg.setdefault("tier_requirements", self._default_tier_requirements)
         cfg.setdefault("achievement_bonuses", self._default_achievement_bonuses)
         cfg.setdefault("pending_reviews", [])
+        cfg.setdefault("trial_settings", self._default_trial_settings)
+        cfg.setdefault("staff_applications", {})
+        cfg.setdefault("application_tracking", {})
         return cfg
 
     async def _promotion_loop(self):
@@ -136,6 +155,121 @@ class StaffPromotionSystem:
         tenure_hours = (datetime.utcnow() - member.joined_at).total_seconds() / 3600
         return tenure_hours >= min_hours
 
+    async def _check_trial_period(self, guild_id: int, member: discord.Member, config: dict) -> Optional[str]:
+        """Check trial period status: 'active', 'complete', 'revert', 'extend', or None if not in trial"""
+        trial_settings = config.get("trial_settings", self._default_trial_settings)
+        if not trial_settings.get("enabled", True):
+            return None
+            
+        # Check if member has trial moderator role
+        tiers = config.get("tiers", self._default_tiers)
+        role_ids = dict(config.get("roles_by_tier", {}))
+        trial_role_id = None
+        
+        for tier in tiers:
+            if tier.get("name") == "Trial Moderator":
+                trial_role_id = role_ids.get(tier.get("name"))
+                break
+                
+        if not trial_role_id:
+            return None
+            
+        has_trial_role = any(r.id == trial_role_id for r in member.roles)
+        if not has_trial_role:
+            return None
+            
+        # Get trial start time from user data
+        udata = dm.get_guild_data(guild_id, f"user_{member.id}", {})
+        trial_start = udata.get("trial_start_time")
+        
+        if not trial_start:
+            # Set trial start time if not set
+            udata["trial_start_time"] = datetime.utcnow().timestamp()
+            dm.update_guild_data(guild_id, f"user_{member.id}", udata)
+            return "active"
+            
+        trial_duration_days = trial_settings.get("duration_days", 14)
+        trial_seconds = trial_duration_days * 24 * 3600
+        elapsed_time = datetime.utcnow().timestamp() - trial_start
+        
+        if elapsed_time >= trial_seconds:
+            # Trial period ended, evaluate performance
+            evaluation_result = await self._evaluate_trial_performance(guild_id, member, trial_settings, config)
+            if evaluation_result == "pass":
+                return "complete"
+            elif evaluation_result == "fail":
+                return "revert"
+            else:
+                return "extend"  # Need more time
+        else:
+            return "active"
+
+    async def _evaluate_trial_performance(self, guild_id: int, member: discord.Member, trial_settings: dict, config: dict) -> str:
+        """Evaluate trial performance based on metrics"""
+        metrics = trial_settings.get("evaluation_metrics", {
+            "activity_score_min": 0.3,
+            "ticket_resolution_min": 5,
+            "voice_hours_min": 10
+        })
+        
+        # Get user data
+        udata = dm.get_guild_data(guild_id, f"user_{member.id}", {})
+        
+        # Check activity score (from promotion system)
+        current_score = self._compute_score(guild_id, member.id, member, config.get("metrics", self._default_metrics))
+        activity_score_min = metrics.get("activity_score_min", 0.3)
+        
+        # Check ticket resolutions (would need ticket system integration)
+        ticket_resolutions = udata.get("ticket_resolutions", 0)
+        ticket_resolution_min = metrics.get("ticket_resolution_min", 5)
+        
+        # Check voice hours
+        voice_hours = udata.get("voice_minutes", 0) / 60  # Convert to hours
+        voice_hours_min = metrics.get("voice_hours_min", 10)
+        
+        # Evaluate criteria
+        score_pass = current_score >= activity_score_min
+        ticket_pass = ticket_resolutions >= ticket_resolution_min
+        voice_pass = voice_hours >= voice_hours_min
+        
+        # Require at least 2 out of 3 criteria to pass
+        passes = sum([score_pass, ticket_pass, voice_pass])
+        
+        if passes >= 2:
+            return "pass"
+        else:
+            return "fail"
+
+    async def _handle_trial_revert(self, guild: discord.Guild, member: discord.Member, tiers, role_ids, settings, config):
+        """Handle automatic reversion from trial period"""
+        # Remove trial moderator role
+        trial_role_id = role_ids.get("Trial Moderator")
+        if trial_role_id:
+            trial_role = guild.get_role(trial_role_id)
+            if trial_role and trial_role in member.roles:
+                try:
+                    await member.remove_roles(trial_role)
+                except Exception as e:
+                    logger.error(f"Failed to remove trial role: {e}")
+        
+        # Add back any previous roles if they existed
+        # For simplicity, we'll just remove the trial role and let system evaluate normally
+        
+        # Reset trial data
+        udata = dm.get_guild_data(guild.id, f"user_{member.id}", {})
+        if "trial_start_time" in udata:
+            del udata["trial_start_time"]
+            dm.update_guild_data(guild.id, f"user_{member.id}", udata)
+        
+        # Notify user
+        try:
+            await member.send("📋 Your trial period has ended and you did not meet the requirements for promotion. "
+                            "Your Trial Moderator role has been removed. You can reapply after improving your activity.")
+        except:
+            pass
+            
+        logger.info(f"StaffPromo[{guild.id}] {member} reverted from trial period due to insufficient performance")
+
     async def _evaluate_member(self, guild: discord.Guild, member: discord.Member, tiers, role_ids, metrics, settings, config):
         user_id = member.id
         cooldown_key = f"{guild.id}_{user_id}"
@@ -151,6 +285,18 @@ class StaffPromotionSystem:
         for tier in sorted(tiers, key=lambda t: t.get("threshold", 0)):
             if score >= tier.get("threshold", 0):
                 target_tier = tier
+        
+        # Check for trial period completion/reversion
+        trial_status = await self._check_trial_period(guild.id, member, config)
+        if trial_status == "revert":
+            await self._handle_trial_revert(guild, member, tiers, role_ids, settings, config)
+            return
+        elif trial_status == "extend":
+            # Extend trial period, don't process promotion
+            return
+        elif trial_status == "complete":
+            # Trial completed successfully, allow promotion to next tier
+            pass
         
         current_index = self._get_current_tier_index(member, tiers, role_ids)
         target_index = -1 if not target_tier else tiers.index(target_tier)
@@ -188,6 +334,60 @@ class StaffPromotionSystem:
             if rid and any(r.id == rid for r in member.roles):
                 return idx
         return -1
+
+    def _calculate_gamification_score(self, guild_id: int, user_id: int) -> int:
+        """Calculate a gamification score based on badges, quests, and skills"""
+        try:
+            # Import gamification system to access its data
+            from modules.gamification import AdaptiveGamification
+            # Note: In a real implementation, we'd need access to the bot instance
+            # For now, we'll calculate based on available data
+            
+            # Base score from badges
+            badges = dm.get_guild_data(guild_id, f"badges_{user_id}", [])
+            badge_score = len(badges) * 10  # 10 points per badge
+            
+            # Bonus for rare/evolved badges
+            evolved_bonus = 0
+            for badge_data in badges:
+                evolved_level = badge_data.get("evolved_level", 1)
+                if evolved_level > 1:
+                    evolved_bonus += (evolved_level - 1) * 5
+            
+            # Skill points (if available)
+            skills = dm.get_guild_data(guild_id, f"skills_{user_id}", {})
+            skill_score = 0
+            for skill_name, skill_data in skills.items():
+                level = skill_data.get("level", 1)
+                skill_score += level * 2  # 2 points per skill level
+            
+            # Quest completion bonus
+            quests_completed = dm.get_guild_data(guild_id, f"user_{user_id}", {}).get("quests_completed", 0)
+            quest_bonus = quests_completed * 5  # 5 points per completed quest
+            
+            total_score = badge_score + evolved_bonus + skill_score + quest_bonus
+            return min(100, total_score)  # Cap at 100
+        except Exception as e:
+            logger.error(f"Error calculating gamification score: {e}")
+            return 0
+
+    def _get_user_level(self, guild_id: int, user_id: int) -> int:
+        """Get user level from leveling system or calculate from XP"""
+        try:
+            # Try to get from leveling system first
+            level_data = dm.get_guild_data(guild_id, f"level_{user_id}", {})
+            if level_data:
+                return level_data.get("level", 1)
+            
+            # Fallback: calculate from XP
+            user_data = dm.get_guild_data(guild_id, f"user_{user_id}", {})
+            xp = user_data.get("xp", 0)
+            # Simple level calculation: every 1000 XP = 1 level
+            level = max(1, xp // 1000)
+            return min(50, level)  # Cap at 50
+        except Exception as e:
+            logger.error(f"Error getting user level: {e}")
+            return 1
 
     def _check_tier_requirements(self, guild_id: int, member: discord.Member, tier_name: str, config: dict) -> bool:
         requirements = config.get("tier_requirements", self._default_tier_requirements)
@@ -275,6 +475,9 @@ class StaffPromotionSystem:
             "voice_minutes": udata.get("voice_minutes", 0),
             "rep_received": udata.get("rep_received", 0),
             "rep_given": udata.get("rep_given", 0),
+            "gamification_score": self._calculate_gamification_score(guild_id, user_id),
+            "badge_count": len(dm.get_guild_data(guild_id, f"badges_{user_id}", [])),
+            "level": self._get_user_level(guild_id, user_id)
         }
         
         score = 0.0
