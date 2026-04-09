@@ -674,6 +674,7 @@ class StaffPromotionSystem:
         custom_cmds["staffpromo approve"] = json.dumps({"command_type": "staffpromo_review"})
         custom_cmds["staffpromo reject"] = json.dumps({"command_type": "staffpromo_review"})
         custom_cmds["staffpromo tiers"] = json.dumps({"command_type": "staffpromo_tiers"})
+        custom_cmds["tiers"] = json.dumps({"command_type": "staffpromo_tiers"})
         
         custom_cmds["help staffpromo"] = json.dumps({
             "command_type": "help_embed",
@@ -691,6 +692,7 @@ class StaffPromotionSystem:
                 {"name": "!staffpromo exclude add/remove @user", "value": "Exclude from auto-promotion (admin).", "inline": False},
                 {"name": "!staffpromo roles add/remove <tier> @role", "value": "Map roles to tiers (admin).", "inline": False},
                 {"name": "!staffpromo tiers", "value": "Manage promotion tiers interactively (admin).", "inline": False},
+                {"name": "!tiers", "value": "Manage promotion tiers interactively (admin).", "inline": False},
                 {"name": "!staffpromo review", "value": "View pending reviews (admin).", "inline": False},
                 {"name": "!staffpromo approve @user", "value": "Approve promotion (admin).", "inline": False},
                 {"name": "!staffpromo reject @user", "value": "Reject promotion (admin).", "inline": False},
