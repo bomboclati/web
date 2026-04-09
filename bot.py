@@ -1100,34 +1100,6 @@ async def health_cmd(interaction: discord.Interaction):
     
     await interaction.followup.send(embed=embed)
 
-@bot.tree.command(name="suggest_members", description="Get member connection suggestions")
-@app_commands.describe(user="User to find connections for")
-async def suggest_members_cmd(interaction: discord.Interaction, user: discord.Member = None):
-    target_user = user or interaction.user
-    
-    suggestions = await bot.community_health.suggest_connections(interaction.guild.id, target_user.id)
-    
-    if not suggestions:
-        await interaction.response.send_message("No connection suggestions available yet. Keep chatting!")
-        return
-    
-    embed = discord.Embed(
-        title="🔗 Connection Suggestions",
-        description=f"For {target_user.display_name}:",
-        color=discord.Color.blue()
-    )
-    
-    for user_id, score in suggestions:
-        member = interaction.guild.get_member(user_id)
-        if member:
-            embed.add_field(
-                name=member.display_name,
-                value=f"Compatibility: {score:.1f}",
-                inline=True
-            )
-    
-    await interaction.response.send_message(embed=embed)
-
 # Main Execution
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
