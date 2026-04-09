@@ -40,6 +40,7 @@ from modules.anti_raid import AntiRaidSystem
 from modules.auto_publisher import AutoPublisher
 from modules.achievements import AchievementSystem
 from modules.staff_promo import StaffPromotionSystem
+from modules.staff_extras import StaffExtras, StaffExtrasCommands
 from modules.conflict_resolution import ConflictResolution
 from modules.community_health import CommunityHealth
 from modules.auto_setup import AutoSetup
@@ -96,6 +97,7 @@ class ImmortalBot(commands.Bot):
         self.auto_publisher = AutoPublisher(self)
         self.achievements = AchievementSystem(self)
         self.staff_promo = StaffPromotionSystem(self)
+        self.staff_extras = StaffExtras(self)
         self.conflict_resolution = ConflictResolution(self)
         self.community_health = CommunityHealth(self)
         self.auto_setup = AutoSetup(self)
@@ -297,6 +299,11 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 await self._handle_suggest_command(message, cmd_content)
                 return
             
+            # Handle staff commands
+            if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "trainingtasks", "appeal"]):
+                await self._handle_staff_command(message, cmd_content)
+                return
+            
             matched_cmd = None
             matched_data = None
             
@@ -493,6 +500,26 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         await msg.add_reaction("❌")
         
         await message.channel.send("✅ Suggestion submitted!")
+    
+    async def _handle_staff_command(self, message, cmd_content):
+        """Handle staff extras commands"""
+        parts = cmd_content.split()
+        
+        if not parts:
+            return
+        
+        command = parts[0].lower()
+        
+        staff_commands = {
+            "staffleaderboard": self.staff_extras.handle_staff_leaderboard,
+            "promotionhistory": self.staff_extras.handle_promotion_history,
+            "trainingtasks": self.staff_extras.handle_training_tasks,
+            "appeal": self.staff_extras.handle_appeal,
+        }
+        
+        if command in staff_commands:
+            cmd_func = staff_commands[command]
+            await cmd_func(message, parts)
     
     async def analyze_command_usage_and_suggest_improvements(self):
         """Periodically analyze command usage and suggest improvements."""
@@ -1191,6 +1218,26 @@ async def on_guild_join(guild: discord.Guild):
 async def on_guild_remove(guild: discord.Guild):
     logger.info(f"Left guild: {guild.name} (ID: {guild.id})")
     await bot.auto_setup.on_guild_remove(guild)
+
+@bot.event  
+async def on_member_remove(member):
+    """Handle exit interviews when staff leave"""
+    try:
+        await bot.staff_extras.on_member_remove(member)
+    except:
+        pass
+
+@bot.event
+async def on_raw_reaction_add(payload):
+    """Handle reaction add for exit interviews"""
+    try:
+        channel = bot.get_channel(payload.channel_id)
+        message = await channel.fetch_message(payload.message_id)
+        user = payload.member
+        if user and not user.bot:
+            await bot.staff_extras.on_reaction_add(message, user)
+    except:
+        pass
 
 # Main Execution
 if __name__ == "__main__":
