@@ -163,6 +163,8 @@ class ActionHandler:
         name = params.get("name", "new-channel")
         channel_type = params.get("type", "text")
         category_name = params.get("category")
+        allowed_roles = params.get("allowed_roles", [])
+        denied_roles = params.get("denied_roles", [])
 
         category = None
         if category_name:
@@ -176,10 +178,105 @@ class ActionHandler:
             channel = await guild.create_voice_channel(name, category=category)
         else:
             return False, None
-            
+        
+        # Set permissions if specified
+        if allowed_roles or denied_roles:
+            await self._set_channel_permissions(channel, guild, allowed_roles, denied_roles)
+        
+        # Send help embed to explain the channel
+        await self._send_channel_guide(channel, name)
+        
         self._track_artifact("channel", channel.id, channel.name)
         logger.info("Created channel: %s", channel.name)
         return True, {"action": "delete_channel", "channel_id": channel.id}
+
+    async def _set_channel_permissions(self, channel, guild, allowed_roles, denied_roles):
+        """Set view permissions for roles"""
+        from discord import PermissionOverwrite
+        
+        overwrites = {}
+        
+        # Allow specified roles
+        for role_name in allowed_roles:
+            role = discord.utils.get(guild.roles, name=role_name)
+            if role:
+                overwrites[role] = PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True
+                )
+        
+        # Deny specified roles
+        for role_name in denied_roles:
+            role = discord.utils.get(guild.roles, name=role_name)
+            if role:
+                overwrites[role] = PermissionOverwrite(
+                    view_channel=False
+                )
+        
+        # If there's any permission changes, apply them
+        if overwrites:
+            await channel.edit(overwrites=overwrites)
+            logger.info(f"Set permissions on channel {channel.name}: +{allowed_roles} -{denied_roles}")
+
+    async def _send_channel_guide(self, channel, channel_name: str):
+        """Send a guide embed explaining what the channel is and available commands"""
+        name_lower = channel_name.lower()
+        
+        guide_content = {
+            "general": {
+                "description": "This is a general chat channel for conversations.",
+                "commands": ["!help", "!ping"]
+            },
+            "suggestions": {
+                "description": "Submit your ideas for the server here!",
+                "commands": ["!suggest <title> <description>"]
+            },
+            "verify": {
+                "description": "Verify yourself to access the server!",
+                "commands": ["Click the Verify button"]
+            },
+            "rules": {
+                "description": "Please read and follow our server rules.",
+                "commands": ["React to accept rules"]
+            },
+            "ticket": {
+                "description": "Need help? Create a ticket!",
+                "commands": ["!ticket <message>"]
+            },
+            "applications": {
+                "description": "Apply to join our staff team!",
+                "commands": ["!apply"]
+            },
+            "modmail": {
+                "description": "DM the bot for staff assistance.",
+                "commands": ["DM the bot directly"]
+            },
+            "announcements": {
+                "description": "Server news and updates.",
+                "commands": ["Staff only: Post announcements"]
+            }
+        }
+        
+        # Find matching guide
+        guide = None
+        for key, content in guide_content.items():
+            if key in name_lower:
+                guide = content
+                break
+        
+        if not guide:
+            return
+        
+        embed = discord.Embed(
+            title=f"🔹 {channel_name}",
+            description=guide["description"],
+            color=discord.Color.blue()
+        )
+        
+        cmd_list = "\n".join([f"• {cmd}" for cmd in guide["commands"]])
+        embed.add_field(name="Available Commands", value=cmd_list, inline=False)
+        
+        await channel.send(embed=embed)
 
     async def action_create_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         guild = interaction.guild
