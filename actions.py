@@ -575,6 +575,27 @@ class ActionHandler:
         result = await system.setup(interaction, params)
         return result, {"action": "undo_trigger_role", "guild_id": interaction.guild.id}
 
+    async def action_schedule_ai_action(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Schedule an AI action to run on a cron schedule."""
+        from task_scheduler import TaskScheduler
+        
+        name = params.get("name", f"scheduled_{int(time.time())}")
+        cron = params.get("cron", "0 12 * * *")
+        action_type = params.get("action_type", "announcement")
+        action_params = params.get("action_params", {})
+        channel_id = params.get("channel_id")
+        
+        guild_id = interaction.guild.id
+        
+        scheduler = getattr(self.bot, 'scheduler', None)
+        if scheduler and hasattr(scheduler, 'add_ai_task'):
+            scheduler.add_ai_task(name, guild_id, cron, action_type, action_params, channel_id)
+            logger.info(f"Scheduled AI action: {name} for guild {guild_id}")
+            return True, {"action": "remove_ai_task", "name": name}
+        else:
+            logger.error("Scheduler not available")
+            return False, None
+
     # --- Execution Logic ---
 
     async def execute_custom_command(self, message: discord.Interaction, code: str, cmd_name: str = None):

@@ -7,6 +7,8 @@ import threading
 import time
 from datetime import datetime, timedelta
 
+from logger import logger
+
 class DataManager:
     """
     Atomic writing system to ensure Zero Data Loss.
@@ -322,6 +324,115 @@ class DataManager:
             # For JSON backend, we'd need to load, filter, and save
             # This is less efficient but maintains compatibility
             pass
+
+    def export_memory(self, guild_id: int = None) -> dict:
+        """Export conversation memory as JSON (for backup/migration)."""
+        export_data = {
+            "version": "1.0",
+            "exported_at": datetime.now().isoformat(),
+            "guilds": {}
+        }
+
+        if self.use_sqlite:
+            conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+
+            if guild_id:
+                guild_ids = [guild_id]
+            else:
+                guild_ids = [row[0] for row in conn.execute("SELECT DISTINCT guild_id FROM exchanges").fetchall()]
+
+            for gid in guild_ids:
+                users = [row[0] for row in conn.execute("SELECT DISTINCT user_id FROM exchanges WHERE guild_id = ?", (gid,)).fetchall()]
+                export_data["guilds"][str(gid)] = {"users": {}}
+
+                for uid in users:
+                    exchanges = conn.execute(
+                        "SELECT role, content, timestamp, importance_score FROM exchanges WHERE guild_id = ? AND user_id = ? ORDER BY timestamp",
+                        (gid, uid)
+                    ).fetchall()
+                    export_data["guilds"][str(gid)]["users"][str(uid)] = {
+                        "exchanges": [
+                            {"role": r["role"], "content": r["content"], "timestamp": r["timestamp"], "importance_score": r["importance_score"]}
+                            for r in exchanges
+                        ]
+                    }
+
+                    summaries = conn.execute(
+                        "SELECT start_timestamp, end_timestamp, summary_text, message_count, created_at FROM conversation_summaries WHERE guild_id = ? AND user_id = ?",
+                        (gid, uid)
+                    ).fetchall()
+                    if summaries:
+                        export_data["guilds"][str(gid)]["users"][str(uid)]["summaries"] = [
+                            {"start": s["start_timestamp"], "end": s["end_timestamp"], "summary": s["summary_text"], "count": s["message_count"]}
+                            for s in summaries
+                        ]
+
+            conn.close()
+        else:
+            if guild_id:
+                data = self.load_json(f"guild_{guild_id}", {})
+                export_data["guilds"][str(guild_id)] = data.get("conversation_history", {})
+            else:
+                for f in os.listdir(self.data_dir):
+                    if f.startswith("guild_") and f.endswith(".json"):
+                        gid = f.replace("guild_", "").replace(".json", "")
+                        if gid.isdigit():
+                            data = self.load_json(f, {})
+                            export_data["guilds"][gid] = data.get("conversation_history", {})
+
+        return export_data
+
+    def import_memory(self, import_data: dict, merge: bool = True) -> dict:
+        """Import conversation memory from JSON export."""
+        result = {"success": True, "imported": 0, "errors": []}
+        
+        version = import_data.get("version", "unknown")
+        guilds = import_data.get("guilds", {})
+
+        if not self.use_sqlite:
+            result["success"] = False
+            result["errors"].append("Import only supported with SQLite backend")
+            return result
+
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+
+        for gid_str, guild_data in guilds.items():
+            try:
+                gid = int(gid_str)
+                users = guild_data.get("users", {})
+
+                for uid_str, user_data in users.items():
+                    uid = int(uid_str)
+                    exchanges = user_data.get("exchanges", [])
+
+                    for ex in exchanges:
+                        conn.execute(
+                            "INSERT INTO exchanges (guild_id, user_id, role, content, timestamp, importance_score) VALUES (?, ?, ?, ?, ?, ?)",
+                            (gid, uid, ex.get("role", "user"), ex.get("content", ""), ex.get("timestamp", time.time()), ex.get("importance_score", 0.5))
+                        )
+                        result["imported"] += 1
+
+                    summaries = user_data.get("summaries", [])
+                    for s in summaries:
+                        conn.execute(
+                            "INSERT INTO conversation_summaries (guild_id, user_id, start_timestamp, end_timestamp, summary_text, message_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (gid, uid, s.get("start"), s.get("end"), s.get("summary", ""), s.get("count", 0), time.time())
+                        )
+
+            except Exception as e:
+                result["errors"].append(f"Guild {gid_str}: {str(e)}")
+
+        conn.commit()
+        conn.close()
+
+        if not result["errors"]:
+            logger.info(f"Memory import completed: {result['imported']} exchanges")
+        else:
+            logger.error(f"Memory import completed with errors: {result['errors']}")
+
+        return result
+
 
 # Initialize global DataManager
 # Use SQLite by default for better performance, but can be overridden

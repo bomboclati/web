@@ -1,4 +1,5 @@
 import os
+import io
 import discord
 from discord.ext import commands
 from discord import app_commands, ui
@@ -305,6 +306,19 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 await self._handle_suggest_command(message, cmd_content)
                 return
             
+            # Handle memory export/import commands
+            if cmd_content.startswith("exportmemory"):
+                await self._handle_export_memory(message)
+                return
+            
+            if cmd_content.startswith("importmemory"):
+                await self._handle_import_memory(message)
+                return
+            
+            if cmd_content.startswith("scheduled"):
+                await self._handle_scheduled_actions(message, cmd_content)
+                return
+            
             # Handle staff commands
             if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "trainingtasks", "appeal"]):
                 await self._handle_staff_command(message, cmd_content)
@@ -506,6 +520,121 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         await msg.add_reaction("❌")
         
         await message.channel.send("✅ Suggestion submitted!")
+    
+    async def _handle_export_memory(self, message):
+        """Handle !exportmemory command"""
+        guild = message.guild
+        if not guild:
+            return
+        
+        try:
+            export_data = dm.export_memory(guild.id)
+            
+            if not export_data.get("guilds"):
+                await message.channel.send("No conversation data found.")
+                return
+            
+            json_str = json.dumps(export_data, indent=2)
+            bytes_io = io.BytesIO(json_str.encode('utf-8'))
+            file = discord.File(bytes_io, filename=f"memory_export_{guild.id}_{datetime.now().strftime('%Y%m%d')}.json")
+            
+            await message.channel.send("📤 Here is your conversation memory export:", file=file)
+            
+        except Exception as e:
+            logger.error(f"Memory export failed: {e}")
+            await message.channel.send(f"Export failed: {str(e)}")
+
+    async def _handle_import_memory(self, message):
+        """Handle !importmemory command"""
+        guild = message.guild
+        if not guild:
+            return
+        
+        if not message.attachments:
+            await message.channel.send("Please attach a JSON export file.")
+            return
+        
+        attachment = message.attachments[0]
+        
+        if not attachment.filename.endswith('.json'):
+            await message.channel.send("Please attach a valid JSON file.")
+            return
+        
+        try:
+            content = await attachment.read()
+            import_data = json.loads(content.decode('utf-8'))
+            
+            result = dm.import_memory(import_data, merge=True)
+            
+            if result["success"]:
+                await message.channel.send(f"✅ Import complete! Imported {result['imported']} exchanges.")
+            else:
+                await message.channel.send(f"❌ Import failed: {result['errors']}")
+                
+        except json.JSONDecodeError:
+            await message.channel.send("Invalid JSON file format.")
+        except Exception as e:
+            logger.error(f"Memory import failed: {e}")
+            await message.channel.send(f"Import failed: {str(e)}")
+
+    async def _handle_scheduled_actions(self, message, cmd_content):
+        """Handle !scheduled command"""
+        guild = message.guild
+        if not guild:
+            return
+        
+        parts = cmd_content.split()
+        
+        tasks = dm.load_json("ai_scheduled_tasks", default={})
+        guild_tasks = {k: v for k, v in tasks.items() if v.get("guild_id") == guild.id}
+        
+        if len(parts) == 1 or (len(parts) == 2 and parts[1] == "list"):
+            if not guild_tasks:
+                await message.channel.send("No scheduled actions on this server.")
+                return
+            
+            lines = []
+            for task_name, task_data in guild_tasks.items():
+                cron = task_data.get("cron", "N/A")
+                enabled = "✅" if task_data.get("enabled", True) else "❌"
+                action_type = task_data.get("action_type", "unknown")
+                lines.append(f"**{task_name}** - {action_type} | {cron} | {enabled}")
+            
+            embed = discord.Embed(title="⏰ Scheduled AI Actions", color=discord.Color.blue())
+            embed.description = "\n".join(lines)
+            await message.channel.send(embed=embed)
+            
+        elif len(parts) >= 3:
+            action = parts[1]
+            name = parts[2]
+            
+            if action == "delete":
+                if name in tasks:
+                    del tasks[name]
+                    dm.save_json("ai_scheduled_tasks", tasks)
+                    await message.channel.send(f"✅ Deleted: {name}")
+                else:
+                    await message.channel.send(f"❌ Not found: {name}")
+                    
+            elif action == "enable":
+                if name in tasks:
+                    tasks[name]["enabled"] = True
+                    dm.save_json("ai_scheduled_tasks", tasks)
+                    await message.channel.send(f"✅ Enabled: {name}")
+                else:
+                    await message.channel.send(f"❌ Not found: {name}")
+                    
+            elif action == "disable":
+                if name in tasks:
+                    tasks[name]["enabled"] = False
+                    dm.save_json("ai_scheduled_tasks", tasks)
+                    await message.channel.send(f"✅ Disabled: {name}")
+                else:
+                    await message.channel.send(f"❌ Not found: {name}")
+            else:
+                await message.channel.send("Usage: `!scheduled list/delete/enable/disable <name>`")
+        else:
+            await message.channel.send("Usage: `!scheduled list` or `!scheduled delete <name>`")
     
     async def _handle_staff_command(self, message, cmd_content):
         """Handle staff extras commands"""

@@ -331,6 +331,15 @@ ACTION EXAMPLES:
 - {"name": "create_prefix_command", "parameters": {"name": "buy", "code": "..."}}
 - {"name": "send_embed", "parameters": {"channel": "...", "title": "...", "description": "..."}}
 - {"name": "web_search", "parameters": {"query": "..."}}
+- {"name": "schedule_ai_action", "parameters": {"name": "daily_welcome", "cron": "0 9 * * *", "action_type": "announcement", "action_params": {"title": "Good Morning!", "message": "Start your day with positivity!"}, "channel_id": 123456789}}
+
+SCHEDULED ACTIONS:
+You can schedule actions to run automatically using cron expressions:
+- Use action_type "announcement" to send scheduled messages to a channel
+- Use action_type "reminder" to remind users at specific times
+- Use action_type "ai_action" to have the AI perform actions on a schedule
+- Cron format: "minute hour day month weekday" (e.g., "0 9 * * *" = 9 AM daily)
+- Get channel_id from the server configuration or ask the user
 
 IMMORTAL GUARANTEE:
 Maintain state in data/ JSON files. Never lose a single bit of information.
