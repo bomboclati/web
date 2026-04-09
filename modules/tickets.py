@@ -253,7 +253,9 @@ Respond with JSON only:
         self._ticket_channels[channel.id] = ticket_id
         self._save_ticket(ticket)
         
-        await self._send_ticket_created_message(ticket, channel, initial_message)
+        assigned_staff = await self._assign_ticket_to_staff(guild, ticket)
+        
+        await self._send_ticket_created_message(ticket, channel, initial_message, assigned_staff)
         
         await self._check_auto_responses(ticket)
         
@@ -269,7 +271,44 @@ Respond with JSON only:
         
         return ticket
 
-    async def _send_ticket_created_message(self, ticket: Ticket, channel: discord.TextChannel, message: str):
+    async def _assign_ticket_to_staff(self, guild: discord.Guild, ticket: Ticket) -> Optional[discord.Member]:
+        """Find and assign ticket to available staff"""
+        settings = self.get_guild_settings(guild.id)
+        staff_role_ids = settings.get("staff_roles", [])
+        
+        if not staff_role_ids:
+            return None
+        
+        staff_members = []
+        for role_id in staff_role_ids:
+            role = guild.get_role(role_id)
+            if role:
+                staff_members.extend(role.members)
+        
+        if not staff_members:
+            return None
+        
+        counts = {}
+        for member in staff_members:
+            if member.bot:
+                continue
+            count = sum(1 for t in self._active_tickets.values() 
+                        if t.staff_id == member.id and t.status == TicketStatus.OPEN)
+            counts[member.id] = count
+        
+        if not counts:
+            return None
+        
+        staff_id = min(counts, key=counts.get)
+        staff = guild.get_member(staff_id)
+        
+        if staff:
+            ticket.staff_id = staff_id
+            ticket.assigned_to = staff_id
+        
+        return staff
+
+    async def _send_ticket_created_message(self, ticket: Ticket, channel: discord.TextChannel, message: str, assigned_staff=None):
         settings = self.get_guild_settings(ticket.guild_id)
         cat_settings = settings.get("categories", {}).get(ticket.category.value, {})
         
@@ -278,7 +317,12 @@ Respond with JSON only:
             description=f"**{ticket.title}**",
             color=discord.Color.blue()
         )
-        embed.add_field(name="Category", value=ticket.category.value.title(), inline=True)
+        
+        if assigned_staff:
+            embed.add_field(name="Assigned To", value=assigned_staff.mention, inline=True)
+            ping_msg = f"{assigned_staff.mention} 🎫 New ticket assigned to you!"
+        else:
+            ping_msg = ""
         
         priority_emoji = "🔴" if ticket.priority == TicketPriority.URGENT else "🟠" if ticket.priority == TicketPriority.HIGH else "🟡" if ticket.priority == TicketPriority.MEDIUM else "🟢"
         embed.add_field(name="Priority", value=f"{priority_emoji} {ticket.priority.name}", inline=True)
@@ -289,7 +333,7 @@ Respond with JSON only:
         view = discord.ui.View()
         view.add_item(discord.ui.Button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id=f"ticket_close_{ticket.id}"))
         
-        await channel.send(embed=embed, view=view)
+        await channel.send(ping_msg, embed=embed, view=view)
 
     async def _check_auto_responses(self, ticket: Ticket):
         settings = self.get_guild_settings(ticket.guild_id)
