@@ -345,9 +345,153 @@ class ActionHandler:
         color_hex = params.get("color", "#99AAB5").replace("#", "")
         color = discord.Color(int(color_hex, 16))
         
-        role = await guild.create_role(name=name, color=color, reason="AI Action")
+        # Auto-detect role permissions
+        role_perms = self._detect_role_permissions(name)
+        
+        permissions = discord.Permissions(
+            view_channel=role_perms.get("view_channel", False),
+            send_messages=role_perms.get("send_messages", False),
+            manage_channels=role_perms.get("manage_channels", False),
+            manage_roles=role_perms.get("manage_roles", False),
+            kick_members=role_perms.get("kick_members", False),
+            ban_members=role_perms.get("ban_members", False),
+            moderate_members=role_perms.get("moderate_members", False),
+            manage_messages=role_perms.get("manage_messages", False),
+            mention_everyone=role_perms.get("mention_everyone", False)
+        )
+        
+        role = await guild.create_role(
+            name=name, 
+            color=color, 
+            permissions=permissions,
+            hoist=role_perms.get("hoist", False),
+            mentionable=role_perms.get("mentionable", False),
+            reason="AI Action"
+        )
+        
+        # Send role info
+        await self._send_role_guide(interaction, name, role_perms)
+        
         self._track_artifact("role", role.id, role.name)
         return True, {"action": "delete_role", "role_id": role.id}
+
+    def _detect_role_permissions(self, role_name: str) -> dict:
+        """Auto-detect what permissions a role should have based on its name"""
+        name_lower = role_name.lower()
+        
+        role_rules = {
+            # Admin role - full permissions
+            "admin": {
+                "view_channel": True, "manage_channels": True, "manage_roles": True,
+                "kick_members": True, "ban_members": True, "moderate_members": True,
+                "mention_everyone": True, "hoist": True, "mentionable": True
+            },
+            # Moderator role
+            "mod": {
+                "view_channel": True, "send_messages": True, "manage_messages": True,
+                "kick_members": True, "moderate_members": True,
+                "mention_everyone": False, "hoist": True, "mentionable": True
+            },
+            # Support role
+            "support": {
+                "view_channel": True, "send_messages": True, "manage_messages": True,
+                "hoist": True, "mentionable": True
+            },
+            # Verified role - basic access
+            "verified": {
+                "view_channel": True, "send_messages": True,
+                "hoist": True, "mentionable": False
+            },
+            # Member role
+            "member": {
+                "view_channel": True, "send_messages": True,
+                "hoist": True
+            },
+            # Muted role - no permissions
+            "muted": {
+                "view_channel": True, "send_messages": False,
+                "hoist": True, "mentionable": False
+            },
+            # Bot role
+            "bot": {
+                "view_channel": True, "send_messages": True,
+                "manage_messages": True, "hoist": True
+            },
+            # VIP role
+            "vip": {
+                "view_channel": True, "send_messages": True,
+                "hoist": True, "mentionable": True
+            },
+            # Event role
+            "event": {
+                "view_channel": True, "send_messages": True,
+                "mention_everyone": False, "hoist": True, "mentionable": True
+            },
+            # Streaming role
+            "streaming": {
+                "view_channel": True, "send_messages": True,
+                "mention_everyone": True, "hoist": True, "mentionable": True
+            },
+            # Gaming role
+            "gaming": {
+                "view_channel": True, "send_messages": True,
+                "hoist": True
+            },
+            # Music role
+            "music": {
+                "view_channel": True, "send_messages": True,
+                "hoist": True
+            }
+        }
+        
+        for keyword, perms in role_rules.items():
+            if keyword in name_lower:
+                return perms
+        
+        # Default: basic member permissions
+        return {"view_channel": True, "send_messages": True, "hoist": False}
+
+    async def _send_role_guide(self, interaction, role_name: str, role_perms: dict):
+        """Send a guide embed explaining what the role is"""
+        import discord
+        
+        name_lower = role_name.lower()
+        
+        guide_content = {
+            "admin": "Full administrator role with all permissions.",
+            "mod": "Moderator role for managing the server.",
+            "support": "Support role for helping users.",
+            "verified": "Verified members - access to all channels.",
+            "member": "Default member role.",
+            "muted": "Muted role - cannot send messages.",
+            "vip": "VIP role - special perks and access.",
+            "event": "Event participants role.",
+            "gaming": "Gaming community role.",
+            "music": "Music lovers role."
+        }
+        
+        description = guide_content.get("default", f"Custom role: {role_name}")
+        for key, desc in guide_content.items():
+            if key in name_lower:
+                description = desc
+                break
+        
+        embed = discord.Embed(
+            title=f"🔹 Role: {role_name}",
+            description=description,
+            color=discord.Color.blue()
+        )
+        
+        perm_list = [f"View Channels", "Send Messages"] if role_perms.get("view_channel") else []
+        if role_perms.get("moderate_members"): perm_list.append("Moderate Members")
+        if role_perms.get("kick_members"): perm_list.append("Kick Members")
+        if role_perms.get("ban_members"): perm_list.append("Ban Members")
+        if role_perms.get("manage_channels"): perm_list.append("Manage Channels")
+        
+        if perm_list:
+            embed.add_field(name="Permissions", value="\n".join([f"✅ {p}" for p in perm_list]), inline=False)
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def action_assign_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         user_id = params.get("user_id")
