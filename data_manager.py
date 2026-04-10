@@ -6,6 +6,9 @@ from typing import Any, Dict, Optional, List, Tuple
 import threading
 import time
 from datetime import datetime, timedelta
+from cryptography.fernet import Fernet
+import base64
+import hashlib
 
 from logger import logger
 
@@ -234,20 +237,57 @@ class DataManager:
         data = self.load_json(filename)
         return data.get(key, default)
 
+    def _get_encryption_key(self) -> bytes:
+        """Get or create encryption key from environment or generate one"""
+        key_env = os.getenv("ENCRYPTION_KEY")
+        if key_env:
+            # Use provided key (must be base64 encoded 32 bytes)
+            return base64.urlsafe_b64encode(hashlib.sha256(key_env.encode()).digest())
+        
+        # Check for stored key or generate new one
+        key_file = os.path.join(self.data_dir, ".key")
+        if os.path.exists(key_file):
+            with open(key_file, "rb") as f:
+                return f.read()
+        
+        # Generate new key and store it
+        key = Fernet.generate_key()
+        with open(key_file, "wb") as f:
+            f.write(key)
+        return key
+
     def set_guild_api_key(self, guild_id: int, api_key: str, provider: str = "openrouter"):
-        """Set guild-specific API key (encrypted storage recommended for production)"""
+        """Set guild-specific API key (encrypted)"""
+        f = Fernet(self._get_encryption_key())
+        encrypted_key = f.encrypt(api_key.encode()).decode()
+        
         api_keys = self.load_json("guild_api_keys", default={})
         api_keys[str(guild_id)] = {
-            "api_key": api_key,
+            "api_key": encrypted_key,
             "provider": provider,
             "updated_at": datetime.now().isoformat()
         }
         self.save_json("guild_api_keys", api_keys)
 
     def get_guild_api_key(self, guild_id: int) -> Optional[Dict[str, str]]:
-        """Get guild-specific API key"""
+        """Get guild-specific API key (decrypted)"""
         api_keys = self.load_json("guild_api_keys", default={})
-        return api_keys.get(str(guild_id))
+        guild_data = api_keys.get(str(guild_id))
+        
+        if not guild_data:
+            return None
+        
+        # Decrypt the API key
+        try:
+            f = Fernet(self._get_encryption_key())
+            decrypted_key = f.decrypt(guild_data["api_key"].encode()).decode()
+            return {
+                "api_key": decrypted_key,
+                "provider": guild_data.get("provider", "openrouter")
+            }
+        except Exception:
+            # If decryption fails, return as-is (might be old unencrypted key)
+            return guild_data
 
     def record_global_action_result(self, action_name: str, success: bool, error: str = None):
         """Record anonymized action result for cross-server intelligence sharing."""

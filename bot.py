@@ -77,6 +77,8 @@ class ImmortalBot(commands.Bot):
         self.pending_confirms = {} # user_id -> {action_data, message_obj}
         self._bot_cooldowns = {}  # user_id -> timestamp
         self._bot_cooldown_seconds = 30
+        self._cmd_cooldowns = {}  # (guild_id, user_id, cmd) -> timestamp
+        self._cmd_cooldown_seconds = 3
         self.ai_sessions = {}     # user_id -> {messages: [...], last_interaction: interaction, original_request: str}
         
         # Internal Systems
@@ -344,6 +346,17 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                     break
             
             if matched_cmd:
+                # Rate limiting check
+                cooldown_key = (message.guild.id, message.author.id, matched_cmd)
+                now = time.time()
+                if cooldown_key in self._cmd_cooldowns:
+                    remaining = self._cmd_cooldown_seconds - (now - self._cmd_cooldowns[cooldown_key])
+                    if remaining > 0:
+                        await message.channel.send(f"⚠️ Wait **{int(remaining)}s** before using `!{matched_cmd}` again.")
+                        return
+                
+                self._cmd_cooldowns[cooldown_key] = now
+                
                 parts = cmd_content.split()
                 cmd_name = matched_cmd
                 # Track command chain (what was run before this)
