@@ -127,6 +127,13 @@ class ImmortalBot(commands.Bot):
             logger.info("Skipping global sync (set SYNC_COMMANDS=true to force).")
         logger.info("Restoring trigger role presence monitoring...")
         await self.scheduler.start()
+        
+        # Load core commands cog
+        try:
+            await self.load_extension("cogs.core_commands")
+            logger.info("Loaded core commands cog")
+        except Exception as e:
+            logger.error(f"Failed to load core commands cog: {e}")
 
     async def on_ready(self):
         logger.info("Logged in as %s (ID: %s) (IMMORTAL)", self.user, self.user.id)

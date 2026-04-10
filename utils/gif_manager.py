@@ -9,9 +9,9 @@ class GIFManager:
     Supports Tenor, GIPHY, and Built-in Pools.
     """
     BUILTIN_GIRLS = {
-        "welcome": ["https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcjk0ODJ4eHd5NXo5eHhyeHh4eHh4eHh4eHh4eHh4eHh4eHgmZXA9djFfaW50ZXJuYWxfZ2lmX2J5X2lkJmN0PWc/ASd0UkjqhZ3P2/giphy.gif"],
-        "level_up": ["https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcjk0ODJ4eHd5NXo5eHhyeHh4eHh4eHh4eHh4eHh4eHh4eHgmZXA9djFfaW50ZXJuYWxfZ2lmX2J5X2lkJmN0PWc/12S5z7Z2y1P2sM/giphy.gif"],
-        "success": ["https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcjk0ODJ4eHd5NXo5eHhyeHh4eHh4eHh4eHh4eHh4eHh4eHgmZXA9djFfaW50ZXJuYWxfZ2lmX2J5X2lkJmN0PWc/3o7TKVUn7iM8FMEU24/giphy.gif"]
+        "welcome": ["https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif", "https://media.giphy.com/media/3o7TKsR8XnIBjCe95e/giphy.gif", "https://media.giphy.com/media/l0HlR1vaIXXHbWZHy/giphy.gif"],
+        "level_up": ["https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif", "https://media.giphy.com/media/3o6Zt6ML6Bsls GugW/giphy.gif", "https://media.giphy.com/media/xT9IgzoKnwFNmISR8I/giphy.gif"],
+        "success": ["https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif", "https://media.giphy.com/media/3o6Zt481isNVuQI1l6/giphy.gif", "https://media.giphy.com/media/xT9IgG50Fb7Mi0prBC/giphy.gif"]
     }
 
     async def get_random_gif(self, search_term: str) -> str:

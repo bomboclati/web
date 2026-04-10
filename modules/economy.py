@@ -11,8 +11,6 @@ class Economy:
     Zero Data Loss with immediate writes.
     Now includes daily challenges and achievements!
     """
-    def __init__(self, bot):
-        self.bot = bot
     
     """Daily Challenges System"""
     DAILY_CHALLENGES = [
@@ -22,6 +20,9 @@ class Economy:
         {"id": "invite_1", "name": "Invoker", "desc": "Send 1 invite", "target": 1, "reward": 500},
         {"id": "help_3", "name": "Helper", "desc": "Use 3 help commands", "target": 3, "reward": 250},
     ]
+    
+    def __init__(self, bot):
+        self.bot = bot
     
     def get_coins(self, guild_id: int, user_id: int) -> int:
         balances = dm.get_guild_data(guild_id, "economy_balances", {})
