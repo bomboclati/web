@@ -749,13 +749,13 @@ class ActionHandler:
         
         return None
 
-    async def handle_application_status(self, interaction: discord.Interaction) -> bool:
+    async def handle_application_status(self, message: discord.Message) -> bool:
         """Handle !apply status command"""
         apps = dm.load_json("applications", default={})
-        user_id = str(interaction.user.id)
+        user_id = str(message.author.id)
         
         if user_id not in apps:
-            await interaction.response.send_message("You have not submitted a staff application yet.", ephemeral=True)
+            await message.channel.send("You have not submitted a staff application yet.")
             return True
             
         status = apps[user_id]["status"]
@@ -765,16 +765,16 @@ class ActionHandler:
         embed.add_field(name="Status", value=status.capitalize(), inline=True)
         embed.add_field(name="Submitted", value=timestamp, inline=True)
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await message.channel.send(embed=embed)
         return True
 
-    async def handle_appeal_status(self, interaction: discord.Interaction) -> bool:
+    async def handle_appeal_status(self, message: discord.Message) -> bool:
         """Handle !appeal status command"""
         appeals = dm.load_json("appeals", default={})
-        user_id = str(interaction.user.id)
+        user_id = str(message.author.id)
         
         if user_id not in appeals:
-            await interaction.response.send_message("You have no active appeals.", ephemeral=True)
+            await message.channel.send("You have no active appeals.")
             return True
             
         appeal = appeals[user_id]
@@ -787,10 +787,10 @@ class ActionHandler:
         embed.add_field(name="Status", value=status.capitalize(), inline=True)
         embed.add_field(name="Submitted", value=str(timestamp), inline=True)
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await message.channel.send(embed=embed)
         return True
 
-    async def send_help_embed(self, interaction: discord.Interaction, data: dict) -> bool:
+    async def send_help_embed(self, message: discord.Message, data: dict) -> bool:
         """Send a help embed based on stored data"""
         title = data.get("title", "Help")
         description = data.get("description", "")
@@ -805,22 +805,22 @@ class ActionHandler:
                 inline=field.get("inline", False)
             )
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await message.channel.send(embed=embed)
         return True
 
-    async def list_triggers(self, interaction: discord.Interaction) -> bool:
+    async def list_triggers(self, message: discord.Message) -> bool:
         """List all active trigger words for the guild"""
-        guild_id = interaction.guild.id
+        guild_id = message.guild.id
         triggers = dm.get_guild_data(guild_id, "trigger_roles", {})
         
         if not triggers:
-            await interaction.response.send_message("No trigger words are currently set up.", ephemeral=True)
+            await message.channel.send("No trigger words are currently set up.")
             return True
             
         embed = discord.Embed(title="Active Trigger Words", color=discord.Color.blue())
         
         for word, role_id in triggers.items():
-            role = interaction.guild.get_role(role_id)
+            role = message.guild.get_role(role_id)
             role_name = role.name if role else f"Unknown Role (ID: {role_id})"
             embed.add_field(
                 name=f"Trigger: `{word}`",
@@ -828,7 +828,7 @@ class ActionHandler:
                 inline=False
             )
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await message.channel.send(embed=embed)
         return True
 
     async def handle_economy_daily(self, message: discord.Message) -> bool:
