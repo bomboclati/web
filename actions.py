@@ -244,7 +244,7 @@ class ActionHandler:
             # Applications - hidden from regular users until they apply
             "applications": {"allowed": ["Moderator", "Admin", "Administrator"], "denied": ["@everyone"]},
             "apply": {"allowed": ["Moderator", "Admin"], "denied": ["@everyone"]},
-            "applications": {"allowed": [], "denied": []},  # Public but use button
+            "apply-public": {"allowed": [], "denied": []},  # Public but use button
             
             # Verification - new users need to verify
             "verify": {"allowed": [], "denied": []},  # Everyone can see, needs button
@@ -502,7 +502,7 @@ class ActionHandler:
             "music": "Music lovers role."
         }
         
-        description = guide_content.get("default", f"Custom role: {role_name}")
+        description = f"Custom role: {role_name}"
         for key, desc in guide_content.items():
             if key in name_lower:
                 description = desc
@@ -582,7 +582,7 @@ class ActionHandler:
         if footer:
             embed.set_footer(text=footer)
         
-        embed.timestamp = datetime.datetime.utcnow()
+        embed.timestamp = datetime.utcnow()
         
         msg = await channel.send(embed=embed)
         return True, {"action": "delete_message", "channel_id": channel.id, "message_id": msg.id}
@@ -630,7 +630,7 @@ class ActionHandler:
 
     # --- Execution Logic ---
 
-    async def execute_custom_command(self, message: discord.Interaction, code: str, cmd_name: str = None):
+    async def execute_custom_command(self, message: discord.Message, code: str, cmd_name: str = None):
         """
         Executes a custom '!' command's stored code.
         Can be a simple string, a list of actions, or a special command object.
@@ -842,14 +842,14 @@ class ActionHandler:
         last_time = last_daily.get(str(user_id))
         
         if last_time:
-            last_date = datetime.datetime.fromisoformat(last_time)
-            if (datetime.datetime.now() - last_date).days < 1:
+            last_date = datetime.fromisoformat(last_time)
+            if (datetime.now() - last_date).days < 1:
                 await message.channel.send("Daily reward already claimed today!")
                 return True
         
         reward = 100
         economy.add_coins(guild_id, user_id, reward)
-        last_daily[str(user_id)] = str(datetime.datetime.now())
+        last_daily[str(user_id)] = str(datetime.now())
         dm.update_guild_data(guild_id, "last_daily", last_daily)
         
         await message.channel.send(f"💰 {message.author.mention} claimed **{reward} coins**!")
