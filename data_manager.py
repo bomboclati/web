@@ -105,9 +105,12 @@ class DataManager:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            # If load fails, check for backup if implemented, else return default
+        except json.JSONDecodeError as e:
+            logger.error("Corrupted JSON in %s: %s", filename, e)
             return default if default is not None else {}
+        except IOError as e:
+            logger.critical("IO error reading %s: %s — DATA LOSS RISK", filename, e)
+            raise
 
     def save_exchange(self, guild_id: int, user_id: int, role: str, content: str, importance_score: float = 0.5):
         """Save a single exchange to SQLite database"""

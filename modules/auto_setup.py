@@ -223,6 +223,11 @@ class AutoSetup:
         setup.state = SetupState.COMPLETED
         setup.completed_at = time.time()
         
+        # Mark guild as completed setup
+        completed = dm.load_json("completed_setups", default={})
+        completed[str(guild.id)] = time.time()
+        dm.save_json("completed_setups", completed)
+        
         await self._send_setup_results(guild, owner, results)
 
     async def _setup_welcome_system(self, guild: discord.Guild) -> bool:
