@@ -40,6 +40,16 @@ class EditCommandModal(discord.ui.Modal):
         await interaction.response.edit_message(content=f"✅ Command `!{self.cmd_name}` updated!", view=None)
 
 class ActionHandler:
+    ALLOWED_ACTIONS = {
+        "send_message", "send_embed", "add_role", "remove_role",
+        "create_channel", "delete_channel", "create_role", "delete_role",
+        "create_category", "edit_channel", "edit_role", "assign_role", "remove_role",
+        "create_prefix_command", "delete_prefix_command", "setup_welcome",
+        "setup_logging", "setup_verification", "setup_economy", "setup_leveling",
+        "setup_tickets", "setup_applications", "setup_appeals", "setup_moderation",
+        "send_dm", "create_invite", "schedule_ai_action"
+    }
+    
     def __init__(self, bot):
         self.bot = bot
         self._action_log = []
@@ -70,6 +80,11 @@ class ActionHandler:
         for i, action in enumerate(actions):
             name = action.get("name")
             params = action.get("parameters", {})
+            
+            if name not in self.ALLOWED_ACTIONS:
+                logger.warning("Blocked disallowed action: %s", name)
+                results.append((name, False))
+                raise Exception(f"Disallowed action: {name}")
             
             try:
                 success, undo_data = await self.dispatch(interaction, name, params)
@@ -643,7 +658,12 @@ class ActionHandler:
             data = json.loads(code)
             cmd_data_obj = data
             
-            # Handle list of actions (existing functionality)
+            if isinstance(data, dict) and "command_type" in data:
+                allowed_types = {"application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "achievements", "titles", "leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review"}
+                if data["command_type"] not in allowed_types:
+                    await message.channel.send("❌ Invalid command type.")
+                    return False
+            
             if isinstance(data, list):
                 # We'd need a way to pass 'message' context to execute_sequence
                 # For now, just acknowledge the command

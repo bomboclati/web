@@ -6,6 +6,9 @@ import discord
 from data_manager import dm
 from logger import logger
 
+import fcntl
+import os
+
 class TaskScheduler:
     """Background task scheduler using cron expressions."""
     
@@ -14,10 +17,12 @@ class TaskScheduler:
         self._tasks = {}
         self._running = False
         self._ai_tasks = {}
+        self._lock_file = None
 
     async def start(self):
         """Start the scheduler loop."""
         self._running = True
+        self._lock_file = open(os.path.join(os.path.dirname(__file__), ".task_lock"), "w")
         self._load_scheduled_tasks()
         logger.info("Task scheduler started with %d tasks", len(self._tasks))
         asyncio.create_task(self._scheduler_loop())
@@ -28,6 +33,8 @@ class TaskScheduler:
         for name, task in self._tasks.items():
             if task and not task.done():
                 task.cancel()
+        if self._lock_file:
+            self._lock_file.close()
         logger.info("Task scheduler stopped")
 
     def _load_scheduled_tasks(self):
@@ -60,6 +67,21 @@ class TaskScheduler:
                 self._tasks.pop(name, None)
             logger.info("Scheduled task removed: %s", name)
 
+    def _acquire_lock(self) -> bool:
+        """Acquire file lock to prevent race conditions."""
+        try:
+            fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except BlockingIOError:
+            return False
+
+    def _release_lock(self):
+        """Release file lock."""
+        try:
+            fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_UN)
+        except Exception:
+            pass
+
     async def _scheduler_loop(self):
         """Main scheduler loop - checks every 30 seconds."""
         while self._running:
@@ -72,8 +94,11 @@ class TaskScheduler:
 
     async def _check_tasks(self):
         """Check and execute due tasks."""
-        tasks = dm.load_json("scheduled_tasks", default={})
-        now = datetime.now()
+        if not self._acquire_lock():
+            return
+        try:
+            tasks = dm.load_json("scheduled_tasks", default={})
+            now = datetime.now()
         
         for name, task_data in tasks.items():
             if not task_data.get("enabled", True):
@@ -96,6 +121,8 @@ class TaskScheduler:
                     dm.save_json("scheduled_tasks", tasks)
             except Exception as e:
                 logger.error("Task %s cron error: %s", name, e)
+        finally:
+            self._release_lock()
 
     async def _execute_task(self, name: str, task_data: dict):
         """Execute a single scheduled task."""

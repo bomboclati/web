@@ -29,6 +29,26 @@ class DataManager:
             
         if self.use_sqlite:
             self._init_sqlite()
+        
+        self._init_encryption()
+    
+    def _init_encryption(self):
+        """Initialize Fernet encryption for sensitive data."""
+        self.cipher = None
+        key_file = os.path.join(self.data_dir, ".encryption_key")
+        
+        if os.getenv("ENCRYPTION_KEY"):
+            key = os.getenv("ENCRYPTION_KEY")
+            self.cipher = Fernet(key.encode() if isinstance(key, str) else key)
+        elif os.path.exists(key_file):
+            with open(key_file, "rb") as f:
+                self.cipher = Fernet(f.read())
+        else:
+            key = Fernet.generate_key()
+            with open(key_file, "wb") as f:
+                f.write(key)
+            self.cipher = Fernet(key)
+            os.chmod(key_file, 0o600)
 
     def _get_path(self, filename: str) -> str:
         import re
