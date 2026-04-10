@@ -260,7 +260,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
 """
             
             # Get reflection from AI (using a lighter weight prompt)
-            reflection_result = await bot.ai.chat(
+            reflection_result = await self.ai.chat(
                 guild_id=guild_id,
                 user_id=user_id,
                 user_input=reflection_prompt,
@@ -559,7 +559,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             
             json_str = json.dumps(export_data, indent=2)
             bytes_io = io.BytesIO(json_str.encode('utf-8'))
-            file = discord.File(bytes_io, filename=f"memory_export_{guild.id}_{datetime.now().strftime('%Y%m%d')}.json")
+            file = discord.File(bytes_io, filename=f"memory_export_{guild.id}_{datetime.datetime.now().strftime('%Y%m%d')}.json")
             
             await message.channel.send("📤 Here is your conversation memory export:", file=file)
             
@@ -1479,7 +1479,7 @@ async def health_cmd(interaction: discord.Interaction):
         inline=False
     )
     embed.add_field(name="Clusters", value=f"{len(report.get('clusters', []))} active groups", inline=True)
-    embed.timestamp = datetime.now()
+    embed.timestamp = datetime.datetime.now()
     embed.set_footer(text="Community Health Analysis")
     
     await interaction.followup.send(embed=embed)

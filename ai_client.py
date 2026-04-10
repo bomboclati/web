@@ -114,7 +114,6 @@ class AIClient:
         """
         Communicates with the LLM, handles history, and processes web search requests.
         Includes self-improvement data from past action successes/failures.
-        Now includes self-consistency checks for improved reasoning quality.
         Supports per-guild API keys.
         """
         # Get guild-specific API key (fallback to default)
@@ -139,147 +138,72 @@ class AIClient:
         # Format vector memory results as context messages
         vector_context = []
         for result in vector_results:
-            # Extract conversation text from the document
             doc = result["document"]
             similarity = result["similarity"]
-            # Add as a system message with similarity score for context
             vector_context.append({
                 "role": "system",
                 "content": f"[Relevant past conversation (similarity: {similarity:.2f})]\n{doc}"
             })
         
         # Combine history and vector memory context
-        # Adjust depth to accommodate vector results if needed
         combined_context = history + vector_context
         
         enhanced_prompt = self._build_enhanced_prompt(system_prompt, guild_id)
         
-        # Self-consistency: Generate multiple responses and select the most consistent
-        responses = []
-        for i in range(3):  # Generate 3 responses for self-consistency check
-            messages = [{"role": "system", "content": enhanced_prompt}]
-            messages.extend(combined_context)
-            messages.append({"role": "user", "content": user_input})
+        # Build messages
+        messages = [{"role": "system", "content": enhanced_prompt}]
+        messages.extend(combined_context)
+        messages.append({"role": "user", "content": user_input})
 
-            async with aiohttp.ClientSession() as session:
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                }
-                if provider == "openrouter":
-                    headers["HTTP-Referer"] = "https://github.com/antigravity"
-                    headers["X-Title"] = "Immortal AI Discord Bot"
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            if provider == "openrouter":
+                headers["HTTP-Referer"] = "https://github.com/antigravity"
+                headers["X-Title"] = "Immortal AI Discord Bot"
 
-                # Vary temperature slightly for diversity in responses
-                temperature = 0.7 + (i * 0.1)  # 0.7, 0.8, 0.9
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": 0.7,
+            }
+            if provider in ["openai", "openrouter"]:
+                payload["response_format"] = {"type": "json_object"}
+
+            async with session.post(self.base_urls.get(provider), headers=headers, json=payload) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    raise Exception(f"AI API Error ({resp.status}): {text}")
                 
-                payload = {
-                    "model": self.model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    # Force JSON output if the provider supports it
-                    "response_format": {"type": "json_object"} if provider in ["openai", "openrouter"] else None
-                }
+                data = await resp.json()
+                ai_msg = data['choices'][0]['message']['content']
 
-                async with session.post(self.base_urls.get(provider), headers=headers, json=payload) as resp:
-                    if resp.status != 200:
-                        text = await resp.text()
-                        raise Exception(f"AI API Error ({resp.status}): {text}")
+                # Try to parse JSON from AI message
+                try:
+                    res_json = json.loads(ai_msg)
                     
-                    data = await resp.json()
-                    ai_msg = data['choices'][0]['message']['content']
-
-                    # Try to parse JSON from AI message
-                    try:
-                        # AI might include extra text; extract JSON using a helper if needed
-                        # but with 'json_object' it should be clean.
-                        res_json = json.loads(ai_msg)
-                        
-                        # Handle Web Search requested by AI
-                        if res_json.get("action") == "web_search":
-                            query = res_json.get("parameters", {}).get("query")
-                            if query:
-                                search_results = await self.get_search_results(query)
-                                # Add search results as a 'system' or 'user' response and recurse
-                                messages.append({"role": "assistant", "content": ai_msg})
-                                messages.append({"role": "user", "content": f"Web Search Results for '{query}':\n{search_results}"})
-                                
-                                # Recursion with search context
-                                payload["messages"] = messages
-                                async with session.post(self.base_urls.get(self.provider), headers=headers, json=payload) as search_resp:
-                                    search_data = await search_resp.json()
-                                    ai_msg = search_data['choices'][0]['message']['content']
-                                    res_json = json.loads(ai_msg)
-                        
-                        responses.append(res_json)
-                    except json.JSONDecodeError:
-                        # If AI failed to return valid JSON, skip this response
-                        continue
-        
-        # If we have no valid responses, fall back to original single attempt
-        if not responses:
-            # Original single attempt logic
-            messages = [{"role": "system", "content": enhanced_prompt}]
-            messages.extend(combined_context)
-            messages.append({"role": "user", "content": user_input})
-
-            async with aiohttp.ClientSession() as session:
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                }
-                if provider == "openrouter":
-                    headers["HTTP-Referer"] = "https://github.com/antigravity"
-                    headers["X-Title"] = "Immortal AI Discord Bot"
-
-                payload = {
-                    "model": self.model,
-                    "messages": messages,
-                    "temperature": 0.7,
-                    # Force JSON output if the provider supports it
-                    "response_format": {"type": "json_object"} if provider in ["openai", "openrouter"] else None
-                }
-
-                async with session.post(self.base_urls.get(provider), headers=headers, json=payload) as resp:
-                    if resp.status != 200:
-                        text = await resp.text()
-                        raise Exception(f"AI API Error ({resp.status}): {text}")
+                    # Handle Web Search requested by AI
+                    if res_json.get("action") == "web_search":
+                        query = res_json.get("parameters", {}).get("query")
+                        if query:
+                            search_results = await self.get_search_results(query)
+                            messages.append({"role": "assistant", "content": ai_msg})
+                            messages.append({"role": "user", "content": f"Web Search Results for '{query}':\n{search_results}"})
+                            
+                            # Retry with search context
+                            payload["messages"] = messages
+                            async with session.post(self.base_urls.get(provider), headers=headers, json=payload) as search_resp:
+                                search_data = await search_resp.json()
+                                ai_msg = search_data['choices'][0]['message']['content']
+                                res_json = json.loads(ai_msg)
                     
-                    data = await resp.json()
-                    ai_msg = data['choices'][0]['message']['content']
-
-                    # Try to parse JSON from AI message
-                    try:
-                        # AI might include extra text; extract JSON using a helper if needed
-                        # but with 'json_object' it should be clean.
-                        res_json = json.loads(ai_msg)
-                        
-                        # Handle Web Search requested by AI
-                        if res_json.get("action") == "web_search":
-                            query = res_json.get("parameters", {}).get("query")
-                            if query:
-                                search_results = await self.get_search_results(query)
-                                # Add search results as a 'system' or 'user' response and recurse
-                                messages.append({"role": "assistant", "content": ai_msg})
-                                messages.append({"role": "user", "content": f"Web Search Results for '{query}':\n{search_results}"})
-                                
-                                # Recursion with search context
-                                payload["messages"] = messages
-                                async with session.post(self.base_urls.get(self.provider), headers=headers, json=payload) as search_resp:
-                                    search_data = await search_resp.json()
-                                    ai_msg = search_data['choices'][0]['message']['content']
-                                    res_json = json.loads(ai_msg)
-                        
-                        return res_json
-                    except json.JSONDecodeError:
-                        # If AI failed to return valid JSON, the retry logic will handle it
-                        # or we can pass it back to a 'correction' filter
-                        raise Exception("AI failed to return valid JSON.")
+                    return res_json
+                except json.JSONDecodeError:
+                    raise Exception("AI failed to return valid JSON.")
         
-        # Select the most consistent response (highest confidence or first valid one)
-        # For now, we'll use the first response but in a more advanced implementation
-        # we would compare responses and select the most consistent
-        return responses[0] if responses else {}
+        return {}
 
 # Default System Prompt
 SYSTEM_PROMPT = """
