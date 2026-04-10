@@ -58,10 +58,10 @@ class VectorMemory:
                 metadata={"hnsw:space": "cosine"}
             )
             
-            logger.info(f"Vector memory initialized with {self.collection.count()} stored conversations and {self.summary_collection.count()} summaries")
+            logger.info("Vector memory initialized with %d stored conversations and %d summaries", self.collection.count(), self.summary_collection.count())
             
         except Exception as e:
-            logger.error(f"Failed to initialize vector memory: {e}")
+            logger.error("Failed to initialize vector memory: %s", e)
             self.client = None
             self.collection = None
             self.summary_collection = None
@@ -112,12 +112,12 @@ Walkthrough: {walkthrough}
             metadata = {
                 "guild_id": str(guild_id),
                 "user_id": str(user_id),
-                "timestamp": str(timestamp),
-                "importance_score": str(importance_score),
-                "has_reasoning": str(bool(reasoning)),
-                "has_walkthrough": str(bool(walkthrough)),
-                "access_count": "0",
-                "last_accessed": str(timestamp)
+                "timestamp": timestamp,
+                "importance_score": importance_score,
+                "has_reasoning": bool(reasoning),
+                "has_walkthrough": bool(walkthrough),
+                "access_count": 0,
+                "last_accessed": timestamp
             }
             
             # Store in collection
@@ -127,10 +127,10 @@ Walkthrough: {walkthrough}
                 ids=[doc_id]
             )
             
-            logger.debug(f"Stored conversation in vector memory: {doc_id}")
+            logger.debug("Stored conversation in vector memory: %s", doc_id)
             
         except Exception as e:
-            logger.error(f"Failed to store conversation in vector memory: {e}")
+            logger.error("Failed to store conversation in vector memory: %s", e)
     
     def retrieve_relevant_conversations(
         self,
@@ -167,7 +167,7 @@ Walkthrough: {walkthrough}
             # where_conditions.append({"user_id": {"$eq": str(user_id)}})
             
             # Filter by minimum importance
-            where_conditions.append({"importance_score": {"$gte": str(min_importance)}})
+            where_conditions.append({"importance_score": {"$gte": min_importance}})
             
             # Combine conditions (ChromaDB uses AND for multiple conditions)
             where_clause = {"$and": where_conditions} if len(where_conditions) > 1 else where_conditions[0]
@@ -196,7 +196,7 @@ Walkthrough: {walkthrough}
                     
                     # Apply reinforcement: boost importance based on access frequency
                     # Using logarithmic scaling to prevent runaway importance
-                    importance = float(metadata.get('importance_score', '0.5'))
+                    importance = metadata.get('importance_score', 0.5)
                     # Reinforcement factor: more access = higher importance, but with diminishing returns
                     reinforcement_factor = min(0.5, 0.1 * math.log(access_count + 1))
                     # Boost importance but cap at 1.0
@@ -224,13 +224,13 @@ Walkthrough: {walkthrough}
                             metadatas=[update['metadata']]
                         )
                     except Exception as e:
-                        logger.error(f"Failed to update memory {update['id']} after reinforcement: {e}")
+                        logger.error("Failed to update memory %s after reinforcement: %s", update['id'], e)
             
-            logger.debug(f"Retrieved {len(conversations)} relevant conversations from vector memory")
+            logger.debug("Retrieved %d relevant conversations from vector memory", len(conversations))
             return conversations
             
         except Exception as e:
-            logger.error(f"Failed to retrieve conversations from vector memory: {e}")
+            logger.error("Failed to retrieve conversations from vector memory: %s", e)
             return []
     
     def decay_memory(self, half_life_days: float = 7.0, max_age_days: int = 30):
@@ -247,7 +247,7 @@ Walkthrough: {walkthrough}
         try:
             # Get all memories with metadata
             results = self.collection.get(
-                include=["metadatas", "documents", "embeddings"]
+                include=["metadatas"]
             )
             
             if not results['ids']:
@@ -293,7 +293,7 @@ Walkthrough: {walkthrough}
             # Delete expired memories
             if to_delete:
                 self.collection.delete(ids=to_delete)
-                logger.info(f"Decayed {len(to_delete)} old memories from vector memory")
+                logger.info("Decayed %d old memories from vector memory", len(to_delete))
             
             # Update importance scores for decaying memories
             for update in to_update:
@@ -302,10 +302,10 @@ Walkthrough: {walkthrough}
                     metadatas=[update['metadata']]
                 )
                 
-            logger.debug(f"Applied memory decay: {len(to_delete)} deleted, {len(to_update)} updated")
+            logger.debug("Applied memory decay: %d deleted, %d updated", len(to_delete), len(to_update))
             
         except Exception as e:
-            logger.error(f"Failed to apply memory decay: {e}")
+            logger.error("Failed to apply memory decay: %s", e)
     
     def summarize_memories(self, guild_id: int, user_id: Optional[int] = None, 
                           max_memories: int = 10, similarity_threshold: float = 0.7):
@@ -412,10 +412,10 @@ Walkthrough: {walkthrough}
                 
                 # Optionally delete original memories after summarization
                 # For safety, we'll just log this action
-                logger.info(f"Created summary for {len(group)} memories in guild {guild_id}")
+                logger.info("Created summary for %d memories in guild %d", len(group), guild_id)
                 
         except Exception as e:
-            logger.error(f"Failed to summarize memories: {e}")
+            logger.error("Failed to summarize memories: %s", e)
     
     def _calculate_text_similarity(self, text1: str, text2: str) -> float:
         """
@@ -456,7 +456,7 @@ Walkthrough: {walkthrough}
             )
             
             if not results['ids'] or not results['metadatas']:
-                logger.warning(f"Memory {memory_id} not found for pinning")
+                logger.warning("Memory %s not found for pinning", memory_id)
                 return False
                 
             metadata = results['metadatas'][0]
@@ -464,9 +464,9 @@ Walkthrough: {walkthrough}
             # Verify ownership
             if (metadata.get('guild_id') != str(guild_id) or 
                 metadata.get('user_id') != str(user_id)):
-                logger.warning(f"Ownership mismatch for memory {memory_id}")
+                logger.warning("Ownership mismatch for memory %s", memory_id)
                 return False
-                
+            
             # Update metadata to mark as pinned
             metadata['is_pinned'] = 'true'
             
@@ -475,11 +475,11 @@ Walkthrough: {walkthrough}
                 metadatas=[metadata]
             )
             
-            logger.info(f"Pinned memory {memory_id} for user {user_id} in guild {guild_id}")
+            logger.info("Pinned memory %s for user %d in guild %d", memory_id, user_id, guild_id)
             return True
             
         except Exception as e:
-            logger.error(f"Failed to pin memory {memory_id}: {e}")
+            logger.error("Failed to pin memory %s: %s", memory_id, e)
             return False
     
     def unpin_memory(self, memory_id: str, guild_id: int, user_id: int) -> bool:
@@ -505,7 +505,7 @@ Walkthrough: {walkthrough}
             )
             
             if not results['ids'] or not results['metadatas']:
-                logger.warning(f"Memory {memory_id} not found for unpinning")
+                logger.warning("Memory %s not found for unpinning", memory_id)
                 return False
                 
             metadata = results['metadatas'][0]
@@ -513,9 +513,9 @@ Walkthrough: {walkthrough}
             # Verify ownership
             if (metadata.get('guild_id') != str(guild_id) or 
                 metadata.get('user_id') != str(user_id)):
-                logger.warning(f"Ownership mismatch for memory {memory_id}")
+                logger.warning("Ownership mismatch for memory %s", memory_id)
                 return False
-                
+            
             # Update metadata to remove pin
             metadata['is_pinned'] = 'false'
             
@@ -524,11 +524,11 @@ Walkthrough: {walkthrough}
                 metadatas=[metadata]
             )
             
-            logger.info(f"Unpinned memory {memory_id} for user {user_id} in guild {guild_id}")
+            logger.info("Unpinned memory %s for user %d in guild %d", memory_id, user_id, guild_id)
             return True
             
         except Exception as e:
-            logger.error(f"Failed to unpin memory {memory_id}: {e}")
+            logger.error("Failed to unpin memory %s: %s", memory_id, e)
             return False
     
     def get_memory_stats(self) -> Dict[str, Any]:
@@ -560,7 +560,7 @@ Walkthrough: {walkthrough}
                 "persist_directory": self.persist_directory
             }
         except Exception as e:
-            logger.error(f"Failed to get vector memory stats: {e}")
+            logger.error("Failed to get vector memory stats: %s", e)
             return {"status": "error", "count": 0, "error": str(e)}
 
 

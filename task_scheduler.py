@@ -108,7 +108,7 @@ class TaskScheduler:
                 logger.info("Daily backup completed via scheduler")
             elif name == "cleanup_old_data":
                 days = params.get("days", 30)
-                dm.cleanup_old_data(days)
+                await dm.cleanup_old_data(days)
                 logger.info("Data cleanup completed (%d days)", days)
             elif name == "weekly_leaderboard":
                 if guild_id:
@@ -128,7 +128,7 @@ class TaskScheduler:
             
             guild = self.bot.get_guild(guild_id)
             if not guild:
-                logger.error(f"Guild {guild_id} not found for AI task: {name}")
+                logger.error("Guild %d not found for AI task: %s", guild_id, name)
                 return
             
             if action_type == "announcement":
@@ -151,18 +151,18 @@ class TaskScheduler:
                         
             elif action_type == "ai_action":
                 ai_input = action_params.get("ai_input")
-                if ai_input and hasattr(self.bot, 'ai_client'):
+                if ai_input and hasattr(self.bot, 'ai'):
                     from ai_client import AIClient, SYSTEM_PROMPT
-                    response = await self.bot.ai_client.chat(guild_id, self.bot.user.id, ai_input, SYSTEM_PROMPT)
+                    response = await self.bot.ai.chat(guild_id, self.bot.user.id, ai_input, SYSTEM_PROMPT)
                     if response.get("action"):
                         from actions import ActionHandler
                         handler = ActionHandler(self.bot)
                         await handler.execute_action(response, guild, interaction=None)
             
-            logger.info(f"AI scheduled task executed: {name}")
+            logger.info("AI scheduled task executed: %s", name)
             
         except Exception as e:
-            logger.error(f"AI task %s execution error: %s", name, e)
+            logger.error("AI task %s execution error: %s", name, e)
 
     def add_ai_task(self, name: str, guild_id: int, cron_expr: str, action_type: str, action_params: dict, channel_id: int = None):
         """Register an AI-scheduled action task."""
@@ -177,7 +177,7 @@ class TaskScheduler:
             "last_run": None
         }
         dm.save_json("ai_scheduled_tasks", tasks)
-        logger.info(f"AI scheduled task added: {name} ({action_type})")
+        logger.info("AI scheduled task added: %s (%s)", name, action_type)
 
     def remove_ai_task(self, name: str):
         """Remove an AI-scheduled task."""
@@ -185,7 +185,7 @@ class TaskScheduler:
         if name in tasks:
             del tasks[name]
             dm.save_json("ai_scheduled_tasks", tasks)
-            logger.info(f"AI scheduled task removed: {name}")
+            logger.info("AI scheduled task removed: %s", name)
 
     async def _check_ai_tasks(self):
         """Check and execute due AI-scheduled tasks."""
@@ -206,13 +206,13 @@ class TaskScheduler:
                 
                 last_run = task_data.get("last_run")
                 if last_run is None or prev_run.timestamp() > last_run:
-                    logger.info(f"Executing AI scheduled task: {name}")
+                    logger.info("Executing AI scheduled task: %s", name)
                     await self._execute_ai_task(name, task_data)
                     task_data["last_run"] = prev_run.timestamp()
                     tasks[name] = task_data
                     dm.save_json("ai_scheduled_tasks", tasks)
             except Exception as e:
-                logger.error(f"AI task %s cron error: %s", name, e)
+                logger.error("AI task %s cron error: %s", name, e)
 
     async def _post_leaderboard(self, guild_id: int):
         """Post weekly leaderboard to the guild."""
