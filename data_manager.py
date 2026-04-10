@@ -379,9 +379,26 @@ class DataManager:
                 conn.commit()
                 conn.close()
         else:
-            # For JSON backend, we'd need to load, filter, and save
-            # This is less efficient but maintains compatibility
-            pass
+            # JSON backend cleanup
+            cutoff_timestamp = cutoff_time
+            for f in os.listdir(self.data_dir):
+                if f.startswith("guild_") and f.endswith(".json"):
+                    filename = f[:-5]  # strip .json
+                    data = self.load_json(filename, {})
+                    history = data.get("conversation_history", {})
+                    changed = False
+                    for uid in list(history.keys()):
+                        before = len(history[uid])
+                        history[uid] = [
+                            e for e in history[uid]
+                            if e.get("timestamp", 0) > cutoff_timestamp
+                        ]
+                        if len(history[uid]) != before:
+                            changed = True
+                    if changed:
+                        data["conversation_history"] = history
+                        self.save_json(filename, data)
+                        logger.info("Cleaned old history from %s", f)
 
     def export_memory(self, guild_id: int = None) -> dict:
         """Export conversation memory as JSON (for backup/migration)."""
@@ -465,11 +482,20 @@ class DataManager:
                     exchanges = user_data.get("exchanges", [])
 
                     for ex in exchanges:
-                        conn.execute(
-                            "INSERT INTO exchanges (guild_id, user_id, role, content, timestamp, importance_score) VALUES (?, ?, ?, ?, ?, ?)",
-                            (gid, uid, ex.get("role", "user"), ex.get("content", ""), ex.get("timestamp", time.time()), ex.get("importance_score", 0.5))
+                        cursor = conn.execute(
+                            "SELECT id FROM exchanges WHERE guild_id=? AND user_id=? AND timestamp=? AND role=?",
+                            (gid, uid, ex.get("timestamp"), ex.get("role", "user"))
                         )
-                        result["imported"] += 1
+                        existing = cursor.fetchone()
+                        
+                        if not existing:
+                            conn.execute(
+                                "INSERT INTO exchanges (guild_id, user_id, role, content, timestamp, importance_score) VALUES (?, ?, ?, ?, ?, ?)",
+                                (gid, uid, ex.get("role", "user"), ex.get("content", ""), ex.get("timestamp", time.time()), ex.get("importance_score", 0.5))
+                            )
+                            result["imported"] += 1
+                        else:
+                            result["skipped"] = result.get("skipped", 0) + 1
 
                     summaries = user_data.get("summaries", [])
                     for s in summaries:

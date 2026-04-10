@@ -120,8 +120,11 @@ class ImmortalBot(commands.Bot):
 
     async def setup_hook(self):
         logger.info("Recovering immortal state...")
-        await self.tree.sync()
-        logger.info("Slash commands synced.")
+        if os.getenv("SYNC_COMMANDS", "false").lower() == "true":
+            await self.tree.sync()
+            logger.info("Slash commands synced globally.")
+        else:
+            logger.info("Skipping global sync (set SYNC_COMMANDS=true to force).")
         logger.info("Restoring trigger role presence monitoring...")
         await self.scheduler.start()
 
@@ -295,20 +298,27 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         except Exception as e:
             logger.error(f"Error in self-reflection mechanism: {e}")
 
+    async def _safe_call(self, coro, label: str):
+        """Wrapper to prevent one subsystem crash from breaking others"""
+        try:
+            await coro
+        except Exception as e:
+            logger.error("Error in %s handler: %s", label, e)
+
     async def on_message(self, message):
         if message.author.bot:
             return
 
-        # 1. Passive Systems (XP & Triggers)
-        await self.leveling.handle_message(message)
-        await self.trigger_roles.handle_message(message)
-        await self.moderation.analyze_message(message)
-        await self.intelligence.track_message(message)
-        await self.conflict_resolution.analyze_message(message)
-        await self.community_health.analyze_interaction(message)
+        # 1. Passive Systems (XP & Triggers) - wrapped to prevent cascade failures
+        await self._safe_call(self.leveling.handle_message(message), "leveling")
+        await self._safe_call(self.trigger_roles.handle_message(message), "trigger_roles")
+        await self._safe_call(self.moderation.analyze_message(message), "moderation")
+        await self._safe_call(self.intelligence.track_message(message), "intelligence")
+        await self._safe_call(self.conflict_resolution.analyze_message(message), "conflict_resolution")
+        await self._safe_call(self.community_health.analyze_interaction(message), "community_health")
         
         # 2. AI Chat Channels (if message is in an AI chat channel)
-        await self.chat_channels.handle_message(message)
+        await self._safe_call(self.chat_channels.handle_message(message), "chat_channels")
 
         # 2. Prefix Commands
         prefix = await self.get_dynamic_prefix(self, message)
@@ -456,7 +466,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 "total_count": 0,
                 "success_count": 0,
                 "failure_count": 0,
-                "guilds_used": set(),
+                "guilds_used": [],
                 "last_used": 0
             }
         
@@ -703,13 +713,12 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             "show": self.staff_shift.handle_show_shifts,
         }
         
-        if any(cmd_content.startswith(f"!{cmd}") for cmd in ["shift"]):
-            if command == "shift" and len(parts) > 1:
-                sub_cmd = parts[1].lower()
-                if sub_cmd in shift_only_commands:
-                    func = shift_only_commands[sub_cmd]
-                    await func(message)
-                    return
+        if cmd_content.startswith("shift") and len(parts) > 1:
+            sub_cmd = parts[1].lower()
+            if sub_cmd in shift_only_commands:
+                func = shift_only_commands[sub_cmd]
+                await func(message)
+                return
         
         activity_commands = {
             "logs": self.staff_shift.handle_activity_logs,
