@@ -19,18 +19,22 @@ class VectorMemory:
     """
     Persistent long-term memory using Chroma DB for vector storage.
     Stores and retrieves conversations based on semantic similarity.
+    Includes fallback to keyword search if ChromaDB fails.
     """
     
     def __init__(self, persist_directory: str = "vector_db"):
         self.persist_directory = persist_directory
         self.client = None
         self.collection = None
+        self._fallback_enabled = False
+        self._keyword_index = {}  # fallback: word -> list of (doc_id, content)
         self._initialize()
     
     def _initialize(self):
         """Initialize Chroma DB client and collection."""
         if not CHROMADB_AVAILABLE:
-            logger.warning("ChromaDB not available. Vector memory disabled.")
+            logger.warning("ChromaDB not available. Using fallback keyword search.")
+            self._fallback_enabled = True
             return
             
         try:
@@ -58,13 +62,72 @@ class VectorMemory:
                 metadata={"hnsw:space": "cosine"}
             )
             
-            logger.info("Vector memory initialized with %d stored conversations and %d summaries", self.collection.count(), self.summary_collection.count())
+            self._load_keyword_index()
             
         except Exception as e:
-            logger.error("Failed to initialize vector memory: %s", e)
-            self.client = None
-            self.collection = None
-            self.summary_collection = None
+            logger.error("ChromaDB initialization failed: %s. Using fallback keyword search.", e)
+            self._fallback_enabled = True
+    
+    def _load_keyword_index(self):
+        """Load keyword index from disk for fallback."""
+        index_file = os.path.join(self.persist_directory, "keyword_index.json")
+        if os.path.exists(index_file):
+            try:
+                with open(index_file, "r") as f:
+                    self._keyword_index = json.load(f)
+            except Exception:
+                self._keyword_index = {}
+    
+    def _save_keyword_index(self):
+        """Save keyword index to disk."""
+        index_file = os.path.join(self.persist_directory, "keyword_index.json")
+        try:
+            temp_path = index_file + ".tmp"
+            with open(temp_path, "w") as f:
+                json.dump(self._keyword_index, f)
+            os.replace(temp_path, index_file)
+        except Exception as e:
+            logger.error("Failed to save keyword index: %s", e)
+    
+    def _add_to_keyword_index(self, doc_id: str, content: str, metadata: dict):
+        """Add document to keyword index."""
+        words = content.lower().split()
+        for word in set(words):
+            if word not in self._keyword_index:
+                self._keyword_index[word] = []
+            self._keyword_index[word].append({
+                "id": doc_id,
+                "content": content,
+                "metadata": metadata
+            })
+        self._save_keyword_index()
+    
+    def _keyword_search(self, guild_id: int, query: str, n_results: int = 5) -> List[Dict[str, Any]]:
+        """Fallback keyword-based search when ChromaDB is unavailable."""
+        query_words = query.lower().split()
+        scored = {}
+        
+        for word in query_words:
+            if word in self._keyword_index:
+                for item in self._keyword_index[word]:
+                    if str(item["metadata"].get("guild_id")) != str(guild_id):
+                        continue
+                    
+                    doc_id = item["id"]
+                    if doc_id not in scored:
+                        scored[doc_id] = {
+                            "document": item["content"],
+                            "metadata": item["metadata"],
+                            "score": 0
+                        }
+                    scored[doc_id]["score"] += 1
+        
+        sorted_results = sorted(scored.values(), key=lambda x: x["score"], reverse=True)[:n_results]
+        return [{"id": r["metadata"].get("doc_id", ""), "document": r["document"], "metadata": r["metadata"], "distance": 1.0 - (r["score"] / max(len(query_words), 1))} for r in sorted_results]
+    
+    def is_healthy(self) -> bool:
+        """Check if vector memory is operational."""
+        return not self._fallback_enabled and self.client is not None and self.collection is not None
     
     def _generate_id(self, guild_id: int, user_id: int, timestamp: float) -> str:
         """Generate a unique ID for a conversation entry."""
@@ -129,8 +192,26 @@ Walkthrough: {walkthrough}
             
             logger.debug("Stored conversation in vector memory: %s", doc_id)
             
+            if self._fallback_enabled:
+                self._add_to_keyword_index(doc_id, document_text, metadata)
+            
         except Exception as e:
             logger.error("Failed to store conversation in vector memory: %s", e)
+    
+    def _rebuild_keyword_index(self):
+        """Rebuild keyword index from collection (for migration to fallback)."""
+        if not self.collection:
+            return
+        
+        try:
+            all_data = self.collection.get()
+            for i, doc_id in enumerate(all_data.get("ids", [])):
+                content = all_data.get("documents", [""])[i]
+                metadata = all_data.get("metadatas", [{}])[i]
+                self._add_to_keyword_index(doc_id, content, metadata)
+            logger.info("Keyword index rebuilt with %d entries", len(self._keyword_index))
+        except Exception as e:
+            logger.error("Failed to rebuild keyword index: %s", e)
     
     def retrieve_relevant_conversations(
         self,
@@ -142,6 +223,7 @@ Walkthrough: {walkthrough}
     ) -> List[Dict[str, Any]]:
         """
         Retrieve conversations relevant to the current query.
+        Falls back to keyword search if ChromaDB is unavailable.
         
         Args:
             guild_id: Discord guild ID (for filtering)
@@ -153,8 +235,11 @@ Walkthrough: {walkthrough}
         Returns:
             List of relevant conversation dictionaries
         """
+        if self._fallback_enabled:
+            return self._keyword_search(guild_id, query, n_results)
+        
         if not self.client or not self.collection:
-            return []
+            return self._keyword_search(guild_id, query, n_results)
             
         try:
             # Build where clause for filtering

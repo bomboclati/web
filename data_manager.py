@@ -49,6 +49,39 @@ class DataManager:
                 f.write(key)
             self.cipher = Fernet(key)
             os.chmod(key_file, 0o600)
+    
+    def rotate_api_key(self, guild_id: int) -> str:
+        """Generate and store a new API key for a guild."""
+        import secrets
+        new_key = secrets.token_urlsafe(32)
+        
+        if self.cipher:
+            new_key = self.cipher.encrypt(new_key.encode()).decode()
+        
+        api_keys = self.load_json("api_keys", default={})
+        api_keys[str(guild_id)] = {
+            "key": new_key,
+            "created_at": time.time(),
+            "last_rotated": time.time()
+        }
+        self.save_json("api_keys", api_keys)
+        
+        return new_key if self.cipher else new_key
+    
+    def get_api_key(self, guild_id: int) -> str:
+        """Retrieve API key for a guild."""
+        api_keys = self.load_json("api_keys", default={})
+        key_data = api_keys.get(str(guild_id))
+        if not key_data:
+            return None
+        
+        encrypted_key = key_data.get("key")
+        if self.cipher and encrypted_key:
+            try:
+                return self.cipher.decrypt(encrypted_key.encode()).decode()
+            except Exception:
+                return None
+        return encrypted_key
 
     def _get_path(self, filename: str) -> str:
         import re

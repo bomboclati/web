@@ -7,6 +7,55 @@ from typing import List, Dict, Any, Tuple, Optional
 from data_manager import dm
 from logger import logger
 
+COMMAND_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "command_type": {
+            "type": "string",
+            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "achievements", "titles", "leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "list_triggers", "set_title", "achievements_leaderboard", "help_all"]
+        },
+        "content": {"type": "string"},
+        "actions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "parameters": {"type": "object"}
+                },
+                "required": ["name"]
+            }
+        }
+    },
+    "required": ["command_type"]
+}
+
+def validate_command_json(data: dict) -> Tuple[bool, str]:
+    """Validate custom command JSON against schema. Returns (valid, error_message)."""
+    if not isinstance(data, dict):
+        return False, "Command must be a JSON object"
+    
+    command_type = data.get("command_type")
+    if command_type is None:
+        return False, "Missing required field: command_type"
+    
+    allowed_types = COMMAND_SCHEMA["properties"]["command_type"]["enum"]
+    if command_type not in allowed_types:
+        return False, f"Invalid command_type: {command_type}. Allowed: {allowed_types}"
+    
+    if "actions" in data:
+        if not isinstance(data["actions"], list):
+            return False, "actions must be an array"
+        for i, action in enumerate(data["actions"]):
+            if not isinstance(action, dict):
+                return False, f"Action {i} must be an object"
+            if "name" not in action:
+                return False, f"Action {i} missing required field: name"
+            if action["name"] not in ActionHandler.ALLOWED_ACTIONS:
+                return False, f"Disallowed action in command: {action['name']}"
+    
+    return True, ""
+
 class EditCommandModal(discord.ui.Modal):
     def __init__(self, cmd_name: str, user_id: int):
         super().__init__(title=f"Edit: !{cmd_name}")
@@ -28,9 +77,14 @@ class EditCommandModal(discord.ui.Modal):
         new_code = self.code_input.value
         
         try:
-            json.loads(new_code)
+            data = json.loads(new_code)
         except json.JSONDecodeError:
             await interaction.response.send_message("❌ Invalid JSON! Please enter valid JSON.", ephemeral=True)
+            return
+        
+        valid, error_msg = validate_command_json(data)
+        if not valid:
+            await interaction.response.send_message(f"❌ {error_msg}", ephemeral=True)
             return
         
         custom_cmds = dm.get_guild_data(interaction.guild.id, "custom_commands", {})
@@ -645,6 +699,9 @@ class ActionHandler:
 
     # --- Execution Logic ---
 
+    _custom_cmd_cooldowns = {}  # class-level: (guild_id, user_id, cmd_name) -> timestamp
+    _custom_cmd_cooldown_seconds = 3
+    
     async def execute_custom_command(self, message: discord.Message, code: str, cmd_name: str = None):
         """
         Executes a custom '!' command's stored code.
@@ -652,17 +709,26 @@ class ActionHandler:
         Includes error prevention based on learned patterns.
         """
         guild_id = message.guild.id
+        user_id = message.author.id
         cmd_data_obj = None
+        
+        cooldown_key = (guild_id, user_id, cmd_name)
+        now = time.time()
+        if cooldown_key in self._custom_cmd_cooldowns:
+            remaining = self._custom_cmd_cooldown_seconds - (now - self._custom_cmd_cooldowns[cooldown_key])
+            if remaining > 0:
+                await message.channel.send(f"⏳ Command on cooldown. Wait {int(remaining)}s.", delete_after=2)
+                return None
+        self._custom_cmd_cooldowns[cooldown_key] = now
         
         try:
             data = json.loads(code)
             cmd_data_obj = data
             
-            if isinstance(data, dict) and "command_type" in data:
-                allowed_types = {"application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "achievements", "titles", "leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review"}
-                if data["command_type"] not in allowed_types:
-                    await message.channel.send("❌ Invalid command type.")
-                    return False
+            valid, error_msg = validate_command_json(data)
+            if not valid:
+                await message.channel.send(f"❌ {error_msg}")
+                return False
             
             if isinstance(data, list):
                 # We'd need a way to pass 'message' context to execute_sequence
