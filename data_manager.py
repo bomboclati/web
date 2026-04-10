@@ -234,6 +234,21 @@ class DataManager:
         data = self.load_json(filename)
         return data.get(key, default)
 
+    def set_guild_api_key(self, guild_id: int, api_key: str, provider: str = "openrouter"):
+        """Set guild-specific API key (encrypted storage recommended for production)"""
+        api_keys = self.load_json("guild_api_keys", default={})
+        api_keys[str(guild_id)] = {
+            "api_key": api_key,
+            "provider": provider,
+            "updated_at": datetime.now().isoformat()
+        }
+        self.save_json("guild_api_keys", api_keys)
+
+    def get_guild_api_key(self, guild_id: int) -> Optional[Dict[str, str]]:
+        """Get guild-specific API key"""
+        api_keys = self.load_json("guild_api_keys", default={})
+        return api_keys.get(str(guild_id))
+
     def record_global_action_result(self, action_name: str, success: bool, error: str = None):
         """Record anonymized action result for cross-server intelligence sharing."""
         intelligence = self.load_json("global_intelligence", default={})

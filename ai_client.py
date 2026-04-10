@@ -11,16 +11,25 @@ class AIClient:
     """
     Handles deep reasoning, web searches, and JSON extraction.
     Ensures the bot thinks before acting and provides a walkthrough.
+    Supports per-guild API keys.
     """
     def __init__(self, api_key: str, provider: str = "openrouter", model: Optional[str] = None):
-        self.api_key = api_key
-        self.provider = provider
+        self.default_api_key = api_key
+        self.default_provider = provider
         self.model = model or "meta-llama/llama-3.1-405b-instruct"
         self.base_urls = {
             "openrouter": "https://openrouter.ai/api/v1/chat/completions",
             "openai": "https://api.openai.com/v1/chat/completions",
             "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
         }
+
+    def _get_guild_api_key(self, guild_id: int) -> tuple:
+        """Get API key and provider for a specific guild, fallback to defaults"""
+        from data_manager import dm
+        guild_config = dm.get_guild_api_key(guild_id)
+        if guild_config:
+            return guild_config.get("api_key", self.default_api_key), guild_config.get("provider", self.default_provider)
+        return self.default_api_key, self.default_provider
 
     async def get_search_results(self, query: str) -> str:
         """Performs a web search using Tavily or a fallback."""
@@ -106,7 +115,14 @@ class AIClient:
         Communicates with the LLM, handles history, and processes web search requests.
         Includes self-improvement data from past action successes/failures.
         Now includes self-consistency checks for improved reasoning quality.
+        Supports per-guild API keys.
         """
+        # Get guild-specific API key (fallback to default)
+        api_key, provider = self._get_guild_api_key(guild_id)
+        
+        if not api_key:
+            return {"error": "No API key configured. Use /config apikey to set one."}
+        
         # Get recent history
         history_depth = int(os.getenv("MEMORY_DEPTH", 20))
         history = history_manager.get_enhanced_context(guild_id, user_id, depth=history_depth)
@@ -147,10 +163,10 @@ class AIClient:
 
             async with aiohttp.ClientSession() as session:
                 headers = {
-                    "Authorization": f"Bearer {self.api_key}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json"
                 }
-                if self.provider == "openrouter":
+                if provider == "openrouter":
                     headers["HTTP-Referer"] = "https://github.com/antigravity"
                     headers["X-Title"] = "Immortal AI Discord Bot"
 
@@ -162,10 +178,10 @@ class AIClient:
                     "messages": messages,
                     "temperature": temperature,
                     # Force JSON output if the provider supports it
-                    "response_format": {"type": "json_object"} if self.provider in ["openai", "openrouter"] else None
+                    "response_format": {"type": "json_object"} if provider in ["openai", "openrouter"] else None
                 }
 
-                async with session.post(self.base_urls.get(self.provider), headers=headers, json=payload) as resp:
+                async with session.post(self.base_urls.get(provider), headers=headers, json=payload) as resp:
                     if resp.status != 200:
                         text = await resp.text()
                         raise Exception(f"AI API Error ({resp.status}): {text}")
@@ -209,10 +225,10 @@ class AIClient:
 
             async with aiohttp.ClientSession() as session:
                 headers = {
-                    "Authorization": f"Bearer {self.api_key}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json"
                 }
-                if self.provider == "openrouter":
+                if provider == "openrouter":
                     headers["HTTP-Referer"] = "https://github.com/antigravity"
                     headers["X-Title"] = "Immortal AI Discord Bot"
 
@@ -221,10 +237,10 @@ class AIClient:
                     "messages": messages,
                     "temperature": 0.7,
                     # Force JSON output if the provider supports it
-                    "response_format": {"type": "json_object"} if self.provider in ["openai", "openrouter"] else None
+                    "response_format": {"type": "json_object"} if provider in ["openai", "openrouter"] else None
                 }
 
-                async with session.post(self.base_urls.get(self.provider), headers=headers, json=payload) as resp:
+                async with session.post(self.base_urls.get(provider), headers=headers, json=payload) as resp:
                     if resp.status != 200:
                         text = await resp.text()
                         raise Exception(f"AI API Error ({resp.status}): {text}")

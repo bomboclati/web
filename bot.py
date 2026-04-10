@@ -1279,13 +1279,15 @@ async def status_cmd(interaction: discord.Interaction):
     guild = interaction.guild
     
     vm_stats = vector_memory.get_memory_stats()
+    guild_api = dm.get_guild_api_key(guild.id)
     
     embed = discord.Embed(title="System Status", color=discord.Color.green())
     embed.add_field(name="Bot", value="🟢 Online", inline=True)
     embed.add_field(name="Guild", value=f"🟢 {guild.name}", inline=True)
     embed.add_field(name="Vector Memory", value=f"{vm_stats.get('count', 0)} memories stored", inline=False)
-    embed.add_field(name="AI Provider", value=bot.ai.provider.title(), inline=True)
+    embed.add_field(name="AI Provider", value=(guild_api or {}).get("provider", bot.ai.default_provider).title(), inline=True)
     embed.add_field(name="AI Model", value=bot.ai.model, inline=True)
+    embed.add_field(name="API Key", value="🟢 Server-specific" if guild_api else "🔴 Default", inline=True)
     embed.add_field(name="Self-Reflection", value="🔴 Disabled" if os.getenv("SELF_REFLECT_ENABLED", "false").lower() != "true" else "🟢 Enabled", inline=True)
     
     await interaction.response.send_message(embed=embed)
@@ -1356,6 +1358,7 @@ async def config_cmd(interaction: discord.Interaction):
     embed = discord.Embed(title="Bot Configuration", description="Use subcommands to adjust settings.", color=discord.Color.dark_grey())
     embed.add_field(name="/config model <name>", value="Set AI model (e.g. gpt-4, claude-3)", inline=False)
     embed.add_field(name="/config provider <name>", value="Set AI provider (openrouter, openai, gemini)", inline=False)
+    embed.add_field(name="/config apikey <key>", value="Set server-specific API key", inline=False)
     embed.add_field(name="/config prefix <char>", value="Set server prefix", inline=False)
     embed.add_field(name="/config depth <number>", value="Set memory depth", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1365,8 +1368,10 @@ async def config_cmd(interaction: discord.Interaction):
 async def config_model(interaction: discord.Interaction, model: str):
     if not interaction.user.guild_permissions.administrator:
         return await interaction.response.send_message("Admin only.", ephemeral=True)
+    
+    dm.update_guild_data(interaction.guild.id, "custom_model", model)
     bot.ai.model = model
-    await interaction.response.send_message(f"AI model set to **{model}**.", ephemeral=True)
+    await interaction.response.send_message(f"AI model set to **{model}** for this server.", ephemeral=True)
 
 @bot.tree.command(name="config_provider", description="Set the AI provider")
 @app_commands.choices(provider=[
@@ -1379,8 +1384,11 @@ async def config_provider(interaction: discord.Interaction, provider: str):
         return await interaction.response.send_message("Admin only.", ephemeral=True)
     if provider not in bot.ai.base_urls:
         return await interaction.response.send_message(f"Unknown provider. Valid: {', '.join(bot.ai.base_urls.keys())}", ephemeral=True)
-    bot.ai.provider = provider
-    await interaction.response.send_message(f"AI provider set to **{provider}**.", ephemeral=True)
+    
+    current_key = dm.get_guild_api_key(interaction.guild.id)
+    api_key = current_key.get("api_key") if current_key else os.getenv("AI_API_KEY", "")
+    dm.set_guild_api_key(interaction.guild.id, api_key, provider)
+    await interaction.response.send_message(f"AI provider set to **{provider}** for this server.", ephemeral=True)
 
 @bot.tree.command(name="config_prefix", description="Set the server prefix")
 @app_commands.describe(prefix="New prefix character")
@@ -1401,6 +1409,20 @@ async def config_depth(interaction: discord.Interaction, depth: int):
         return await interaction.response.send_message("Depth must be between 5 and 100.", ephemeral=True)
     dm.update_guild_data(interaction.guild.id, "memory_depth", depth)
     await interaction.response.send_message(f"Memory depth set to **{depth}**.", ephemeral=True)
+
+@bot.tree.command(name="config_apikey", description="Set server-specific AI API key")
+@app_commands.describe(api_key="Your API key", provider="AI provider (default: openrouter)")
+@app_commands.choices(provider=[
+    app_commands.Choice(name="OpenRouter", value="openrouter"),
+    app_commands.Choice(name="OpenAI", value="openai"),
+    app_commands.Choice(name="Gemini", value="gemini"),
+])
+async def config_apikey(interaction: discord.Interaction, api_key: str, provider: str = "openrouter"):
+    if not interaction.user.guild_permissions.administrator:
+        return await interaction.response.send_message("Admin only.", ephemeral=True)
+    
+    dm.set_guild_api_key(interaction.guild.id, api_key, provider)
+    await interaction.response.send_message(f"✅ API key set for this server!\nProvider: **{provider}**", ephemeral=True)
 
 @bot.tree.command(name="undo", description="Reverse latest actions")
 @app_commands.describe(count="Number of action groups to undo (default: 1)")
