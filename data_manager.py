@@ -31,9 +31,22 @@ class DataManager:
             self._init_sqlite()
 
     def _get_path(self, filename: str) -> str:
-        if not filename.endswith(".json"):
-            filename += ".json"
-        return os.path.join(self.data_dir, filename)
+        import re
+        safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', filename)
+        if not safe_name:
+            raise ValueError("Invalid filename")
+        
+        if not safe_name.endswith(".json"):
+            safe_name += ".json"
+        
+        full_path = os.path.join(self.data_dir, safe_name)
+        resolved = os.path.abspath(full_path)
+        data_dir_resolved = os.path.abspath(self.data_dir)
+        
+        if not resolved.startswith(data_dir_resolved):
+            raise ValueError("Path traversal attempt detected")
+        
+        return full_path
 
     def _init_sqlite(self):
         """Initialize SQLite database for history storage"""

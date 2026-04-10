@@ -1,7 +1,20 @@
 import logging
 import os
 import sys
+import re
 from logging.handlers import RotatingFileHandler
+
+class SensitiveDataFilter(logging.Filter):
+    """Filter to redact sensitive data from log messages."""
+    def filter(self, record):
+        if isinstance(record.msg, str):
+            record.msg = re.sub(
+                r'(api_key|token|secret|password|key)[=:]\s*[\w\-]+',
+                r'\1=***REDACTED***',
+                record.msg,
+                flags=re.IGNORECASE
+            )
+        return True
 
 def setup_logger(name: str = "immortal_bot") -> logging.Logger:
     """Set up structured logging with file and console output."""
@@ -10,6 +23,8 @@ def setup_logger(name: str = "immortal_bot") -> logging.Logger:
 
     if logger.handlers:
         return logger
+    
+    logger.addFilter(SensitiveDataFilter())
 
     log_dir = "logs"
     if not os.path.exists(log_dir):
