@@ -332,6 +332,8 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 await self._handle_staff_command(message, cmd_content)
                 return
             
+            guild_cmds = dm.get_guild_data(message.guild.id, "custom_commands", {})
+            
             matched_cmd = None
             matched_data = None
             
@@ -733,10 +735,6 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             "probation": self.staff_reviews.handle_probation_status,
             "vote": self.staff_reviews.handle_peer_vote,
         }
-        
-        if command in staff_commands:
-            cmd_func = staff_commands[command]
-            await cmd_func(message, parts)
         
         if command in staff_commands:
             cmd_func = staff_commands[command]
@@ -1198,16 +1196,16 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
             await interaction.followup.send(embed=embed, ephemeral=True)
             history_manager.add_exchange(guild_id, user_id, user_input, summary)
             # Store in vector memory for long-term recall
-            vector_memory.store_conversation(
+vector_memory.store_conversation(
                 guild_id=guild_id,
                 user_id=user_id,
                 user_message=user_input,
                 bot_response=summary,
                 reasoning=reasoning,
                 walkthrough=walkthrough
-             )
-             # Self-reflection mechanism for response improvement
-             await _self_reflect_on_response(guild_id, user_id, user_input, summary, reasoning, walkthrough)
+)
+            # Self-reflection mechanism for response improvement
+            await _self_reflect_on_response(guild_id, user_id, user_input, summary, reasoning, walkthrough)
             return
         
         bot.pending_confirms[user_id] = {
