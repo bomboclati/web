@@ -293,10 +293,10 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 importance_score=0.7  # Reflections are moderately important for learning
             )
             
-            logger.debug(f"Stored self-reflection for user {user_id} in guild {guild_id}")
+            logger.debug("Stored self-reflection for user %d in guild %d", user_id, guild_id)
             
         except Exception as e:
-            logger.error(f"Error in self-reflection mechanism: {e}")
+            logger.error("Error in self-reflection mechanism: %s", e)
 
     async def _safe_call(self, coro, label: str):
         """Wrapper to prevent one subsystem crash from breaking others"""
@@ -588,7 +588,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             await message.channel.send("📤 Here is your conversation memory export:", file=file)
             
         except Exception as e:
-            logger.error(f"Memory export failed: {e}")
+            logger.error("Memory export failed: %s", e)
             await message.channel.send(f"Export failed: {str(e)}")
 
     async def _handle_import_memory(self, message):
@@ -625,7 +625,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         except json.JSONDecodeError:
             await message.channel.send("Invalid JSON file format.")
         except Exception as e:
-            logger.error(f"Memory import failed: {e}")
+            logger.error("Memory import failed: %s", e)
             await message.channel.send(f"Import failed: {str(e)}")
 
     async def _handle_scheduled_actions(self, message, cmd_content):
@@ -1018,7 +1018,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                         logger.error(f"Error notifying guild {filename}: {e}")
         
         if notified_guilds:
-            logger.info(f"Notified {len(notified_guilds)} guilds about !{cmd_name} improvement")
+            logger.info("Notified %d guilds about !%s improvement", len(notified_guilds), cmd_name)
 
 # Initialize Bot
 bot = ImmortalBot()
@@ -1428,12 +1428,12 @@ async def health_cmd(interaction: discord.Interaction):
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
-    logger.info(f"Joined guild: {guild.name} (ID: {guild.id})")
+    logger.info("Joined guild: %s (ID: %d)", guild.name, guild.id)
     await bot.auto_setup.on_guild_join(guild)
 
 @bot.event
 async def on_guild_remove(guild: discord.Guild):
-    logger.info(f"Left guild: {guild.name} (ID: {guild.id})")
+    logger.info("Left guild: %s (ID: %d)", guild.name, guild.id)
     await bot.auto_setup.on_guild_remove(guild)
 
 @bot.event  
@@ -1442,7 +1442,7 @@ async def on_member_remove(member):
     try:
         await bot.staff_extras.on_member_remove(member)
     except Exception as e:
-        logger.warning(f"Exit interview error: {e}")
+        logger.warning("Exit interview error: %s", e)
 
 @bot.event
 async def on_raw_reaction_add(payload):
@@ -1454,7 +1454,7 @@ async def on_raw_reaction_add(payload):
         if user and not user.bot:
             await bot.staff_extras.on_reaction_add(message, user)
     except Exception as e:
-        logger.warning(f"Reaction add error: {e}")
+        logger.warning("Reaction add error: %s", e)
 
 # Main Execution
 if __name__ == "__main__":

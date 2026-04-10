@@ -467,9 +467,9 @@ async def save_conversation_summary(self, guild_id: int, user_id: int,
         conn.close()
 
         if not result["errors"]:
-            logger.info(f"Memory import completed: {result['imported']} exchanges")
+            logger.info("Memory import completed: %d exchanges", result['imported'])
         else:
-            logger.error(f"Memory import completed with errors: {result['errors']}")
+            logger.error("Memory import completed with errors: %s", result['errors'])
 
         return result
 
