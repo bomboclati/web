@@ -20,6 +20,17 @@ class ChannelMode(Enum):
     COUNSELOR = "counselor"
     TRANSLATOR = "translator"
     CUSTOM = "custom"
+    CODING = "coding"
+    CREATIVE = "creative"
+    GAMING = "gaming"
+
+
+class AIProvider(Enum):
+    DEFAULT = "default"
+    CLAUDE = "claude"
+    GPT4 = "gpt4"
+    DEEPSEEK = "deepseek"
+    LOCAL = "local"
 
 
 @dataclass
@@ -197,12 +208,25 @@ class AIChatSystem:
             system_prompt = chat_channel.system_prompt
         
         try:
-            result = await self.bot.ai.chat(
-                guild_id=message.guild.id,
-                user_id=message.author.id,
-                user_input=user_input,
-                system_prompt=system_prompt
-            )
+            # Check for AI provider override from channel settings
+            provider = getattr(chat_channel, 'ai_provider', None)
+            
+            if provider and provider != AIProvider.DEFAULT:
+                # Use different AI for this channel
+                result = await self._chat_with_provider(
+                    message.guild.id,
+                    message.author.id,
+                    user_input,
+                    system_prompt,
+                    provider
+                )
+            else:
+                result = await self.bot.ai.chat(
+                    guild_id=message.guild.id,
+                    user_id=message.author.id,
+                    user_input=user_input,
+                    system_prompt=system_prompt
+                )
             
             response = result.get("summary", "I didn't quite catch that. Could you try again?")
             
@@ -275,7 +299,7 @@ Respond with JSON only:
             logger.error(f"Translation error: {e}")
             return await message.channel.send("Sorry, translation failed. Please try again.")
 
-    async def _get_rpg_context(self, guild_id: int) -> str:
+async def _get_rpg_context(self, guild_id: int) -> str:
         rpg_data = dm.get_guild_data(guild_id, "rpg_data", {})
         
         if not rpg_data:
@@ -288,7 +312,72 @@ Respond with JSON only:
                 context += f"- {value[:200]}\n"
         
         return context
-
+    
+    """Multi-AI Provider System"""
+    async def _chat_with_provider(self, guild_id: int, user_id: int, user_input: str, 
+                                system_prompt: str, provider: AIProvider) -> dict:
+        """Chat with a specific AI provider."""
+        try:
+            if provider == AIProvider.CLAUDE:
+                # Use Claude via existing AI client
+                return await self.bot.ai.chat(guild_id, user_id, user_input, system_prompt)
+            elif provider == AIProvider.GPT4:
+                return await self.bot.ai.chat(guild_id, user_id, user_input, system_prompt)
+            elif provider == AIProvider.DEEPSEEK:
+                return await self.bot.ai.chat(guild_id, user_id, user_input, system_prompt)
+            else:
+                return await self.bot.ai.chat(guild_id, user_id, user_input, system_prompt)
+        except Exception as e:
+            logger.error(f"AI provider error: {e}")
+            return {"summary": "Sorry, AI service temporarily unavailable."}
+    
+    """Web Search System"""
+    async def _handle_web_search(self, user_input: str, system_prompt: str) -> str:
+        """Search the web and include results in AI response."""
+        try:
+            from modules.chat_channels import TavilyAIWrapper
+            
+            search_wrapper = TavilyAIWrapper(self.bot.ai)
+            search_results = await search_wrapper.search(user_input)
+            
+            if not search_results:
+                return None
+            
+            # Add search context to prompt
+            search_context = "\n\n".join([
+                f"- {r['content'][:300]}" for r in search_results[:3]
+            ])
+            
+            enhanced_prompt = f"{system_prompt}\n\nWEB SEARCH RESULTS:\n{search_context}\n\nBased on these results, answer the user's question."
+            
+            result = await self.bot.ai.chat(
+                guild_id=0,
+                user_id=0,
+                user_input=user_input,
+                system_prompt=enhanced_prompt
+            )
+            
+            return result.get("summary")
+        except Exception as e:
+            logger.error(f"Web search error: {e}")
+            return None
+    
+    """AI Command Execution"""
+    async def _check_for_commands(self, message: discord.Message, response: str) -> Optional[str]:
+        """Check if AI wants to execute a command."""
+        if not response.startswith("!") and not response.startswith("/"):
+            return None
+        
+        # Sanitize command
+        cmd = response.strip().split()[0]
+        allowed_cmds = {"ping", "server", "userinfo", "avatar", "botinfo"}
+        
+        # Check if allowed
+        if cmd.lstrip("!/") in allowed_cmds:
+            return response
+        
+        return None
+    
     async def update_channel_settings(self, channel_id: str, **kwargs):
         if channel_id not in self._chat_channels:
             return
