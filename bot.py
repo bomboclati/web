@@ -1196,16 +1196,17 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
             await interaction.followup.send(embed=embed, ephemeral=True)
             history_manager.add_exchange(guild_id, user_id, user_input, summary)
             # Store in vector memory for long-term recall
-vector_memory.store_conversation(
+            vector_memory.store_conversation(
                 guild_id=guild_id,
                 user_id=user_id,
                 user_message=user_input,
                 bot_response=summary,
                 reasoning=reasoning,
                 walkthrough=walkthrough
-)
-            # Self-reflection mechanism for response improvement
-            await _self_reflect_on_response(guild_id, user_id, user_input, summary, reasoning, walkthrough)
+            )
+            # Self-reflection mechanism (opt-in via SELF_REFLECT_ENABLED env var)
+            if os.getenv("SELF_REFLECT_ENABLED", "false").lower() == "true":
+                await _self_reflect_on_response(guild_id, user_id, user_input, summary, reasoning, walkthrough)
             return
         
         bot.pending_confirms[user_id] = {
@@ -1252,6 +1253,10 @@ vector_memory.store_conversation(
                 reasoning=reasoning,
                 walkthrough=walkthrough
             )
+            # Self-reflection (opt-in)
+            if os.getenv("SELF_REFLECT_ENABLED", "false").lower() == "true":
+                await _self_reflect_on_response(guild_id, user_id, user_input, summary, reasoning, walkthrough)
+            
             del bot.pending_confirms[user_id]
         
         async def cancel_callback(it: discord.Interaction):
@@ -1268,6 +1273,22 @@ vector_memory.store_conversation(
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 # --- Utility Commands ---
+
+@bot.tree.command(name="status", description="View bot and system health")
+async def status_cmd(interaction: discord.Interaction):
+    guild = interaction.guild
+    
+    vm_stats = vector_memory.get_memory_stats()
+    
+    embed = discord.Embed(title="System Status", color=discord.Color.green())
+    embed.add_field(name="Bot", value="🟢 Online", inline=True)
+    embed.add_field(name="Guild", value=f"🟢 {guild.name}", inline=True)
+    embed.add_field(name="Vector Memory", value=f"{vm_stats.get('count', 0)} memories stored", inline=False)
+    embed.add_field(name="AI Provider", value=bot.ai.provider.title(), inline=True)
+    embed.add_field(name="AI Model", value=bot.ai.model, inline=True)
+    embed.add_field(name="Self-Reflection", value="🔴 Disabled" if os.getenv("SELF_REFLECT_ENABLED", "false").lower() != "true" else "🟢 Enabled", inline=True)
+    
+    await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="help", description="List all commands")
 async def help_cmd(interaction: discord.Interaction):
@@ -1443,8 +1464,8 @@ async def on_member_remove(member):
     """Handle exit interviews when staff leave"""
     try:
         await bot.staff_extras.on_member_remove(member)
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Exit interview error: {e}")
 
 @bot.event
 async def on_raw_reaction_add(payload):
@@ -1455,8 +1476,8 @@ async def on_raw_reaction_add(payload):
         user = payload.member
         if user and not user.bot:
             await bot.staff_extras.on_reaction_add(message, user)
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Reaction add error: {e}")
 
 # Main Execution
 if __name__ == "__main__":
