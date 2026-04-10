@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import sqlite3
+import aiosqlite
 from typing import Any, Dict, Optional, List, Tuple
 import threading
 import time
@@ -112,121 +113,83 @@ class DataManager:
             logger.critical("IO error reading %s: %s — DATA LOSS RISK", filename, e)
             raise
 
-    def save_exchange(self, guild_id: int, user_id: int, role: str, content: str, importance_score: float = 0.5):
+async def save_exchange(self, guild_id: int, user_id: int, role: str, content: str, importance_score: float = 0.5):
         """Save a single exchange to SQLite database"""
         if not self.use_sqlite:
             return False
-            
-        with self._lock:
-            conn = sqlite3.connect(self.db_path, check_same_thread=False)
-            conn.execute(
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
                 "INSERT INTO exchanges (guild_id, user_id, role, content, timestamp, importance_score) VALUES (?, ?, ?, ?, ?, ?)",
                 (guild_id, user_id, role, content, time.time(), importance_score)
             )
-            conn.commit()
-            conn.close()
+            await db.commit()
         return True
 
-    def load_exchanges(self, guild_id: int, user_id: int, limit: Optional[int] = None, 
-                      start_time: Optional[float] = None, end_time: Optional[float] = None) -> List[Dict]:
+    async def load_exchanges(self, guild_id: int, user_id: int, limit: Optional[int] = None, 
+                          start_time: Optional[float] = None, end_time: Optional[float] = None) -> List[Dict]:
         """Load exchanges from SQLite with optional filtering"""
         if not self.use_sqlite:
             return []
-            
-        with self._lock:
-            conn = sqlite3.connect(self.db_path, check_same_thread=False)
-            conn.row_factory = sqlite3.Row  # This allows us to access columns by name
-            
-            query = "SELECT role, content, timestamp, importance_score FROM exchanges WHERE guild_id = ? AND user_id = ?"
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            query = "SELECT role, content, timestamp, importance_score FROM exchanges WHERE guild_id=? AND user_id=?"
             params = [guild_id, user_id]
-            
             if start_time is not None:
                 query += " AND timestamp >= ?"
-                params.append(start_time)  # type: ignore
-                
+                params.append(start_time)
             if end_time is not None:
                 query += " AND timestamp <= ?"
-                params.append(end_time)  # type: ignore
-                
+                params.append(end_time)
             query += " ORDER BY timestamp DESC"
-            
             if limit is not None:
                 query += " LIMIT ?"
                 params.append(limit)
-                
-            cursor = conn.execute(query, params)
-            rows = cursor.fetchall()
-            conn.close()
-            
-            # Convert to list of dicts in chronological order (oldest first)
-            result = []
-            for row in reversed(rows):  # Reverse to get chronological order
-                result.append({
-                    "role": row["role"],
-                    "content": row["content"],
-                    "timestamp": row["timestamp"],
-                    "importance_score": row["importance_score"]
-                })
-                
-            return result
+            async with db.execute(query, params) as cursor:
+                rows = await cursor.fetchall()
+        return [
+            {"role": r["role"], "content": r["content"], "timestamp": r["timestamp"], "importance_score": r["importance_score"]}
+            for r in reversed(rows)
+        ]
 
-    def save_conversation_summary(self, guild_id: int, user_id: int, start_timestamp: float, 
-                                 end_timestamp: float, summary_text: str, message_count: int):
+async def save_conversation_summary(self, guild_id: int, user_id: int, 
+                                  end_timestamp: float, summary_text: str, message_count: int):
         """Save a conversation summary"""
         if not self.use_sqlite:
             return False
-            
-        with self._lock:
-            conn = sqlite3.connect(self.db_path, check_same_thread=False)
-            conn.execute(
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
                 """INSERT INTO conversation_summaries 
                    (guild_id, user_id, start_timestamp, end_timestamp, summary_text, message_count, created_at) 
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (guild_id, user_id, start_timestamp, end_timestamp, summary_text, message_count, time.time())
+                (guild_id, user_id, time.time() - (message_count * 2), end_timestamp, summary_text, message_count, time.time())
             )
-            conn.commit()
-            conn.close()
+            await db.commit()
         return True
 
-    def load_conversation_summaries(self, guild_id: int, user_id: int, 
-                                   start_time: Optional[float] = None, 
-                                   end_time: Optional[float] = None) -> List[Dict]:
+    async def load_conversation_summaries(self, guild_id: int, user_id: int, 
+                                       start_time: Optional[float] = None, 
+                                       end_time: Optional[float] = None) -> List[Dict]:
         """Load conversation summaries"""
         if not self.use_sqlite:
             return []
-            
-        with self._lock:
-            conn = sqlite3.connect(self.db_path, check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-            
-            query = "SELECT start_timestamp, end_timestamp, summary_text, message_count, created_at FROM conversation_summaries WHERE guild_id = ? AND user_id = ?"
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            query = "SELECT start_timestamp, end_timestamp, summary_text, message_count, created_at FROM conversation_summaries WHERE guild_id=? AND user_id=?"
             params = [guild_id, user_id]
-            
             if start_time is not None:
                 query += " AND end_timestamp >= ?"
-                params.append(start_time)  # type: ignore
-                
+                params.append(start_time)
             if end_time is not None:
                 query += " AND start_timestamp <= ?"
-                params.append(end_time)  # type: ignore
-                
+                params.append(end_time)
             query += " ORDER BY start_timestamp DESC"
-                
-            cursor = conn.execute(query, params)
-            rows = cursor.fetchall()
-            conn.close()
-            
-            result = []
-            for row in rows:
-                result.append({
-                    "start_timestamp": row["start_timestamp"],
-                    "end_timestamp": row["end_timestamp"],
-                    "summary_text": row["summary_text"],
-                    "message_count": row["message_count"],
-                    "created_at": row["created_at"]
-                })
-                
-            return result
+            async with db.execute(query, params) as cursor:
+                rows = await cursor.fetchall()
+        return [
+            {"start_timestamp": r["start_timestamp"], "end_timestamp": r["end_timestamp"], 
+             "summary_text": r["summary_text"], "message_count": r["message_count"], "created_at": r["created_at"]}
+            for r in rows
+        ]
 
     def update_guild_data(self, guild_id: int, key: str, value: Any):
         """Helper to update a specific guild's data block in a large file."""
@@ -365,85 +328,55 @@ class DataManager:
         if not os.path.exists(backup_path):
             raise Exception("Backup verification failed")
 
-    def cleanup_old_data(self, days_to_keep: int = 30):
+    async def cleanup_old_data(self, days_to_keep: int = 30):
         """Remove data older than specified days"""
         cutoff_time = time.time() - (days_to_keep * 24 * 60 * 60)
         
         if self.use_sqlite:
-            with self._lock:
-                conn = sqlite3.connect(self.db_path, check_same_thread=False)
-                # Delete old exchanges
-                conn.execute("DELETE FROM exchanges WHERE timestamp < ?", (cutoff_time,))
-                # Delete old summaries
-                conn.execute("DELETE FROM conversation_summaries WHERE created_at < ?", (cutoff_time,))
-                conn.commit()
-                conn.close()
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("DELETE FROM exchanges WHERE timestamp < ?", (cutoff_time,))
+                await db.execute("DELETE FROM conversation_summaries WHERE created_at < ?", (cutoff_time,))
+                await db.commit()
         else:
-            # JSON backend cleanup
-            cutoff_timestamp = cutoff_time
             for f in os.listdir(self.data_dir):
                 if f.startswith("guild_") and f.endswith(".json"):
-                    filename = f[:-5]  # strip .json
+                    filename = f[:-5]
                     data = self.load_json(filename, {})
                     history = data.get("conversation_history", {})
                     changed = False
                     for uid in list(history.keys()):
                         before = len(history[uid])
-                        history[uid] = [
-                            e for e in history[uid]
-                            if e.get("timestamp", 0) > cutoff_timestamp
-                        ]
+                        history[uid] = [e for e in history[uid] if e.get("timestamp", 0) > cutoff_time]
                         if len(history[uid]) != before:
                             changed = True
                     if changed:
                         data["conversation_history"] = history
                         self.save_json(filename, data)
-                        logger.info("Cleaned old history from %s", f)
 
-    def export_memory(self, guild_id: int = None) -> dict:
+    async def export_memory(self, guild_id: int = None) -> dict:
         """Export conversation memory as JSON (for backup/migration)."""
-        export_data = {
-            "version": "1.0",
-            "exported_at": datetime.now().isoformat(),
-            "guilds": {}
-        }
-
+        export_data = {"version": "1.0", "exported_at": datetime.now().isoformat(), "guilds": {}}
+        
         if self.use_sqlite:
-            conn = sqlite3.connect(self.db_path, check_same_thread=False)
-            conn.row_factory = sqlite3.Row
-
-            if guild_id:
-                guild_ids = [guild_id]
-            else:
-                guild_ids = [row[0] for row in conn.execute("SELECT DISTINCT guild_id FROM exchanges").fetchall()]
-
-            for gid in guild_ids:
-                users = [row[0] for row in conn.execute("SELECT DISTINCT user_id FROM exchanges WHERE guild_id = ?", (gid,)).fetchall()]
-                export_data["guilds"][str(gid)] = {"users": {}}
-
-                for uid in users:
-                    exchanges = conn.execute(
-                        "SELECT role, content, timestamp, importance_score FROM exchanges WHERE guild_id = ? AND user_id = ? ORDER BY timestamp",
-                        (gid, uid)
-                    ).fetchall()
-                    export_data["guilds"][str(gid)]["users"][str(uid)] = {
-                        "exchanges": [
-                            {"role": r["role"], "content": r["content"], "timestamp": r["timestamp"], "importance_score": r["importance_score"]}
-                            for r in exchanges
-                        ]
-                    }
-
-                    summaries = conn.execute(
-                        "SELECT start_timestamp, end_timestamp, summary_text, message_count, created_at FROM conversation_summaries WHERE guild_id = ? AND user_id = ?",
-                        (gid, uid)
-                    ).fetchall()
-                    if summaries:
-                        export_data["guilds"][str(gid)]["users"][str(uid)]["summaries"] = [
-                            {"start": s["start_timestamp"], "end": s["end_timestamp"], "summary": s["summary_text"], "count": s["message_count"]}
-                            for s in summaries
-                        ]
-
-            conn.close()
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                if guild_id:
+                    guild_ids = [guild_id]
+                else:
+                    async with db.execute("SELECT DISTINCT guild_id FROM exchanges") as cursor:
+                        guild_ids = [r[0] for r in await cursor.fetchall()]
+                
+                for gid in guild_ids:
+                    async with db.execute("SELECT DISTINCT user_id FROM exchanges WHERE guild_id=?", (gid,)) as cursor:
+                        users = [r[0] for r in await cursor.fetchall()]
+                    export_data["guilds"][str(gid)] = {"users": {}}
+                    
+                    for uid in users:
+                        async with db.execute("SELECT role, content, timestamp, importance_score FROM exchanges WHERE guild_id=? AND user_id=? ORDER BY timestamp", (gid, uid)) as cursor:
+                            exchanges = await cursor.fetchall()
+                        export_data["guilds"][str(gid)]["users"][str(uid)] = {
+                            "exchanges": [{"role": r["role"], "content": r["content"], "timestamp": r["timestamp"], "importance_score": r["importance_score"]} for r in exchanges]
+                        }
         else:
             if guild_id:
                 data = self.load_json(f"guild_{guild_id}", {})
@@ -453,17 +386,40 @@ class DataManager:
                     if f.startswith("guild_") and f.endswith(".json"):
                         gid = f.replace("guild_", "").replace(".json", "")
                         if gid.isdigit():
-                            data = self.load_json(f, {})
+                            data = self.load_json(f[:-5], {})
                             export_data["guilds"][gid] = data.get("conversation_history", {})
-
+        
         return export_data
 
-    def import_memory(self, import_data: dict, merge: bool = True) -> dict:
+    async def import_memory(self, import_data: dict, merge: bool = True) -> dict:
         """Import conversation memory from JSON export."""
-        result = {"success": True, "imported": 0, "errors": []}
+        result = {"success": True, "imported": 0, "skipped": 0, "errors": []}
         
-        version = import_data.get("version", "unknown")
+        if not self.use_sqlite:
+            result["success"] = False
+            result["errors"].append("Import only supported with SQLite backend")
+            return result
+        
         guilds = import_data.get("guilds", {})
+        async with aiosqlite.connect(self.db_path) as db:
+            for gid_str, guild_data in guilds.items():
+                try:
+                    gid = int(gid_str)
+                    for uid_str, user_data in guild_data.get("users", {}).items():
+                        uid = int(uid_str)
+                        for ex in user_data.get("exchanges", []):
+                            async with db.execute("SELECT id FROM exchanges WHERE guild_id=? AND user_id=? AND timestamp=? AND role=?", (gid, uid, ex.get("timestamp"), ex.get("role"))) as cursor:
+                                existing = await cursor.fetchone()
+                            if not existing:
+                                await db.execute("INSERT INTO exchanges (guild_id, user_id, role, content, timestamp, importance_score) VALUES (?, ?, ?, ?, ?, ?)", (gid, uid, ex.get("role", "user"), ex.get("content", ""), ex.get("timestamp", time.time()), ex.get("importance_score", 0.5)))
+                                result["imported"] += 1
+                            else:
+                                result["skipped"] = result.get("skipped", 0) + 1
+                except Exception as e:
+                    result["errors"].append(f"Guild {gid_str}: {str(e)}")
+            await db.commit()
+        
+        return result
 
         if not self.use_sqlite:
             result["success"] = False

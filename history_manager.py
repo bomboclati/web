@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import os
+import asyncio
 from typing import List, Dict, Optional
 from data_manager import dm
 import time
@@ -49,77 +50,65 @@ class HistoryManager:
         # Cap the score between 0.1 and 1.0
         return max(0.1, min(1.0, score))
 
-    def _should_summarize(self, guild_id: int, user_id: int) -> bool:
+    async def _should_summarize(self, guild_id: int, user_id: int) -> bool:
         """Determine if we should create a summary of older exchanges"""
         if not dm.use_sqlite:
-            # For JSON backend, check file-based history
             history = dm.load_json(self.history_file, default={})
             key = self._get_key(guild_id, user_id)
             if key not in history:
                 return False
-            return len(history[key]) >= self.summary_threshold * 2  # *2 because each exchange has 2 entries
+            return len(history[key]) >= self.summary_threshold * 2
         else:
-            # For SQLite backend, count exchanges
-            exchanges = dm.load_exchanges(guild_id, user_id)
+            exchanges = await dm.load_exchanges(guild_id, user_id)
             return len(exchanges) >= self.summary_threshold
 
-    def _create_summary(self, guild_id: int, user_id: int) -> bool:
+    async def _create_summary(self, guild_id: int, user_id: int) -> bool:
         """Create a summary of older exchanges and remove them from active storage"""
         try:
             if dm.use_sqlite:
-                # Get exchanges that are candidates for summarization (older ones)
-                all_exchanges = dm.load_exchanges(guild_id, user_id)
+                all_exchanges = await dm.load_exchanges(guild_id, user_id)
                 if len(all_exchanges) < self.summary_threshold:
                     return False
                     
-                # Take older exchanges for summarization (keep recent ones)
                 exchanges_to_summarize = all_exchanges[:-self.recent_depth*2] if len(all_exchanges) > self.recent_depth*2 else all_exchanges[:len(all_exchanges)//2]
                 recent_exchanges = all_exchanges[-self.recent_depth*2:] if len(all_exchanges) > self.recent_depth*2 else []
                 
                 if not exchanges_to_summarize:
                     return False
                     
-                # Create summary text
                 summary_parts = []
                 for exchange in exchanges_to_summarize:
                     role = exchange["role"]
                     content = exchange["content"]
-                    # Truncate very long messages
                     if len(content) > 100:
                         content = content[:97] + "..."
                     summary_parts.append(f"{role}: {content}")
                 
                 summary_text = " | ".join(summary_parts)
                 
-                # Save summary
                 start_timestamp = exchanges_to_summarize[0]["timestamp"] if exchanges_to_summarize else time.time()
                 end_timestamp = exchanges_to_summarize[-1]["timestamp"] if exchanges_to_summarize else time.time()
                 
-                dm.save_conversation_summary(
+                await dm.save_conversation_summary(
                     guild_id, user_id, 
-                    start_timestamp, end_timestamp,
+                    end_timestamp,
                     summary_text, 
                     len(exchanges_to_summarize)
                 )
                 
-                # For SQLite, we don't actually delete the exchanges here to maintain ability to search
-                # In a production system, we might move them to archive or delete after verifying summary
                 return True
             else:
-                # JSON backend summarization (simpler approach)
                 history = dm.load_json(self.history_file, default={})
                 key = self._get_key(guild_id, user_id)
                 if key not in history or len(history[key]) < self.summary_threshold * 2:
                     return False
                 
-                # Take older exchanges for summarization
                 exchanges_to_summarize = history[key][:-self.recent_depth*2] if len(history[key]) > self.recent_depth*2 else history[key][:len(history[key])//2]
                 if not exchanges_to_summarize:
                     return False
                 
-                # Create summary
                 summary_parts = []
-                for i in range(0, len(exchanges_to_summarize), 2):  # Process in pairs
+                for i in range(0, len(exchanges_to_summarize), 2):
                     if i+1 < len(exchanges_to_summarize):
                         user_content = exchanges_to_summarize[i].get("content", "")
                         bot_content = exchanges_to_summarize[i+1].get("content", "")
@@ -127,9 +116,6 @@ class HistoryManager:
                 
                 summary_text = " | ".join(summary_parts)
                 
-                # In a full implementation, we'd save this to a summaries file
-                # For now, we'll just truncate the history and note that summarization happened
-                # Keep only recent exchanges
                 history[key] = history[key][-self.recent_depth*2:]
                 dm.save_json(self.history_file, history)
                 return True
@@ -138,51 +124,36 @@ class HistoryManager:
             logger.error("Error creating summary: %s", e)
             return False
 
-    def add_exchange(self, guild_id: int, user_id: int, user_msg: str, bot_response: str):
+async def add_exchange(self, guild_id: int, user_id: int, user_msg: str, bot_response: str):
         """Adds a message pair to the infinite history and writes to disk immediately."""
-        # Calculate importance score
         importance_score = self._calculate_importance_score(user_msg, bot_response)
         
-        # Check if we should summarize older exchanges
-        if self._should_summarize(guild_id, user_id):
-            self._create_summary(guild_id, user_id)
+        if await self._should_summarize(guild_id, user_id):
+            await self._create_summary(guild_id, user_id)
         
-        # Store the exchange
         if dm.use_sqlite:
-            # Store in SQLite with importance score
-            dm.save_exchange(guild_id, user_id, "user", user_msg, importance_score)
-            dm.save_exchange(guild_id, user_id, "assistant", bot_response, importance_score)
+            await dm.save_exchange(guild_id, user_id, "user", user_msg, importance_score)
+            await dm.save_exchange(guild_id, user_id, "assistant", bot_response, importance_score)
         else:
-            # Original JSON storage for backward compatibility
             key = self._get_key(guild_id, user_id)
             history = dm.load_json(self.history_file, default={})
             
             if key not in history:
                 history[key] = []
             
-            history[key].append({
-                "role": "user",
-                "content": user_msg
-            })
-            history[key].append({
-                "role": "assistant",
-                "content": bot_response
-            })
+            history[key].append({"role": "user", "content": user_msg})
+            history[key].append({"role": "assistant", "content": bot_response})
             
             dm.save_json(self.history_file, history)
 
-    def get_context(self, guild_id: int, user_id: int, depth: int = 20) -> List[Dict[str, str]]:
+    async def get_context(self, guild_id: int, user_id: int, depth: int = 20) -> List[Dict[str, str]]:
         """Retrieves the last N exchanges for the LLM context, with importance weighting."""
         if dm.use_sqlite:
-            # Get recent exchanges from SQLite
-            exchanges = dm.load_exchanges(guild_id, user_id, limit=depth*2)
+            exchanges = await dm.load_exchanges(guild_id, user_id, limit=depth*2)
+            summaries = await dm.load_conversation_summaries(guild_id, user_id)
             
-            # Also get summaries for additional context if needed
-            summaries = dm.load_conversation_summaries(guild_id, user_id)
-            
-            # Format exchanges for compatibility with existing code
             formatted_exchanges = []
-            for exchange in reversed(exchanges):  # Reverse to get chronological order
+            for exchange in reversed(exchanges):
                 formatted_exchanges.append({
                     "role": exchange["role"],
                     "content": exchange["content"]
@@ -190,24 +161,21 @@ class HistoryManager:
                 
             return formatted_exchanges
         else:
-            # Original JSON backend
             key = self._get_key(guild_id, user_id)
             history = dm.load_json(self.history_file, default={})
             
             if key not in history:
                 return []
             
-            # history[key] is a list of {"role": "...", "content": "..."}
-            # depth * 2 because each exchange has 2 entries (user & assistant)
             return history[key][-(depth * 2):]
 
-    def get_enhanced_context(self, guild_id: int, user_id: int, depth: int = 20) -> List[Dict[str, str]]:
+    async def get_enhanced_context(self, guild_id: int, user_id: int, depth: int = 20) -> List[Dict[str, str]]:
         """Get context enhanced with summaries for better memory utilization"""
         if not dm.use_sqlite:
-            return self.get_context(guild_id, user_id, depth)
+            return await self.get_context(guild_id, user_id, depth)
             
-        recent_exchanges = dm.load_exchanges(guild_id, user_id, limit=depth*2)
-        summaries = dm.load_conversation_summaries(guild_id, user_id)
+        recent_exchanges = await dm.load_exchanges(guild_id, user_id, limit=depth*2)
+        summaries = await dm.load_conversation_summaries(guild_id, user_id)
         
         formatted_exchanges = []
         

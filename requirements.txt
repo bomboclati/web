@@ -9,3 +9,4 @@ requests==2.32.3
 colorama==0.4.6
 chromadb==0.5.4
 cryptography==42.0.5
+aiosqlite==0.20.0

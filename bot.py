@@ -575,7 +575,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             return
         
         try:
-            export_data = dm.export_memory(guild.id)
+            export_data = await dm.export_memory(guild.id)
             
             if not export_data.get("guilds"):
                 await message.channel.send("No conversation data found.")
@@ -615,7 +615,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             content = await attachment.read()
             import_data = json.loads(content.decode('utf-8'))
             
-            result = dm.import_memory(import_data, merge=True)
+            result = await dm.import_memory(import_data, merge=True)
             
             if result["success"]:
                 await message.channel.send(f"✅ Import complete! Imported {result['imported']} exchanges.")
