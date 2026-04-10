@@ -133,17 +133,5 @@ When you use `/bot`, the AI will:
 
 ---
 
-## 💰 AI Tiers (Conceptual)
-
-| Tier | Daily Limit | Features |
-|------|-------------|------------|
-| Free | 50/day | Basic AI chat |
-| Premium | 500/day | +Web search, +Image gen |
-| Enterprise | Unlimited | +Custom AI model |
-
-*Note: Premium and Enterprise require users to add their own API keys.*
-
----
-
 ## 🛡️ License
 MIT License. Built with pride by **Antigravity**.
