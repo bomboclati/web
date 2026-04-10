@@ -65,6 +65,81 @@ class TicketResponse:
 
 
 class AdvancedTickets:
+    """Ticket system with templates and canned responses."""
+    
+    TICKET_TEMPLATES = {
+        "bug_report": {
+            "name": "Bug Report",
+            "category": "technical",
+            "priority": "high",
+            "title": "Bug Report: [Title]",
+            "questions": [
+                "What were you doing when the bug occurred?",
+                "What did you expect to happen?",
+                "What actually happened?",
+                "Any error messages?",
+                "Steps to reproduce:"
+            ]
+        },
+        "feature_request": {
+            "name": "Feature Request",
+            "category": "suggestion",
+            "priority": "medium",
+            "title": "Feature Request: [Title]",
+            "questions": [
+                "What feature would you like?",
+                "Why do you need this feature?",
+                "How would you use it?",
+                "Any alternative solutions?"
+            ]
+        },
+        "billing": {
+            "name": "Billing Issue",
+            "category": "billing",
+            "priority": "high",
+            "title": "Billing: [Issue]",
+            "questions": [
+                "What is your billing concern?",
+                "What card/email used?",
+                "Expected vs actual charge?",
+                "Refund request?"
+            ]
+        },
+        "account": {
+            "name": "Account Help",
+            "category": "support",
+            "priority": "medium",
+            "title": "Account: [Issue]",
+            "questions": [
+                "What issue are you having?",
+                "Email associated with account?",
+                "Any error messages?",
+                " Tried troubleshooting?"
+            ]
+        },
+        "general": {
+            "name": "General Support",
+            "category": "general", 
+            "priority": "low",
+            "title": "Support: [Topic]",
+            "questions": [
+                "How can we help you today?",
+                "Any relevant details?",
+                "Links to related info?"
+            ]
+        }
+    }
+    
+    CANNED_RESPONSES = {
+        "greeting": "Hi! Thanks for creating a ticket. We'll help you shortly.",
+        "thanks": "Thank you for your patience while we look into this.",
+        "more_info": "Could you provide more details about this?",
+        "resolved": "Glad we could help! Is there anything else you need?",
+        "closing": "This ticket will be closed. Create a new one if you need more help!",
+        "escalated": "Escalating this to our team. Theyll respond soon.",
+        "wait": "Please allow us some time to investigate this."
+    }
+    
     def __init__(self, bot):
         self.bot = bot
         self._active_tickets: Dict[str, Ticket] = {}

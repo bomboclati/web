@@ -23,6 +23,7 @@ class EventType(Enum):
     GAME = "game"
     GIVEAWAY = "giveaway"
     CONTEST = "contest"
+    POLL = "poll"
     CUSTOM = "custom"
 
 
@@ -290,9 +291,49 @@ Respond with JSON only:
             active_event.data["contributions"] = []
         except Exception as e:
             logger.error(f"Failed to start story: {e}")
-            active_event.data["story"] = "The story begins..."
+active_event.data["story"] = "The story begins..."
             active_event.data["contributions"] = []
-
+    
+    """Poll System"""
+    POLL_OPTIONS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    
+    async def create_poll(self, channel: discord.TextChannel, question: str, options: List[str], 
+                        duration_minutes: int = 60, multiple_choice: bool = False) -> discord.Message:
+        """Create a poll message with reactions."""
+        if len(options) > 10:
+            options = options[:10]
+        
+        options_text = "\n".join(f"{self.POLL_OPTIONS[i]} {opt}" for i, opt in enumerate(options))
+        
+        embed = discord.Embed(title="📊 New Poll!", color=discord.Color.blurple())
+        embed.add_field(name=question, value=options_text, inline=False)
+        embed.set_footer(text=f"Duration: {duration_minutes} minutes | {'Multiple choice' if multiple_choice else 'Single choice'}")
+        
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="End Poll", style=discord.ButtonStyle.danger, custom_id="end_poll"))
+        
+        msg = await channel.send(embed=embed)
+        
+        # Add reactions
+        for i in range(len(options)):
+            await msg.add_reaction(self.POLL_OPTIONS[i])
+        
+        # Add vote counts to message
+        await msg.add_reaction("📊")
+        
+        return msg
+    
+    async def create_contest(self, channel: discord.TextChannel, title: str, description: str,
+                           submission_deadline: int = 7) -> discord.Message:
+        """Create a contest with submissions."""
+        embed = discord.Embed(title=f"🏆 {title}", description=description, color=discord.Color.gold())
+        embed.add_field(name="How to Enter", value="DM the bot your submission!", inline=False)
+        embed.add_field(name="Deadline", value=f"{submission_deadline} days", inline=False)
+        
+        msg = await channel.send(embed=embed)
+        
+        return msg
+    
     async def _end_event(self, active_event: ActiveEvent):
         event_id = active_event.id
         
