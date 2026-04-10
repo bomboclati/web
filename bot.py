@@ -1015,7 +1015,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                                         await channel.send(embed=embed)
                                         notified_guilds.append(guild.name)
                     except Exception as e:
-                        logger.error(f"Error notifying guild {filename}: {e}")
+                        logger.error("Error notifying guild %s: %s", filename, e)
         
         if notified_guilds:
             logger.info("Notified %d guilds about !%s improvement", len(notified_guilds), cmd_name)
