@@ -308,6 +308,11 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
     async def on_message(self, message):
         if message.author.bot:
             return
+        
+        # Handle DMs (Modmail)
+        if isinstance(message.channel, discord.DM):
+            await self._handle_modmail(message)
+            return
 
         # 1. Passive Systems (XP & Triggers) - wrapped to prevent cascade failures
         await self._safe_call(self.leveling.handle_message(message), "leveling")
@@ -525,6 +530,78 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         self._recent_commands[user_id] = {"command": command, "timestamp": now}
         
         return prev_command
+    
+    async def _handle_modmail(self, message):
+        """Handle DM messages - forward to modmail channel."""
+        user = message.author
+        
+        # Find user's shared guilds
+        shared_guilds = [g for g in self.guilds if g.get_member(user.id)]
+        
+        if not shared_guilds:
+            await user.send("❌ We don't share any servers!")
+            return
+        
+        # Use first shared guild or most active
+        guild = shared_guilds[0]
+        
+        # Get modmail channel
+        modmail_channel_id = dm.get_guild_data(guild.id, "modmail_channel")
+        if not modmail_channel_id:
+            # Try default name
+            modmail_channel = discord.utils.get(guild.text_channels, name="modmail")
+            if modmail_channel:
+                modmail_channel_id = modmail_channel.id
+        
+        if not modmail_channel_id:
+            await user.send(f"❌ Modmail not set up in {guild.name}. Ask staff to run `/setup`!")
+            return
+        
+        modmail_channel = guild.get_channel(modmail_channel_id)
+        if not modmail_channel:
+            await user.send("❌ Modmail channel not found.")
+            return
+        
+        # Forward DM to modmail channel
+        embed = discord.Embed(
+            title=f"📩 Modmail from {user}",
+            description=message.content,
+            color=discord.Color.blurple()
+        )
+        embed.set_footer(text=f"User ID: {user.id}")
+        
+        view = discord.ui.View()
+        reply_btn = discord.ui.Button(label="Reply", style=discord.ButtonStyle.primary)
+        
+        async def reply_callback(it: discord.Interaction):
+            await it.response.send_modal(ModmailReplyModal(self.bot, user, guild.id))
+        
+        reply_btn.callback = reply_callback
+        view.add_item(reply_btn)
+        
+        await modmail_channel.send(embed=embed, view=view)
+        await user.send(f"✅ Message forwarded to {guild.name} staff!")
+    
+    async def _handle_modmail_reply(self, interaction: discord.Interaction, user_id: int, guild_id: int, reply_text: str):
+        """Handle staff reply to modmail."""
+        guild = self.bot.get_guild(guild_id)
+        user = self.bot.get_user(user_id)
+        
+        if not user or not guild:
+            await interaction.response.send_message("❌ User not found.", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title=f"📩 Reply from {guild.name} Staff",
+            description=reply_text,
+            color=discord.Color.green()
+        )
+        
+        try:
+            await user.send(embed=embed)
+            await interaction.response.send_message("✅ Reply sent!", ephemeral=True)
+        except:
+            await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=True)
     
     async def _handle_suggest_command(self, message, cmd_content):
         guild = message.guild
@@ -1034,6 +1111,41 @@ class AIReplyModal(ui.Modal, title='Reply to AI'):
         ))
     
     answer: ui.TextInput
+
+class ModmailReplyModal(ui.Modal, title='Reply to User'):
+    """Modal for staff to reply to modmail."""
+    def __init__(self, bot, user, guild_id):
+        super().__init__()
+        self.bot = bot
+        self.user = user
+        self.guild_id = guild_id
+    
+    reply = ui.TextInput(
+        label='Message',
+        style=discord.TextStyle.paragraph,
+        placeholder='Type your reply...'
+    )
+    self.add_item(reply)
+    
+    async def callback(self, interaction: discord.Interaction):
+        guild = self.bot.get_guild(self.guild_id)
+        user = self.bot.get_user(self.user.id)
+        
+        if not user or not guild:
+            await interaction.response.send_message("❌ User not found.", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title=f"📩 Reply from {guild.name} Staff",
+            description=self.reply.value,
+            color=discord.Color.green()
+        )
+        
+        try:
+            await user.send(embed=embed)
+            await interaction.response.send_message("✅ Reply sent!", ephemeral=True)
+        except:
+            await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=True)
 
 # --- Slash Commands ---
 
