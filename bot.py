@@ -1377,6 +1377,69 @@ async def cancel_cmd(interaction: discord.Interaction):
     else:
         await interaction.response.send_message("No pending action to cancel.", ephemeral=True)
 
+@bot.tree.command(name="analyze", description="AI analyzes your server and suggests improvements")
+async def analyze_cmd(interaction: discord.Interaction):
+    """AI analyzes the server and provides suggestions."""
+    await interaction.response.send_message("🤖 Analyzing server...", ephemeral=True)
+    
+    guild = interaction.guild
+    
+    # Gather server data
+    members = len(guild.members)
+    channels = len(guild.channels)
+    roles = len(guild.roles)
+    
+    # Get community health data
+    health_data = dm.get_guild_data(guild.id, "server_health", {})
+    engagement = health_data.get("engagement_score", 0)
+    active = health_data.get("active_members", 0)
+    
+    # Get systems data
+    custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
+    triggers = dm.get_guild_data(guild.id, "trigger_roles", {})
+    xp_data = dm.get_guild_data(guild.id, "leveling_xp", {})
+    
+    # Let AI analyze and suggest
+    analysis_prompt = f"""Analyze this Discord server and suggest improvements:
+
+SERVER STATS:
+- Members: {members}
+- Channels: {channels}
+- Roles: {roles}
+- Engagement Score: {engagement}/100
+- Active Members: {active}
+
+SYSTEMS:
+- Custom Commands: {len(custom_cmds)}
+- Trigger Roles: {len(triggers)}
+- Leveling Users: {len(xp_data)}
+
+Suggest 3 specific improvements the server should make. Keep it brief and actionable."""
+
+    try:
+        result = await bot.ai.chat(
+            guild_id=guild.id,
+            user_id=interaction.user.id,
+            user_input=analysis_prompt,
+            system_prompt="You are a helpful Discord server consultant. Give concrete, actionable suggestions."
+        )
+        
+        suggestions = result.get("summary", "Could not generate suggestions at this time.")
+        
+        embed = discord.Embed(
+            title="🤖 Server Analysis & Suggestions",
+            description=suggestions,
+            color=discord.Color.green()
+        )
+        embed.set_footer(text=f"Analyzed {guild.name}")
+        embed.add_field(name="Quick Stats", value=f"Members: {members} | Active: {active} | Engagement: {engagement}%", inline=False)
+        
+        await interaction.edit_original_response(content=None, embed=embed)
+        
+    except Exception as e:
+        logger.error(f"Analysis error: {e}")
+        await interaction.edit_original_response(content="❌ Could not complete analysis. Try again later.")
+
 @bot.tree.command(name="suggest", description="Submit a suggestion for the server")
 @app_commands.describe(title="Suggestion title", description="Describe your suggestion")
 async def suggest_cmd(interaction: discord.Interaction, title: str, description: str):
@@ -1405,6 +1468,19 @@ async def suggest_cmd(interaction: discord.Interaction, title: str, description:
     await message.add_reaction("❌")
     
     await interaction.response.send_message("✅ Suggestion submitted!", ephemeral=True)
+
+@bot.tree.command(name="autoanalyze", description="Enable automatic AI analysis of your server")
+@app_commands.describe(interval="How often to analyze (hours)", enabled="Enable or disable")
+async def autoanalyze_cmd(interaction: discord.Interaction, interval: int = 24, enabled: bool = True):
+    """Enable automatic server analysis."""
+    config = dm.get_guild_data(interaction.guild.id, "auto_analyze", {})
+    config["enabled"] = enabled
+    config["interval_hours"] = interval
+    config["last_analysis"] = 0
+    dm.update_guild_data(interaction.guild.id, "auto_analyze", config)
+    
+    status = "enabled" if enabled else "disabled"
+    await interaction.response.send_message(f"🤖 Auto-analyze {status} (every {interval} hours). Use /analyze to see results.", ephemeral=True)
 
 @bot.tree.command(name="list", description="Shows all active automations")
 async def list_cmd(interaction: discord.Interaction):
