@@ -1214,6 +1214,9 @@ async def slash_bot(interaction: discord.Interaction, text: str):
     except discord.errors.NotFound:
         pass
     except Exception as e:
+        error_str = str(e)
+        if "RetryError" in error_str or "API key" in error_str or "No API key" in error_str:
+            return
         try:
             await interaction.followup.send(f"Error: {str(e)}", ephemeral=True)
         except discord.errors.NotFound:
