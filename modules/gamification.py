@@ -35,6 +35,7 @@ class BadgeCategory(Enum):
     EVENT = "event"
     SPECIAL = "special"
     SEASONAL = "seasonal"
+    CHALLENGE = "challenge"
 
 
 @dataclass
