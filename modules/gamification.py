@@ -241,10 +241,10 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
             self._save_quests()
             
         except Exception as e:
-            # If AI chat fails, log the specific reason surfaced by AIClient
-            logger.error(f"Failed to generate daily quest for user {user_id} in guild {guild_id}. Error: {e}")
-            # Ensure we don't try again immediately in the same loop
-            return
+            error_str = str(e)
+            if "No API key" in error_str or "API key" in error_str:
+                return
+            logger.warning(f"Failed to generate daily quest for user {user_id} in guild {guild_id}: {e}")
 
     async def _check_quest_progress(self):
         current_time = time.time()
