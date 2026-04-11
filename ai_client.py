@@ -204,6 +204,7 @@ class AIClient:
             async with session.post(provider_url, headers=headers, json=payload) as resp:
                 if resp.status != 200:
                     text = await resp.text()
+                    logger.error(f"AI API Error from {provider} ({resp.status}): {text}")
                     raise Exception(f"AI API Error ({resp.status}): {text}")
                 
                 res_data = await resp.json()
