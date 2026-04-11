@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, List, Tuple
 import threading
 import time
 from datetime import datetime, timedelta
-from cryptography import Fernet
+from cryptography.fernet import Fernet
 import base64
 import hashlib
 
