@@ -20,15 +20,17 @@ class ServerAnalytics:
         self.bot = bot
         self._hourly_cache = {}  # guild_id -> {hour: metrics}
         self._analytics_task = None
-        
-        # Start the background task
-        self.hourly_analytics_loop.start()
+        # Loop started manually in setup_hook
     
     def __del__(self):
         """Cleanup task on deletion"""
         if self._analytics_task and not self._analytics_task.cancelled():
             self._analytics_task.cancel()
     
+    def start_monitoring_loop(self):
+        if not self.hourly_analytics_loop.is_running():
+            self.hourly_analytics_loop.start()
+
     @tasks.loop(hours=1)
     async def hourly_analytics_loop(self):
         """Run every hour to log current activity and prune old data"""

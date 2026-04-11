@@ -14,6 +14,8 @@ import logging
 from collections import defaultdict, Counter
 import re
 
+from data_manager import dm
+
 logger = logging.getLogger(__name__)
 
 # Raid detection thresholds
@@ -41,7 +43,7 @@ class GuardianSystem:
     def _load_config(self):
         """Load guardian configuration from database"""
         try:
-            config = self.bot.dm.load_json("guardian_config", default={})
+            config = dm.load_json("guardian_config", default={})
             for guild_id, guild_config in config.items():
                 RAID_CONFIG.update(guild_config)
         except Exception as e:
