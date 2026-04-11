@@ -242,7 +242,7 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
             
         except Exception as e:
             error_str = str(e)
-            if "No API key" in error_str or "API key" in error_str:
+            if "No API key" in error_str or "API key" in error_str or "RetryError" in error_str:
                 return
             logger.warning(f"Failed to generate daily quest for user {user_id} in guild {guild_id}: {e}")
 
