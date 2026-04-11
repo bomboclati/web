@@ -438,7 +438,7 @@ Respond with JSON only:
         
         self._save_ticket(ticket)
 
-async def resolve_ticket(self, ticket_id: str, resolution: str):
+    async def resolve_ticket(self, ticket_id: str, resolution: str):
         if ticket_id not in self._active_tickets:
             return
         

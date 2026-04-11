@@ -299,7 +299,7 @@ Respond with JSON only:
             logger.error(f"Translation error: {e}")
             return await message.channel.send("Sorry, translation failed. Please try again.")
 
-async def _get_rpg_context(self, guild_id: int) -> str:
+    async def _get_rpg_context(self, guild_id: int) -> str:
         rpg_data = dm.get_guild_data(guild_id, "rpg_data", {})
         
         if not rpg_data:
@@ -313,10 +313,9 @@ async def _get_rpg_context(self, guild_id: int) -> str:
         
         return context
     
-    """Multi-AI Provider System"""
     async def _chat_with_provider(self, guild_id: int, user_id: int, user_input: str, 
                                 system_prompt: str, provider: AIProvider) -> dict:
-        """Chat with a specific AI provider."""
+        """Multi-AI Provider System - Chat with a specific AI provider."""
         try:
             if provider == AIProvider.CLAUDE:
                 # Use Claude via existing AI client
@@ -331,9 +330,8 @@ async def _get_rpg_context(self, guild_id: int) -> str:
             logger.error(f"AI provider error: {e}")
             return {"summary": "Sorry, AI service temporarily unavailable."}
     
-    """Web Search System"""
     async def _handle_web_search(self, user_input: str, system_prompt: str) -> str:
-        """Search the web and include results in AI response."""
+        """Web Search System - Search the web and include results in AI response."""
         try:
             from modules.chat_channels import TavilyAIWrapper
             
