@@ -1328,9 +1328,9 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
         if not actions:
             embed = discord.Embed(title="AI Response", description=summary, color=discord.Color.blue())
             await interaction.followup.send(embed=embed, ephemeral=True)
-            history_manager.add_exchange(guild_id, user_id, user_input, summary)
+            await history_manager.add_exchange(guild_id, user_id, user_input, summary)
             # Store in vector memory for long-term recall
-            vector_memory.store_conversation(
+            await vector_memory.store_conversation(
                 guild_id=guild_id,
                 user_id=user_id,
                 user_message=user_input,
