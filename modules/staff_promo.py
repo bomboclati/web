@@ -3,7 +3,7 @@ from datetime import datetime
 import json
 import discord
 from discord.ext import commands, tasks
-from typing import Optional
+from typing import Optional, List
 
 from data_manager import dm
 from logger import logger
