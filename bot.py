@@ -1259,7 +1259,13 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
     
     reasoning = res.get("reasoning", "Thinking...")
     walkthrough = res.get("walkthrough", "Planning...")
-    summary = res.get("summary", "Ready to proceed.")
+    # Flexible key check for AI response content
+    summary = res.get("summary") or res.get("message") or res.get("response") or res.get("question")
+    if not summary and reasoning:
+        summary = f"*AI Reasoning/Fallback:* {reasoning}"
+    if not summary:
+        summary = "Ready to proceed."
+        
     needs_input = res.get("needs_input", False)
     question = res.get("question", "")
     

@@ -218,7 +218,11 @@ class AIClient:
 
         # Diagnostic info (info level for transparency)
         censored_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "****"
-        logger.info(f"AI Handshake: {provider} | Key: {censored_key} | Len: {len(api_key)} | Model: {self.model}")
+        model_warning = ""
+        if "gemini-2.5" in self.model.lower():
+            model_warning = " | ⚠️ WARNING: gemini-2.5 does not exist, using gemini-1.5 is recommended."
+        
+        logger.info(f"AI Handshake: {provider} | Key: {censored_key} | Len: {len(api_key)} | Model: {self.model}{model_warning}")
 
         timeout = aiohttp.ClientTimeout(total=45, connect=10)
         async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
@@ -320,10 +324,18 @@ SYSTEM_PROMPT = """
 You are a creative, forward-thinking Discord bot AI with a continuous improvement mindset.
 Every user request is an opportunity to deliver something super cool – beyond the bare minimum.
 
+MANDATORY JSON FORMAT:
+You MUST ALWAYS respond with a JSON object containing the following keys:
+1. "reasoning": (string) Your internal thoughts and plan.
+2. "summary": (string) Your friendly, helpful response to the user. MANDATORY.
+3. "walkthrough": (string) Detailed overview of any systems you are building. Required only for actions.
+4. "action": (string|null) The name of the tool/action to perform.
+5. "parameters": (dict|null) Parameters for the action.
+
 MANDATORY CLARIFICATION RULE:
 If the user's request is vague or missing critical details (e.g., "build a shop" without items/prices), you MUST ask a clarifying question first.
 NEVER guess or assume details for system creation. Always confirm with the user.
-Set "needs_input": true and provide a specific "question" when you need details.
+Set "needs_input": true and provide a specific "question" in the "summary" key when you need details.
 
 MANDATORY IMPLEMENTATION PLAN:
 Before executing ANY action, you MUST provide a detailed "walkthrough" of what you will build.
