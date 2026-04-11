@@ -1214,26 +1214,39 @@ async def slash_bot(interaction: discord.Interaction, text: str):
     except discord.errors.NotFound:
         pass
     except Exception as e:
-        error_str = str(e)
-        if "RetryError" in error_str or "API key" in error_str or "No API key" in error_str:
-            return
+        logger.error(f"Error in /bot command for user {interaction.user.id}: {e}", exc_info=True)
         try:
-            await interaction.followup.send(f"Error: {str(e)}", ephemeral=True)
+            # Always ensure the user gets an answer so they aren't stuck on "Thinking..."
+            await interaction.followup.send(f"❌ **AI Error:** {str(e)}\n*Suggestions: Check API key, try a different model, or wait a few minutes if the bot is downloading models.*", ephemeral=True)
         except discord.errors.NotFound:
             pass
+        return
 
 async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
     """Process a single turn of the AI conversation."""
     guild_id = interaction.guild.id
     user_id = interaction.user.id
     
-    # Retrieve relevant memories for context
-    relevant_memories = vector_memory.retrieve_relevant_conversations(
-        guild_id=guild_id,
-        user_id=user_id,
-        query=user_input,
-        n_results=3
-    )
+    # Retrieve relevant memories for context (Run in executor with timeout to avoid hangs)
+    loop = asyncio.get_event_loop()
+    relevant_memories = []
+    try:
+        relevant_memories = await asyncio.wait_for(
+            loop.run_in_executor(
+                None, 
+                lambda: vector_memory.retrieve_relevant_conversations(
+                    guild_id=guild_id,
+                    user_id=user_id,
+                    query=user_input,
+                    n_results=3
+                )
+            ),
+            timeout=15.0
+        )
+    except asyncio.TimeoutError:
+        logger.warning(f"Memory retrieval timed out for guild {guild_id}. Proceeding with empty context.")
+    except Exception as e:
+        logger.error(f"Error retrieving memory: {e}")
     
     # Add memory context to the system prompt if we have relevant memories
     memory_context = ""
