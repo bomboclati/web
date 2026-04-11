@@ -154,11 +154,17 @@ class AIClient:
         """
         # Get guild-specific API key (fallback to default)
         api_key, provider = self._get_guild_api_key(guild_id)
+        if api_key:
+            api_key = api_key.strip()
+            
         if provider:
             provider = provider.lower()
+            
+        if not api_key or len(api_key) < 5:
+            logger.error(f"Missing or malformed API key for guild {guild_id} (Provider: {provider})")
+            return {"error": "No valid API key configured. Use /config apikey to set one."}
         
-        if not api_key:
-            return {"error": "No API key configured. Use /config apikey to set one."}
+        logger.debug(f"Starting AI request for guild {guild_id} (Provider: {provider}, Key Length: {len(api_key)})")
         
         # Get recent history
         history_depth = int(os.getenv("MEMORY_DEPTH", 20))
@@ -222,7 +228,7 @@ class AIClient:
             if not provider_url:
                 raise Exception(f"Unsupported AI provider: {provider}")
 
-            async with session.post(provider_url, headers=headers, json=payload) as resp:
+            async with session.post(provider_url, headers=headers, json=payload, allow_redirects=False) as resp:
                 if resp.status != 200:
                     text = await resp.text()
                     logger.error(f"AI API Error from {provider} ({resp.status}): {text}")
@@ -250,7 +256,7 @@ class AIClient:
                             
                             # Retry with search context
                             payload["messages"] = messages
-                            async with session.post(provider_url, headers=headers, json=payload) as search_resp:
+                            async with session.post(provider_url, headers=headers, json=payload, allow_redirects=False) as search_resp:
                                 if search_resp.status != 200:
                                     search_text = await search_resp.text()
                                     logger.error(f"AI Search Retry Error ({search_resp.status}): {search_text}")
