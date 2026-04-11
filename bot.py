@@ -1544,7 +1544,11 @@ async def list_cmd(interaction: discord.Interaction):
 @bot.tree.command(name="config", description="Change AI provider, model, keys, etc.")
 async def config_cmd(interaction: discord.Interaction):
     if not interaction.user.guild_permissions.administrator:
-        return await interaction.response.send_message("Admin only.", ephemeral=True)
+        try:
+            await interaction.response.send_message("Admin only.", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
+        return
         
     embed = discord.Embed(title="Bot Configuration", description="Use subcommands to adjust settings.", color=discord.Color.dark_grey())
     embed.add_field(name="/config model <name>", value="Set AI model (e.g. gpt-4, claude-3)", inline=False)
@@ -1552,17 +1556,27 @@ async def config_cmd(interaction: discord.Interaction):
     embed.add_field(name="/config apikey <key>", value="Set server-specific API key", inline=False)
     embed.add_field(name="/config prefix <char>", value="Set server prefix", inline=False)
     embed.add_field(name="/config depth <number>", value="Set memory depth", inline=False)
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    try:
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    except discord.errors.NotFound:
+        pass
 
 @bot.tree.command(name="config_model", description="Set the AI model")
 @app_commands.describe(model="Model name (e.g. gpt-4, claude-3)")
 async def config_model(interaction: discord.Interaction, model: str):
     if not interaction.user.guild_permissions.administrator:
-        return await interaction.response.send_message("Admin only.", ephemeral=True)
+        try:
+            await interaction.response.send_message("Admin only.", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
+        return
     
     dm.update_guild_data(interaction.guild.id, "custom_model", model)
     bot.ai.model = model
-    await interaction.response.send_message(f"AI model set to **{model}** for this server.", ephemeral=True)
+    try:
+        await interaction.response.send_message(f"AI model set to **{model}** for this server.", ephemeral=True)
+    except discord.errors.NotFound:
+        pass
 
 @bot.tree.command(name="config_provider", description="Set the AI provider")
 @app_commands.choices(provider=[
@@ -1572,34 +1586,67 @@ async def config_model(interaction: discord.Interaction, model: str):
 ])
 async def config_provider(interaction: discord.Interaction, provider: str):
     if not interaction.user.guild_permissions.administrator:
-        return await interaction.response.send_message("Admin only.", ephemeral=True)
+        try:
+            await interaction.response.send_message("Admin only.", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
+        return
     if provider not in bot.ai.base_urls:
-        return await interaction.response.send_message(f"Unknown provider. Valid: {', '.join(bot.ai.base_urls.keys())}", ephemeral=True)
+        try:
+            await interaction.response.send_message(f"Unknown provider. Valid: {', '.join(bot.ai.base_urls.keys())}", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
+        return
     
     current_key = dm.get_guild_api_key(interaction.guild.id)
     api_key = current_key.get("api_key") if current_key else os.getenv("AI_API_KEY", "")
     dm.set_guild_api_key(interaction.guild.id, api_key, provider)
-    await interaction.response.send_message(f"AI provider set to **{provider}** for this server.", ephemeral=True)
+    try:
+        await interaction.response.send_message(f"AI provider set to **{provider}** for this server.", ephemeral=True)
+    except discord.errors.NotFound:
+        pass
 
 @bot.tree.command(name="config_prefix", description="Set the server prefix")
 @app_commands.describe(prefix="New prefix character")
 async def config_prefix(interaction: discord.Interaction, prefix: str):
     if not interaction.user.guild_permissions.administrator:
-        return await interaction.response.send_message("Admin only.", ephemeral=True)
+        try:
+            await interaction.response.send_message("Admin only.", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
+        return
     if len(prefix) > 5:
-        return await interaction.response.send_message("Prefix must be 5 characters or less.", ephemeral=True)
+        try:
+            await interaction.response.send_message("Prefix must be 5 characters or less.", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
+        return
     dm.update_guild_data(interaction.guild.id, "prefix", prefix)
-    await interaction.response.send_message(f"Server prefix set to **{prefix}**.", ephemeral=True)
+    try:
+        await interaction.response.send_message(f"Server prefix set to **{prefix}**.", ephemeral=True)
+    except discord.errors.NotFound:
+        pass
 
 @bot.tree.command(name="config_depth", description="Set memory depth")
 @app_commands.describe(depth="Number of messages to remember")
 async def config_depth(interaction: discord.Interaction, depth: int):
     if not interaction.user.guild_permissions.administrator:
-        return await interaction.response.send_message("Admin only.", ephemeral=True)
+        try:
+            await interaction.response.send_message("Admin only.", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
+        return
     if depth < 5 or depth > 100:
-        return await interaction.response.send_message("Depth must be between 5 and 100.", ephemeral=True)
+        try:
+            await interaction.response.send_message("Depth must be between 5 and 100.", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
+        return
     dm.update_guild_data(interaction.guild.id, "memory_depth", depth)
-    await interaction.response.send_message(f"Memory depth set to **{depth}**.", ephemeral=True)
+    try:
+        await interaction.response.send_message(f"Memory depth set to **{depth}**.", ephemeral=True)
+    except discord.errors.NotFound:
+        pass
 
 @bot.tree.command(name="config_apikey", description="Set server-specific AI API key")
 @app_commands.describe(api_key="Your API key", provider="AI provider (default: openrouter)")
@@ -1610,28 +1657,49 @@ async def config_depth(interaction: discord.Interaction, depth: int):
 ])
 async def config_apikey(interaction: discord.Interaction, api_key: str, provider: str = "openrouter"):
     if not interaction.user.guild_permissions.administrator:
-        return await interaction.response.send_message("Admin only.", ephemeral=True)
+        try:
+            await interaction.response.send_message("Admin only.", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
+        return
     
     dm.set_guild_api_key(interaction.guild.id, api_key, provider)
-    await interaction.response.send_message(f"✅ API key set for this server!\nProvider: **{provider}**", ephemeral=True)
+    try:
+        await interaction.response.send_message(f"✅ API key set for this server!\nProvider: **{provider}**", ephemeral=True)
+    except discord.errors.NotFound:
+        pass
 
 @bot.tree.command(name="undo", description="Reverse latest actions")
 @app_commands.describe(count="Number of action groups to undo (default: 1)")
 async def undo_cmd(interaction: discord.Interaction, count: int = 1):
     if not interaction.user.guild_permissions.administrator:
-        return await interaction.response.send_message("Admin only.", ephemeral=True)
+        try:
+            await interaction.response.send_message("Admin only.", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
+        return
     
     if count < 1 or count > 10:
-        return await interaction.response.send_message("Count must be between 1 and 10.", ephemeral=True)
+        try:
+            await interaction.response.send_message("Count must be between 1 and 10.", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
+        return
     
-    await interaction.response.defer(ephemeral=True)
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except discord.errors.NotFound:
+        return
     
     from actions import ActionHandler
     handler = ActionHandler(bot)
     results = await handler.undo_last_actions(interaction, count)
     
     summary = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in results])
-    await interaction.followup.send(f"**Undo Summary:**\n{summary}", ephemeral=True)
+    try:
+        await interaction.followup.send(f"**Undo Summary:**\n{summary}", ephemeral=True)
+    except discord.errors.NotFound:
+        pass
 
 @bot.tree.command(name="health", description="View community health report")
 async def health_cmd(interaction: discord.Interaction):
