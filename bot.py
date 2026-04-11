@@ -49,6 +49,7 @@ from modules.conflict_resolution import ConflictResolution
 from modules.community_health import CommunityHealth
 from modules.auto_setup import AutoSetup
 from modules.promotion_service import PromotionService
+from modules.guardian import GuardianSystem
 
 load_dotenv()
 
@@ -112,6 +113,7 @@ class MiroBot(commands.Bot):
         self.conflict_resolution = ConflictResolution(self)
         self.community_health = CommunityHealth(self)
         self.auto_setup = AutoSetup(self)
+        self.guardian = GuardianSystem(self)
 
     async def get_dynamic_prefix(self, bot, message):
         if not message.guild:
