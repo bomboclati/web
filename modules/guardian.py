@@ -392,15 +392,11 @@ class GuardianCog(commands.Cog):
         """Handle captcha reactions if implemented"""
         pass
 
-    @app_commands.command(name="guardian", description="Guardian anti-raid settings")
-    @app_commands.describe(
-        action="Action to perform (status, lockdown, unlock, config)",
-        duration="Lockdown duration in seconds"
-    )
+    @commands.command(name="guardian", aliases=["guard", "shield"])
     @commands.has_permissions(administrator=True)
-    async def guardian_command(self, interaction: discord.Interaction, action: str = "status", duration: int = 300):
-        """Guardian control panel"""
-        guild = interaction.guild
+    async def guardian_command(self, ctx, action: str = "status", duration: int = 300):
+        """Guardian control panel - !guardian [status|lockdown|unlock] [duration]"""
+        guild = ctx.guild
         
         if action == "status":
             in_lockdown = self.guardian.raid_mode_active.get(guild.id, False)
@@ -416,12 +412,12 @@ class GuardianCog(commands.Cog):
                 remaining = self.guardian.lockdown_end_times[guild.id] - datetime.now()
                 embed.add_field(name="Time Remaining", value=f"{max(0, int(remaining.total_seconds()))}s")
             
-            await interaction.response.send_message(embed=embed)
+            await ctx.send(embed=embed)
             
         elif action == "lockdown":
             RAID_CONFIG['lockdown_duration'] = duration
             await self.guardian.initiate_lockdown(guild, "Manual lockdown by admin")
-            await interaction.response.send_message("🔒 Lockdown initiated!", ephemeral=True)
+            await ctx.send("🔒 Lockdown initiated!", delete_after=5)
             
         elif action == "unlock":
             self.guardian.raid_mode_active[guild.id] = False
@@ -435,13 +431,14 @@ class GuardianCog(commands.Cog):
                 except:
                     pass
             
-            await interaction.response.send_message("🔓 Lockdown lifted!", ephemeral=True)
+            await ctx.send("🔓 Lockdown lifted!", delete_after=5)
+        else:
+            await ctx.send("Usage: `!guardian [status|lockdown|unlock] [duration_seconds]`")
 
-    @app_commands.command(name="verify", description="Complete captcha verification")
-    @app_commands.describe(answer="Your captcha answer")
-    async def verify_command(self, interaction: discord.Interaction, answer: str):
-        """Submit captcha answer"""
-        success = await self.guardian.verify_captcha(interaction.user.id, answer)
+    @commands.command(name="verify", aliases=["captcha"])
+    async def verify_command(self, ctx, answer: str):
+        """Submit captcha answer - !verify <answer>"""
+        success = await self.guardian.verify_captcha(ctx.author.id, answer)
         
         if success:
             embed = discord.Embed(
@@ -449,19 +446,19 @@ class GuardianCog(commands.Cog):
                 description="You are now verified and can participate normally.",
                 color=discord.Color.green()
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await ctx.send(embed=embed, delete_after=10)
         else:
             embed = discord.Embed(
                 title="❌ Verification Failed",
                 description="Incorrect answer or challenge expired. Please wait for a new challenge.",
                 color=discord.Color.red()
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await ctx.send(embed=embed, delete_after=10)
 
     @verify_command.error
-    async def verify_command_error(self, interaction: discord.Interaction, error):
-        if isinstance(error, app_commands.CommandInvokeError):
-            await interaction.response.send_message("You don't have a pending captcha challenge.", ephemeral=True)
+    async def verify_command_error(self, ctx, error):
+        if isinstance(error, commands.CommandInvokeError):
+            await ctx.send("You don't have a pending captcha challenge.", delete_after=5)
 
 async def setup(bot):
     await bot.add_cog(GuardianCog(bot))
