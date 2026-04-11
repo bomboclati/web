@@ -5,9 +5,23 @@ import logging
 import re
 import asyncio
 from typing import List, Dict, Any, Optional
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception, retry_if_not_exception_type
 from history_manager import history_manager
 from vector_memory import vector_memory
+
+class AIClientError(Exception):
+    """Custom exception for AI client errors that should not be retried (e.g., 4xx)."""
+    def __init__(self, status: int, message: str):
+        self.status = status
+        self.message = message
+        super().__init__(f"AI API Client Error ({status}): {message}")
+
+def is_retryable_exception(exception):
+    """Only retry on server errors (5xx) or connection issues, skip client errors (4xx)."""
+    if isinstance(exception, AIClientError):
+        # Don't retry on 400 (Bad Request), 404 (Not Found), 401 (Unauthorized)
+        return exception.status >= 500
+    return True
 
 class AIClient:
     """
@@ -125,7 +139,11 @@ class AIClient:
         
         return system_prompt + improvement_data
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    @retry(
+        retry=retry_if_exception(is_retryable_exception),
+        stop=stop_after_attempt(3), 
+        wait=wait_exponential(multiplier=1, min=1, max=10)
+    )
     async def chat(self, guild_id: int, user_id: int, user_input: str, system_prompt: str) -> Dict[str, Any]:
         """
         Communicates with the LLM, handles history, and processes web search requests.
@@ -180,7 +198,8 @@ class AIClient:
         messages.extend(combined_context)
         messages.append({"role": "user", "content": user_input})
 
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=45, connect=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
@@ -194,7 +213,7 @@ class AIClient:
                 "messages": messages,
                 "temperature": 0.7,
             }
-            if provider in ["openai", "openrouter"]:
+            if provider in ["openai", "openrouter", "gemini"]:
                 payload["response_format"] = {"type": "json_object"}
 
             provider_url = self.base_urls.get(provider)
@@ -205,6 +224,8 @@ class AIClient:
                 if resp.status != 200:
                     text = await resp.text()
                     logger.error(f"AI API Error from {provider} ({resp.status}): {text}")
+                    if 400 <= resp.status < 500:
+                        raise AIClientError(resp.status, text)
                     raise Exception(f"AI API Error ({resp.status}): {text}")
                 
                 res_data = await resp.json()
