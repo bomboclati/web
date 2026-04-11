@@ -1,35 +1,53 @@
-# Environment variables
+```
+# Dependencies
+node_modules/
+
+# Environment
 .env
-
-# Data files (sensitive, should not be committed)
-data/
-*.json
-
-# Logs
-logs/
-*.log
+.env.local
+.env.*
 
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-*.egg-info/
-dist/
-build/
-*.egg
-
-# Virtual environments
+*.pyc
+*.pyo
+*.pyd
+.Python
 venv/
-env/
-ENV/
+.venv/
+.env
+.env.local
+.env.*
+.python-version
+pip-log.txt
+pip-delete-this-directory.txt
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+# Logs
+*.log
 
-# OS
+# Temporary files
+*.tmp
+*.temp
+*~
+.swp
+.swo
+
+# OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+.coverage
+htmlcov/
+.coverage.*
+.tox/
+.nox/
+```

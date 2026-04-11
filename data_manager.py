@@ -180,7 +180,7 @@ class DataManager:
             # Handle gracefully by returning default value to prevent crashes
             return default if default is not None else {}
 
-async def save_exchange(self, guild_id: int, user_id: int, role: str, content: str, importance_score: float = 0.5):
+    async def save_exchange(self, guild_id: int, user_id: int, role: str, content: str, importance_score: float = 0.5):
         """Save a single exchange to SQLite database"""
         if not self.use_sqlite:
             return False
@@ -218,8 +218,8 @@ async def save_exchange(self, guild_id: int, user_id: int, role: str, content: s
             for r in reversed(rows)
         ]
 
-async def save_conversation_summary(self, guild_id: int, user_id: int, 
-                                  end_timestamp: float, summary_text: str, message_count: int):
+    async def save_conversation_summary(self, guild_id: int, user_id: int, 
+                                      end_timestamp: float, summary_text: str, message_count: int):
         """Save a conversation summary"""
         if not self.use_sqlite:
             return False

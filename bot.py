@@ -591,8 +591,8 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
     
     async def _handle_modmail_reply(self, interaction: discord.Interaction, user_id: int, guild_id: int, reply_text: str):
         """Handle staff reply to modmail."""
-        guild = self.bot.get_guild(guild_id)
-        user = self.bot.get_user(user_id)
+        guild = self.get_guild(guild_id)
+        user = self.get_user(user_id)
         
         if not user or not guild:
             await interaction.response.send_message("❌ User not found.", ephemeral=True)
@@ -1127,12 +1127,12 @@ class ModmailReplyModal(ui.Modal, title='Reply to User'):
         self.user = user
         self.guild_id = guild_id
     
-    reply = ui.TextInput(
-        label='Message',
-        style=discord.TextStyle.paragraph,
-        placeholder='Type your reply...'
-    )
-    self.add_item(reply)
+        self.reply = ui.TextInput(
+            label='Message',
+            style=discord.TextStyle.paragraph,
+            placeholder='Type your reply...'
+        )
+        self.add_item(self.reply)
     
     async def callback(self, interaction: discord.Interaction):
         guild = self.bot.get_guild(self.guild_id)

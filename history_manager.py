@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import aiosqlite
 import os
 import asyncio
 from typing import List, Dict, Optional
@@ -125,7 +126,7 @@ class HistoryManager:
             logger.error("Error creating summary: %s", e)
             return False
 
-async def add_exchange(self, guild_id: int, user_id: int, user_msg: str, bot_response: str):
+    async def add_exchange(self, guild_id: int, user_id: int, user_msg: str, bot_response: str):
         """Adds a message pair to the infinite history and writes to disk immediately."""
         importance_score = self._calculate_importance_score(user_msg, bot_response)
         
@@ -179,7 +180,7 @@ async def add_exchange(self, guild_id: int, user_id: int, user_msg: str, bot_res
                 "content": combined_summary
             })
         
-        for exchange in reversed(recent_exchanges):
+        for exchange in recent_exchanges:
             formatted_exchanges.append({
                 "role": exchange["role"],
                 "content": exchange["content"]
