@@ -216,6 +216,10 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
                 system_prompt="You create fun daily quests for Discord users. Keep them achievable (5-20 actions)."
             )
             
+            if not result or "error" in result:
+                logger.warning(f"AI failed to provide quest data: {result.get('error', 'Unknown error')}")
+                return
+            
             quest_id = f"quest_{guild_id}_{user_id}_{int(time.time())}"
             
             quest = Quest(

@@ -12,14 +12,7 @@ class CoreCommands(commands.Cog):
 
 
 
-    @app_commands.command(name="undo", description="Reverses the latest administrative actions")
-    async def undo_command(self, interaction: discord.Interaction):
-        """Reverses the latest administrative actions"""
-        await interaction.response.defer()
-        
-        # This would normally check for recent actions and undo them
-        # For now, we'll just acknowledge
-        await interaction.followup.send("↩️ Undo functionality would reverse the latest administrative actions.\n\n*This feature requires tracking of recent actions to work properly.*")
+
 
     @app_commands.command(name="setup", description="Configure various systems")
     @app_commands.describe(system="Which system to setup")

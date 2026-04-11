@@ -1,6 +1,8 @@
 import os
 import json
 import aiohttp
+import logging
+import re
 import asyncio
 from typing import List, Dict, Any, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -212,7 +214,7 @@ class AIClient:
 
                 # Try to parse JSON from AI message
                 try:
-                    res_json = json.loads(ai_msg)
+                    res_json = self._extract_json(ai_msg)
                     
                     # Handle Web Search requested by AI
                     if res_json.get("action") == "web_search":
@@ -224,14 +226,56 @@ class AIClient:
                             
                             # Retry with search context
                             payload["messages"] = messages
-                            async with session.post(self.base_urls.get(provider), headers=headers, json=payload) as search_resp:
+                            async with session.post(provider_url, headers=headers, json=payload) as search_resp:
+                                if search_resp.status != 200:
+                                    search_text = await search_resp.text()
+                                    logger.error(f"AI Search Retry Error ({search_resp.status}): {search_text}")
+                                    raise Exception(f"AI Search API Error ({search_resp.status})")
+                                    
                                 search_data = await search_resp.json()
+                                if not search_data.get('choices'):
+                                    raise Exception("Invalid AI response body after search")
+                                    
                                 ai_msg = search_data['choices'][0]['message']['content']
-                                res_json = json.loads(ai_msg)
+                                res_json = self._extract_json(ai_msg)
                     
                     return res_json
-                except json.JSONDecodeError:
-                    raise Exception("AI failed to return valid JSON.")
+                except Exception as e:
+                    logger.error(f"AI output processing failed. AI Message: {ai_msg[:500]}... Error: {e}")
+                    raise Exception(f"AI failed to return valid JSON: {e}")
+
+    def _extract_json(self, text: str) -> Dict[str, Any]:
+        """Robustly extract JSON from AI response, handling Markdown and conversational filler."""
+        if not text:
+            return {}
+            
+        # Try direct parse first
+        try:
+            return json.loads(text.strip())
+        except json.JSONDecodeError:
+            pass
+            
+        # Try to find JSON block in markdown
+        json_pattern = r"```(?:json)?\s*(\{.*?\})\s*```"
+        match = re.search(json_pattern, text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                pass
+                
+        # Try to find anything that looks like a JSON object using basic brace matching
+        brace_pattern = r"(\{.*\})"
+        match = re.search(brace_pattern, text, re.DOTALL)
+        if match:
+            try:
+                # Basic cleanup: remove everything before first { and after last }
+                content = match.group(1)
+                return json.loads(content)
+            except json.JSONDecodeError:
+                pass
+                
+        raise ValueError("Could not extract valid JSON from AI response.")
         
         return {}
 
