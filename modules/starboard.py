@@ -288,7 +288,7 @@ class StarboardSystem:
                   "• 25 stars: 50 coins, 30 XP",
             inline=False
         )
-        doc_embed.set_footer(text="Created by Immortal AI • Use !help starboard for more info")
+        doc_embed.set_footer(text="Created by Miro AI • Use !help starboard for more info")
         
         await doc_channel.send(embed=doc_embed)
         await doc_channel.send("💡 **Quick Start:** React to any message with ⭐ to star it!")

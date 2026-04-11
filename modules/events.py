@@ -291,7 +291,7 @@ Respond with JSON only:
             active_event.data["contributions"] = []
         except Exception as e:
             logger.error(f"Failed to start story: {e}")
-active_event.data["story"] = "The story begins..."
+            active_event.data["story"] = "The story begins..."
             active_event.data["contributions"] = []
     
     """Poll System"""
@@ -368,7 +368,8 @@ active_event.data["story"] = "The story begins..."
         logger.info(f"Event ended: {active_event.data['name']}")
 
     async def _distribute_rewards(self, active_event: ActiveEvent, top_scores: List[tuple]):
-        if event_id := active_event.id, event_id in self._scheduled_events:
+        event_id = active_event.id
+        if event_id in self._scheduled_events:
             scheduled = self._scheduled_events[event_id]
             rewards = scheduled.rewards
             

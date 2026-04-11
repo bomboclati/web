@@ -307,7 +307,7 @@ class ReminderSystem:
         doc_embed.add_field(name="🎮 Available Commands", value="**!remind <time> <message>** - Create a reminder\n**!reminders** - List your active reminders\n**!help reminders** - Show this guide", inline=False)
         doc_embed.add_field(name="💡 Time Formats", value="• `30m` = 30 minutes\n• `2h` = 2 hours\n• `1d` = 1 day\n• `1d2h30m` = 1 day, 2 hours, 30 minutes\n• `daily` / `weekly` = recurring", inline=False)
         doc_embed.add_field(name="💡 Examples", value="• `!remind 1h Call mom`\n• `!remind 2h30m Team meeting`\n• `!remind weekly Check reports`", inline=False)
-        doc_embed.set_footer(text="Created by Immortal AI")
+        doc_embed.set_footer(text="Created by Miro AI")
         
         await doc_channel.send(embed=doc_embed)
         await doc_channel.send("💡 **Quick Start:** Try `!remind 5m Test reminder`")

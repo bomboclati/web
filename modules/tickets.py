@@ -438,7 +438,7 @@ Respond with JSON only:
         
         self._save_ticket(ticket)
 
-async def resolve_ticket(self, ticket_id: str, resolution: str):
+    async def resolve_ticket(self, ticket_id: str, resolution: str):
         if ticket_id not in self._active_tickets:
             return
         
@@ -563,7 +563,7 @@ async def resolve_ticket(self, ticket_id: str, resolution: str):
                   "• **billing** - Payment issues",
             inline=False
         )
-        doc_embed.set_footer(text="Created by Immortal AI • Use !help tickets for more info")
+        doc_embed.set_footer(text="Created by Miro AI • Use !help tickets for more info")
         
         await doc_channel.send(embed=doc_embed)
         await doc_channel.send("💡 **Quick Start:** Create a ticket with `!ticket <your message>`")

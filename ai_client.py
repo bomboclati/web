@@ -162,7 +162,7 @@ class AIClient:
             }
             if provider == "openrouter":
                 headers["HTTP-Referer"] = "https://github.com/antigravity"
-                headers["X-Title"] = "Immortal AI Discord Bot"
+                headers["X-Title"] = "Miro AI Discord Bot"
 
             payload = {
                 "model": self.model,
@@ -262,7 +262,7 @@ When creating documentation, use channel name format: "system-name-guide" (lower
         "inline": false
       }
     ],
-    "footer": "Created by Immortal AI • Use !help shop for this guide"
+    "footer": "Created by Miro AI • Use !help shop for this guide"
   }
 }
 
