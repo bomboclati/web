@@ -483,7 +483,7 @@ class AchievementSystem:
                   "• Get notified when you unlock achievements",
             inline=False
         )
-        doc_embed.set_footer(text="Created by Immortal AI • Use !help achievements for more info")
+        doc_embed.set_footer(text="Created by Miro AI • Use !help achievements for more info")
         
         await doc_channel.send(embed=doc_embed)
         await doc_channel.send("💡 **Quick Start:** Try these commands:\n" +

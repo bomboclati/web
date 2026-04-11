@@ -52,7 +52,7 @@ from modules.promotion_service import PromotionService
 
 load_dotenv()
 
-class ImmortalBot(commands.Bot):
+class MiroBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
@@ -1105,7 +1105,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             logger.info("Notified %d guilds about !%s improvement", len(notified_guilds), cmd_name)
 
 # Initialize Bot
-bot = ImmortalBot()
+bot = MiroBot()
 
 class AIReplyModal(ui.Modal, title='Reply to AI'):
     """Modal for users to answer AI clarifying questions."""
@@ -1368,7 +1368,7 @@ async def status_cmd(interaction: discord.Interaction):
 
 @bot.tree.command(name="help", description="List all commands")
 async def help_cmd(interaction: discord.Interaction):
-    embed = discord.Embed(title="Immortal Bot Help", color=discord.Color.blue())
+    embed = discord.Embed(title="Miro Bot Help", color=discord.Color.blue())
     embed.add_field(name="/bot <text>", value="AI-powered management.", inline=False)
     embed.add_field(name="/status", value="System health check.", inline=False)
     embed.add_field(name="/list", value="Show active automations.", inline=False)

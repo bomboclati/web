@@ -58,7 +58,7 @@ class AutoSetup:
             return
         
         embed = discord.Embed(
-            title="🤖 Welcome to Immortal AI!",
+            title="🤖 Welcome to Miro AI!",
             description=f"I've been added to **{guild.name}**!",
             color=discord.Color.blue()
         )
@@ -785,7 +785,7 @@ class AutoSetup:
             inline=False
         )
         
-        embed.set_footer(text="Immortal AI • Full Auto-Setup")
+        embed.set_footer(text="Miro AI • Full Auto-Setup")
         
         try:
             await owner.send(embed=embed)
