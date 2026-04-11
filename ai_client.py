@@ -132,13 +132,15 @@ class AIClient:
         """
         # Get guild-specific API key (fallback to default)
         api_key, provider = self._get_guild_api_key(guild_id)
+        if provider:
+            provider = provider.lower()
         
         if not api_key:
             return {"error": "No API key configured. Use /config apikey to set one."}
         
         # Get recent history
         history_depth = int(os.getenv("MEMORY_DEPTH", 20))
-        history = history_manager.get_enhanced_context(guild_id, user_id, depth=history_depth)
+        history = await history_manager.get_enhanced_context(guild_id, user_id, depth=history_depth)
         
         # Retrieve semantically similar conversations from vector memory
         vector_results = vector_memory.retrieve_relevant_conversations(
