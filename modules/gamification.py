@@ -90,7 +90,6 @@ class AdaptiveGamification:
         self._seasonal_events: Dict[int, dict] = {}
         self._load_data()
         self._init_default_badges()
-        self._start_quest_refresh()
 
     def _load_data(self):
         quests_data = dm.load_json("active_quests", default={})
@@ -157,7 +156,7 @@ class AdaptiveGamification:
         for badge in default_badges:
             self._badge_definitions[badge.id] = badge
 
-    def _start_quest_refresh(self):
+    def start_quest_refresh(self):
         asyncio.create_task(self._quest_refresh_loop())
 
     async def _quest_refresh_loop(self):

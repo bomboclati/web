@@ -135,6 +135,7 @@ class MiroBot(commands.Bot):
         # Start background monitors
         self.events.start_event_monitor()
         self.intelligence.start_monitoring()
+        self.gamification.start_quest_refresh()
         
         # Load core commands cog
         try:
