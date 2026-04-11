@@ -772,7 +772,7 @@ class AutoSetup:
     async def _setup_ai_config(self, guild: discord.Guild) -> bool:
         ai_config = {
             "provider": "openrouter",
-            "model": "meta-llama/llama-3.1-405b-instruct",
+            "model": "meta-llama/llama-3.1-70b-instruct",
             "temperature": 0.7,
             "max_tokens": 2000
         }

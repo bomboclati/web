@@ -34,7 +34,8 @@ class AIClient:
     def __init__(self, api_key: str, provider: str = "openrouter", model: Optional[str] = None):
         self.default_api_key = api_key
         self.default_provider = provider
-        self.model = model or "meta-llama/llama-3.1-405b-instruct"
+        # Default model that works with multiple providers
+        self.model = model or "meta-llama/llama-3.1-70b-instruct"
         self.base_urls = {
             "openrouter": "https://openrouter.ai/api/v1/chat/completions",
             "openai": "https://api.openai.com/v1/chat/completions",

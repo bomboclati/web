@@ -1,1 +1,1 @@
-(empty)
+Nothing needs to be added to the .gitignore file since the changes only include Python source files (.py) which should not be ignored.

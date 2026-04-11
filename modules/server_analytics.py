@@ -94,26 +94,21 @@ class ServerAnalytics:
         """Collect current metrics for a guild"""
         metrics = {
             "message_count": 0,
-            "unique_chatters": set(),
+            "unique_chatters": 0,
             "xp_gained": 0,
             "voice_minutes": 0
         }
         
         try:
             # Get message count and unique chatters from leveling module
-            if hasattr(self.bot, 'leveling'):
-                hourly_stats = self.bot.leveling.get_hourly_stats(guild.id)
-                metrics["message_count"] = hourly_stats.get("messages", 0)
-                metrics["unique_chatters"] = len(hourly_stats.get("users", set()))
-                metrics["xp_gained"] = hourly_stats.get("xp", 0)
+            # Note: get_hourly_stats is not implemented in Leveling class, so we skip this for now
+            # The metrics will remain at 0 until the method is added to Leveling
             
             # Get voice minutes from voice system
             if hasattr(self.bot, 'voice_system'):
                 metrics["voice_minutes"] = await self.bot.voice_system.get_hourly_voice_minutes(guild.id)
             
-            # Convert set to count for JSON serialization
-            if isinstance(metrics["unique_chatters"], set):
-                metrics["unique_chatters"] = len(metrics["unique_chatters"])
+            # Convert set to count for JSON serialization (already an int now)
                 
         except Exception as e:
             logger.error(f"Error collecting metrics for guild {guild.id}: {e}")
