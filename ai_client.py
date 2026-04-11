@@ -9,6 +9,8 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from history_manager import history_manager
 from vector_memory import vector_memory
 
+logger = logging.getLogger(__name__)
+
 class AIClientError(Exception):
     """Custom exception for AI client errors that should not be retried (e.g., 4xx)."""
     def __init__(self, status: int, message: str):
