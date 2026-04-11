@@ -2,10 +2,51 @@ import discord
 import json
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Tuple, Optional
 from data_manager import dm
 from logger import logger
+
+# Color name to integer mapping for embeds
+COLOR_MAP = {
+    "gold": 0xFFD700,
+    "yellow": 0xFFD700,
+    "blue": 0x3498DB,
+    "red": 0xE74C3C,
+    "green": 0x2ECC71,
+    "purple": 0x9B59B6,
+    "orange": 0xE67E22,
+    "pink": 0xFF69B4,
+    "white": 0xFFFFFF,
+    "black": 0x000000,
+    "gray": 0x95A5A6,
+    "grey": 0x95A5A6,
+    "cyan": 0x1ABC9C,
+    "magenta": 0xE91E63,
+    "brown": 0x795548,
+    "navy": 0x34495E,
+    "lime": 0xCDDC39,
+    "teal": 0x008080,
+}
+
+def parse_color(color_val):
+    """Convert color value to valid Discord embed color."""
+    if isinstance(color_val, int):
+        return color_val
+    if isinstance(color_val, str):
+        # Try color name first
+        color_lower = color_val.lower()
+        if color_lower in COLOR_MAP:
+            return COLOR_MAP[color_lower]
+        # Try hex string
+        try:
+            if color_val.startswith("#"):
+                return int(color_val[1:], 16)
+            return int(color_val, 16)
+        except ValueError:
+            pass
+    # Default fallback
+    return 0x3498DB
 
 COMMAND_SCHEMA = {
     "type": "object",
@@ -622,7 +663,7 @@ class ActionHandler:
         channel_name = params.get("channel")
         title = params.get("title")
         description = params.get("description")
-        color = params.get("color", 0x3498db)
+        color = parse_color(params.get("color", 0x3498db))
 
         channel = discord.utils.get(interaction.guild.channels, name=channel_name) or interaction.channel
         embed = discord.Embed(title=title, description=description, color=color)
@@ -638,7 +679,7 @@ class ActionHandler:
         description = params.get("description", "")
         sections = params.get("sections", [])
         footer = params.get("footer", "")
-        color = params.get("color", 0x5865F2)
+        color = parse_color(params.get("color", 0x5865F2))
         
         embed = discord.Embed(title=title, description=description, color=color)
         
@@ -651,7 +692,7 @@ class ActionHandler:
         if footer:
             embed.set_footer(text=footer)
         
-        embed.timestamp = datetime.utcnow()
+        embed.timestamp = datetime.now(timezone.utc)
         
         msg = await channel.send(embed=embed)
         return True, {"action": "delete_message", "channel_id": channel.id, "message_id": msg.id}

@@ -6,8 +6,12 @@ import discord
 from data_manager import dm
 from logger import logger
 
-import fcntl
 import os
+import sys
+
+# Platform-specific file locking
+if sys.platform != 'win32':
+    import fcntl
 
 class TaskScheduler:
     """Background task scheduler using cron expressions."""
@@ -69,6 +73,9 @@ class TaskScheduler:
 
     def _acquire_lock(self) -> bool:
         """Acquire file lock to prevent race conditions."""
+        if sys.platform == 'win32':
+            # Windows doesn't support fcntl, skip locking
+            return True
         try:
             fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             return True
@@ -77,6 +84,8 @@ class TaskScheduler:
 
     def _release_lock(self):
         """Release file lock."""
+        if sys.platform == 'win32':
+            return
         try:
             fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_UN)
         except Exception:
@@ -100,27 +109,27 @@ class TaskScheduler:
             tasks = dm.load_json("scheduled_tasks", default={})
             now = datetime.now()
         
-        for name, task_data in tasks.items():
-            if not task_data.get("enabled", True):
-                continue
-            
-            cron_expr = task_data.get("cron")
-            if not cron_expr:
-                continue
-            
-            try:
-                cron = croniter(cron_expr, now)
-                prev_run = cron.get_prev(datetime)
+            for name, task_data in tasks.items():
+                if not task_data.get("enabled", True):
+                    continue
                 
-                last_run = task_data.get("last_run")
-                if last_run is None or prev_run.timestamp() > last_run:
-                    logger.info("Executing scheduled task: %s", name)
-                    await self._execute_task(name, task_data)
-                    task_data["last_run"] = prev_run.timestamp()
-                    tasks[name] = task_data
-                    dm.save_json("scheduled_tasks", tasks)
-            except Exception as e:
-                logger.error("Task %s cron error: %s", name, e)
+                cron_expr = task_data.get("cron")
+                if not cron_expr:
+                    continue
+                
+                try:
+                    cron = croniter(cron_expr, now)
+                    prev_run = cron.get_prev(datetime)
+                    
+                    last_run = task_data.get("last_run")
+                    if last_run is None or prev_run.timestamp() > last_run:
+                        logger.info("Executing scheduled task: %s", name)
+                        await self._execute_task(name, task_data)
+                        task_data["last_run"] = prev_run.timestamp()
+                        tasks[name] = task_data
+                        dm.save_json("scheduled_tasks", tasks)
+                except Exception as e:
+                    logger.error("Task %s cron error: %s", name, e)
         finally:
             self._release_lock()
 
