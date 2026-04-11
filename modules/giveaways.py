@@ -36,7 +36,6 @@ class GiveawaySystem:
         self.bot = bot
         self._giveaways: Dict[str, Giveaway] = {}
         self._load_giveaways()
-        self._start_giveaway_monitor()
 
     def _load_giveaways(self):
         data = dm.load_json("giveaways", default={})
@@ -86,7 +85,7 @@ class GiveawaySystem:
         }
         dm.save_json("giveaways", data)
 
-    def _start_giveaway_monitor(self):
+    def start_giveaway_monitor(self):
         asyncio.create_task(self._giveaway_monitor_loop())
 
     async def _giveaway_monitor_loop(self):

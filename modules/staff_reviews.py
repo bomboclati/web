@@ -19,7 +19,6 @@ class StaffReviewSystem:
         self._votes: Dict[int, List[dict]] = {}
         self._alerts_sent: Dict[int, float] = {}
         self._load_data()
-        self._start_review_loop()
 
     def _load_data(self):
         data = dm.load_json("staff_reviews", default={})
@@ -37,7 +36,7 @@ class StaffReviewSystem:
         }
         dm.save_json("staff_reviews", data)
 
-    def _start_review_loop(self):
+    def start_review_loop(self):
         asyncio.create_task(self._review_loop())
 
     async def _review_loop(self):

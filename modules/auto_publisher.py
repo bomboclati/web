@@ -14,7 +14,6 @@ class AutoPublisher:
         self.bot = bot
         self._publish_channels: Dict[int, List[int]] = {}
         self._load_settings()
-        self._start_bump_monitor()
 
     def _load_settings(self):
         data = dm.load_json("auto_publisher_settings", default={})
@@ -24,7 +23,7 @@ class AutoPublisher:
         data = {"channels": self._publish_channels}
         dm.save_json("auto_publisher_settings", data)
 
-    def _start_bump_monitor(self):
+    def start_bump_monitor(self):
         asyncio.create_task(self._bump_monitor_loop())
 
     async def _bump_monitor_loop(self):

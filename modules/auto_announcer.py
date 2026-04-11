@@ -16,7 +16,6 @@ class AutoAnnouncer:
         self._schedules: Dict[int, List[dict]] = {}
         self._reminders: Dict[int, List[dict]] = {}
         self._load_data()
-        self._start_loops()
 
     def _load_data(self):
         data = dm.load_json("announcer_reminders", default={})
@@ -30,7 +29,7 @@ class AutoAnnouncer:
         }
         dm.save_json("announcer_reminders", data)
 
-    def _start_loops(self):
+    def start_loops(self):
         asyncio.create_task(self._announcement_loop())
         asyncio.create_task(self._reminder_loop())
 

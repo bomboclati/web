@@ -29,7 +29,6 @@ class VoiceActivitySystem:
         self._voice_channels: Dict[int, dict] = {}
         self._leaderboards: Dict[int, List[dict]] = {}
         self._load_settings()
-        self._start_voice_monitoring()
 
     def _load_settings(self):
         settings_data = dm.load_json("voice_settings", default={})
@@ -52,7 +51,7 @@ class VoiceActivitySystem:
             "highlight_recording": False
         })
 
-    def _start_voice_monitoring(self):
+    def start_voice_monitoring(self):
         asyncio.create_task(self._voice_monitor_loop())
 
     async def _voice_monitor_loop(self):

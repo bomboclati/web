@@ -136,6 +136,13 @@ class MiroBot(commands.Bot):
         self.events.start_event_monitor()
         self.intelligence.start_monitoring()
         self.gamification.start_quest_refresh()
+        self.anti_raid.start_monitoring()
+        self.auto_announcer.start_loops()
+        self.auto_publisher.start_bump_monitor()
+        self.giveaways.start_giveaway_monitor()
+        self.reminders.start_reminder_loop()
+        self.staff_reviews.start_review_loop()
+        self.voice_system.start_voice_monitoring()
         
         # Load core commands cog
         try:

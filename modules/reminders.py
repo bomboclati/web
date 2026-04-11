@@ -29,7 +29,6 @@ class ReminderSystem:
         self.bot = bot
         self._reminders: Dict[str, Reminder] = {}
         self._load_reminders()
-        self._start_reminder_loop()
 
     def _load_reminders(self):
         data = dm.load_json("reminders", default={})
@@ -65,7 +64,7 @@ class ReminderSystem:
         }
         dm.save_json("reminders", data)
 
-    def _start_reminder_loop(self):
+    def start_reminder_loop(self):
         asyncio.create_task(self._reminder_loop())
 
     async def _reminder_loop(self):

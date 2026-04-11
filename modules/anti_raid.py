@@ -27,7 +27,6 @@ class AntiRaidSystem:
         self._raid_alerts: Dict[int, RaidAlert] = {}
         self._suspicious_members: Dict[int, dict] = {}
         self._load_settings()
-        self._start_monitoring()
 
     def _load_settings(self):
         data = dm.load_json("anti_raid_settings", default={})
@@ -37,7 +36,7 @@ class AntiRaidSystem:
         data = {"suspicious": self._suspicious_members}
         dm.save_json("anti_raid_settings", data)
 
-    def _start_monitoring(self):
+    def start_monitoring(self):
         asyncio.create_task(self._raid_monitor_loop())
 
     async def _raid_monitor_loop(self):
