@@ -97,10 +97,16 @@ class AutoSetup:
         
         async def setup_callback(interaction: discord.Interaction):
             if interaction.user.id != owner.id:
-                await interaction.response.send_message("Only the server owner can run setup.", ephemeral=True)
+                try:
+                    await interaction.response.send_message("Only the server owner can run setup.", ephemeral=True)
+                except discord.errors.NotFound:
+                    pass
                 return
             
-            await interaction.response.send_message("🚀 Running full auto-setup...", ephemeral=True)
+            try:
+                await interaction.response.send_message("🚀 Running full auto-setup...", ephemeral=True)
+            except discord.errors.NotFound:
+                return
             try:
                 await self._run_full_auto_setup(guild, interaction.user)
             except discord.errors.NotFound:
@@ -108,7 +114,10 @@ class AutoSetup:
         
         async def skip_callback(interaction: discord.Interaction):
             if interaction.user.id != owner.id:
-                await interaction.response.send_message("Only the server owner can skip.", ephemeral=True)
+                try:
+                    await interaction.response.send_message("Only the server owner can skip.", ephemeral=True)
+                except discord.errors.NotFound:
+                    pass
                 return
             
             self._pending_setups[guild.id].state = SetupState.SKIPPED

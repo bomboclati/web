@@ -1184,25 +1184,40 @@ class ModmailReplyModal(ui.Modal, title='Reply to User'):
 async def slash_bot(interaction: discord.Interaction, text: str):
     """The main AI portal with multi-step conversation support."""
     if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("Only Administrators can use AI commands.", ephemeral=True)
+        try:
+            await interaction.response.send_message("Only Administrators can use AI commands.", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
         return
 
     now = datetime.datetime.now().timestamp()
     last_use = bot._bot_cooldowns.get(interaction.user.id, 0)
     remaining = bot._bot_cooldown_seconds - (now - last_use)
     if remaining > 0:
-        return await interaction.response.send_message(
-            f"Please wait {int(remaining)}s before using /bot again.",
-            ephemeral=True
-        )
+        try:
+            await interaction.response.send_message(
+                f"Please wait {int(remaining)}s before using /bot again.",
+                ephemeral=True
+            )
+        except discord.errors.NotFound:
+            pass
+        return
     bot._bot_cooldowns[interaction.user.id] = now
 
-    await interaction.response.defer(ephemeral=True)
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except discord.errors.NotFound:
+        return
     
     try:
         await _process_ai_turn(interaction, text)
+    except discord.errors.NotFound:
+        pass
     except Exception as e:
-        await interaction.followup.send(f"Error: {str(e)}", ephemeral=True)
+        try:
+            await interaction.followup.send(f"Error: {str(e)}", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
 
 async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
     """Process a single turn of the AI conversation."""
