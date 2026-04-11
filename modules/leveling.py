@@ -148,7 +148,6 @@ class Leveling:
         if message.author.bot or not message.guild:
             return
         
-        import datetime
         base_xp = random.randint(5, 15)
         final_xp, applied = self.calculate_xp(message.guild.id, message.author.id, base_xp)
         
@@ -182,9 +181,4 @@ class Leveling:
                 "user_id": int(user_id),
                 "name": name,
                 "xp": xp,
-                "level": self.get_level_from_xp(xp),
-                "streak": streak
-            })
-        return leaderboard
-
-from datetime import datetime
+                "level": self.get_level_from_xp(xp),

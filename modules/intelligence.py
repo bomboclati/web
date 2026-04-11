@@ -169,7 +169,7 @@ class ServerIntelligence:
         health_data = dm.get_guild_data(guild_id, "server_health", {})
         messages_today = health_data.get("messages_today", 0)
         
-        new_members = len([m for m in guild.members if (datetime.utcnow() - m.joined_at).days == 0])
+        new_members = len([m for m in guild.members if m.joined_at and (discord.utils.utcnow() - m.joined_at).days == 0])
         
         engagement_score = self._calculate_engagement_score(total_members, active_members, messages_today, commands_today)
         

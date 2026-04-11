@@ -297,8 +297,8 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
             
             if "days_member" in req:
                 member = self.bot.get_guild(guild_id).get_member(user_id)
-                if member:
-                    days = (datetime.utcnow() - member.joined_at).days
+                if member and member.joined_at:
+                    days = (discord.utils.utcnow() - member.joined_at).days
                     earned = days >= req["days_member"]
             
             if "days_active" in req and not earned:

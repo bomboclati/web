@@ -9,15 +9,6 @@ class CoreCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="bot", description="The main AI portal. Tell the AI what you want to build or do")
-    @app_commands.describe(text="What you want the AI to help you with")
-    async def ai_bot_command(self, interaction: discord.Interaction, text: str):
-        """Main AI portal command"""
-        await interaction.response.defer()
-        
-        # This would normally trigger the AI reasoning process
-        # For now, we'll just acknowledge the command
-        await interaction.followup.send(f"🤖 AI received: {text}\n\n*This would trigger the AI reasoning process to help you build what you requested.*")
 
     @app_commands.command(name="status", description="Check system health and memory depth")
     async def status_command(self, interaction: discord.Interaction):
