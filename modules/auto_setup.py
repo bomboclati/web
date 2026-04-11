@@ -101,7 +101,10 @@ class AutoSetup:
                 return
             
             await interaction.response.send_message("🚀 Running full auto-setup...", ephemeral=True)
-            await self._run_full_auto_setup(guild, interaction.user)
+            try:
+                await self._run_full_auto_setup(guild, interaction.user)
+            except discord.errors.NotFound:
+                pass
         
         async def skip_callback(interaction: discord.Interaction):
             if interaction.user.id != owner.id:
@@ -109,7 +112,10 @@ class AutoSetup:
                 return
             
             self._pending_setups[guild.id].state = SetupState.SKIPPED
-            await interaction.response.send_message("✅ Setup skipped. Use `/bot` anytime to create features!", ephemeral=True)
+            try:
+                await interaction.response.send_message("✅ Setup skipped. Use `/bot` anytime to create features!", ephemeral=True)
+            except discord.errors.NotFound:
+                pass
         
         setup_btn.callback = setup_callback
         skip_btn.callback = skip_callback
