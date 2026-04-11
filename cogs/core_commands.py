@@ -11,7 +11,7 @@ class CoreCommands(commands.Cog):
 
     @app_commands.command(name="bot", description="The main AI portal. Tell the AI what you want to build or do")
     @app_commands.describe(text="What you want the AI to help you with")
-    async def bot_command(self, interaction: discord.Interaction, text: str):
+    async def ai_bot_command(self, interaction: discord.Interaction, text: str):
         """Main AI portal command"""
         await interaction.response.defer()
         
