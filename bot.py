@@ -618,7 +618,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         user = self.get_user(user_id)
         
         if not user or not guild:
-            await interaction.response.send_message("❌ User not found.", ephemeral=True)
+            await interaction.response.send_message("❌ User not found.", ephemeral=False)
             return
         
         embed = discord.Embed(
@@ -629,9 +629,9 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         
         try:
             await user.send(embed=embed)
-            await interaction.response.send_message("✅ Reply sent!", ephemeral=True)
+            await interaction.response.send_message("✅ Reply sent!", ephemeral=False)
         except:
-            await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=True)
+            await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=False)
     
     async def _handle_suggest_command(self, message, cmd_content):
         guild = message.guild
@@ -1162,7 +1162,7 @@ class ModmailReplyModal(ui.Modal, title='Reply to User'):
         user = self.bot.get_user(self.user.id)
         
         if not user or not guild:
-            await interaction.response.send_message("❌ User not found.", ephemeral=True)
+            await interaction.response.send_message("❌ User not found.", ephemeral=False)
             return
         
         embed = discord.Embed(
@@ -1173,9 +1173,9 @@ class ModmailReplyModal(ui.Modal, title='Reply to User'):
         
         try:
             await user.send(embed=embed)
-            await interaction.response.send_message("✅ Reply sent!", ephemeral=True)
+            await interaction.response.send_message("✅ Reply sent!", ephemeral=False)
         except:
-            await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=True)
+            await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=False)
 
 # --- Slash Commands ---
 
@@ -1185,7 +1185,7 @@ async def slash_bot(interaction: discord.Interaction, text: str):
     """The main AI portal with multi-step conversation support."""
     if not interaction.user.guild_permissions.administrator:
         try:
-            await interaction.response.send_message("Only Administrators can use AI commands.", ephemeral=True)
+            await interaction.response.send_message("Only Administrators can use AI commands.", ephemeral=False)
         except discord.errors.NotFound:
             pass
         return
@@ -1197,7 +1197,7 @@ async def slash_bot(interaction: discord.Interaction, text: str):
         try:
             await interaction.response.send_message(
                 f"Please wait {int(remaining)}s before using /bot again.",
-                ephemeral=True
+                ephemeral=False
             )
         except discord.errors.NotFound:
             pass
@@ -1205,24 +1205,31 @@ async def slash_bot(interaction: discord.Interaction, text: str):
     bot._bot_cooldowns[interaction.user.id] = now
 
     try:
-        await interaction.response.defer(ephemeral=True)
+        # Defer publicly so everyone can see the bot is thinking
+        await interaction.response.defer(ephemeral=False)
+    except discord.errors.NotFound:
+        return
+    
+    # Send "Thinking..." message visible to everyone
+    try:
+        thinking_msg = await interaction.followup.send("🤖 *Thinking...", ephemeral=False)
     except discord.errors.NotFound:
         return
     
     try:
-        await _process_ai_turn(interaction, text)
+        await _process_ai_turn(interaction, text, thinking_msg)
     except discord.errors.NotFound:
         pass
     except Exception as e:
         logger.error(f"Error in /bot command for user {interaction.user.id}: {e}", exc_info=True)
         try:
-            # Always ensure the user gets an answer so they aren't stuck on "Thinking..."
-            await interaction.followup.send(f"❌ **AI Error:** {str(e)}\n*Suggestions: Check API key, try a different model, or wait a few minutes if the bot is downloading models.*", ephemeral=True)
+            # Update the thinking message with the error
+            await thinking_msg.edit(content=f"❌ **AI Error:** {str(e)}\n*Suggestions: Check your API key with `/config apikey`, or try a different model.*")
         except discord.errors.NotFound:
             pass
         return
 
-async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
+async def _process_ai_turn(interaction: discord.Interaction, user_input: str, thinking_msg=None):
     """Process a single turn of the AI conversation."""
     guild_id = interaction.guild.id
     user_id = interaction.user.id
@@ -1290,7 +1297,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
         
         async def reply_callback(it: discord.Interaction):
             if it.user.id != user_id:
-                return await it.response.send_message("Only the user who started this can reply.", ephemeral=True)
+                return await it.response.send_message("Only the user who started this can reply.", ephemeral=False)
             
             modal = AIReplyModal(question=question)
             await it.response.send_modal(modal)
@@ -1301,33 +1308,37 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
                 if user_id in bot.ai_sessions:
                     del bot.ai_sessions[user_id]
                 
-                await modal_it.response.send_message("🔄 Processing your answer...", ephemeral=True)
-                await _process_ai_turn(modal_it, f"[User answered your question]: {answer}")
+                await modal_it.response.send_message("🔄 Processing your answer...", ephemeral=False)
+                await _process_ai_turn(modal_it, thinking_msg=None, f"[User answered your question]: {answer}")
             
             modal.on_submit = on_submit_wrapper
         
         async def skip_callback(it: discord.Interaction):
             if it.user.id != user_id:
-                return await it.response.send_message("Only the user who started this can skip.", ephemeral=True)
+                return await it.response.send_message("Only the user who started this can skip.", ephemeral=False)
             
             if user_id in bot.ai_sessions:
                 del bot.ai_sessions[user_id]
             
             await it.response.edit_message(content="🔄 Proceeding with defaults...", embed=None, view=None)
-            await _process_ai_turn(it, "[User said to use defaults]")
+            await _process_ai_turn(it, thinking_msg=None, "[User said to use defaults]")
         
         reply_btn.callback = reply_callback
         skip_btn.callback = skip_callback
         view.add_item(reply_btn)
         view.add_item(skip_btn)
         
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=False)
     else:
         actions = res.get("actions", [])
         
         if not actions:
+            # Edit the thinking message with the final AI response
             embed = discord.Embed(title="AI Response", description=summary, color=discord.Color.blue())
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            if thinking_msg:
+                await thinking_msg.edit(content="", embed=embed)
+            else:
+                await interaction.followup.send(embed=embed, ephemeral=False)
             await history_manager.add_exchange(guild_id, user_id, user_input, summary)
             # Store in vector memory for long-term recall
             await vector_memory.store_conversation(
@@ -1357,7 +1368,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
         
         async def proceed_callback(it: discord.Interaction):
             if it.user.id != user_id:
-                return await it.response.send_message("Only the user who started this can proceed.", ephemeral=True)
+                return await it.response.send_message("Only the user who started this can proceed.", ephemeral=False)
             
             await it.response.edit_message(content="🔄 Execution in progress...", embed=None, view=None)
             
@@ -1376,7 +1387,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
                     rollback_text = f"\n\n**Auto-Rollback ({len(result['rolled_back'])} actions):**\n{rb}"
                 final_msg = f"**Failed at step {result['failed_at'] + 1}: `{result['failed_action']}`**\nError: {result['error']}\n\n**Executed:**\n{summary_text}{rollback_text}"
             
-            await it.followup.send(final_msg, ephemeral=True)
+            await it.followup.send(final_msg, ephemeral=False)
             history_manager.add_exchange(guild_id, user_id, user_input, summary)
             # Store in vector memory for long-term recall
             vector_memory.store_conversation(
@@ -1395,7 +1406,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
         
         async def cancel_callback(it: discord.Interaction):
             if it.user.id != user_id:
-                return await it.response.send_message("Only the user who started this can cancel.", ephemeral=True)
+                return await it.response.send_message("Only the user who started this can cancel.", ephemeral=False)
             await it.response.edit_message(content="❌ Action cancelled.", embed=None, view=None)
             del bot.pending_confirms[user_id]
         
@@ -1404,7 +1415,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
         view.add_item(proceed_btn)
         view.add_item(cancel_btn)
         
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=False)
 
 # --- Utility Commands ---
 
@@ -1455,14 +1466,14 @@ async def help_cmd(interaction: discord.Interaction):
 async def cancel_cmd(interaction: discord.Interaction):
     if interaction.user.id in bot.pending_confirms:
         del bot.pending_confirms[interaction.user.id]
-        await interaction.response.send_message("Pending action cancelled.", ephemeral=True)
+        await interaction.response.send_message("Pending action cancelled.", ephemeral=False)
     else:
-        await interaction.response.send_message("No pending action to cancel.", ephemeral=True)
+        await interaction.response.send_message("No pending action to cancel.", ephemeral=False)
 
 @bot.tree.command(name="analyze", description="AI analyzes your server and suggests improvements")
 async def analyze_cmd(interaction: discord.Interaction):
     """AI analyzes the server and provides suggestions."""
-    await interaction.response.send_message("🤖 Analyzing server...", ephemeral=True)
+    await interaction.response.send_message("🤖 Analyzing server...", ephemeral=False)
     
     guild = interaction.guild
     
@@ -1529,12 +1540,12 @@ async def suggest_cmd(interaction: discord.Interaction, title: str, description:
     suggestions_channel_id = dm.get_guild_data(guild.id, "suggestions_channel")
     
     if not suggestions_channel_id:
-        await interaction.response.send_message("No suggestions channel set up yet!", ephemeral=True)
+        await interaction.response.send_message("No suggestions channel set up yet!", ephemeral=False)
         return
     
     channel = guild.get_channel(suggestions_channel_id)
     if not channel:
-        await interaction.response.send_message("Suggestions channel not found!", ephemeral=True)
+        await interaction.response.send_message("Suggestions channel not found!", ephemeral=False)
         return
     
     embed = discord.Embed(
@@ -1549,7 +1560,7 @@ async def suggest_cmd(interaction: discord.Interaction, title: str, description:
     await message.add_reaction("✅")
     await message.add_reaction("❌")
     
-    await interaction.response.send_message("✅ Suggestion submitted!", ephemeral=True)
+    await interaction.response.send_message("✅ Suggestion submitted!", ephemeral=False)
 
 @bot.tree.command(name="autoanalyze", description="Enable automatic AI analysis of your server")
 @app_commands.describe(interval="How often to analyze (hours)", enabled="Enable or disable")
@@ -1562,7 +1573,7 @@ async def autoanalyze_cmd(interaction: discord.Interaction, interval: int = 24, 
     dm.update_guild_data(interaction.guild.id, "auto_analyze", config)
     
     status = "enabled" if enabled else "disabled"
-    await interaction.response.send_message(f"🤖 Auto-analyze {status} (every {interval} hours). Use /analyze to see results.", ephemeral=True)
+    await interaction.response.send_message(f"🤖 Auto-analyze {status} (every {interval} hours). Use /analyze to see results.", ephemeral=False)
 
 @bot.tree.command(name="list", description="Shows all active automations")
 async def list_cmd(interaction: discord.Interaction):
@@ -1579,7 +1590,7 @@ async def list_cmd(interaction: discord.Interaction):
 async def config_cmd(interaction: discord.Interaction):
     if not interaction.user.guild_permissions.administrator:
         try:
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            await interaction.response.send_message("Admin only.", ephemeral=False)
         except discord.errors.NotFound:
             pass
         return
@@ -1591,7 +1602,7 @@ async def config_cmd(interaction: discord.Interaction):
     embed.add_field(name="/config prefix <char>", value="Set server prefix", inline=False)
     embed.add_field(name="/config depth <number>", value="Set memory depth", inline=False)
     try:
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed, ephemeral=False)
     except discord.errors.NotFound:
         pass
 
@@ -1600,7 +1611,7 @@ async def config_cmd(interaction: discord.Interaction):
 async def config_model(interaction: discord.Interaction, model: str):
     if not interaction.user.guild_permissions.administrator:
         try:
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            await interaction.response.send_message("Admin only.", ephemeral=False)
         except discord.errors.NotFound:
             pass
         return
@@ -1608,7 +1619,7 @@ async def config_model(interaction: discord.Interaction, model: str):
     dm.update_guild_data(interaction.guild.id, "custom_model", model)
     bot.ai.model = model
     try:
-        await interaction.response.send_message(f"AI model set to **{model}** for this server.", ephemeral=True)
+        await interaction.response.send_message(f"AI model set to **{model}** for this server.", ephemeral=False)
     except discord.errors.NotFound:
         pass
 
@@ -1621,14 +1632,14 @@ async def config_model(interaction: discord.Interaction, model: str):
 async def config_provider(interaction: discord.Interaction, provider: str):
     if not interaction.user.guild_permissions.administrator:
         try:
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            await interaction.response.send_message("Admin only.", ephemeral=False)
         except discord.errors.NotFound:
             pass
         return
         
     if provider not in bot.ai.base_urls:
         try:
-            await interaction.response.send_message(f"Unknown provider. Valid: {', '.join(bot.ai.base_urls.keys())}", ephemeral=True)
+            await interaction.response.send_message(f"Unknown provider. Valid: {', '.join(bot.ai.base_urls.keys())}", ephemeral=False)
         except discord.errors.NotFound:
             pass
         return
@@ -1642,7 +1653,7 @@ async def config_provider(interaction: discord.Interaction, provider: str):
         global_key = os.getenv("AI_API_KEY") if provider == os.getenv("AI_PROVIDER", "openrouter") else None
         if not global_key:
             try:
-                await interaction.response.send_message(f"⚠️ **Note:** Provider set to **{provider}**, but no API key is configured for it. Use `/config_key` to set one.", ephemeral=True)
+                await interaction.response.send_message(f"⚠️ **Note:** Provider set to **{provider}**, but no API key is configured for it. Use `/config_key` to set one.", ephemeral=False)
             except discord.errors.NotFound:
                 pass
     
@@ -1650,7 +1661,7 @@ async def config_provider(interaction: discord.Interaction, provider: str):
     dm.set_guild_api_key(interaction.guild.id, api_key or "", provider)
     try:
         if not interaction.response.is_done():
-            await interaction.response.send_message(f"✅ AI provider switched to **{provider}**.", ephemeral=True)
+            await interaction.response.send_message(f"✅ AI provider switched to **{provider}**.", ephemeral=False)
     except discord.errors.NotFound:
         pass
 
@@ -1664,14 +1675,14 @@ async def config_provider(interaction: discord.Interaction, provider: str):
 async def config_key(interaction: discord.Interaction, provider: str, key: str):
     if not interaction.user.guild_permissions.administrator:
         try:
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            await interaction.response.send_message("Admin only.", ephemeral=False)
         except discord.errors.NotFound:
             pass
         return
     
     dm.set_guild_api_key(interaction.guild.id, key, provider)
     try:
-        await interaction.response.send_message(f"✅ API key for **{provider}** has been updated and encrypted.", ephemeral=True)
+        await interaction.response.send_message(f"✅ API key for **{provider}** has been updated and encrypted.", ephemeral=False)
     except discord.errors.NotFound:
         pass
 
@@ -1680,19 +1691,19 @@ async def config_key(interaction: discord.Interaction, provider: str, key: str):
 async def config_prefix(interaction: discord.Interaction, prefix: str):
     if not interaction.user.guild_permissions.administrator:
         try:
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            await interaction.response.send_message("Admin only.", ephemeral=False)
         except discord.errors.NotFound:
             pass
         return
     if len(prefix) > 5:
         try:
-            await interaction.response.send_message("Prefix must be 5 characters or less.", ephemeral=True)
+            await interaction.response.send_message("Prefix must be 5 characters or less.", ephemeral=False)
         except discord.errors.NotFound:
             pass
         return
     dm.update_guild_data(interaction.guild.id, "prefix", prefix)
     try:
-        await interaction.response.send_message(f"Server prefix set to **{prefix}**.", ephemeral=True)
+        await interaction.response.send_message(f"Server prefix set to **{prefix}**.", ephemeral=False)
     except discord.errors.NotFound:
         pass
 
@@ -1701,19 +1712,19 @@ async def config_prefix(interaction: discord.Interaction, prefix: str):
 async def config_depth(interaction: discord.Interaction, depth: int):
     if not interaction.user.guild_permissions.administrator:
         try:
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            await interaction.response.send_message("Admin only.", ephemeral=False)
         except discord.errors.NotFound:
             pass
         return
     if depth < 5 or depth > 100:
         try:
-            await interaction.response.send_message("Depth must be between 5 and 100.", ephemeral=True)
+            await interaction.response.send_message("Depth must be between 5 and 100.", ephemeral=False)
         except discord.errors.NotFound:
             pass
         return
     dm.update_guild_data(interaction.guild.id, "memory_depth", depth)
     try:
-        await interaction.response.send_message(f"Memory depth set to **{depth}**.", ephemeral=True)
+        await interaction.response.send_message(f"Memory depth set to **{depth}**.", ephemeral=False)
     except discord.errors.NotFound:
         pass
 
@@ -1727,14 +1738,14 @@ async def config_depth(interaction: discord.Interaction, depth: int):
 async def config_apikey(interaction: discord.Interaction, api_key: str, provider: str = "openrouter"):
     if not interaction.user.guild_permissions.administrator:
         try:
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            await interaction.response.send_message("Admin only.", ephemeral=False)
         except discord.errors.NotFound:
             pass
         return
     
     dm.set_guild_api_key(interaction.guild.id, api_key, provider)
     try:
-        await interaction.response.send_message(f"✅ API key set for this server!\nProvider: **{provider}**", ephemeral=True)
+        await interaction.response.send_message(f"✅ API key set for this server!\nProvider: **{provider}**", ephemeral=False)
     except discord.errors.NotFound:
         pass
 
@@ -1743,20 +1754,20 @@ async def config_apikey(interaction: discord.Interaction, api_key: str, provider
 async def undo_cmd(interaction: discord.Interaction, count: int = 1):
     if not interaction.user.guild_permissions.administrator:
         try:
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            await interaction.response.send_message("Admin only.", ephemeral=False)
         except discord.errors.NotFound:
             pass
         return
     
     if count < 1 or count > 10:
         try:
-            await interaction.response.send_message("Count must be between 1 and 10.", ephemeral=True)
+            await interaction.response.send_message("Count must be between 1 and 10.", ephemeral=False)
         except discord.errors.NotFound:
             pass
         return
     
     try:
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
     except discord.errors.NotFound:
         return
     
@@ -1766,7 +1777,7 @@ async def undo_cmd(interaction: discord.Interaction, count: int = 1):
     
     summary = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in results])
     try:
-        await interaction.followup.send(f"**Undo Summary:**\n{summary}", ephemeral=True)
+        await interaction.followup.send(f"**Undo Summary:**\n{summary}", ephemeral=False)
     except discord.errors.NotFound:
         pass
 

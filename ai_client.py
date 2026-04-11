@@ -31,11 +31,11 @@ class AIClient:
     Ensures the bot thinks before acting and provides a walkthrough.
     Supports per-guild API keys.
     """
-    def __init__(self, api_key: str, provider: str = "openrouter", model: Optional[str] = None):
+    def __init__(self, api_key: str, provider: str = "gemini", model: Optional[str] = None):
         self.default_api_key = api_key
         self.default_provider = provider
-        # Default model that works with multiple providers
-        self.model = model or "meta-llama/llama-3.1-70b-instruct"
+        # Default model for Gemini provider
+        self.model = model or "gemini-1.5-flash"
         self.base_urls = {
             "openrouter": "https://openrouter.ai/api/v1/chat/completions",
             "openai": "https://api.openai.com/v1/chat/completions",
