@@ -335,7 +335,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             return
         
         # Handle DMs (Modmail)
-        if isinstance(message.channel, discord.DM):
+        if isinstance(message.channel, discord.DMChannel):
             await self._handle_modmail(message)
             return
 
