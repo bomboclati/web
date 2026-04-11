@@ -30,6 +30,20 @@ class AIClient:
         if guild_config:
             return guild_config.get("api_key", self.default_api_key), guild_config.get("provider", self.default_provider)
         return self.default_api_key, self.default_provider
+    
+    async def fetch_server_health(self, guild_id: int) -> Dict[str, Any]:
+        """
+        Tool function to fetch server health and forecast data.
+        Called by AI when user asks about server activity, forecasts, or level-up ETAs.
+        """
+        try:
+            from modules.server_analytics import get_analytics
+            analytics = get_analytics()
+            if analytics:
+                return analytics.get_forecast(guild_id)
+            return {"error": "Analytics system not initialized"}
+        except Exception as e:
+            return {"error": str(e)}
 
     async def get_search_results(self, query: str) -> str:
         """Performs a web search using Tavily or a fallback."""
