@@ -73,7 +73,6 @@ class EventScheduler:
         self._active_events: Dict[str, ActiveEvent] = {}
         self._guild_settings: Dict[int, dict] = {}
         self._load_scheduled_events()
-        self._start_event_monitor()
 
     def _load_scheduled_events(self):
         events_data = dm.load_json("scheduled_events", default={})
@@ -146,7 +145,7 @@ class EventScheduler:
         except:
             return None
 
-    async def _start_event_monitor(self):
+    def start_event_monitor(self):
         asyncio.create_task(self._event_monitor_loop())
 
     async def _event_monitor_loop(self):

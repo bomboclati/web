@@ -43,7 +43,6 @@ class ServerIntelligence:
         self._activity_data: Dict[int, Dict[int, UserActivity]] = {}
         self._topic_trends: Dict[int, List[dict]] = {}
         self._load_data()
-        self._start_monitoring()
 
     def _load_data(self):
         saved_data = dm.load_json("server_intelligence", default={})
@@ -86,7 +85,7 @@ class ServerIntelligence:
         
         dm.save_json("server_intelligence", data)
 
-    def _start_monitoring(self):
+    def start_monitoring(self):
         asyncio.create_task(self._intelligence_monitor_loop())
 
     async def _intelligence_monitor_loop(self):

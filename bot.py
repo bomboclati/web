@@ -132,6 +132,10 @@ class MiroBot(commands.Bot):
         logger.info("Restoring trigger role presence monitoring...")
         await self.scheduler.start()
         
+        # Start background monitors
+        self.events.start_event_monitor()
+        self.intelligence.start_monitoring()
+        
         # Load core commands cog
         try:
             await self.load_extension("cogs.core_commands")
