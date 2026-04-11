@@ -1733,15 +1733,15 @@ class TierManagementView(discord.ui.View):
         self.staff_promo = staff_promo
         self.config = config
     
-    @discord.ui.button(label="Add Tier", style=discord.ButtonStyle.green, emoji="➕")
+    @discord.ui.button(label="Add Tier", style=discord.ButtonStyle.success, emoji="➕")
     async def add_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(AddTierModal(self.guild, self.staff_promo, self.config))
     
-    @discord.ui.button(label="Edit Tier", style=discord.ButtonStyle.blue, emoji="✏️")
+    @discord.ui.button(label="Edit Tier", style=discord.ButtonStyle.primary, emoji="✏️")
     async def edit_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(EditTierModal(self.guild, self.staff_promo, self.config))
     
-    @discord.ui.button(label="Remove Tier", style=discord.ButtonStyle.red, emoji="🗑️")
+    @discord.ui.button(label="Remove Tier", style=discord.ButtonStyle.danger, emoji="🗑️")
     async def remove_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(RemoveTierModal(self.guild, self.staff_promo, self.config))
 
