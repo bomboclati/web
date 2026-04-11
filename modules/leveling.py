@@ -181,4 +181,8 @@ class Leveling:
                 "user_id": int(user_id),
                 "name": name,
                 "xp": xp,
-                "level": self.get_level_from_xp(xp),
+                "level": self.get_level_from_xp(xp),
+                "streak": streak
+            })
+        return leaderboard
+
