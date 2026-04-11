@@ -94,7 +94,7 @@ class PromotionService:
 
     def _compute_score(self, guild_id: int, user_id: int, member: discord.Member, metrics: dict) -> float:
         """Compute promotion score based on various metrics"""
-        now = datetime.utcnow()
+        now = discord.utils.utcnow()
         joined = member.joined_at or now
         tenure_days = (now - joined).days
         
@@ -152,7 +152,7 @@ class PromotionService:
             "user_name": str(member),
             "tier_name": target_tier.get("name"),
             "score": score,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": discord.utils.utcnow().isoformat(),
         }
         
         pending.append(review_data)
@@ -183,7 +183,7 @@ class PromotionService:
         min_hours = settings.get("min_tenure_hours", 72)
         if not member.joined_at:
             return False
-        tenure_hours = (datetime.utcnow() - member.joined_at).total_seconds() / 3600
+        tenure_hours = (discord.utils.utcnow() - member.joined_at).total_seconds() / 3600
         return tenure_hours >= min_hours
 
     def _check_tier_requirements(self, guild_id: int, member: discord.Member, tier_name: str, config: dict) -> bool:
@@ -195,8 +195,8 @@ class PromotionService:
             return True
         
         udata = dm.get_guild_data(guild_id, f"user_{member.id}", {})
-        joined_at = member.joined_at or datetime.utcnow()
-        tenure_days = (datetime.utcnow() - joined_at).days
+        joined_at = member.joined_at or discord.utils.utcnow()
+        tenure_days = (discord.utils.utcnow() - joined_at).days
         user_achievements = dm.get_guild_data(guild_id, f"achievements_{member.id}", [])
         
         missing = []

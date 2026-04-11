@@ -440,7 +440,7 @@ class CommunityHealth:
             )
         
         embed.set_footer(text="Community Health Analysis • AI-Powered")
-        embed.timestamp = datetime.now()
+        embed.timestamp = discord.utils.utcnow()
         
         await channel.send(embed=embed)
 

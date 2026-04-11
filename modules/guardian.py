@@ -51,7 +51,7 @@ class GuardianSystem:
 
     async def check_join_rate(self, guild: discord.Guild) -> bool:
         """Check if join rate exceeds threshold"""
-        now = datetime.now()
+        now = discord.utils.utcnow()
         one_minute_ago = now - timedelta(minutes=1)
         
         # Clean old entries
@@ -73,7 +73,7 @@ class GuardianSystem:
             
         guild_id = message.guild.id
         user_id = message.author.id
-        now = datetime.now()
+        now = discord.utils.utcnow()
         
         # Track message timing
         self.message_counts[guild_id][user_id].append(now)
@@ -125,13 +125,13 @@ class GuardianSystem:
 
     async def check_account_age(self, member: discord.Member) -> bool:
         """Check if account is too new"""
-        account_age = datetime.now() - member.created_at
+        account_age = discord.utils.utcnow() - member.created_at
         return account_age < RAID_CONFIG['account_age_threshold']
 
     async def initiate_lockdown(self, guild: discord.Guild, reason: str = "Raid detected"):
         """Put guild into lockdown mode"""
         if guild.id in self.lockdown_end_times:
-            if self.lockdown_end_times[guild.id] > datetime.now():
+            if self.lockdown_end_times[guild.id] > discord.utils.utcnow():
                 return  # Already in lockdown
         
         logger.info(f"Initiating lockdown for {guild.name}: {reason}")
@@ -148,7 +148,7 @@ class GuardianSystem:
                 logger.warning(f"Cannot lockdown channel {channel.name}")
         
         self.raid_mode_active[guild.id] = True
-        self.lockdown_end_times[guild.id] = datetime.now() + timedelta(seconds=RAID_CONFIG['lockdown_duration'])
+        self.lockdown_end_times[guild.id] = discord.utils.utcnow() + timedelta(seconds=RAID_CONFIG['lockdown_duration'])
         
         # Notify admins
         admin_channel = await self._find_admin_channel(guild)
@@ -206,7 +206,7 @@ class GuardianSystem:
         
         self.captcha_challenges[member.id] = {
             'answer': answer,
-            'expires': datetime.now() + timedelta(minutes=5),
+            'expires': discord.utils.utcnow() + timedelta(minutes=5),
             'attempts': 0
         }
         
@@ -237,7 +237,7 @@ class GuardianSystem:
         challenge = self.captcha_challenges[user_id]
         
         # Check expiration
-        if datetime.now() > challenge['expires']:
+        if discord.utils.utcnow() > challenge['expires']:
             del self.captcha_challenges[user_id]
             return False
         
@@ -266,8 +266,8 @@ Rate from 0.0 (safe) to 1.0 (definitely raid/spam).
 Consider: repetitive content, malicious links, excessive caps, suspicious patterns.
 
 Message: "{message.content}"
-Author Account Age: {(datetime.now() - message.author.created_at).days} days
-Is New Member: {datetime.now() - message.author.joined_at < timedelta(hours=1)}
+Author Account Age: {(discord.utils.utcnow() - message.author.created_at).days} days
+Is New Member: {discord.utils.utcnow() - message.author.joined_at < timedelta(hours=1)}
 
 Respond with ONLY a number between 0.0 and 1.0."""
 
@@ -297,7 +297,7 @@ Respond with ONLY a number between 0.0 and 1.0."""
         # Auto-kick if high risk
         if reason in ["high_message_rate", "duplicate_spam"]:
             ai_score = await self.ai_analyze_message(
-                type('FakeMessage', (), {'content': 'spam', 'author': member, 'created_at': datetime.now()})()
+                type('FakeMessage', (), {'content': 'spam', 'author': member, 'created_at': discord.utils.utcnow()})()
             )
             if ai_score > RAID_CONFIG['ai_confidence_threshold']:
                 try:
@@ -329,7 +329,7 @@ class GuardianCog(commands.Cog):
             return
             
         # Track join time
-        self.guardian.join_times[member.guild.id].append(datetime.now())
+        self.guardian.join_times[member.guild.id].append(discord.utils.utcnow())
         
         # Check for raid
         if await self.guardian.check_join_rate(member.guild):
@@ -370,7 +370,7 @@ class GuardianCog(commands.Cog):
             return
         
         # AI analysis for suspicious accounts
-        if (datetime.now() - message.author.created_at).days < 30:
+        if (discord.utils.utcnow() - message.author.created_at).days < 30:
             ai_score = await self.guardian.ai_analyze_message(message)
             if ai_score > RAID_CONFIG['ai_confidence_threshold']:
                 await self.guardian.handle_suspicious_user(message.author, f"AI detected spam (score: {ai_score:.2f})")
@@ -383,7 +383,7 @@ class GuardianCog(commands.Cog):
             return
         
         # Re-analyze edited messages from new accounts
-        if (datetime.now() - after.author.created_at).days < 7:
+        if (discord.utils.utcnow() - after.author.created_at).days < 7:
             ai_score = await self.guardian.ai_analyze_message(after)
             if ai_score > RAID_CONFIG['ai_confidence_threshold'] * 1.2:  # Higher threshold for edits
                 await self.guardian.handle_suspicious_user(after.author, "AI detected spam in edited message")
@@ -411,7 +411,7 @@ class GuardianCog(commands.Cog):
             embed.add_field(name="Suspicious Users", value=len(self.guardian.suspicious_users))
             
             if in_lockdown and guild.id in self.guardian.lockdown_end_times:
-                remaining = self.guardian.lockdown_end_times[guild.id] - datetime.now()
+                remaining = self.guardian.lockdown_end_times[guild.id] - discord.utils.utcnow()
                 embed.add_field(name="Time Remaining", value=f"{max(0, int(remaining.total_seconds()))}s")
             
             await ctx.send(embed=embed)

@@ -170,9 +170,13 @@ class ReminderSystem:
                 dt = datetime.strptime(datetime_str, fmt)
                 
                 if dt.year == 1900:
-                    dt = dt.replace(year=datetime.now().year)
-                    if dt < datetime.now():
-                        dt = dt.replace(year=datetime.now().year + 1)
+                    dt = dt.replace(year=discord.utils.utcnow().year)
+                    if dt.tzinfo is None:
+                         # Assume UTC if naive
+                         dt = dt.replace(tzinfo=discord.utils.utcnow().tzinfo)
+                    
+                    if dt < discord.utils.utcnow():
+                        dt = dt.replace(year=discord.utils.utcnow().year + 1)
                 
                 return dt.timestamp()
             except:

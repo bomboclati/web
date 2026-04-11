@@ -149,8 +149,8 @@ class GiveawaySystem:
         settings = self.get_guild_settings(giveaway.guild_id)
         emoji = settings.get("emoji", "🎁")
         
-        ends_at = datetime.fromtimestamp(giveaway.ends_at)
-        time_left = ends_at - datetime.now()
+        ends_at = datetime.fromtimestamp(giveaway.ends_at, tz=datetime.timezone.utc)
+        time_left = ends_at - discord.utils.utcnow()
         
         embed = discord.Embed(
             title=f"{emoji} {giveaway.name}",

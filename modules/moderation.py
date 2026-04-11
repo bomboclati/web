@@ -369,7 +369,7 @@ Consider:
         embed.add_field(name="Reason", value=violation.reason, inline=False)
         embed.add_field(name="AI Reasoning", value=violation.ai_reasoning[:500], inline=False)
         embed.add_field(name="Message", value=violation.message_content[:200], inline=False)
-        embed.timestamp = datetime.datetime.now()
+        embed.timestamp = discord.utils.utcnow()
         return embed
 
     async def _create_appeal_ticket(self, violation: ModerationViolation, history: UserModerationHistory, member: discord.Member):

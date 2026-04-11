@@ -88,7 +88,7 @@ class StaffReviewSystem:
         achievements = stats.get("achievements", 0)
         join_date = member.joined_at
         
-        days_since_join = (datetime.now() - join_date).days
+        days_since_join = (discord.utils.utcnow() - join_date).days
         
         embed = discord.Embed(
             title=f"📊 Staff Review: {member.display_name}",
@@ -117,7 +117,7 @@ class StaffReviewSystem:
             inline=True
         )
         
-        embed.timestamp = datetime.now()
+        embed.timestamp = discord.utils.utcnow()
         
         await channel.send(embed=embed)
         
@@ -292,7 +292,7 @@ class StaffReviewSystem:
         stats = self._get_staff_stats(guild_id, user_id)
         
         join_date = member.joined_at
-        days_since_join = (datetime.now() - join_date).days
+        days_since_join = (discord.utils.utcnow() - join_date).days
         
         messages = stats.get("messages", 0)
         xp = stats.get("xp", 0)

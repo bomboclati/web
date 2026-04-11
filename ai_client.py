@@ -141,6 +141,8 @@ class AIClient:
         # Get recent history
         history_depth = int(os.getenv("MEMORY_DEPTH", 20))
         history = await history_manager.get_enhanced_context(guild_id, user_id, depth=history_depth)
+        if not isinstance(history, list):
+            history = []
         
         # Retrieve semantically similar conversations from vector memory
         vector_results = vector_memory.retrieve_relevant_conversations(
@@ -154,8 +156,13 @@ class AIClient:
         # Format vector memory results as context messages
         vector_context = []
         for result in vector_results:
-            doc = result["document"]
-            similarity = result["similarity"]
+            doc = result.get("document", "")
+            # Fallback for old distance-based results from keyword search
+            similarity = result.get("similarity")
+            if similarity is None:
+                distance = result.get("distance", 1.0)
+                similarity = 1.0 - distance
+            
             vector_context.append({
                 "role": "system",
                 "content": f"[Relevant past conversation (similarity: {similarity:.2f})]\n{doc}"
@@ -188,13 +195,20 @@ class AIClient:
             if provider in ["openai", "openrouter"]:
                 payload["response_format"] = {"type": "json_object"}
 
-            async with session.post(self.base_urls.get(provider), headers=headers, json=payload) as resp:
+            provider_url = self.base_urls.get(provider)
+            if not provider_url:
+                raise Exception(f"Unsupported AI provider: {provider}")
+
+            async with session.post(provider_url, headers=headers, json=payload) as resp:
                 if resp.status != 200:
                     text = await resp.text()
                     raise Exception(f"AI API Error ({resp.status}): {text}")
                 
-                data = await resp.json()
-                ai_msg = data['choices'][0]['message']['content']
+                res_data = await resp.json()
+                if not res_data.get('choices'):
+                    raise Exception(f"Invalid AI response body: {res_data}")
+                    
+                ai_msg = res_data['choices'][0]['message']['content']
 
                 # Try to parse JSON from AI message
                 try:

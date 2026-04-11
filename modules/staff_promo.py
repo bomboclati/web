@@ -200,7 +200,7 @@ class StaffPromotionSystem:
         min_hours = settings.get("min_tenure_hours", 72)
         if not member.joined_at:
             return False
-        tenure_hours = (datetime.utcnow() - member.joined_at).total_seconds() / 3600
+        tenure_hours = (discord.utils.utcnow() - member.joined_at).total_seconds() / 3600
         return tenure_hours >= min_hours
 
     async def _check_trial_period(self, guild_id: int, member: discord.Member, config: dict) -> Optional[str]:
@@ -232,13 +232,13 @@ class StaffPromotionSystem:
         
         if not trial_start:
             # Set trial start time if not set
-            udata["trial_start_time"] = datetime.utcnow().timestamp()
+            udata["trial_start_time"] = discord.utils.utcnow().timestamp()
             dm.update_guild_data(guild_id, f"user_{member.id}", udata)
             return "active"
             
         trial_duration_days = trial_settings.get("duration_days", 14)
         trial_seconds = trial_duration_days * 24 * 3600
-        elapsed_time = datetime.utcnow().timestamp() - trial_start
+        elapsed_time = discord.utils.utcnow().timestamp() - trial_start
         
         if elapsed_time >= trial_seconds:
             # Trial period ended, evaluate performance
@@ -325,7 +325,7 @@ class StaffPromotionSystem:
         
         if cooldown_key in self._last_promotion_time:
             last = self._last_promotion_time[cooldown_key]
-            if (datetime.utcnow() - last).total_seconds() < cooldown_hours * 3600:
+            if (discord.utils.utcnow() - last).total_seconds() < cooldown_hours * 3600:
                 return
         
         score = self.promotion_service._compute_score(guild.id, user_id, member, metrics)
@@ -359,19 +359,19 @@ class StaffPromotionSystem:
                 return
             
             await self._promote_member(guild, member, target_tier, tiers, role_ids, current_index, settings, config)
-            self._last_promotion_time[cooldown_key] = datetime.utcnow()
+            self._last_promotion_time[cooldown_key] = discord.utils.utcnow()
         elif settings.get("auto_demote", False) and target_index < current_index and current_index > 0:
             demotion_cooldown_key = f"{guild.id}_{user_id}_demote"
             demotion_cooldown_hours = settings.get("demotion_cooldown_hours", 168)
             if demotion_cooldown_key in self._last_demotion_time:
                 last = self._last_demotion_time[demotion_cooldown_key]
-                if (datetime.utcnow() - last).total_seconds() < demotion_cooldown_hours * 3600:
+                if (discord.utils.utcnow() - last).total_seconds() < demotion_cooldown_hours * 3600:
                     return
             
             buffer = settings.get("demotion_threshold_buffer", 0.1)
             if score < target_tier.get("threshold", 0) - buffer:
                 await self._demote_member(guild, member, target_index, tiers, role_ids, current_index, settings, config)
-                self._last_demotion_time[demotion_cooldown_key] = datetime.utcnow()
+                self._last_demotion_time[demotion_cooldown_key] = discord.utils.utcnow()
         
         if settings.get("notify_near_promotion", True):
             await self._check_progress_notification(guild, member, score, tiers, role_ids, settings)
@@ -494,7 +494,7 @@ class StaffPromotionSystem:
         notif_key = f"{guild.id}_{member.id}_progress"
         if notif_key in self._last_notification_time:
             last = self._last_notification_time[notif_key]
-            if (datetime.utcnow() - last).total_seconds() < 86400:
+            if (discord.utils.utcnow() - last).total_seconds() < 86400:
                 return
         
         config = self._get_full_config(guild.id)
@@ -509,7 +509,7 @@ class StaffPromotionSystem:
                 percent_away = (threshold - score) * 100
                 try:
                     await member.send(f"🎯 You're **{percent_away:.1f}%** away from being promoted to **{next_tier.get('name')}**! Keep it up!")
-                    self._last_notification_time[notif_key] = datetime.utcnow()
+                    self._last_notification_time[notif_key] = discord.utils.utcnow()
                 except:
                     pass
 
@@ -613,7 +613,7 @@ class StaffPromotionSystem:
         await self._apply_promotion_rewards(guild, target_member, tier.get("name"), config)
         
         cooldown_key = f"{guild.id}_{target_member.id}"
-        self._last_promotion_time[cooldown_key] = datetime.utcnow()
+        self._last_promotion_time[cooldown_key] = discord.utils.utcnow()
         
         return True, f"Promoted to {tier.get('name')}"
 
@@ -670,7 +670,7 @@ class StaffPromotionSystem:
         await self._apply_demotion_penalty(guild, target_member, new_tier_name, config)
         
         demotion_cooldown_key = f"{guild.id}_{target_member.id}_demote"
-        self._last_demotion_time[demotion_cooldown_key] = datetime.utcnow()
+        self._last_demotion_time[demotion_cooldown_key] = discord.utils.utcnow()
         
         return True, f"Demoted to {new_tier_name}"
 

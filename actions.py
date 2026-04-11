@@ -1502,7 +1502,7 @@ class CommandsListView(discord.ui.View):
             max_val = cfg.get("max", 100)
             weight = cfg.get("weight", 0)
             if metric_name == "tenure_days":
-                val = (datetime.utcnow() - (member.joined_at or datetime.utcnow())).days
+                val = (discord.utils.utcnow() - (member.joined_at or discord.utils.utcnow())).days
             elif metric_name == "achievements":
                 val = len(dm.get_guild_data(guild.id, f"achievements_{member.id}", []))
             else:
