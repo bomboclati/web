@@ -290,33 +290,66 @@ class DataManager:
         return key
 
     def set_guild_api_key(self, guild_id: int, api_key: str, provider: str = "openrouter"):
-        """Set guild-specific API key (encrypted)"""
+        """Set guild-specific API key for a specific provider (encrypted)"""
         f = Fernet(self._get_encryption_key())
         encrypted_key = f.encrypt(api_key.encode()).decode()
         
         api_keys = self.load_json("guild_api_keys", default={})
-        api_keys[str(guild_id)] = {
-            "api_key": encrypted_key,
-            "provider": provider,
-            "updated_at": datetime.now().isoformat()
-        }
+        guild_id_str = str(guild_id)
+        
+        if guild_id_str not in api_keys or not isinstance(api_keys[guild_id_str].get("providers"), dict):
+            # Migration/Initial setup
+            old_provider = api_keys.get(guild_id_str, {}).get("provider", "openrouter")
+            old_key = api_keys.get(guild_id_str, {}).get("api_key")
+            
+            api_keys[guild_id_str] = {
+                "active_provider": provider,
+                "providers": {provider: encrypted_key},
+                "updated_at": datetime.now().isoformat()
+            }
+            if old_key and old_provider != provider:
+                api_keys[guild_id_str]["providers"][old_provider] = old_key
+        else:
+            api_keys[guild_id_str]["providers"][provider] = encrypted_key
+            api_keys[guild_id_str]["active_provider"] = provider
+            api_keys[guild_id_str]["updated_at"] = datetime.now().isoformat()
+            
         self.save_json("guild_api_keys", api_keys)
 
-    def get_guild_api_key(self, guild_id: int) -> Optional[Dict[str, str]]:
-        """Get guild-specific API key (decrypted)"""
+    def get_guild_api_key(self, guild_id: int, provider: str = None) -> Optional[Dict[str, str]]:
+        """Get guild-specific API key (decrypted) for the active or specified provider"""
         api_keys = self.load_json("guild_api_keys", default={})
         guild_data = api_keys.get(str(guild_id))
         
         if not guild_data:
             return None
         
+        # Determine target provider and encrypted key
+        target_provider = provider
+        encrypted_key = None
+        
+        if "providers" in guild_data and isinstance(guild_data["providers"], dict):
+            # New format
+            active_provider = guild_data.get("active_provider", "openrouter")
+            target_provider = provider or active_provider
+            encrypted_key = guild_data["providers"].get(target_provider)
+        else:
+            # Old format migration
+            old_provider = guild_data.get("provider", "openrouter")
+            target_provider = provider or old_provider
+            if target_provider == old_provider:
+                encrypted_key = guild_data.get("api_key")
+        
+        if not encrypted_key:
+            return None
+            
         # Decrypt the API key
         try:
             f = Fernet(self._get_encryption_key())
-            decrypted_key = f.decrypt(guild_data["api_key"].encode()).decode()
+            decrypted_key = f.decrypt(encrypted_key.encode()).decode()
             return {
                 "api_key": decrypted_key,
-                "provider": guild_data.get("provider", "openrouter")
+                "provider": target_provider
             }
         except Exception:
             # If decryption fails, return as-is (might be old unencrypted key)

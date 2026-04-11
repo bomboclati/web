@@ -44,9 +44,10 @@ class AIClient:
     def _get_guild_api_key(self, guild_id: int) -> tuple:
         """Get API key and provider for a specific guild, fallback to defaults"""
         from data_manager import dm
-        guild_config = dm.get_guild_api_key(guild_id)
-        if guild_config:
-            return guild_config.get("api_key", self.default_api_key), guild_config.get("provider", self.default_provider)
+        # Get active provider for the guild
+        current_config = dm.get_guild_api_key(guild_id)
+        if current_config:
+            return current_config.get("api_key", self.default_api_key), current_config.get("provider", self.default_provider)
         return self.default_api_key, self.default_provider
     
     async def fetch_server_health(self, guild_id: int) -> Dict[str, Any]:
@@ -206,16 +207,21 @@ class AIClient:
         messages.extend(combined_context)
         messages.append({"role": "user", "content": user_input})
 
-        timeout = aiohttp.ClientTimeout(total=45, connect=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-            if provider == "openrouter":
-                headers["HTTP-Referer"] = "https://github.com/antigravity"
-                headers["X-Title"] = "Miro AI Discord Bot"
+        # Prepare headers
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        if provider == "openrouter":
+            headers["HTTP-Referer"] = "https://github.com/antigravity"
+            headers["X-Title"] = "Miro AI Discord Bot"
 
+        # Diagnostic info (info level for transparency)
+        censored_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "****"
+        logger.info(f"AI Handshake: {provider} | Key: {censored_key} | Len: {len(api_key)} | Model: {self.model}")
+
+        timeout = aiohttp.ClientTimeout(total=45, connect=10)
+        async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
             payload = {
                 "model": self.model,
                 "messages": messages,
@@ -228,7 +234,7 @@ class AIClient:
             if not provider_url:
                 raise Exception(f"Unsupported AI provider: {provider}")
 
-            async with session.post(provider_url, headers=headers, json=payload, allow_redirects=False) as resp:
+            async with session.post(provider_url, json=payload, allow_redirects=False) as resp:
                 if resp.status != 200:
                     text = await resp.text()
                     logger.error(f"AI API Error from {provider} ({resp.status}): {text}")
@@ -256,7 +262,7 @@ class AIClient:
                             
                             # Retry with search context
                             payload["messages"] = messages
-                            async with session.post(provider_url, headers=headers, json=payload, allow_redirects=False) as search_resp:
+                            async with session.post(provider_url, json=payload, allow_redirects=False) as search_resp:
                                 if search_resp.status != 200:
                                     search_text = await search_resp.text()
                                     logger.error(f"AI Search Retry Error ({search_resp.status}): {search_text}")

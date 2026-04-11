@@ -1405,17 +1405,32 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str):
 @bot.tree.command(name="status", description="View bot and system health")
 async def status_cmd(interaction: discord.Interaction):
     guild = interaction.guild
+    guild_id = guild.id
     
     vm_stats = vector_memory.get_memory_stats()
-    guild_api = dm.get_guild_api_key(guild.id)
     
     embed = discord.Embed(title="System Status", color=discord.Color.green())
+    
+    # Get detailed AI configuration
+    ai_config = dm.get_guild_api_key(guild_id)
+    active_provider = ai_config.get("provider", "openrouter") if ai_config else os.getenv("AI_PROVIDER", "openrouter")
+    
+    # Check which providers have keys
+    provider_status = []
+    for p in ["openrouter", "openai", "gemini"]:
+        p_key = dm.get_guild_api_key(guild_id, provider=p)
+        status = "✅" if p_key and p_key.get("api_key") else "❌"
+        if p == active_provider:
+            provider_status.append(f"**{p.capitalize()}** {status} (Active)")
+        else:
+            provider_status.append(f"{p.capitalize()} {status}")
+
+    embed.add_field(name="🤖 AI Configuration", value="\n".join(provider_status), inline=False)
+    embed.add_field(name="🧠 AI Model", value=f"`{bot.ai.model}`", inline=True)
+    embed.add_field(name="📝 Memory", value=f"{os.getenv('MEMORY_DEPTH', '20')} msgs", inline=True)
     embed.add_field(name="Bot", value="🟢 Online", inline=True)
     embed.add_field(name="Guild", value=f"🟢 {guild.name}", inline=True)
     embed.add_field(name="Vector Memory", value=f"{vm_stats.get('count', 0)} memories stored", inline=False)
-    embed.add_field(name="AI Provider", value=(guild_api or {}).get("provider", bot.ai.default_provider).title(), inline=True)
-    embed.add_field(name="AI Model", value=bot.ai.model, inline=True)
-    embed.add_field(name="API Key", value="🟢 Server-specific" if guild_api else "🔴 Default", inline=True)
     embed.add_field(name="Self-Reflection", value="🔴 Disabled" if os.getenv("SELF_REFLECT_ENABLED", "false").lower() != "true" else "🟢 Enabled", inline=True)
     
     await interaction.response.send_message(embed=embed)
@@ -1591,7 +1606,7 @@ async def config_model(interaction: discord.Interaction, model: str):
     except discord.errors.NotFound:
         pass
 
-@bot.tree.command(name="config_provider", description="Set the AI provider")
+@bot.tree.command(name="config_provider", description="Set the active AI provider for this server")
 @app_commands.choices(provider=[
     app_commands.Choice(name="OpenRouter", value="openrouter"),
     app_commands.Choice(name="OpenAI", value="openai"),
@@ -1604,6 +1619,7 @@ async def config_provider(interaction: discord.Interaction, provider: str):
         except discord.errors.NotFound:
             pass
         return
+        
     if provider not in bot.ai.base_urls:
         try:
             await interaction.response.send_message(f"Unknown provider. Valid: {', '.join(bot.ai.base_urls.keys())}", ephemeral=True)
@@ -1611,11 +1627,45 @@ async def config_provider(interaction: discord.Interaction, provider: str):
             pass
         return
     
-    current_key = dm.get_guild_api_key(interaction.guild.id)
-    api_key = current_key.get("api_key") if current_key else os.getenv("AI_API_KEY", "")
-    dm.set_guild_api_key(interaction.guild.id, api_key, provider)
+    # Get any key for the new provider (or existing active key if we're switching)
+    current_key_data = dm.get_guild_api_key(interaction.guild.id, provider=provider)
+    api_key = current_key_data.get("api_key") if current_key_data else None
+    
+    if not api_key:
+        # Check if we have a default global key for this provider
+        global_key = os.getenv("AI_API_KEY") if provider == os.getenv("AI_PROVIDER", "openrouter") else None
+        if not global_key:
+            try:
+                await interaction.response.send_message(f"⚠️ **Note:** Provider set to **{provider}**, but no API key is configured for it. Use `/config_key` to set one.", ephemeral=True)
+            except discord.errors.NotFound:
+                pass
+    
+    # Just update the active provider in DM
+    dm.set_guild_api_key(interaction.guild.id, api_key or "", provider)
     try:
-        await interaction.response.send_message(f"AI provider set to **{provider}** for this server.", ephemeral=True)
+        if not interaction.response.is_done():
+            await interaction.response.send_message(f"✅ AI provider switched to **{provider}**.", ephemeral=True)
+    except discord.errors.NotFound:
+        pass
+
+@bot.tree.command(name="config_key", description="Set the API key for a specific provider")
+@app_commands.choices(provider=[
+    app_commands.Choice(name="OpenRouter", value="openrouter"),
+    app_commands.Choice(name="OpenAI", value="openai"),
+    app_commands.Choice(name="Gemini", value="gemini"),
+])
+@app_commands.describe(key="Your API key for this provider")
+async def config_key(interaction: discord.Interaction, provider: str, key: str):
+    if not interaction.user.guild_permissions.administrator:
+        try:
+            await interaction.response.send_message("Admin only.", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
+        return
+    
+    dm.set_guild_api_key(interaction.guild.id, key, provider)
+    try:
+        await interaction.response.send_message(f"✅ API key for **{provider}** has been updated and encrypted.", ephemeral=True)
     except discord.errors.NotFound:
         pass
 
