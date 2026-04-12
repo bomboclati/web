@@ -51,7 +51,9 @@ class AIClient:
             "anthropic": os.getenv("ANTHROPIC_URL", "https://api.anthropic.com/v1/messages"),
             "groq": os.getenv("GROQ_URL", "https://api.groq.com/openai/v1/chat/completions"),
             "mistral": os.getenv("MISTRAL_URL", "https://api.mistral.ai/v1/chat/completions"),
-            "deepseek": os.getenv("DEEPSEEK_URL", "https://api.deepseek.com/v1/chat/completions")
+            "deepseek": os.getenv("DEEPSEEK_URL", "https://api.deepseek.com/v1/chat/completions"),
+            "dashscope": os.getenv("DASHSCOPE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"),
+            "qwen": os.getenv("DASHSCOPE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions")
         }
 
     def _get_guild_api_key(self, guild_id: int) -> tuple:
@@ -176,6 +178,8 @@ class AIClient:
             active_model = "gemini-1.5-flash-latest"
         elif provider == "openai" and (not active_model or "/" in active_model):
             active_model = "gpt-3.5-turbo"
+        elif provider in ["qwen", "dashscope"] and (not active_model or "gpt" in active_model.lower()):
+            active_model = "qwen3.6-plus"
         elif not active_model:
             active_model = self.model or "gpt-3.5-turbo"
         
@@ -254,7 +258,7 @@ class AIClient:
             "temperature": 0.7,
         }
         
-        if provider in ["openai", "openrouter", "gemini", "groq", "mistral", "deepseek"]:
+        if provider in ["openai", "openrouter", "gemini", "groq", "mistral", "deepseek", "qwen", "dashscope"]:
             payload["response_format"] = {"type": "json_object"}
 
         timeout = aiohttp.ClientTimeout(total=45, connect=10)

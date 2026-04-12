@@ -1654,6 +1654,9 @@ async def health_cmd(interaction: discord.Interaction):
 config_group = app_commands.Group(name="config", description="Configure server-specific AI settings")
 
 COMMON_MODELS = [
+    # Qwen Family (Latest 2026)
+    "qwen3.6-plus", "qwen3.6-max", "qwen3.5-omni", "qwen-max-latest", "qwen-turbo-latest",
+    
     # Gemini 3.1 Family (Latest 2026)
     "gemini-3.1-pro", "gemini-3.1-flash", "gemini-3.1-flash-lite", "gemini-3.1-flash-live",
     "gemini-3-pro", "gemini-3-flash",
@@ -1696,6 +1699,7 @@ async def model_autocomplete(interaction: discord.Interaction, current: str) -> 
     app_commands.Choice(name="Mistral AI", value="mistral"),
     app_commands.Choice(name="DeepSeek", value="deepseek"),
     app_commands.Choice(name="Anthropic", value="anthropic"),
+    app_commands.Choice(name="Alibaba DashScope (Qwen)", value="dashscope")
 ])
 async def config_provider(it: discord.Interaction, provider: str):
     if not it.user.guild_permissions.administrator:
@@ -1708,6 +1712,11 @@ async def config_provider(it: discord.Interaction, provider: str):
     app_commands.Choice(name="OpenRouter", value="openrouter"),
     app_commands.Choice(name="OpenAI", value="openai"),
     app_commands.Choice(name="Gemini", value="gemini"),
+    app_commands.Choice(name="Groq", value="groq"),
+    app_commands.Choice(name="Mistral", value="mistral"),
+    app_commands.Choice(name="DeepSeek", value="deepseek"),
+    app_commands.Choice(name="Anthropic", value="anthropic"),
+    app_commands.Choice(name="Alibaba DashScope (Qwen)", value="dashscope")
 ])
 async def config_key(it: discord.Interaction, provider: str, api_key: str):
     if not it.user.guild_permissions.administrator:
