@@ -24,7 +24,7 @@ def is_retryable_exception(exception):
     Skip client errors (4xx) and logic/parsing errors (KeyError, etc).
     """
     if isinstance(exception, AIClientError):
-        return exception.status >= 500
+        return exception.status >= 500 or exception.status == 429
     
     # Don't retry on structural errors - these are bugs or API changes, not transient issues
     if isinstance(exception, (KeyError, IndexError, TypeError, json.JSONDecodeError)):
@@ -159,8 +159,8 @@ class AIClient:
 
     @retry(
         retry=retry_if_exception(is_retryable_exception),
-        stop=stop_after_attempt(3), 
-        wait=wait_exponential(multiplier=1, min=1, max=10)
+        stop=stop_after_attempt(5), 
+        wait=wait_exponential(multiplier=2, min=2, max=60)
     )
     async def chat(self, guild_id: int, user_id: int, user_input: str, system_prompt: str) -> Dict[str, Any]:
         """
