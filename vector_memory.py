@@ -152,7 +152,7 @@ class VectorMemory:
         data = f"{guild_id}_{user_id}_{timestamp}"
         return hashlib.md5(data.encode()).hexdigest()
     
-    def store_conversation(
+    async def store_conversation(
         self, 
         guild_id: int, 
         user_id: int, 
@@ -231,7 +231,7 @@ Walkthrough: {walkthrough}
         except Exception as e:
             logger.error("Failed to rebuild keyword index: %s", e)
     
-    def retrieve_relevant_conversations(
+    async def retrieve_relevant_conversations(
         self,
         guild_id: int,
         user_id: int,

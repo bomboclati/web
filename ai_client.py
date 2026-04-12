@@ -198,7 +198,7 @@ class AIClient:
             history = []
         
         # Retrieve semantically similar conversations from vector memory
-        vector_results = vector_memory.retrieve_relevant_conversations(
+        vector_results = await vector_memory.retrieve_relevant_conversations(
             guild_id=guild_id,
             user_id=user_id,
             query=user_input,
