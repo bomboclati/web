@@ -1655,22 +1655,32 @@ async def health_cmd(interaction: discord.Interaction):
 # --- Configuration Commands Group ---
 config_group = app_commands.Group(name="config", description="Configure server-specific AI settings")
 
+COMMON_MODELS = [
+    "gemini-1.5-flash-latest", "gemini-1.5-pro-latest", "gemini-2.0-flash-exp", "gemini-1.0-pro",
+    "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo",
+    "claude-3-5-sonnet-20240620", "claude-3-opus-20240229", "claude-3-haiku-20240307",
+    "meta-llama/llama-3.1-405b", "meta-llama/llama-3.1-70b", "meta-llama/llama-3.1-8b",
+    "mistralai/mistral-large", "mistralai/mistral-medium",
+    "deepseek/deepseek-chat", "deepseek/deepseek-coder",
+    "google/gemini-pro-1.5", "google/gemini-flash-1.5",
+    "perplexity/pplx-70b-online", "perplexity/pplx-70b-chat",
+    "anthropic/claude-3.5-sonnet", "openai/gpt-4o"
+]
+
 @config_group.command(name="model", description="Set the default AI model for this server")
-@app_commands.describe(model="AI Model to use")
-@app_commands.choices(model=[
-    app_commands.Choice(name="Gemini 1.5 Flash (Fastest)", value="gemini-1.5-flash-latest"),
-    app_commands.Choice(name="Gemini 1.5 Pro (Brainiest)", value="gemini-1.5-pro-latest"),
-    app_commands.Choice(name="GPT-4o (Standard)", value="gpt-4o"),
-    app_commands.Choice(name="GPT-4 Turbo", value="gpt-4-turbo"),
-    app_commands.Choice(name="Claude 3.5 Sonnet", value="anthropic/claude-3.5-sonnet"),
-    app_commands.Choice(name="Llama 3.1 405B (OpenRouter)", value="meta-llama/llama-3.1-405b"),
-    app_commands.Choice(name="DeepSeek Coder", value="deepseek-coder"),
-])
+@app_commands.describe(model="AI Model to use (Pick from list or type any OpenRouter model name)")
 async def config_model(it: discord.Interaction, model: str):
     if not it.user.guild_permissions.administrator:
         return await it.response.send_message("? Admin only.", ephemeral=True)
     dm.update_guild_data(it.guild.id, "custom_model", model)
     await it.response.send_message(f"? AI model set to **{model}**.", ephemeral=True)
+
+@config_model.autocomplete('model')
+async def model_autocomplete(interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
+    return [
+        app_commands.Choice(name=m, value=m)
+        for m in COMMON_MODELS if current.lower() in m.lower()
+    ][:25]
 
 @config_group.command(name="provider", description="Set the active AI provider")
 @app_commands.choices(provider=[
