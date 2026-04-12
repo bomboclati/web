@@ -5,6 +5,7 @@ import logging
 import math
 from typing import List, Dict, Any, Optional
 import hashlib
+import asyncio
 from datetime import datetime, timedelta
 
 try:
@@ -201,11 +202,19 @@ Walkthrough: {walkthrough}
                 "last_accessed": timestamp
             }
             
-            # Store in collection
-            self.collection.add(
-                documents=[document_text],
-                metadatas=[metadata],
-                ids=[doc_id]
+            # Store in collection — run in executor to avoid blocking the event loop
+            loop = asyncio.get_event_loop()
+            coll = self.collection
+            doc_text = document_text
+            meta = metadata
+            did = doc_id
+            await loop.run_in_executor(
+                None,
+                lambda: coll.add(
+                    documents=[doc_text],
+                    metadatas=[meta],
+                    ids=[did]
+                )
             )
             
             logger.debug("Stored conversation in vector memory: %s", doc_id)
@@ -277,12 +286,17 @@ Walkthrough: {walkthrough}
             # Combine conditions (ChromaDB uses AND for multiple conditions)
             where_clause = {"$and": where_conditions} if len(where_conditions) > 1 else where_conditions[0]
             
-            # Query the collection
-            results = self.collection.query(
-                query_texts=[query],
-                n_results=n_results,
-                where=where_clause,
-                include=["documents", "metadatas", "distances"]
+            # Query the collection — run in executor to avoid blocking the event loop
+            loop = asyncio.get_event_loop()
+            collection = self.collection
+            results = await loop.run_in_executor(
+                None,
+                lambda: collection.query(
+                    query_texts=[query],
+                    n_results=n_results,
+                    where=where_clause,
+                    include=["documents", "metadatas", "distances"]
+                )
             )
             
             # Format results
