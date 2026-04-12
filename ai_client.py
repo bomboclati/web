@@ -54,7 +54,9 @@ class AIClient:
             "deepseek": os.getenv("DEEPSEEK_URL", "https://api.deepseek.com/v1/chat/completions"),
             "dashscope": os.getenv("DASHSCOPE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"),
             "qwen": os.getenv("DASHSCOPE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"),
-            "cerebras": os.getenv("CEREBRAS_URL", "https://api.cerebras.ai/v1/chat/completions")
+            "cerebras": os.getenv("CEREBRAS_URL", "https://api.cerebras.ai/v1/chat/completions"),
+            "sambanova": os.getenv("SAMBANOVA_URL", "https://api.sambanova.ai/v1/chat/completions"),
+            "together": os.getenv("TOGETHER_URL", "https://api.together.xyz/v1/chat/completions")
         }
 
     def _get_guild_api_key(self, guild_id: int) -> tuple:
@@ -274,6 +276,10 @@ class AIClient:
             active_model = "claude-3-5-sonnet-20240620"
         elif provider == "cerebras" and (not active_model or "gpt" in active_model.lower() or "claude" in active_model.lower()):
             active_model = "llama3.3-70b"
+        elif provider == "sambanova" and (not active_model or "gpt" in active_model.lower()):
+            active_model = "llama3.1-70b-instruct"
+        elif provider == "together" and (not active_model or "gpt" in active_model.lower()):
+            active_model = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
         elif provider in ["qwen", "dashscope"] and (not active_model or "gpt" in active_model.lower()):
             active_model = "qwen2.5-72b-instruct" # Updated to newest stable qwen
         elif not active_model:
@@ -311,7 +317,7 @@ class AIClient:
         else:
             # Add system message back for OpenAI compatible providers
             payload["messages"] = messages
-            if provider in ["openai", "openrouter", "gemini", "groq", "mistral", "deepseek", "qwen", "dashscope", "cerebras"]:
+            if provider in ["openai", "openrouter", "gemini", "groq", "mistral", "deepseek", "qwen", "dashscope", "cerebras", "sambanova", "together"]:
                 payload["response_format"] = {"type": "json_object"}
 
         timeout = aiohttp.ClientTimeout(total=45, connect=10)
