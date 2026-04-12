@@ -163,7 +163,8 @@ class MiroBot(commands.Bot):
         self.add_view(CreateTicketButton(guild_id=0, channel_id=0))
         self.add_view(SuggestionButton(guild_id=0))
         self.add_view(ApplyStaffButton(guild_id=0))
-        self.add_view(RoleSelectButton(guild_id=0, role_name="", role_id=0, emoji=""))
+        # Note: RoleSelectButton is a Button, not a View, so it doesn't need to be registered here
+        # It gets added dynamically to View instances when role selection embeds are created
         
         # Support for Manual Sync (Prefix command !sync)
         @self.command(name="sync")
