@@ -74,10 +74,13 @@ class AIClient:
         api_keys = dm.load_json("guild_api_keys", default={})
         guild_data = api_keys.get(str(guild_id), {})
         
+        def is_valid_key(k):
+            return k and len(k) > 10 and not any(x in k.upper() for x in ["YOUR_", "REPLACE_"])
+
         results = []
         # Add primary first
         primary = self._get_guild_api_key(guild_id)
-        if primary[0]: # Only add if key exists
+        if is_valid_key(primary[0]):
             results.append({"api_key": primary[0], "provider": primary[1]})
         
         # Add others if available
@@ -87,11 +90,11 @@ class AIClient:
                 if p != primary[1]:
                     # Decrypt and add
                     res = dm.get_guild_api_key(guild_id, provider=p)
-                    if res and res.get("api_key"):
+                    if res and is_valid_key(res.get("api_key")):
                         results.append(res)
         
         # Finally add defaults if not already present and valid
-        if self.default_api_key and not any(r["provider"] == self.default_provider for r in results):
+        if is_valid_key(self.default_api_key) and not any(r["provider"] == self.default_provider for r in results):
             results.append({"api_key": self.default_api_key, "provider": self.default_provider})
             
         return results
@@ -325,6 +328,15 @@ class AIClient:
             provider_url = self.base_urls.get(provider)
             if not provider_url:
                 raise Exception(f"Unsupported AI provider: {provider}")
+            
+            # Gemini specific URL handling (expects key in query param)
+            if provider == "gemini":
+                if "?" in provider_url:
+                    provider_url += f"&key={api_key.strip()}"
+                else:
+                    provider_url += f"?key={api_key.strip()}"
+
+            logger.info(f"AI Handshake Executing: {provider} | URL: {provider_url.split('?')[0]}")
 
             async with session.post(provider_url, json=payload, allow_redirects=False) as resp:
                 if resp.status != 200:
