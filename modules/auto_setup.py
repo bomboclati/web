@@ -28,6 +28,170 @@ class ServerSetup:
     config: dict
 
 
+# Persistent View Classes for Auto-Setup Buttons
+class VerifyButton(discord.ui.View):
+    def __init__(self, guild_id: int, role_id: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.role_id = role_id
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return True
+    
+    @discord.ui.button(label="Verify Me", style=discord.ButtonStyle.success, custom_id="verify_button_persistent")
+    async def verify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        if not guild:
+            await interaction.response.send_message("Error: Guild not found.", ephemeral=True)
+            return
+        
+        role = guild.get_role(self.role_id)
+        if not role:
+            role = discord.utils.get(guild.roles, name="Verified")
+        
+        if role:
+            await interaction.user.add_roles(role)
+            await interaction.response.send_message("✅ You're verified! Enjoy the server!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Verification role not found. Please contact staff.", ephemeral=True)
+
+
+class AcceptRulesButton(discord.ui.View):
+    def __init__(self, guild_id: int, role_id: Optional[int] = None):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.role_id = role_id
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return True
+    
+    @discord.ui.button(label="I Accept the Rules", style=discord.ButtonStyle.primary, custom_id="accept_rules_persistent")
+    async def accept_rules_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        if not guild:
+            await interaction.response.send_message("Error: Guild not found.", ephemeral=True)
+            return
+        
+        role = None
+        if self.role_id:
+            role = guild.get_role(self.role_id)
+        if not role:
+            role = discord.utils.get(guild.roles, name="Verified")
+        
+        if role:
+            await interaction.user.add_roles(role)
+            await interaction.response.send_message("✅ Thanks for accepting! You now have full access.", ephemeral=True)
+        else:
+            await interaction.response.send_message("✅ Thanks for accepting!", ephemeral=True)
+
+
+class CreateTicketButton(discord.ui.View):
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return True
+    
+    @discord.ui.button(label="Create Ticket", style=discord.ButtonStyle.primary, custom_id="create_ticket_persistent")
+    async def create_ticket_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        if not guild:
+            await interaction.response.send_message("Error: Guild not found.", ephemeral=True)
+            return
+        
+        channel = guild.get_channel(self.channel_id)
+        if not channel:
+            channel = discord.utils.get(guild.text_channels, name="ticket-queue")
+        
+        if channel and isinstance(channel, discord.TextChannel):
+            thread = await channel.create_thread(
+                name=f"{interaction.user.name}-ticket",
+                inviter=interaction.user
+            )
+            await thread.send(f"🎫 Ticket created by {interaction.user.mention}")
+            await interaction.response.send_message("✅ Ticket created!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Ticket channel not found. Please contact staff.", ephemeral=True)
+
+
+class SuggestionButton(discord.ui.View):
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return True
+    
+    @discord.ui.button(label="Submit Suggestion", style=discord.ButtonStyle.primary, custom_id="suggestion_submit_persistent")
+    async def submit_suggestion_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Use `/suggest` or `!suggest` to submit a suggestion!", ephemeral=True)
+
+
+class ApplyStaffButton(discord.ui.View):
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return True
+    
+    @discord.ui.button(label="Apply Now", style=discord.ButtonStyle.primary, custom_id="staff_apply_persistent")
+    async def apply_staff_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = discord.ui.Modal(title="Staff Application")
+        
+        reason_input = discord.ui.TextInput(
+            label="Why do you want to be staff?",
+            style=discord.TextStyle.paragraph,
+            placeholder="Tell us about yourself..."
+        )
+        experience_input = discord.ui.TextInput(
+            label="Experience",
+            style=discord.TextStyle.paragraph,
+            placeholder="Any previous moderation experience?"
+        )
+        
+        modal.add_item(reason_input)
+        modal.add_item(experience_input)
+        
+        await interaction.response.send_modal(modal)
+
+
+class RoleSelectButton(discord.ui.View):
+    def __init__(self, guild_id: int, role_name: str, role_id: Optional[int] = None):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.role_name = role_name
+        self.role_id = role_id
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return True
+    
+    @discord.ui.button(style=discord.ButtonStyle.secondary, custom_id="role_select_persistent")
+    async def role_select_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        if not guild:
+            await interaction.response.send_message("Error: Guild not found.", ephemeral=True)
+            return
+        
+        role = None
+        if self.role_id:
+            role = guild.get_role(self.role_id)
+        if not role:
+            role = discord.utils.get(guild.roles, name=self.role_name)
+        
+        if role:
+            if role in interaction.user.roles:
+                await interaction.user.remove_roles(role)
+                await interaction.response.send_message(f"Removed {self.role_name} role!", ephemeral=True)
+            else:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message(f"Added {self.role_name} role!", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"❌ Role '{self.role_name}' not found.", ephemeral=True)
+
+
 class AutoSetup:
     def __init__(self, bot):
         self.bot = bot
@@ -283,27 +447,13 @@ class AutoSetup:
             color=discord.Color.green()
         )
         
-        view = discord.ui.View()
-        
-        verify_btn = discord.ui.Button(
-            label="Verify Me",
-            style=discord.ButtonStyle.success,
-            custom_id="verify_button"
-        )
-        
-        async def verify_callback(interaction: discord.Interaction):
-            role = discord.utils.get(guild.roles, name="Verified")
-            if role:
-                await interaction.user.add_roles(role)
-                await interaction.response.send_message("✅ You're verified! Enjoy the server!", ephemeral=True)
-        
-        verify_btn.callback = verify_callback
-        view.add_item(verify_btn)
+        # Use persistent view for reliable button functionality
+        view = VerifyButton(guild.id, verify_role.id)
         
         try:
             await verify_channel.send(embed=embed, view=view)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to send verification message: {e}")
         
         dm.update_guild_data(guild.id, "verify_channel", verify_channel.id)
         dm.update_guild_data(guild.id, "verify_role", verify_role.id)
@@ -315,12 +465,17 @@ class AutoSetup:
         if not category:
             try:
                 category = await guild.create_category("Rules")
-            except:
+            except Exception as e:
+                logger.error(f"Failed to create Rules category: {e}")
                 category = None
         
         rules_channel = discord.utils.get(guild.text_channels, name="rules")
         if not rules_channel:
             rules_channel = await guild.create_text_channel("rules", category=category)
+        
+        # Get the verified role ID for the button
+        verify_role = discord.utils.get(guild.roles, name="Verified")
+        role_id = verify_role.id if verify_role else None
         
         rules_embed = discord.Embed(
             title="📜 Server Rules",
@@ -353,29 +508,13 @@ class AutoSetup:
             inline=False
         )
         
-        view = discord.ui.View()
-        
-        accept_btn = discord.ui.Button(
-            label="I Accept the Rules",
-            style=discord.ButtonStyle.primary,
-            custom_id="accept_rules"
-        )
-        
-        async def accept_callback(interaction: discord.Interaction):
-            role = discord.utils.get(guild.roles, name="Verified")
-            if role:
-                await interaction.user.add_roles(role)
-                await interaction.response.send_message("✅ Thanks for accepting! You now have full access.", ephemeral=True)
-            else:
-                await interaction.response.send_message("✅ Thanks for accepting!", ephemeral=True)
-        
-        accept_btn.callback = accept_callback
-        view.add_item(accept_btn)
+        # Use persistent view for reliable button functionality
+        view = AcceptRulesButton(guild.id, role_id)
         
         try:
             await rules_channel.send(embed=rules_embed, view=view)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to send rules message: {e}")
         
         dm.update_guild_data(guild.id, "rules_channel", rules_channel.id)
         
@@ -408,7 +547,8 @@ class AutoSetup:
         if not category:
             try:
                 category = await guild.create_category("Feedback")
-            except:
+            except Exception as e:
+                logger.error(f"Failed to create Feedback category: {e}")
                 category = None
         
         suggestions_channel = discord.utils.get(guild.text_channels, name="suggestions")
@@ -435,24 +575,13 @@ class AutoSetup:
             inline=False
         )
         
-        view = discord.ui.View()
-        
-        submit_btn = discord.ui.Button(
-            label="Submit Suggestion",
-            style=discord.ButtonStyle.primary,
-            custom_id="suggestion_submit_btn"
-        )
-        
-        async def submit_callback(interaction: discord.Interaction):
-            await interaction.response.send_message("Use `!suggest` to submit a suggestion!", ephemeral=True)
-        
-        submit_btn.callback = submit_callback
-        view.add_item(submit_btn)
+        # Use persistent view for reliable button functionality
+        view = SuggestionButton(guild.id)
         
         try:
             await suggestions_channel.send(embed=embed, view=view)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to send suggestion message: {e}")
         
         dm.update_guild_data(guild.id, "suggestions_channel", suggestions_channel.id)
         
@@ -531,29 +660,13 @@ class AutoSetup:
             color=discord.Color.blue()
         )
         
-        view = discord.ui.View()
-        
-        create_ticket_btn = discord.ui.Button(
-            label="Create Ticket",
-            style=discord.ButtonStyle.primary,
-            custom_id="create_ticket"
-        )
-        
-        async def create_ticket_callback(interaction: discord.Interaction):
-            thread = await tickets_channel.create_thread(
-                name=f"{interaction.user.name}-ticket",
-                inviter=interaction.user
-            )
-            await thread.send(f"🎫 Ticket created by {interaction.user.mention}")
-            await interaction.response.send_message("✅ Ticket created!", ephemeral=True)
-        
-        create_ticket_btn.callback = create_ticket_callback
-        view.add_item(create_ticket_btn)
+        # Use persistent view for reliable button functionality
+        view = CreateTicketButton(guild.id, tickets_channel.id)
         
         try:
             await tickets_channel.send(embed=embed, view=view)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to send ticket message: {e}")
         
         tickets_config = {
             "enabled": True,
@@ -570,7 +683,8 @@ class AutoSetup:
         if not category:
             try:
                 category = await guild.create_category("Staff")
-            except:
+            except Exception as e:
+                logger.error(f"Failed to create Staff category: {e}")
                 category = None
         
         applications_channel = discord.utils.get(guild.text_channels, name="applications")
@@ -592,40 +706,13 @@ class AutoSetup:
             inline=False
         )
         
-        view = discord.ui.View()
-        
-        apply_btn = discord.ui.Button(
-            label="Apply Now",
-            style=discord.ButtonStyle.primary,
-            custom_id="staff_apply"
-        )
-        
-        async def apply_callback(interaction: discord.Interaction):
-            modal = discord.ui.Modal(title="Staff Application")
-            
-            reason_input = discord.ui.TextInput(
-                label="Why do you want to be staff?",
-                style=discord.TextStyle.paragraph,
-                placeholder="Tell us about yourself..."
-            )
-            experience_input = discord.ui.TextInput(
-                label="Experience",
-                style=discord.TextStyle.paragraph,
-                placeholder="Any previous moderation experience?"
-            )
-            
-            modal.add_item(reason_input)
-            modal.add_item(experience_input)
-            
-            await interaction.response.send_modal(modal)
-        
-        apply_btn.callback = apply_callback
-        view.add_item(apply_btn)
+        # Use persistent view for reliable button functionality
+        view = ApplyStaffButton(guild.id)
         
         try:
             await applications_channel.send(embed=embed, view=view)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to send application message: {e}")
         
         dm.update_guild_data(guild.id, "applications_channel", applications_channel.id)
         
@@ -704,39 +791,32 @@ class AutoSetup:
         
         embed = discord.Embed(
             title="🎭 Role Selection",
-            description="Click the reactions below to get roles!",
+            description="Click the buttons below to get roles!",
             color=discord.Color.blue()
         )
         embed.add_field(name="🔔 Ping Updates", value="Get notified for announcements", inline=True)
         embed.add_field(name="🎮 Gaming", value="Gaming updates and events", inline=True)
         embed.add_field(name="🎨 Art", value="Art sharing and feedback", inline=True)
         
+        # Use persistent views for reliable button functionality
         view = discord.ui.View()
         
-        for role_name, emoji in [("Ping Updates", "🔔"), ("Gaming", "🎮"), ("Art", "🎨")]:
-            btn = discord.ui.Button(
-                label=role_name,
-                style=discord.ButtonStyle.secondary,
-                custom_id=f"role_{role_name.lower().replace(' ', '_')}"
-            )
-            
-            async def role_callback(interaction: discord.Interaction, role_name=role_name):
-                role = discord.utils.get(guild.roles, name=role_name)
-                if role:
-                    if role in interaction.user.roles:
-                        await interaction.user.remove_roles(role)
-                        await interaction.response.send_message(f"Removed {role_name} role!", ephemeral=True)
-                    else:
-                        await interaction.user.add_roles(role)
-                        await interaction.response.send_message(f"Added {role_name} role!", ephemeral=True)
-            
-            btn.callback = role_callback
+        role_data = [
+            ("Ping Updates", "🔔", ping_role.id if ping_role else None),
+            ("Gaming", "🎮", gaming_role.id if gaming_role else None),
+            ("Art", "🎨", art_role.id if art_role else None)
+        ]
+        
+        for role_name, emoji, role_id in role_data:
+            btn = RoleSelectButton(guild.id, role_name, role_id)
+            # Update the button label and emoji
+            btn.label = role_name
             view.add_item(btn)
         
         try:
             await roles_channel.send(embed=embed, view=view)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to send reaction roles message: {e}")
         
         reaction_roles = [
             {"role": ping_role.id, "emoji": "🔔", "name": "Ping Updates"},
