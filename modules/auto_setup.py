@@ -942,3 +942,201 @@ class AutoSetup:
 
     def get_setup_status(self, guild_id: int) -> Optional[ServerSetup]:
         return self._pending_setups.get(guild_id)
+
+    # --- Individual Setup Methods for AI Actions ---
+    
+    async def setup_verification(self, interaction: discord.Interaction, params: dict) -> bool:
+        """Setup verification system with button embed for AI actions."""
+        guild = interaction.guild
+        category_name = params.get("category", "Welcome")
+        channel_name = params.get("channel", "verify")
+        role_name = params.get("role", "Verified")
+        
+        # Create or get category
+        category = discord.utils.get(guild.categories, name=category_name)
+        if not category:
+            category = await guild.create_category(category_name)
+        
+        # Create or get role
+        role = discord.utils.get(guild.roles, name=role_name)
+        if not role:
+            role = await guild.create_role(name=role_name, color=discord.Color.green(), hoist=True)
+        
+        # Create channel
+        channel = discord.utils.get(guild.text_channels, name=channel_name)
+        if not channel:
+            channel = await guild.create_text_channel(channel_name, category=category)
+        
+        # Send embed with persistent button
+        embed = discord.Embed(
+            title="✅ Verification",
+            description="Click the button below to verify yourself and gain access to the server!",
+            color=discord.Color.green()
+        )
+        view = VerifyButton(guild.id, role.id)
+        await channel.send(embed=embed, view=view)
+        
+        # Store config
+        dm.update_guild_data(guild.id, "verify_channel", channel.id)
+        dm.update_guild_data(guild.id, "verify_role", role.id)
+        
+        logger.info(f"Setup verification system in {guild.name}")
+        return True
+    
+    async def setup_tickets(self, interaction: discord.Interaction, params: dict) -> bool:
+        """Setup ticket system with button embed for AI actions."""
+        guild = interaction.guild
+        category_name = params.get("category", "Support")
+        queue_channel_name = params.get("queue_channel", "ticket-queue")
+        
+        # Create category
+        category = discord.utils.get(guild.categories, name=category_name)
+        if not category:
+            category = await guild.create_category(category_name)
+        
+        # Create queue channel
+        queue_channel = discord.utils.get(guild.text_channels, name=queue_channel_name)
+        if not queue_channel:
+            queue_channel = await guild.create_text_channel(queue_channel_name, category=category)
+        
+        # Send embed with persistent button
+        embed = discord.Embed(
+            title="🎫 Support Tickets",
+            description="Need help? Click the button below to create a ticket!",
+            color=discord.Color.blue()
+        )
+        view = CreateTicketButton(guild.id, queue_channel.id)
+        await queue_channel.send(embed=embed, view=view)
+        
+        # Store config
+        dm.update_guild_data(guild.id, "ticket_queue_channel", queue_channel.id)
+        dm.update_guild_data(guild.id, "ticket_category", category.id)
+        
+        logger.info(f"Setup ticket system in {guild.name}")
+        return True
+    
+    async def setup_applications(self, interaction: discord.Interaction, params: dict) -> bool:
+        """Setup applications system with button embed for AI actions."""
+        guild = interaction.guild
+        category_name = params.get("category", "Applications")
+        channel_name = params.get("channel", "applications")
+        
+        # Create category
+        category = discord.utils.get(guild.categories, name=category_name)
+        if not category:
+            category = await guild.create_category(category_name)
+        
+        # Create channel
+        channel = discord.utils.get(guild.text_channels, name=channel_name)
+        if not channel:
+            channel = await guild.create_text_channel(channel_name, category=category)
+        
+        # Send embed with persistent button (opens modal)
+        embed = discord.Embed(
+            title="📝 Staff Applications",
+            description="Want to join our staff team? Click below to apply!",
+            color=discord.Color.purple()
+        )
+        view = ApplyStaffButton(guild.id)
+        await channel.send(embed=embed, view=view)
+        
+        # Store config
+        dm.update_guild_data(guild.id, "applications_channel", channel.id)
+        
+        logger.info(f"Setup applications system in {guild.name}")
+        return True
+    
+    async def setup_appeals(self, interaction: discord.Interaction, params: dict) -> bool:
+        """Setup appeals system with button embed for AI actions."""
+        guild = interaction.guild
+        category_name = params.get("category", "Appeals")
+        channel_name = params.get("channel", "appeals")
+        
+        # Create category
+        category = discord.utils.get(guild.categories, name=category_name)
+        if not category:
+            category = await guild.create_category(category_name)
+        
+        # Create channel
+        channel = discord.utils.get(guild.text_channels, name=channel_name)
+        if not channel:
+            channel = await guild.create_text_channel(channel_name, category=category)
+        
+        # Send embed with button
+        embed = discord.Embed(
+            title="⚖️ Ban Appeals",
+            description="Want to appeal a ban? Click below to submit an appeal!",
+            color=discord.Color.orange()
+        )
+        # Reuse the application modal for appeals
+        view = ApplyStaffButton(guild.id)
+        await channel.send(embed=embed, view=view)
+        
+        # Store config
+        dm.update_guild_data(guild.id, "appeals_channel", channel.id)
+        
+        logger.info(f"Setup appeals system in {guild.name}")
+        return True
+    
+    async def setup_moderation(self, interaction: discord.Interaction, params: dict) -> bool:
+        """Setup moderation logging system for AI actions."""
+        guild = interaction.guild
+        category_name = params.get("category", "Moderation")
+        logs_channel_name = params.get("logs_channel", "mod-logs")
+        
+        # Create category
+        category = discord.utils.get(guild.categories, name=category_name)
+        if not category:
+            category = await guild.create_category(category_name)
+        
+        # Create logs channel
+        logs_channel = discord.utils.get(guild.text_channels, name=logs_channel_name)
+        if not logs_channel:
+            logs_channel = await guild.create_text_channel(logs_channel_name, category=category)
+        
+        # Create mod role
+        mod_role = discord.utils.get(guild.roles, name="Moderator")
+        if not mod_role:
+            mod_role = await guild.create_role(
+                name="Moderator",
+                color=discord.Color.red(),
+                permissions=discord.Permissions(moderate_members=True),
+                hoist=True
+            )
+        
+        # Store config
+        mod_config = {
+            "enabled": True,
+            "ai_enabled": True,
+            "sensitivity": "medium",
+            "auto_moderation": True,
+            "mod_role": mod_role.id,
+            "logs_channel": logs_channel.id
+        }
+        dm.update_guild_data(guild.id, "moderation_config", mod_config)
+        
+        logger.info(f"Setup moderation system in {guild.name}")
+        return True
+    
+    async def setup_logging(self, interaction: discord.Interaction, params: dict) -> bool:
+        """Setup server logging system for AI actions."""
+        guild = interaction.guild
+        category_name = params.get("category", "Logs")
+        logs_channel_name = params.get("channel", "server-logs")
+        
+        # Create category
+        category = discord.utils.get(guild.categories, name=category_name)
+        if not category:
+            category = await guild.create_category(category_name)
+        
+        # Create logs channel
+        logs_channel = discord.utils.get(guild.text_channels, name=logs_channel_name)
+        if not logs_channel:
+            logs_channel = await guild.create_text_channel(logs_channel_name, category=category)
+        
+        # Store config
+        dm.update_guild_data(guild.id, "logging_channel", logs_channel.id)
+        dm.update_guild_data(guild.id, "logging_enabled", True)
+        
+        logger.info(f"Setup logging system in {guild.name}")
+        return True

@@ -757,6 +757,57 @@ class ActionHandler:
         result = await system.setup(interaction, params)
         return result, {"action": "undo_trigger_role", "guild_id": interaction.guild.id}
 
+    # --- Setup System Actions (Auto-Setup with Buttons) ---
+    
+    async def action_setup_verification(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Setup verification system with button embed."""
+        from modules.auto_setup import AutoSetup
+        setup = AutoSetup(self.bot)
+        result = await setup.setup_verification(interaction, params)
+        return result, {"action": "undo_verification", "guild_id": interaction.guild.id}
+    
+    async def action_setup_tickets(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Setup ticket system with button embed."""
+        from modules.auto_setup import AutoSetup
+        setup = AutoSetup(self.bot)
+        result = await setup.setup_tickets(interaction, params)
+        return result, {"action": "undo_tickets", "guild_id": interaction.guild.id}
+    
+    async def action_setup_applications(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Setup applications system with button embed."""
+        from modules.auto_setup import AutoSetup
+        setup = AutoSetup(self.bot)
+        result = await setup.setup_applications(interaction, params)
+        return result, {"action": "undo_applications", "guild_id": interaction.guild.id}
+    
+    async def action_setup_appeals(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Setup appeals system with button embed."""
+        from modules.auto_setup import AutoSetup
+        setup = AutoSetup(self.bot)
+        result = await setup.setup_appeals(interaction, params)
+        return result, {"action": "undo_appeals", "guild_id": interaction.guild.id}
+    
+    async def action_setup_moderation(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Setup moderation logging system."""
+        from modules.auto_setup import AutoSetup
+        setup = AutoSetup(self.bot)
+        result = await setup.setup_moderation(interaction, params)
+        return result, {"action": "undo_moderation", "guild_id": interaction.guild.id}
+    
+    async def action_setup_logging(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Setup server logging system."""
+        from modules.auto_setup import AutoSetup
+        setup = AutoSetup(self.bot)
+        result = await setup.setup_logging(interaction, params)
+        return result, {"action": "undo_logging", "guild_id": interaction.guild.id}
+    
+    async def action_setup_leveling(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Setup leveling/XP system."""
+        from modules.gamification import Gamification
+        system = Gamification(self.bot)
+        result = await system.setup(interaction, params)
+        return result, {"action": "undo_leveling", "guild_id": interaction.guild.id}
+
     async def action_schedule_ai_action(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Schedule an AI action to run on a cron schedule."""
         from task_scheduler import TaskScheduler

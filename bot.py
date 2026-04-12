@@ -156,6 +156,15 @@ class MiroBot(commands.Bot):
         self.add_view(StaffReviewPersistentView())
         self.add_view(TicketPersistentView())
         
+        # Register persistent views for auto-setup buttons (these work across restarts)
+        # Each view uses a unique custom_id pattern that gets matched when buttons are clicked
+        self.add_view(VerifyButton(guild_id=0, role_id=0))  # guild_id and role_id will be overridden by Discord's interaction data
+        self.add_view(AcceptRulesButton(guild_id=0, role_id=0))
+        self.add_view(CreateTicketButton(guild_id=0, channel_id=0))
+        self.add_view(SuggestionButton(guild_id=0))
+        self.add_view(ApplyStaffButton(guild_id=0))
+        self.add_view(RoleSelectButton(guild_id=0, role_name="", role_id=0, emoji=""))
+        
         # Support for Manual Sync (Prefix command !sync)
         @self.command(name="sync")
         @commands.is_owner()
