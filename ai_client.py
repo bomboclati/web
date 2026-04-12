@@ -281,6 +281,8 @@ class AIClient:
             active_model = "llama3.3-70b"
         elif provider == "sambanova" and (not active_model or "gpt" in active_model.lower()):
             active_model = "llama3.1-70b-instruct"
+        elif provider == "groq" and (not active_model or "gpt" in active_model.lower()):
+            active_model = "mixtral-8x7b-32768"
         elif provider == "together" and (not active_model or "gpt" in active_model.lower()):
             active_model = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
         elif provider in ["qwen", "dashscope"] and (not active_model or "gpt" in active_model.lower()):
