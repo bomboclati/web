@@ -21,7 +21,6 @@ class CoreCommands(commands.Cog):
             return
         
         dm.update_guild_data(interaction.guild.id, "custom_model", model)
-        self.bot.ai.model = model
         await interaction.response.send_message(f"? AI model set to **{model}** for this server.", ephemeral=True)
 
     @config.command(name="provider", description="Set the active AI provider")

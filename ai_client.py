@@ -157,6 +157,9 @@ class AIClient:
         """
         # Get guild-specific API key (fallback to default)
         api_key, provider = self._get_guild_api_key(guild_id)
+        from data_manager import dm
+        active_model = dm.get_guild_data(guild_id, "custom_model", self.model)
+        
         if api_key:
             api_key = api_key.strip()
             
@@ -221,12 +224,12 @@ class AIClient:
         # Diagnostic info (info level for transparency)
         censored_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "****"
         
-        logger.info(f"AI Handshake: {provider} | Key: {censored_key} | Len: {len(api_key)} | Model: {self.model}")
+        logger.info(f"AI Handshake: {provider} | Key: {censored_key} | Len: {len(api_key)} | Model: {active_model}")
 
         timeout = aiohttp.ClientTimeout(total=45, connect=10)
         async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
             payload = {
-                "model": self.model,
+                "model": active_model,
                 "messages": messages,
                 "temperature": 0.7,
             }
