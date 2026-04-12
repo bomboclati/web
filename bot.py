@@ -128,20 +128,21 @@ class MiroBot(commands.Bot):
         await self.scheduler.start()
         
         # Start background monitors
-        self.events.start_event_monitor()
-        self.intelligence.start_monitoring()
-        self.gamification.start_quest_refresh()
-        self.anti_raid.start_monitoring()
-        self.auto_announcer.start_loops()
-        self.auto_publisher.start_bump_monitor()
-        self.giveaways.start_giveaway_monitor()
-        self.reminders.start_reminder_loop()
-        self.staff_reviews.start_review_loop()
-        self.voice_system.start_voice_monitoring()
-        if hasattr(self, 'analytics') and self.analytics:
-            self.analytics.start_monitoring_loop()
-        
+        try:
+            self.events.start_event_monitor()
+            self.intelligence.start_monitoring()
+            self.gamification.start_quest_refresh()
+            self.anti_raid.start_monitoring()
+            self.auto_announcer.start_loops()
+            self.auto_publisher.start_bump_monitor()
+            self.giveaways.start_giveaway_monitor()
+            self.reminders.start_reminder_loop()
+            self.staff_reviews.start_review_loop()
+            self.voice_system.start_voice_monitoring()
+            if hasattr(self, 'analytics') and self.analytics:
+                self.analytics.start_monitoring_loop()
         except Exception as e:
+            logger.error(f"Error starting background monitors: {e}")
         # Support for Manual Sync (Prefix command !sync)
         @self.command(name="sync")
         @commands.is_owner()
