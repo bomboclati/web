@@ -1,0 +1,2 @@
+2026-04-12 19:30:27 | CRITICAL | immortal_bot:1875 | DISCORD_TOKEN not found in environment or .env file.
+2026-04-12 19:30:27 | CRITICAL | immortal_bot:1876 | Please copy .env.example to .env and add your bot token.

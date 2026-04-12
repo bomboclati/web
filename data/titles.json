@@ -1,0 +1,65 @@
+{
+    "newcomer": {
+        "id": "newcomer",
+        "name": "Newcomer",
+        "icon": "🌱",
+        "requirement": {
+            "type": "days_member",
+            "count": 1
+        }
+    },
+    "regular": {
+        "id": "regular",
+        "name": "Regular",
+        "icon": "⭐",
+        "requirement": {
+            "type": "days_member",
+            "count": 7
+        }
+    },
+    "veteran": {
+        "id": "veteran",
+        "name": "Veteran",
+        "icon": "🏅",
+        "requirement": {
+            "type": "days_member",
+            "count": 30
+        }
+    },
+    "legend": {
+        "id": "legend",
+        "name": "Legend",
+        "icon": "👑",
+        "requirement": {
+            "type": "days_member",
+            "count": 100
+        }
+    },
+    "helper": {
+        "id": "helper",
+        "name": "Helper",
+        "icon": "🛠️",
+        "requirement": {
+            "type": "rep_received",
+            "count": 10
+        }
+    },
+    "champion": {
+        "id": "champion",
+        "name": "Champion",
+        "icon": "🏆",
+        "requirement": {
+            "type": "events_won",
+            "count": 1
+        }
+    },
+    "elite": {
+        "id": "elite",
+        "name": "Elite",
+        "icon": "💎",
+        "requirement": {
+            "type": "level",
+            "count": 25
+        }
+    }
+}
