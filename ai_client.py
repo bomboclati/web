@@ -285,6 +285,8 @@ class AIClient:
             active_model = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
         elif provider in ["qwen", "dashscope"] and (not active_model or "gpt" in active_model.lower()):
             active_model = "qwen2.5-72b-instruct" # Updated to newest stable qwen
+        elif provider == "groq" and (not active_model or "gpt" in active_model.lower()):
+            active_model = "llama-3.1-70b-versatile"  # Default to best balance of speed/quality
         elif not active_model:
             active_model = self.model or "gpt-3.5-turbo"
         

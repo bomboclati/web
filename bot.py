@@ -1681,7 +1681,13 @@ COMMON_MODELS = [
     
     # OpenRouter Specific Aliases
     "google/gemini-3.1-pro", "google/gemini-2.5-flash",
-    "deepseek/deepseek-v3", "meta-llama/llama-3.1-70b"
+    "deepseek/deepseek-v3", "meta-llama/llama-3.1-70b",
+    
+    # Groq Models
+    "llama-3.1-8b-instant", "llama-3.1-70b-versatile",
+    "llama3-groq-70b-8192-tool-use-preview", "llama3-groq-8b-8192-tool-use-preview",
+    "mixtral-8x7b-32768", "gemma-7b-it", "gemma2-9b-it",
+    "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3-32b"
 ]
 
 @config_group.command(name="model", description="Set the default AI model for this server")
