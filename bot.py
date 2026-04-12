@@ -1657,15 +1657,22 @@ async def health_cmd(interaction: discord.Interaction):
 config_group = app_commands.Group(name="config", description="Configure server-specific AI settings")
 
 COMMON_MODELS = [
-    "gemini-1.5-flash-latest", "gemini-1.5-pro-latest", "gemini-2.0-flash-exp", "gemini-1.0-pro",
-    "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo",
-    "claude-3-5-sonnet-20240620", "claude-3-opus-20240229", "claude-3-haiku-20240307",
-    "meta-llama/llama-3.1-405b", "meta-llama/llama-3.1-70b", "meta-llama/llama-3.1-8b",
-    "mistralai/mistral-large", "mistralai/mistral-medium",
-    "deepseek/deepseek-chat", "deepseek/deepseek-coder",
-    "google/gemini-pro-1.5", "google/gemini-flash-1.5",
-    "perplexity/pplx-70b-online", "perplexity/pplx-70b-chat",
-    "anthropic/claude-3.5-sonnet", "openai/gpt-4o"
+    # Gemini 3.1 Family (Latest 2026)
+    "gemini-3.1-pro", "gemini-3.1-flash", "gemini-3.1-flash-lite", "gemini-3.1-flash-live",
+    "gemini-3-pro", "gemini-3-flash",
+    
+    # Gemini 2.5 Family (Stable)
+    "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite",
+    "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash",
+    
+    # OpenAI & Other Flagships
+    "gpt-5", "gpt-4o", "gpt-4o-mini", "o1",
+    "claude-3-5-sonnet", "claude-4-preview",
+    "llama-4-405b", "llama-3.1-405b",
+    
+    # OpenRouter Specific Aliases
+    "google/gemini-3.1-pro", "google/gemini-2.5-flash",
+    "deepseek/deepseek-v3", "meta-llama/llama-3.1-70b"
 ]
 
 @config_group.command(name="model", description="Set the default AI model for this server")
