@@ -1245,14 +1245,11 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
     relevant_memories = []
     try:
         relevant_memories = await asyncio.wait_for(
-            loop.run_in_executor(
-                None, 
-                lambda: vector_memory.retrieve_relevant_conversations(
-                    guild_id=guild_id,
-                    user_id=user_id,
-                    query=user_input,
-                    n_results=3
-                )
+            vector_memory.retrieve_relevant_conversations(
+                guild_id=guild_id,
+                user_id=user_id,
+                query=user_input,
+                n_results=3
             ),
             timeout=15.0
         )
@@ -1394,9 +1391,9 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
                 final_msg = f"**Failed at step {result['failed_at'] + 1}: `{result['failed_action']}`**\nError: {result['error']}\n\n**Executed:**\n{summary_text}{rollback_text}"
             
             await it.followup.send(final_msg, ephemeral=False)
-            history_manager.add_exchange(guild_id, user_id, user_input, summary)
+            await history_manager.add_exchange(guild_id, user_id, user_input, summary)
             # Store in vector memory for long-term recall
-            vector_memory.store_conversation(
+            await vector_memory.store_conversation(
                 guild_id=guild_id,
                 user_id=user_id,
                 user_message=user_input,
