@@ -40,7 +40,11 @@ class AIClient:
         self.base_urls = {
             "openrouter": os.getenv("OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions"),
             "openai": os.getenv("OPENAI_URL", "https://api.openai.com/v1/chat/completions"),
-            "gemini": os.getenv("GEMINI_URL", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+            "gemini": os.getenv("GEMINI_URL", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"),
+            "anthropic": os.getenv("ANTHROPIC_URL", "https://api.anthropic.com/v1/messages"),
+            "groq": os.getenv("GROQ_URL", "https://api.groq.com/openai/v1/chat/completions"),
+            "mistral": os.getenv("MISTRAL_URL", "https://api.mistral.ai/v1/chat/completions"),
+            "deepseek": os.getenv("DEEPSEEK_URL", "https://api.deepseek.com/v1/chat/completions")
         }
 
     def _get_guild_api_key(self, guild_id: int) -> tuple:
@@ -225,25 +229,29 @@ class AIClient:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
+        
         if provider == "openrouter":
             headers["HTTP-Referer"] = "https://github.com/antigravity"
             headers["X-Title"] = "Miro AI Discord Bot"
+        elif provider == "anthropic":
+            headers["x-api-key"] = api_key
+            headers["anthropic-version"] = "2023-06-01"
 
         # Diagnostic info (info level for transparency)
         censored_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "****"
-        
         logger.info(f"AI Handshake: {provider} | Key: {censored_key} | Len: {len(api_key)} | Model: {active_model}")
+
+        payload = {
+            "model": active_model,
+            "messages": messages,
+            "temperature": 0.7,
+        }
+        
+        if provider in ["openai", "openrouter", "gemini", "groq", "mistral", "deepseek"]:
+            payload["response_format"] = {"type": "json_object"}
 
         timeout = aiohttp.ClientTimeout(total=45, connect=10)
         async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
-            payload = {
-                "model": active_model,
-                "messages": messages,
-                "temperature": 0.7,
-            }
-            if provider in ["openai", "openrouter", "gemini"]:
-                payload["response_format"] = {"type": "json_object"}
-
             provider_url = self.base_urls.get(provider)
             if not provider_url:
                 raise Exception(f"Unsupported AI provider: {provider}")

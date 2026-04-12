@@ -1656,17 +1656,31 @@ async def health_cmd(interaction: discord.Interaction):
 config_group = app_commands.Group(name="config", description="Configure server-specific AI settings")
 
 @config_group.command(name="model", description="Set the default AI model for this server")
+@app_commands.describe(model="AI Model to use")
+@app_commands.choices(model=[
+    app_commands.Choice(name="Gemini 1.5 Flash (Fastest)", value="gemini-1.5-flash-latest"),
+    app_commands.Choice(name="Gemini 1.5 Pro (Brainiest)", value="gemini-1.5-pro-latest"),
+    app_commands.Choice(name="GPT-4o (Standard)", value="gpt-4o"),
+    app_commands.Choice(name="GPT-4 Turbo", value="gpt-4-turbo"),
+    app_commands.Choice(name="Claude 3.5 Sonnet", value="anthropic/claude-3.5-sonnet"),
+    app_commands.Choice(name="Llama 3.1 405B (OpenRouter)", value="meta-llama/llama-3.1-405b"),
+    app_commands.Choice(name="DeepSeek Coder", value="deepseek-coder"),
+])
 async def config_model(it: discord.Interaction, model: str):
     if not it.user.guild_permissions.administrator:
         return await it.response.send_message("? Admin only.", ephemeral=True)
     dm.update_guild_data(it.guild.id, "custom_model", model)
     await it.response.send_message(f"? AI model set to **{model}**.", ephemeral=True)
 
-@config_group.command(name="provider", description="Set the active AI provider (OpenRouter, OpenAI, Gemini)")
+@config_group.command(name="provider", description="Set the active AI provider")
 @app_commands.choices(provider=[
-    app_commands.Choice(name="OpenRouter", value="openrouter"),
+    app_commands.Choice(name="OpenRouter (Universal)", value="openrouter"),
     app_commands.Choice(name="OpenAI", value="openai"),
-    app_commands.Choice(name="Gemini", value="gemini"),
+    app_commands.Choice(name="Google Gemini", value="gemini"),
+    app_commands.Choice(name="Groq (Ultra-Fast)", value="groq"),
+    app_commands.Choice(name="Mistral AI", value="mistral"),
+    app_commands.Choice(name="DeepSeek", value="deepseek"),
+    app_commands.Choice(name="Anthropic", value="anthropic"),
 ])
 async def config_provider(it: discord.Interaction, provider: str):
     if not it.user.guild_permissions.administrator:
