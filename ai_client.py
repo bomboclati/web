@@ -64,6 +64,33 @@ class AIClient:
         if current_config:
             return current_config.get("api_key", self.default_api_key), current_config.get("provider", self.default_provider)
         return self.default_api_key, self.default_provider
+
+    def _get_all_guild_keys(self, guild_id: int) -> List[Dict[str, str]]:
+        """Fetch all available API keys for a guild to use as fallbacks"""
+        from data_manager import dm
+        api_keys = dm.load_json("guild_api_keys", default={})
+        guild_data = api_keys.get(str(guild_id), {})
+        
+        results = []
+        # Add primary first
+        primary = self._get_guild_api_key(guild_id)
+        results.append({"api_key": primary[0], "provider": primary[1]})
+        
+        # Add others if available
+        providers = guild_data.get("providers", {})
+        if isinstance(providers, dict):
+            for p, enc_key in providers.items():
+                if p != primary[1]:
+                    # Decrypt and add
+                    res = dm.get_guild_api_key(guild_id, provider=p)
+                    if res:
+                        results.append(res)
+        
+        # Finally add defaults if not already present
+        if not any(r["provider"] == self.default_provider for r in results):
+            results.append({"api_key": self.default_api_key, "provider": self.default_provider})
+            
+        return results
     
     async def fetch_server_health(self, guild_id: int) -> Dict[str, Any]:
         """
@@ -164,37 +191,36 @@ class AIClient:
     )
     async def chat(self, guild_id: int, user_id: int, user_input: str, system_prompt: str) -> Dict[str, Any]:
         """
-        Communicates with the LLM, handles history, and processes web search requests.
-        Includes self-improvement data from past action successes/failures.
-        Supports per-guild API keys.
+        Communicates with the LLM using a primary provider, with automatic fallback
+        to secondary providers (DashScope, OpenRouter) if the primary hits a quota limit (429/403).
         """
-        # Get guild-specific API key (fallback to default)
-        api_key, provider = self._get_guild_api_key(guild_id)
-        from data_manager import dm
-        active_model = dm.get_guild_data(guild_id, "custom_model", self.model)
-        
-        # Provider-specific default overrides to prevent INVALID_ARGUMENT errors
-        if provider == "gemini" and (not active_model or "gpt" in active_model.lower()):
-            active_model = "gemini-1.5-flash-latest"
-        elif provider == "openai" and (not active_model or "/" in active_model):
-            active_model = "gpt-3.5-turbo"
-        elif provider in ["qwen", "dashscope"] and (not active_model or "gpt" in active_model.lower()):
-            active_model = "qwen3.6-plus"
-        elif not active_model:
-            active_model = self.model or "gpt-3.5-turbo"
-        
-        if api_key:
-            api_key = api_key.strip()
+        keys_to_try = self._get_all_guild_keys(guild_id)
+        last_error = None
+
+        for key_bundle in keys_to_try:
+            api_key = key_bundle["api_key"]
+            provider = key_bundle["provider"]
             
-        if provider:
-            provider = provider.lower()
-            
-        if not api_key or len(api_key) < 5:
-            logger.error(f"Missing or malformed API key for guild {guild_id} (Provider: {provider})")
-            return {"error": "No valid API key configured. Use /config apikey to set one."}
+            try:
+                return await self._chat_internal(guild_id, user_id, user_input, system_prompt, api_key, provider)
+            except AIClientError as e:
+                # If it's a quota (429) or access (403) error, try the next provider in the guild's list
+                if e.status in [429, 403]:
+                    logger.warning(f"[AI FALLBACK] Provider {provider} failed with {e.status}. Trying next available fallback...")
+                    last_error = e
+                    continue
+                raise # Re-raise server/connection errors for the 'tenacity' @retry to handle
+            except Exception as e:
+                # Re-raise transient exceptions for tenacity to handle
+                raise
+
+        if last_error:
+            raise last_error
         
-        logger.debug(f"Starting AI request for guild {guild_id} (Provider: {provider}, Key Length: {len(api_key)})")
-        
+        raise Exception("AI failed to respond after trying all configured fallback providers.")
+
+    async def _chat_internal(self, guild_id: int, user_id: int, user_input: str, system_prompt: str, api_key: str, provider: str) -> Dict[str, Any]:
+        """Internal execution for a single AI provider request."""
         # Get recent history
         history_depth = int(os.getenv("MEMORY_DEPTH", 20))
         history = await history_manager.get_enhanced_context(guild_id, user_id, depth=history_depth)
@@ -210,11 +236,9 @@ class AIClient:
             min_importance=float(os.getenv("VECTOR_MEMORY_MIN_IMPORTANCE", 0.3))
         )
         
-        # Format vector memory results as context messages
         vector_context = []
         for result in vector_results:
             doc = result.get("document", "")
-            # Fallback for old distance-based results from keyword search
             similarity = result.get("similarity")
             if similarity is None:
                 distance = result.get("distance", 1.0)
@@ -225,19 +249,28 @@ class AIClient:
                 "content": f"[Relevant past conversation (similarity: {similarity:.2f})]\n{doc}"
             })
         
-        # Combine history and vector memory context
         combined_context = history + vector_context
-        
         enhanced_prompt = self._build_enhanced_prompt(system_prompt, guild_id)
         
-        # Build messages
         messages = [{"role": "system", "content": enhanced_prompt}]
         messages.extend(combined_context)
         messages.append({"role": "user", "content": user_input})
-
-        # Prepare headers
+        
+        # Determine model based on provider
+        from data_manager import dm
+        active_model = dm.get_guild_data(guild_id, "custom_model", self.model)
+        
+        if provider == "gemini" and (not active_model or "gpt" in active_model.lower()):
+            active_model = "gemini-1.5-flash-latest"
+        elif provider == "openai" and (not active_model or "/" in active_model):
+            active_model = "gpt-3.5-turbo"
+        elif provider in ["qwen", "dashscope"] and (not active_model or "gpt" in active_model.lower()):
+            active_model = "qwen3.6-plus"
+        elif not active_model:
+            active_model = self.model or "gpt-3.5-turbo"
+        
         headers = {
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {api_key.strip()}",
             "Content-Type": "application/json"
         }
         
@@ -248,9 +281,7 @@ class AIClient:
             headers["x-api-key"] = api_key
             headers["anthropic-version"] = "2023-06-01"
 
-        # Diagnostic info (info level for transparency)
-        censored_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "****"
-        logger.info(f"AI Handshake: {provider} | Key: {censored_key} | Len: {len(api_key)} | Model: {active_model}")
+        logger.info(f"AI Handshake: {provider} | Model: {active_model}")
 
         payload = {
             "model": active_model,
@@ -272,7 +303,7 @@ class AIClient:
                     text = await resp.text()
                     logger.error(f"AI API Error from {provider} ({resp.status}): {text}")
                     
-                    # Fallback Logic for 403 (Unpurchased/Access Denied)
+                    # One-provider fallback for 403 on flagship models
                     if resp.status == 403 and ("Unpurchased" in text or "denied" in text.lower()) and "turbo" not in active_model:
                         fallback = "qwen-turbo" if provider in ["qwen", "dashscope"] else "gpt-3.5-turbo"
                         logger.warning(f"Access Denied for {active_model}. Falling back to {fallback}...")
@@ -281,9 +312,7 @@ class AIClient:
                             if fallback_resp.status == 200:
                                 return await self._parse_and_handle_response(session, provider, provider_url, payload, messages, fallback_resp)
                     
-                    if 400 <= resp.status < 500:
-                        raise AIClientError(resp.status, text)
-                    raise Exception(f"AI API Error ({resp.status}): {text}")
+                    raise AIClientError(resp.status, text)
                 
                 return await self._parse_and_handle_response(session, provider, provider_url, payload, messages, resp)
 
@@ -422,27 +451,21 @@ Example help command format: "!help achievements" "!help shop" "!help tickets" (
 
 NEVER skip documentation. Even for simple systems, show users how to use it!
 
-DOCUMENTATION FORMAT EXAMPLE:
-When creating documentation, use channel name format: "system-name-guide" (lowercase, hyphens)
-{
-  "name": "send_embed",
-  "parameters": {
-    "channel": "role-shop-guide",
-    "title": "Role Shop System",
-    "description": "Welcome to the Role Shop! Purchase exclusive roles using your coins.",
-    "color": "gold",
-    "fields": [
       {
-        "name": "Available Commands",
-        "value": "!buy <role_name> - Purchase a role\n!balance - Check your coins\n!daily - Claim daily coins",
+        "name": "Troubleshooting",
+        "value": "No interaction failed here: buttons and commands are 100% functional. Need help? Contact an admin.",
         "inline": false
-      },
-      {
-        "name": "Getting Started",
-        "value": "1. Use !daily to get 100 coins\n2. Use !balance to check funds\n3. Use !buy <role> to purchase",
-        "inline": false
-      },
-      {
+      }
+    ]
+  }
+}
+
+[IMPORTANT: INTERACTION RELIABILITY]
+- Never create 'placeholder' buttons. All buttons must be functional parts of a supported system (Staff, Tickets, etc).
+- If you request the user to 'Proceed' or 'Cancel', the system will handle the buttons.
+- For custom systems, use the set_prefix_command or setup_system tools which register functional components.
+- Buttons must be connected to valid listeners. Do not just send an embed with a raw button without logic.
+"""      {
         "name": "Troubleshooting",
         "value": ". Not enough coins? Use !daily\n. Command not working? Check spelling\n. Need help? Contact an admin",
         "inline": false

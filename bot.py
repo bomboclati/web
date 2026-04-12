@@ -144,6 +144,14 @@ class MiroBot(commands.Bot):
                 self.analytics.start_monitoring_loop()
         except Exception as e:
             logger.error(f"Error starting background monitors: {e}")
+        
+        # Register Persistent Views for long-term button functionality
+        from modules.staff_system import StaffApplicationPersistentView, StaffReviewPersistentView
+        from modules.tickets import TicketPersistentView
+        self.add_view(StaffApplicationPersistentView(self))
+        self.add_view(StaffReviewPersistentView())
+        self.add_view(TicketPersistentView())
+        
         # Support for Manual Sync (Prefix command !sync)
         @self.command(name="sync")
         @commands.is_owner()
@@ -1264,8 +1272,9 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
         memory_context = "\n\nRELEVANT PAST CONVERSATIONS:\n"
         for i, mem in enumerate(relevant_memories, 1):
             memory_context += f"\n{i}. Similar conversation (similarity: {mem['similarity']:.2f}):\n{mem['document'][:500]}...\n"
-    
+
     res = await bot.ai.chat(guild_id, user_id, user_input, SYSTEM_PROMPT + memory_context)
+
     
     reasoning = res.get("reasoning", "Thinking...")
     walkthrough = res.get("walkthrough", "Planning...")
