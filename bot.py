@@ -1356,7 +1356,15 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
         
         await interaction.followup.send(embed=embed, view=view, ephemeral=False)
     else:
+        # Handle both old format (single action) and new format (actions list)
         actions = res.get("actions", [])
+        
+        # Backward compatibility: convert single action to list format
+        if not actions:
+            single_action = res.get("action")
+            if single_action:
+                parameters = res.get("parameters", {})
+                actions = [{"name": single_action, "parameters": parameters}]
         
         if not actions:
             # Edit the thinking message with the final AI response
