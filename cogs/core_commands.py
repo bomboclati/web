@@ -28,6 +28,14 @@ class CoreCommands(commands.Cog):
         app_commands.Choice(name="OpenRouter", value="openrouter"),
         app_commands.Choice(name="OpenAI", value="openai"),
         app_commands.Choice(name="Gemini", value="gemini"),
+        app_commands.Choice(name="Anthropic", value="anthropic"),
+        app_commands.Choice(name="Cerebras", value="cerebras"),
+        app_commands.Choice(name="SambaNova", value="sambanova"),
+        app_commands.Choice(name="Together", value="together"),
+        app_commands.Choice(name="Groq", value="groq"),
+        app_commands.Choice(name="Mistral", value="mistral"),
+        app_commands.Choice(name="DeepSeek", value="deepseek"),
+        app_commands.Choice(name="DashScope", value="dashscope")
     ])
     async def config_provider(self, interaction: discord.Interaction, provider: str):
         if not interaction.user.guild_permissions.administrator:
@@ -55,6 +63,14 @@ class CoreCommands(commands.Cog):
         app_commands.Choice(name="OpenRouter", value="openrouter"),
         app_commands.Choice(name="OpenAI", value="openai"),
         app_commands.Choice(name="Gemini", value="gemini"),
+        app_commands.Choice(name="Anthropic", value="anthropic"),
+        app_commands.Choice(name="Cerebras", value="cerebras"),
+        app_commands.Choice(name="SambaNova", value="sambanova"),
+        app_commands.Choice(name="Together", value="together"),
+        app_commands.Choice(name="Groq", value="groq"),
+        app_commands.Choice(name="Mistral", value="mistral"),
+        app_commands.Choice(name="DeepSeek", value="deepseek"),
+        app_commands.Choice(name="DashScope", value="dashscope")
     ])
     @app_commands.describe(api_key="Your API key for this provider")
     async def config_key(self, interaction: discord.Interaction, provider: str, api_key: str):
