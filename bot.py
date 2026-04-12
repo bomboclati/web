@@ -149,7 +149,7 @@ class MiroBot(commands.Bot):
         @commands.is_owner()
         async def manual_sync(ctx):
             await self.tree.sync()
-            await ctx.send("? Slash commands synced.")
+            await ctx.send("[SUCCESS] Slash commands synced.")
 
         # Final sync after all commands and cogs are loaded
         if os.getenv("SYNC_COMMANDS", "false").lower() == "true":
@@ -1218,7 +1218,7 @@ async def slash_bot(interaction: discord.Interaction, text: str):
     
     # Send "Thinking..." message visible to everyone
     try:
-        thinking_msg = await interaction.followup.send("?? *Thinking...", ephemeral=False)
+        thinking_msg = await interaction.followup.send("[AI] Thinking...", ephemeral=False)
     except discord.errors.NotFound:
         return
     
@@ -1311,7 +1311,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
                 if user_id in bot.ai_sessions:
                     del bot.ai_sessions[user_id]
                 
-                await modal_it.response.send_message("?? Processing your answer...", ephemeral=False)
+                await modal_it.response.send_message("[AI] Processing your answer...", ephemeral=False)
                 await _process_ai_turn(modal_it, f"[User answered your question]: {answer}", thinking_msg=None)
             
             modal.on_submit = on_submit_wrapper
@@ -1323,7 +1323,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
             if user_id in bot.ai_sessions:
                 del bot.ai_sessions[user_id]
             
-            await it.response.edit_message(content="?? Proceeding with defaults...", embed=None, view=None)
+            await it.response.edit_message(content="[AI] Proceeding with defaults...", embed=None, view=None)
             await _process_ai_turn(it, "[User said to use defaults]", thinking_msg=None)
         
         reply_btn.callback = reply_callback
@@ -1337,7 +1337,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
         
         if not actions:
             # Edit the thinking message with the final AI response
-            embed = discord.Embed(title="AI Response", description=summary, color=discord.Color.blue())
+            embed = discord.Embed(title="[AI] AI Response", description=summary, color=discord.Color.blue())
             if thinking_msg:
                 await thinking_msg.edit(content="", embed=embed)
             else:
@@ -1363,7 +1363,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
             "interaction": interaction
         }
         
-        embed = discord.Embed(title="AI Reasoning & Plan", description=f"**Reasoning:**\n{reasoning}\n\n**Walkthrough:**\n{walkthrough}", color=discord.Color.blue())
+        embed = discord.Embed(title="[AI] AI Reasoning & Plan", description=f"**Reasoning:**\n{reasoning}\n\n**Walkthrough:**\n{walkthrough}", color=discord.Color.blue())
         
         view = discord.ui.View()
         proceed_btn = discord.ui.Button(label="Proceed", style=discord.ButtonStyle.success, custom_id="proceed")
@@ -1373,7 +1373,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
             if it.user.id != user_id:
                 return await it.response.send_message("Only the user who started this can proceed.", ephemeral=False)
             
-            await it.response.edit_message(content="?? Execution in progress...", embed=None, view=None)
+            await it.response.edit_message(content="[AI] Execution in progress...", embed=None, view=None)
             
             from actions import ActionHandler
             handler = ActionHandler(bot)
@@ -1410,7 +1410,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
         async def cancel_callback(it: discord.Interaction):
             if it.user.id != user_id:
                 return await it.response.send_message("Only the user who started this can cancel.", ephemeral=False)
-            await it.response.edit_message(content="? Action cancelled.", embed=None, view=None)
+            await it.response.edit_message(content="[AI] Action cancelled.", embed=None, view=None)
             del bot.pending_confirms[user_id]
         
         proceed_btn.callback = proceed_callback
@@ -1679,9 +1679,9 @@ COMMON_MODELS = [
 @app_commands.describe(model="AI Model to use (Pick from list or type any OpenRouter model name)")
 async def config_model(it: discord.Interaction, model: str):
     if not it.user.guild_permissions.administrator:
-        return await it.response.send_message("? Admin only.", ephemeral=True)
+        return await it.response.send_message("[ERROR] Admin only.", ephemeral=True)
     dm.update_guild_data(it.guild.id, "custom_model", model)
-    await it.response.send_message(f"? AI model set to **{model}**.", ephemeral=True)
+    await it.response.send_message(f"[SUCCESS] AI model set to **{model}**.", ephemeral=True)
 
 @config_model.autocomplete('model')
 async def model_autocomplete(interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
@@ -1703,9 +1703,9 @@ async def model_autocomplete(interaction: discord.Interaction, current: str) -> 
 ])
 async def config_provider(it: discord.Interaction, provider: str):
     if not it.user.guild_permissions.administrator:
-        return await it.response.send_message("? Admin only.", ephemeral=True)
+        return await it.response.send_message("[ERROR] Admin only.", ephemeral=True)
     dm.update_guild_data(it.guild.id, "active_provider", provider)
-    await it.response.send_message(f"? AI provider switched to **{provider}**.", ephemeral=True)
+    await it.response.send_message(f"[SUCCESS] AI provider switched to **{provider}**.", ephemeral=True)
 
 @config_group.command(name="key", description="Set your own API key for a specific provider")
 @app_commands.choices(provider=[
@@ -1720,18 +1720,18 @@ async def config_provider(it: discord.Interaction, provider: str):
 ])
 async def config_key(it: discord.Interaction, provider: str, api_key: str):
     if not it.user.guild_permissions.administrator:
-        return await it.response.send_message("? Admin only.", ephemeral=True)
+        return await it.response.send_message("[ERROR] Admin only.", ephemeral=True)
     dm.set_guild_api_key(it.guild.id, api_key, provider)
-    await it.response.send_message(f"? API key for **{provider}** encrypted and saved.", ephemeral=True)
+    await it.response.send_message(f"[SUCCESS] API key for **{provider}** encrypted and saved.", ephemeral=True)
 
 @config_group.command(name="prefix", description="Set the server command prefix")
 async def config_prefix(it: discord.Interaction, prefix: str):
     if not it.user.guild_permissions.administrator:
-        return await it.response.send_message("? Admin only.", ephemeral=True)
+        return await it.response.send_message("[ERROR] Admin only.", ephemeral=True)
     if len(prefix) > 5:
-        return await it.response.send_message("? Prefix too long (max 5).", ephemeral=True)
+        return await it.response.send_message("[ERROR] Prefix too long (max 5).", ephemeral=True)
     dm.update_guild_data(it.guild.id, "prefix", prefix)
-    await it.response.send_message(f"? Prefix set to **{prefix}**.", ephemeral=True)
+    await it.response.send_message(f"[SUCCESS] Prefix set to **{prefix}**.", ephemeral=True)
 
 bot.tree.add_command(config_group)
 
@@ -1844,7 +1844,7 @@ you can use the fetch_server_health tool to get real data."""
         
     except Exception as e:
         logger.error(f"Error in mention AI handler: {e}")
-        await message.channel.send("?? Sorry, I'm having trouble processing that right now. Please try again!")
+        await message.channel.send("[WARNING] Sorry, I'm having trouble processing that right now. Please try again!")
 
 
 @bot.event

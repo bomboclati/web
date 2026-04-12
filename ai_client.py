@@ -428,22 +428,22 @@ When creating documentation, use channel name format: "system-name-guide" (lower
   "name": "send_embed",
   "parameters": {
     "channel": "role-shop-guide",
-    "title": "??? Role Shop System",
+    "title": "Role Shop System",
     "description": "Welcome to the Role Shop! Purchase exclusive roles using your coins.",
     "color": "gold",
     "fields": [
       {
-        "name": "?? Available Commands",
+        "name": "Available Commands",
         "value": "!buy <role_name> - Purchase a role\n!balance - Check your coins\n!daily - Claim daily coins",
         "inline": false
       },
       {
-        "name": "?? Getting Started",
+        "name": "Getting Started",
         "value": "1. Use !daily to get 100 coins\n2. Use !balance to check funds\n3. Use !buy <role> to purchase",
         "inline": false
       },
       {
-        "name": "? Troubleshooting",
+        "name": "Troubleshooting",
         "value": ". Not enough coins? Use !daily\n. Command not working? Check spelling\n. Need help? Contact an admin",
         "inline": false
       }
