@@ -19,10 +19,17 @@ class AIClientError(Exception):
         super().__init__(f"AI API Client Error ({status}): {message}")
 
 def is_retryable_exception(exception):
-    """Only retry on server errors (5xx) or connection issues, skip client errors (4xx)."""
+    """
+    Only retry on server errors (5xx) or connection issues.
+    Skip client errors (4xx) and logic/parsing errors (KeyError, etc).
+    """
     if isinstance(exception, AIClientError):
-        # Don't retry on 400 (Bad Request), 404 (Not Found), 401 (Unauthorized)
         return exception.status >= 500
+    
+    # Don't retry on structural errors - these are bugs or API changes, not transient issues
+    if isinstance(exception, (KeyError, IndexError, TypeError, json.JSONDecodeError)):
+        return False
+        
     return True
 
 class AIClient:
@@ -265,10 +272,26 @@ class AIClient:
                     raise Exception(f"AI API Error ({resp.status}): {text}")
                 
                 res_data = await resp.json()
-                if not res_data.get('choices'):
-                    raise Exception(f"Invalid AI response body: {res_data}")
-                    
-                ai_msg = res_data['choices'][0]['message']['content']
+                
+                # Flexible extraction for different provider formats
+                try:
+                    if 'choices' in res_data:
+                        # OpenAI / OpenRouter / Gemini style
+                        ai_msg = res_data['choices'][0]['message']['content']
+                    elif 'content' in res_data:
+                        # Anthropic style
+                        ai_msg = res_data['content'][0]['text']
+                    elif 'message' in res_data and 'content' in res_data['message']:
+                        # Generic secondary style
+                        ai_msg = res_data['message']['content']
+                    else:
+                        logger.error(f"Unknown response structure from {provider}: {res_data}")
+                        raise KeyError(f"No valid 'choices' or 'content' in response from {provider}")
+                except (KeyError, IndexError, TypeError) as e:
+                    logger.error(f"Failed to parse {provider} response: {e}\nData: {res_data}")
+                    raise
+                
+                logger.debug(f"AI Handshake Successful | Provider: {provider} | Response Length: {len(ai_msg)}")
 
                 # Try to parse JSON from AI message
                 try:
