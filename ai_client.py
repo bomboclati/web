@@ -26,8 +26,8 @@ def is_retryable_exception(exception):
     if isinstance(exception, AIClientError):
         return exception.status >= 500 or exception.status == 429
     
-    # Don't retry on structural errors - these are bugs or API changes, not transient issues
-    if isinstance(exception, (KeyError, IndexError, TypeError, json.JSONDecodeError)):
+    # Don't retry on structural or logic errors - these are bugs, not transient issues
+    if isinstance(exception, (KeyError, IndexError, TypeError, AttributeError, json.JSONDecodeError, ValueError)):
         return False
         
     return True
@@ -74,7 +74,8 @@ class AIClient:
         results = []
         # Add primary first
         primary = self._get_guild_api_key(guild_id)
-        results.append({"api_key": primary[0], "provider": primary[1]})
+        if primary[0]: # Only add if key exists
+            results.append({"api_key": primary[0], "provider": primary[1]})
         
         # Add others if available
         providers = guild_data.get("providers", {})
@@ -83,11 +84,11 @@ class AIClient:
                 if p != primary[1]:
                     # Decrypt and add
                     res = dm.get_guild_api_key(guild_id, provider=p)
-                    if res:
+                    if res and res.get("api_key"):
                         results.append(res)
         
-        # Finally add defaults if not already present
-        if not any(r["provider"] == self.default_provider for r in results):
+        # Finally add defaults if not already present and valid
+        if self.default_api_key and not any(r["provider"] == self.default_provider for r in results):
             results.append({"api_key": self.default_api_key, "provider": self.default_provider})
             
         return results
@@ -195,6 +196,10 @@ class AIClient:
         to secondary providers (DashScope, OpenRouter) if the primary hits a quota limit (429/403).
         """
         keys_to_try = self._get_all_guild_keys(guild_id)
+        if not keys_to_try:
+            logger.error(f"[AI ERROR] No API keys configured for guild {guild_id}")
+            return {"error": "No valid API key configured. Use /config apikey to set one."}
+
         last_error = None
 
         for key_bundle in keys_to_try:
