@@ -5,6 +5,78 @@ import json
 from data_manager import dm
 from typing import Dict, Optional
 
+class StaffApplicationPersistentView(ui.View):
+    """Persistent view for the 'Apply Now' button."""
+    def __init__(self, bot):
+        super().__init__(timeout=None)
+        self.bot = bot
+
+    @ui.button(label="Apply Now", style=discord.ButtonStyle.success, custom_id="staff_apply_now")
+    async def apply_now(self, interaction: discord.Interaction, button: ui.Button):
+        # 30-day cooldown check
+        apps = dm.load_json("applications", default={})
+        last_app = apps.get(str(interaction.user.id))
+        if last_app and (datetime.datetime.now() - datetime.datetime.fromisoformat(last_app['timestamp'])).days < 30:
+            return await interaction.response.send_message("[ERROR] You can only apply once every 30 days.", ephemeral=True)
+        
+        await interaction.response.send_modal(StaffApplicationModal(self.bot))
+
+class StaffReviewPersistentView(ui.View):
+    """Persistent view for staff logs (Approve/Deny)."""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @ui.button(label="Approve", style=discord.ButtonStyle.success, custom_id="staff_approve_app")
+    async def approve(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        
+        # Extract applicant ID from embed (or store it in metadata)
+        embed = interaction.message.embeds[0]
+        try:
+            applicant_id = int(embed.fields[0].value)
+        except:
+            return await interaction.followup.send("[ERROR] Could not identify applicant.", ephemeral=True)
+
+        # Notify applicant
+        guild = interaction.guild
+        applicant = guild.get_member(applicant_id)
+        if applicant:
+            try:
+                await applicant.send(f"[AI] Your staff application for {guild.name} has been approved!")
+            except:
+                pass # DM closed
+        
+        await interaction.message.edit(content=f"[SUCCESS] Approved by {interaction.user.name}", view=None)
+        
+        # Store in applications.json
+        apps = dm.load_json("applications", default={})
+        apps[str(applicant_id)] = {"status": "approved", "timestamp": str(datetime.datetime.now())}
+        dm.save_json("applications", apps)
+
+    @ui.button(label="Deny", style=discord.ButtonStyle.danger, custom_id="staff_deny_app")
+    async def deny(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        
+        embed = interaction.message.embeds[0]
+        try:
+            applicant_id = int(embed.fields[0].value)
+        except:
+            return await interaction.followup.send("[ERROR] Could not identify applicant.", ephemeral=True)
+
+        guild = interaction.guild
+        applicant = guild.get_member(applicant_id)
+        if applicant:
+            try:
+                await applicant.send(f"[AI] Your staff application for {guild.name} has been denied.")
+            except:
+                pass
+        
+        await interaction.message.edit(content=f"[ERROR] Denied by {interaction.user.name}", view=None)
+        
+        apps = dm.load_json("applications", default={})
+        apps[str(applicant_id)] = {"status": "denied", "timestamp": str(datetime.datetime.now())}
+        dm.save_json("applications", apps)
+
 class StaffApplicationModal(ui.Modal):
     def __init__(self, bot):
         super().__init__(title='Staff Application')
@@ -17,12 +89,13 @@ class StaffApplicationModal(ui.Modal):
     q5 = ui.TextInput(label='Anything else?', required=False, style=discord.TextStyle.paragraph)
 
     async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         guild_id = interaction.guild.id
         log_channel_id = dm.get_guild_data(guild_id, "staff_log_channel_id")
         log_channel = interaction.guild.get_channel(log_channel_id)
 
         if not log_channel:
-            return await interaction.response.send_message("Staff logs channel not found. Tell admin.", ephemeral=True)
+            return await interaction.followup.send("[ERROR] Staff logs channel not found. Please contact an admin.", ephemeral=True)
 
         embed = discord.Embed(title=f"New Staff Application: {interaction.user.name}", color=discord.Color.gold())
         embed.add_field(name="User ID", value=interaction.user.id)
@@ -32,73 +105,10 @@ class StaffApplicationModal(ui.Modal):
         embed.add_field(name="4. Skills", value=self.q4.value, inline=False)
         embed.add_field(name="5. Extra", value=self.q5.value or "N/A", inline=False)
 
-        view = ui.View()
-        approve_btn = ui.Button(label="Approve", style=discord.ButtonStyle.success)
-        deny_btn = ui.Button(label="Deny", style=discord.ButtonStyle.danger)
-
-        async def approve_callback(it: discord.Interaction):
-            await interaction.user.send("Your staff application has been approved!")
-            await it.response.edit_message(content=f"✅ Approved by {it.user.name}", view=None)
-             
-            # Store in applications.json
-            apps = dm.load_json("applications", default={})
-            apps[str(interaction.user.id)] = {"status": "approved", "timestamp": str(datetime.datetime.now())}
-            dm.save_json("applications", apps)
-            
-            # Also track in promotion system for fast-track consideration
-            guild_id = interaction.guild.id
-            promo_config = dm.get_guild_data(guild_id, "staff_promo_config", {})
-            staff_applications = promo_config.get("staff_applications", {})
-            staff_applications[str(interaction.user.id)] = {
-                "status": "approved",
-                "timestamp": str(datetime.datetime.now()),
-                "approved_by": str(it.user.id),
-                "application_data": {
-                    "q1": self.q1.value,
-                    "q2": self.q2.value,
-                    "q3": self.q3.value,
-                    "q4": self.q4.value,
-                    "q5": self.q5.value
-                }
-            }
-            promo_config["staff_applications"] = staff_applications
-            dm.update_guild_data(guild_id, "staff_promo_config", promo_config)
-
-        async def deny_callback(it: discord.Interaction):
-            await interaction.user.send("Thank you for applying, but your application has been denied at this time.")
-            await it.response.edit_message(content=f"❌ Denied by {it.user.name}", view=None)
-             
-            # Store in applications.json
-            apps = dm.load_json("applications", default={})
-            apps[str(interaction.user.id)] = {"status": "denied", "timestamp": str(datetime.datetime.now())}
-            dm.save_json("applications", apps)
-            
-            # Also track in promotion system
-            guild_id = interaction.guild.id
-            promo_config = dm.get_guild_data(guild_id, "staff_promo_config", {})
-            staff_applications = promo_config.get("staff_applications", {})
-            staff_applications[str(interaction.user.id)] = {
-                "status": "denied",
-                "timestamp": str(datetime.datetime.now()),
-                "denied_by": str(it.user.id),
-                "application_data": {
-                    "q1": self.q1.value,
-                    "q2": self.q2.value,
-                    "q3": self.q3.value,
-                    "q4": self.q4.value,
-                    "q5": self.q5.value
-                }
-            }
-            promo_config["staff_applications"] = staff_applications
-            dm.update_guild_data(guild_id, "staff_promo_config", promo_config)
-
-        approve_btn.callback = approve_callback
-        deny_btn.callback = deny_callback
-        view.add_item(approve_btn)
-        view.add_item(deny_btn)
-
+        # Use the Persistent Review View
+        view = StaffReviewPersistentView()
         await log_channel.send(embed=embed, view=view)
-        await interaction.response.send_message("Application submitted! We will DM you soon.", ephemeral=True)
+        await interaction.followup.send("[SUCCESS] Staff application submitted! We will DM you shortly.", ephemeral=True)
 
 class StaffSystem:
     def __init__(self, bot):
@@ -115,58 +125,29 @@ class StaffSystem:
 
         dm.update_guild_data(guild.id, "staff_log_channel_id", log_channel.id)
 
-        # 2. Public Panel
+        # 2. Public Panel with Persistent View
         embed = discord.Embed(title="Join Our Staff Team", description="Click below to apply for a staff position!", color=discord.Color.green())
-        view = ui.View()
-        apply_btn = ui.Button(label="Apply Now", style=discord.ButtonStyle.success)
-        
-        async def apply_callback(it: discord.Interaction):
-            # Check cooldown here (Task requirement)
-            apps = dm.load_json("applications", default={})
-            last_app = apps.get(str(it.user.id))
-            if last_app and (datetime.datetime.now() - datetime.datetime.fromisoformat(last_app['timestamp'])).days < 30:
-                return await it.response.send_message("You can only apply once every 30 days.", ephemeral=True)
-            
-            await it.response.send_modal(StaffApplicationModal(self.bot))
-
-        apply_btn.callback = apply_callback
-        view.add_item(apply_btn)
+        view = StaffApplicationPersistentView(self.bot)
         await public_channel.send(embed=embed, view=view)
 
-        # 3. Mandatory Auto-Documentation
+        # 3. Auto-Documentation
         help_embed = discord.Embed(title="Apply Staff System Help", description="Information about staff application system.", color=discord.Color.blue())
         help_embed.add_field(name="!apply status", value="Checks the status of your application.")
         help_embed.add_field(name="!help staffapply", value="Shows this help embed.")
-        
         await public_channel.send(embed=help_embed)
         
-        # 4. Register Prefix Commands
+        # 4. Register Custom Commands
         custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
-        
-        # !apply command - checks application status
-        custom_cmds["apply"] = json.dumps({
-            "command_type": "application_status"
-        })
-        
-        # !help staffapply command - shows help embed
+        custom_cmds["apply"] = json.dumps({"command_type": "application_status"})
         custom_cmds["help staffapply"] = json.dumps({
             "command_type": "help_embed",
             "title": "Apply Staff System Help",
             "description": "Information about staff application system.",
             "fields": [
-                {
-                    "name": "!apply status",
-                    "value": "Checks the status of your application.",
-                    "inline": False
-                },
-                {
-                    "name": "!help staffapply",
-                    "value": "Shows this help embed.",
-                    "inline": False
-                }
+                {"name": "!apply status", "value": "Checks the status of your application.", "inline": False},
+                {"name": "!help staffapply", "value": "Shows this help embed.", "inline": False}
             ]
         })
-        
         dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
 
         return True

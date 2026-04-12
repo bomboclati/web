@@ -201,13 +201,13 @@ class AdvancedTickets:
             "escalation_channel": None,
             "staff_role": None,
             "categories": {
-                "general": {"emoji": "💬", "color": "blue"},
-                "support": {"emoji": "❓", "color": "green"},
-                "report": {"emoji": "🚨", "color": "red"},
-                "appeal": {"emoji": "📝", "color": "yellow"},
-                "suggestion": {"emoji": "💡", "color": "purple"},
-                "technical": {"emoji": "🔧", "color": "orange"},
-                "billing": {"emoji": "💳", "color": "gold"}
+                "general": {"emoji": "??", "color": "blue"},
+                "support": {"emoji": "?", "color": "green"},
+                "report": {"emoji": "??", "color": "red"},
+                "appeal": {"emoji": "??", "color": "yellow"},
+                "suggestion": {"emoji": "??", "color": "purple"},
+                "technical": {"emoji": "??", "color": "orange"},
+                "billing": {"emoji": "??", "color": "gold"}
             }
         })
 
@@ -383,31 +383,63 @@ Respond with JSON only:
         
         return staff
 
+class TicketPersistentView(discord.ui.View):
+    """Persistent view for ticket channels (Close button)."""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="ticket_close_system")
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        
+        # Identify ticket by channel
+        from modules.tickets import AdvancedTickets
+        # We need the instance which is attached to the bot
+        ticket_sys = getattr(interaction.client, "tickets", None)
+        if not ticket_sys:
+            return await interaction.followup.send("[ERROR] Ticket system not found.", ephemeral=True)
+            
+        ticket = ticket_sys.get_ticket_by_channel(interaction.channel.id)
+        if not ticket:
+            return await interaction.followup.send("[ERROR] This channel is not an active ticket.", ephemeral=True)
+
+        await interaction.followup.send("[AI] Closing ticket...", ephemeral=True)
+        await interaction.channel.send(f"[AI] Ticket closed by {interaction.user.mention}.")
+        
+        # Closing logic
+        ticket.status = TicketStatus.CLOSED
+        ticket.updated_at = time.time()
+        ticket_sys._save_ticket(ticket)
+        
+        # Disable view and delay deletion
+        await interaction.message.edit(view=None)
+        await asyncio.sleep(5)
+        await interaction.channel.delete(reason="Ticket closed")
+
     async def _send_ticket_created_message(self, ticket: Ticket, channel: discord.TextChannel, message: str, assigned_staff=None):
         settings = self.get_guild_settings(ticket.guild_id)
         cat_settings = settings.get("categories", {}).get(ticket.category.value, {})
         
         embed = discord.Embed(
-            title=f"{cat_settings.get('emoji', '🎫')} Ticket Created",
+            title=f"{cat_settings.get('emoji', '??')} Ticket Created",
             description=f"**{ticket.title}**",
             color=discord.Color.blue()
         )
         
         if assigned_staff:
             embed.add_field(name="Assigned To", value=assigned_staff.mention, inline=True)
-            ping_msg = f"{assigned_staff.mention} 🎫 New ticket assigned to you!"
+            ping_msg = f"{assigned_staff.mention} ?? New ticket assigned to you!"
         else:
             ping_msg = ""
         
-        priority_emoji = "🔴" if ticket.priority == TicketPriority.URGENT else "🟠" if ticket.priority == TicketPriority.HIGH else "🟡" if ticket.priority == TicketPriority.MEDIUM else "🟢"
+        priority_emoji = "??" if ticket.priority == TicketPriority.URGENT else "??" if ticket.priority == TicketPriority.HIGH else "??" if ticket.priority == TicketPriority.MEDIUM else "??"
         embed.add_field(name="Priority", value=f"{priority_emoji} {ticket.priority.name}", inline=True)
         
         embed.add_field(name="Status", value=ticket.status.value.title(), inline=True)
         embed.add_field(name="Sentiment", value=f"{ticket.sentiment_label} ({ticket.sentiment_score:.1f})", inline=True)
         
-        view = discord.ui.View()
-        view.add_item(discord.ui.Button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id=f"ticket_close_{ticket.id}"))
-        
+        # Use the Persistent View
+        view = TicketPersistentView()
         await channel.send(ping_msg, embed=embed, view=view)
 
     async def _check_auto_responses(self, ticket: Ticket):
@@ -489,7 +521,7 @@ Respond with JSON only:
             
             if escalation_channel:
                 embed = discord.Embed(
-                    title="🚨 Ticket Escalated",
+                    title="?? Ticket Escalated",
                     description=f"**{ticket.title}**",
                     color=discord.Color.red()
                 )
@@ -526,17 +558,17 @@ Respond with JSON only:
         
         # Post comprehensive documentation
         doc_embed = discord.Embed(
-            title="🎫 Advanced Ticket System Guide",
+            title="?? Advanced Ticket System Guide",
             description="Complete guide to using the AI-powered ticket system with sentiment analysis!",
             color=discord.Color.blue()
         )
         doc_embed.add_field(
-            name="📖 How It Works",
+            name="?? How It Works",
             value="Create tickets by describing your issue. AI automatically categorizes it, analyzes sentiment (frustrated/happy), and assigns priority. Staff get notified and can respond.",
             inline=False
         )
         doc_embed.add_field(
-            name="🎮 Available Commands",
+            name="?? Available Commands",
             value="**!ticket <message>** - Create a new support ticket\n" +
                   "**!tickets** - List your active tickets\n" +
                   "**!close** - Close the current ticket\n" +
@@ -544,7 +576,7 @@ Respond with JSON only:
             inline=False
         )
         doc_embed.add_field(
-            name="💡 How to Use",
+            name="?? How to Use",
             value="1. Type `!ticket I need help with...` describing your issue\n" +
                   "2. AI categorizes it (support/technical/billing/etc)\n" +
                   "3. Sentiment is analyzed - urgent issues get priority\n" +
@@ -553,23 +585,23 @@ Respond with JSON only:
             inline=False
         )
         doc_embed.add_field(
-            name="🏷️ Ticket Categories",
-            value="• **general** - General questions\n" +
-                  "• **support** - Technical support\n" +
-                  "• **report** - Report issues\n" +
-                  "• **appeal** - Appeal decisions\n" +
-                  "• **suggestion** - Make suggestions\n" +
-                  "• **technical** - Tech help\n" +
-                  "• **billing** - Payment issues",
+            name="??? Ticket Categories",
+            value=". **general** - General questions\n" +
+                  ". **support** - Technical support\n" +
+                  ". **report** - Report issues\n" +
+                  ". **appeal** - Appeal decisions\n" +
+                  ". **suggestion** - Make suggestions\n" +
+                  ". **technical** - Tech help\n" +
+                  ". **billing** - Payment issues",
             inline=False
         )
-        doc_embed.set_footer(text="Created by Miro AI • Use !help tickets for more info")
+        doc_embed.set_footer(text="Created by Miro AI . Use !help tickets for more info")
         
         await doc_channel.send(embed=doc_embed)
-        await doc_channel.send("💡 **Quick Start:** Create a ticket with `!ticket <your message>`")
+        await doc_channel.send("?? **Quick Start:** Create a ticket with `!ticket <your message>`")
         
         help_embed = discord.Embed(
-            title="🎫 Advanced Ticket System",
+            title="?? Advanced Ticket System",
             description="AI-powered ticket system with sentiment analysis and auto-routing.",
             color=discord.Color.green()
         )
@@ -580,7 +612,7 @@ Respond with JSON only:
         )
         help_embed.add_field(
             name="Features",
-            value="• AI categorization\n• Sentiment analysis\n• Auto-responses\n• Escalation to staff\n• Vector memory learning",
+            value=". AI categorization\n. Sentiment analysis\n. Auto-responses\n. Escalation to staff\n. Vector memory learning",
             inline=False
         )
         help_embed.add_field(
@@ -604,7 +636,7 @@ Respond with JSON only:
         })
         custom_cmds["help tickets"] = json.dumps({
             "command_type": "help_embed",
-            "title": "🎫 Advanced Ticket System",
+            "title": "?? Advanced Ticket System",
             "description": "AI-powered ticket system with sentiment analysis.",
             "fields": [
                 {"name": "!ticket <message>", "value": "Create a new support ticket.", "inline": False},
