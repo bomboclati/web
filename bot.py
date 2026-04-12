@@ -124,11 +124,6 @@ class MiroBot(commands.Bot):
 
     async def setup_hook(self):
         logger.info("Recovering immortal state...")
-        if os.getenv("SYNC_COMMANDS", "false").lower() == "true":
-            await self.tree.sync()
-            logger.info("Slash commands synced globally.")
-        else:
-            logger.info("Skipping global sync (set SYNC_COMMANDS=true to force).")
         logger.info("Restoring trigger role presence monitoring...")
         await self.scheduler.start()
         
@@ -152,6 +147,14 @@ class MiroBot(commands.Bot):
             logger.info("Loaded core commands cog")
         except Exception as e:
             logger.error(f"Failed to load core commands cog: {e}")
+
+        # Final sync after all commands and cogs are loaded
+        if os.getenv("SYNC_COMMANDS", "false").lower() == "true":
+            logger.info("Syncing slash commands...")
+            await self.tree.sync()
+            logger.info("Slash commands synced globally.")
+        else:
+            logger.info("Skipping global sync (set SYNC_COMMANDS=true to force).")
 
     async def on_ready(self):
         logger.info("Logged in as %s (ID: %s) (IMMORTAL)", self.user, self.user.id)
