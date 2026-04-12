@@ -31,6 +31,7 @@ class DataManager:
             self._init_sqlite()
         
         self._init_encryption()
+        self._cache = {}  # In-memory cache for JSON data
     
     def _init_encryption(self):
         """Initialize Fernet encryption for sensitive data."""
@@ -163,6 +164,9 @@ class DataManager:
 
         # Replace original with the new temp file
         os.replace(temp_path, path)
+        
+        # Update cache
+        self._cache[filename] = data
 
     def load_json(self, filename: str, default: Any = None) -> Any:
         path = self._get_path(filename)
@@ -170,13 +174,19 @@ class DataManager:
             return default if default is not None else {}
         
         try:
+            # Check cache first
+            if filename in self._cache:
+                return self._cache[filename]
+                
             with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                self._cache[filename] = data
+                return data
         except json.JSONDecodeError as e:
             logger.error("Corrupted JSON in %s: %s", filename, e)
             return default if default is not None else {}
         except IOError as e:
-            logger.critical("IO error reading %s: %s — DATA LOSS RISK", filename, e)
+            logger.critical("IO error reading %s: %s - DATA LOSS RISK", filename, e)
             # Handle gracefully by returning default value to prevent crashes
             return default if default is not None else {}
 
@@ -421,8 +431,8 @@ class DataManager:
             shutil.copy2(self.db_path, backup_path)
         else:
             # Backup JSON files
-            backup_path = os.path.join(backup_dir, f"backup_{timestamp}.zip")
-            shutil.make_archive(os.path.join(backup_dir, f"backup_{timestamp}"), 'zip', self.data_dir)
+            base_name = os.path.join(backup_dir, f"backup_{timestamp}")
+            backup_path = shutil.make_archive(base_name, 'zip', self.data_dir)
         
         # Verify backup
         if not os.path.exists(backup_path):
@@ -519,58 +529,6 @@ class DataManager:
                     result["errors"].append(f"Guild {gid_str}: {str(e)}")
             await db.commit()
         
-        return result
-
-        if not self.use_sqlite:
-            result["success"] = False
-            result["errors"].append("Import only supported with SQLite backend")
-            return result
-
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
-
-        for gid_str, guild_data in guilds.items():
-            try:
-                gid = int(gid_str)
-                users = guild_data.get("users", {})
-
-                for uid_str, user_data in users.items():
-                    uid = int(uid_str)
-                    exchanges = user_data.get("exchanges", [])
-
-                    for ex in exchanges:
-                        cursor = conn.execute(
-                            "SELECT id FROM exchanges WHERE guild_id=? AND user_id=? AND timestamp=? AND role=?",
-                            (gid, uid, ex.get("timestamp"), ex.get("role", "user"))
-                        )
-                        existing = cursor.fetchone()
-                        
-                        if not existing:
-                            conn.execute(
-                                "INSERT INTO exchanges (guild_id, user_id, role, content, timestamp, importance_score) VALUES (?, ?, ?, ?, ?, ?)",
-                                (gid, uid, ex.get("role", "user"), ex.get("content", ""), ex.get("timestamp", time.time()), ex.get("importance_score", 0.5))
-                            )
-                            result["imported"] += 1
-                        else:
-                            result["skipped"] = result.get("skipped", 0) + 1
-
-                    summaries = user_data.get("summaries", [])
-                    for s in summaries:
-                        conn.execute(
-                            "INSERT INTO conversation_summaries (guild_id, user_id, start_timestamp, end_timestamp, summary_text, message_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                            (gid, uid, s.get("start"), s.get("end"), s.get("summary", ""), s.get("count", 0), time.time())
-                        )
-
-            except Exception as e:
-                result["errors"].append(f"Guild {gid_str}: {str(e)}")
-
-        conn.commit()
-        conn.close()
-
-        if not result["errors"]:
-            logger.info("Memory import completed: %d exchanges", result['imported'])
-        else:
-            logger.error("Memory import completed with errors: %s", result['errors'])
-
         return result
 
 

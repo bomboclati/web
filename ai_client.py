@@ -31,15 +31,16 @@ class AIClient:
     Ensures the bot thinks before acting and provides a walkthrough.
     Supports per-guild API keys.
     """
-    def __init__(self, api_key: str, provider: str = "gemini", model: Optional[str] = None):
+    def __init__(self, api_key: str, provider: str = None, model: Optional[str] = None):
         self.default_api_key = api_key
-        self.default_provider = provider
-        # Default model for Gemini provider
-        self.model = model or "gemini-1.5-flash"
+        self.default_provider = provider or os.getenv("AI_PROVIDER", "openrouter")
+        # Default model logic
+        self.model = model or os.getenv("AI_MODEL", "openai/gpt-3.5-turbo")
+        
         self.base_urls = {
-            "openrouter": "https://openrouter.ai/api/v1/chat/completions",
-            "openai": "https://api.openai.com/v1/chat/completions",
-            "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+            "openrouter": os.getenv("OPENROUTER_URL", "https://openrouter.ai/api/v1/chat/completions"),
+            "openai": os.getenv("OPENAI_URL", "https://api.openai.com/v1/chat/completions"),
+            "gemini": os.getenv("GEMINI_URL", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
         }
 
     def _get_guild_api_key(self, guild_id: int) -> tuple:
@@ -219,11 +220,8 @@ class AIClient:
 
         # Diagnostic info (info level for transparency)
         censored_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "****"
-        model_warning = ""
-        if "gemini-2.5" in self.model.lower():
-            model_warning = " | ⚠️ WARNING: gemini-2.5 does not exist, using gemini-1.5 is recommended."
         
-        logger.info(f"AI Handshake: {provider} | Key: {censored_key} | Len: {len(api_key)} | Model: {self.model}{model_warning}")
+        logger.info(f"AI Handshake: {provider} | Key: {censored_key} | Len: {len(api_key)} | Model: {self.model}")
 
         timeout = aiohttp.ClientTimeout(total=45, connect=10)
         async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
@@ -301,7 +299,9 @@ class AIClient:
         match = re.search(json_pattern, text, re.DOTALL)
         if match:
             try:
-                return json.loads(match.group(1))
+                # Remove possible trailing commas before closing braces/brackets
+                content = re.sub(r',\s*([\]}])', r'\1', match.group(1))
+                return json.loads(content)
             except json.JSONDecodeError:
                 pass
                 
@@ -312,18 +312,29 @@ class AIClient:
             try:
                 # Basic cleanup: remove everything before first { and after last }
                 content = match.group(1)
+                # Remove possible trailing commas
+                content = re.sub(r',\s*([\]}])', r'\1', content)
                 return json.loads(content)
             except json.JSONDecodeError:
                 pass
                 
-        raise ValueError("Could not extract valid JSON from AI response.")
-        
-        return {}
+        # Final desperate attempt: find first { and last } manually
+        try:
+            start = text.find('{')
+            end = text.rfind('}')
+            if start != -1 and end != -1:
+                content = text[start:end+1]
+                content = re.sub(r',\s*([\]}])', r'\1', content)
+                return json.loads(content)
+        except:
+            pass
+                
+        raise ValueError(f"Could not extract valid JSON from AI response. Output: {text[:200]}...")
 
 # Default System Prompt
 SYSTEM_PROMPT = """
 You are a creative, forward-thinking Discord bot AI with a continuous improvement mindset.
-Every user request is an opportunity to deliver something super cool – beyond the bare minimum.
+Every user request is an opportunity to deliver something super cool - beyond the bare minimum.
 
 MANDATORY JSON FORMAT:
 You MUST ALWAYS respond with a JSON object containing the following keys:
@@ -365,27 +376,27 @@ When creating documentation, use channel name format: "system-name-guide" (lower
   "name": "send_embed",
   "parameters": {
     "channel": "role-shop-guide",
-    "title": "🛍️ Role Shop System",
+    "title": "??? Role Shop System",
     "description": "Welcome to the Role Shop! Purchase exclusive roles using your coins.",
     "color": "gold",
     "fields": [
       {
-        "name": "📋 Available Commands",
+        "name": "?? Available Commands",
         "value": "!buy <role_name> - Purchase a role\n!balance - Check your coins\n!daily - Claim daily coins",
         "inline": false
       },
       {
-        "name": "🚀 Getting Started",
+        "name": "?? Getting Started",
         "value": "1. Use !daily to get 100 coins\n2. Use !balance to check funds\n3. Use !buy <role> to purchase",
         "inline": false
       },
       {
-        "name": "❓ Troubleshooting",
-        "value": "• Not enough coins? Use !daily\n• Command not working? Check spelling\n• Need help? Contact an admin",
+        "name": "? Troubleshooting",
+        "value": ". Not enough coins? Use !daily\n. Command not working? Check spelling\n. Need help? Contact an admin",
         "inline": false
       }
     ],
-    "footer": "Created by Miro AI • Use !help shop for this guide"
+    "footer": "Created by Miro AI . Use !help shop for this guide"
   }
 }
 

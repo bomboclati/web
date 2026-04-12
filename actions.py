@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Tuple, Optional
 from data_manager import dm
 from logger import logger
+from utils.deduplicator import deduplicator
 
 # Color name to integer mapping for embeds
 COLOR_MAP = {
@@ -113,26 +114,26 @@ class EditCommandModal(discord.ui.Modal):
     
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+            return await interaction.response.send_message("? Not your session.", ephemeral=True)
         
         new_code = self.code_input.value
         
         try:
             data = json.loads(new_code)
         except json.JSONDecodeError:
-            await interaction.response.send_message("❌ Invalid JSON! Please enter valid JSON.", ephemeral=True)
+            await interaction.response.send_message("? Invalid JSON! Please enter valid JSON.", ephemeral=True)
             return
         
         valid, error_msg = validate_command_json(data)
         if not valid:
-            await interaction.response.send_message(f"❌ {error_msg}", ephemeral=True)
+            await interaction.response.send_message(f"? {error_msg}", ephemeral=True)
             return
         
         custom_cmds = dm.get_guild_data(interaction.guild.id, "custom_commands", {})
         custom_cmds[self.cmd_name] = new_code
         dm.update_guild_data(interaction.guild.id, "custom_commands", custom_cmds)
         
-        await interaction.response.edit_message(content=f"✅ Command `!{self.cmd_name}` updated!", view=None)
+        await interaction.response.edit_message(content=f"? Command `!{self.cmd_name}` updated!", view=None)
 
 class ActionHandler:
     ALLOWED_ACTIONS = {
@@ -471,12 +472,12 @@ class ActionHandler:
             return
         
         embed = discord.Embed(
-            title=f"🔹 {channel_name}",
+            title=f"?? {channel_name}",
             description=guide["description"],
             color=discord.Color.blue()
         )
         
-        cmd_list = "\n".join([f"• {cmd}" for cmd in guide["commands"]])
+        cmd_list = "\n".join([f". {cmd}" for cmd in guide["commands"]])
         embed.add_field(name="Available Commands", value=cmd_list, inline=False)
         
         await channel.send(embed=embed)
@@ -619,7 +620,7 @@ class ActionHandler:
                 break
         
         embed = discord.Embed(
-            title=f"🔹 Role: {role_name}",
+            title=f"?? Role: {role_name}",
             description=description,
             color=discord.Color.blue()
         )
@@ -631,7 +632,7 @@ class ActionHandler:
         if role_perms.get("manage_channels"): perm_list.append("Manage Channels")
         
         if perm_list:
-            embed.add_field(name="Permissions", value="\n".join([f"✅ {p}" for p in perm_list]), inline=False)
+            embed.add_field(name="Permissions", value="\n".join([f"? {p}" for p in perm_list]), inline=False)
         
         await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -669,6 +670,45 @@ class ActionHandler:
         embed = discord.Embed(title=title, description=description, color=color)
         msg = await channel.send(embed=embed)
         return True, {"action": "delete_message", "channel_id": channel.id, "message_id": msg.id}
+
+    async def action_send_dm(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Sends a DM to a user with deduplication."""
+        user_id = params.get("user_id")
+        content = params.get("content")
+        embed_data = params.get("embed")
+        
+        if not user_id:
+            return False, None
+            
+        # Deduplication check
+        dedup_key = f"dm_{user_id}_{hash(content or '')}_{hash(str(embed_data) if embed_data else '')}"
+        if not deduplicator.should_send(dedup_key):
+            logger.info(f"Deduplicated DM to user {user_id}")
+            return True, None # Still return true as we "handled" it by skipping
+
+        user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+        if not user:
+            return False, None
+            
+        embed = None
+        if embed_data:
+            embed = discord.Embed(
+                title=embed_data.get("title"),
+                description=embed_data.get("description"),
+                color=parse_color(embed_data.get("color", "blue"))
+            )
+            for field in embed_data.get("fields", []):
+                embed.add_field(name=field.get("name"), value=field.get("value"), inline=field.get("inline", False))
+
+        try:
+            await user.send(content=content, embed=embed)
+            return True, None # Rollback for DM is hard, usually not needed for simple notifications
+        except discord.Forbidden:
+            logger.warning(f"Failed to send DM to {user_id}: DMs disabled")
+            return False, None
+        except Exception as e:
+            logger.error(f"Error sending DM: {e}")
+            return False, None
 
     async def action_post_documentation(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Posts a comprehensive, multi-section documentation embed for a newly created system."""
@@ -758,7 +798,7 @@ class ActionHandler:
         if cooldown_key in self._custom_cmd_cooldowns:
             remaining = self._custom_cmd_cooldown_seconds - (now - self._custom_cmd_cooldowns[cooldown_key])
             if remaining > 0:
-                await message.channel.send(f"⏳ Command on cooldown. Wait {int(remaining)}s.", delete_after=2)
+                await message.channel.send(f"? Command on cooldown. Wait {int(remaining)}s.", delete_after=2)
                 return None
         self._custom_cmd_cooldowns[cooldown_key] = now
         
@@ -768,7 +808,7 @@ class ActionHandler:
             
             valid, error_msg = validate_command_json(data)
             if not valid:
-                await message.channel.send(f"❌ {error_msg}")
+                await message.channel.send(f"? {error_msg}")
                 return False
             
             if isinstance(data, list):
@@ -979,7 +1019,7 @@ class ActionHandler:
         last_daily[str(user_id)] = str(datetime.now())
         dm.update_guild_data(guild_id, "last_daily", last_daily)
         
-        await message.channel.send(f"💰 {message.author.mention} claimed **{reward} coins**!")
+        await message.channel.send(f"?? {message.author.mention} claimed **{reward} coins**!")
         return True
 
     async def handle_economy_balance(self, message: discord.Message) -> bool:
@@ -1013,13 +1053,13 @@ class ActionHandler:
         
         if not user_achievements:
             embed = discord.Embed(
-                title="🎯 Your Achievements",
+                title="?? Your Achievements",
                 description="No achievements yet! Keep being active to earn some.",
                 color=discord.Color.gold()
             )
         else:
             embed = discord.Embed(
-                title=f"🎯 {message.author.display_name}'s Achievements",
+                title=f"?? {message.author.display_name}'s Achievements",
                 description=f"**{len(user_achievements)} achievements earned**",
                 color=discord.Color.gold()
             )
@@ -1054,7 +1094,7 @@ class ActionHandler:
         
         if not user_titles:
             embed = discord.Embed(
-                title="🎖️ Your Titles",
+                title="??? Your Titles",
                 description="No titles yet! Keep being active to unlock titles.",
                 color=discord.Color.gold()
             )
@@ -1062,7 +1102,7 @@ class ActionHandler:
             active_name = f"{active_title['icon']} {active_title['name']}" if active_title else "None"
             
             embed = discord.Embed(
-                title=f"🎖️ {message.author.display_name}'s Titles",
+                title=f"??? {message.author.display_name}'s Titles",
                 description=f"Active: **{active_name}**\n" +
                            f"Total unlocked: **{len(user_titles)}**",
                 color=discord.Color.gold()
@@ -1090,7 +1130,7 @@ class ActionHandler:
                 await message.channel.send("You don't have any titles yet!")
                 return True
             
-            titles_list = "\n".join([f"• {t['icon']} **{t['name']}**" for t in user_titles])
+            titles_list = "\n".join([f". {t['icon']} **{t['name']}**" for t in user_titles])
             await message.channel.send(f"Available titles:\n{titles_list}\n\nUse `!settitle <name>` to set one.")
             return True
         
@@ -1110,7 +1150,7 @@ class ActionHandler:
         # Set active title
         achievements.set_active_title(message.guild.id, message.author.id, matched_title['id'])
         
-        await message.channel.send(f"✅ Title set to **{matched_title['icon']} {matched_title['name']}**!")
+        await message.channel.send(f"? Title set to **{matched_title['icon']} {matched_title['name']}**!")
         return True
 
     async def handle_achievements_leaderboard(self, message: discord.Message) -> bool:
@@ -1125,7 +1165,7 @@ class ActionHandler:
             return True
         
         embed = discord.Embed(
-            title="🏆 Achievement Leaderboard",
+            title="?? Achievement Leaderboard",
             description="Top achievement collectors in this server:",
             color=discord.Color.gold()
         )
@@ -1272,7 +1312,7 @@ class ActionHandler:
                     command_groups[cmd_name] = []
         
         embed = discord.Embed(
-            title="📋 All Custom Commands",
+            title="?? All Custom Commands",
             description=f"Total: {len(non_help_commands)} commands\n\nClick a command to view/edit its subcommands.",
             color=discord.Color.blue()
         )
@@ -1286,14 +1326,14 @@ class ActionHandler:
                 parent_list.append(f"**!{parent}**")
         
         embed.add_field(
-            name="🎮 Commands",
+            name="?? Commands",
             value="\n".join(parent_list[:25]),
             inline=False
         )
         if len(parent_list) > 25:
             embed.add_field(name="", value="\n".join(parent_list[25:]), inline=False)
         
-        embed.set_footer(text="Click to edit • Back to close")
+        embed.set_footer(text="Click to edit . Back to close")
         
         view = CommandsListView(non_help_commands, command_groups, message.author.id)
         await message.channel.send(embed=embed, view=view)
@@ -1328,16 +1368,16 @@ class CommandsListView(discord.ui.View):
             total_pages = (total + self.commands_per_page - 1) // self.commands_per_page
             
             if page > 0:
-                prev_btn = discord.ui.Button(label="◀ Prev", custom_id=f"prev_{page}", style=discord.ButtonStyle.primary)
+                prev_btn = discord.ui.Button(label="? Prev", custom_id=f"prev_{page}", style=discord.ButtonStyle.primary)
                 prev_btn.callback = self.create_parent_prev_callback(page)
                 self.add_item(prev_btn)
             
             if page < total_pages - 1:
-                next_btn = discord.ui.Button(label="Next ▶", custom_id=f"next_{page}", style=discord.ButtonStyle.primary)
+                next_btn = discord.ui.Button(label="Next ?", custom_id=f"next_{page}", style=discord.ButtonStyle.primary)
                 next_btn.callback = self.create_parent_next_callback(page)
                 self.add_item(next_btn)
             
-            back_btn = discord.ui.Button(label="✕ Close", custom_id="close", style=discord.ButtonStyle.danger)
+            back_btn = discord.ui.Button(label="? Close", custom_id="close", style=discord.ButtonStyle.danger)
             back_btn.callback = self.close_callback
             self.add_item(back_btn)
         else:
@@ -1362,23 +1402,23 @@ class CommandsListView(discord.ui.View):
             total_pages = (len(subcommands) + self.commands_per_page - 1) // self.commands_per_page
             
             if page > 0:
-                prev_btn = discord.ui.Button(label="◀ Prev", custom_id=f"prev_{page}", style=discord.ButtonStyle.primary)
+                prev_btn = discord.ui.Button(label="? Prev", custom_id=f"prev_{page}", style=discord.ButtonStyle.primary)
                 prev_btn.callback = self.create_sub_prev_callback(page)
                 self.add_item(prev_btn)
             
             if page < total_pages - 1:
-                next_btn = discord.ui.Button(label="Next ▶", custom_id=f"next_{page}", style=discord.ButtonStyle.primary)
+                next_btn = discord.ui.Button(label="Next ?", custom_id=f"next_{page}", style=discord.ButtonStyle.primary)
                 next_btn.callback = self.create_sub_next_callback(page)
                 self.add_item(next_btn)
             
-            back_btn = discord.ui.Button(label="← Back", custom_id="back", style=discord.ButtonStyle.primary)
+            back_btn = discord.ui.Button(label="? Back", custom_id="back", style=discord.ButtonStyle.primary)
             back_btn.callback = self.back_callback
             self.add_item(back_btn)
     
     def create_view_callback(self, parent: str):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+                return await interaction.response.send_message("? Not your session.", ephemeral=True)
             view = CommandsListView(self.all_commands, self.command_groups, self.user_id, parent, 0)
             subcommands = self.command_groups.get(parent, [])
             if parent not in subcommands:
@@ -1386,7 +1426,7 @@ class CommandsListView(discord.ui.View):
             total = len(subcommands)
             
             embed = discord.Embed(
-                title=f"📁 Command: !{parent}",
+                title=f"?? Command: !{parent}",
                 description=f"Subcommands: {total}\n\nClick to edit each command's code.",
                 color=discord.Color.orange()
             )
@@ -1396,12 +1436,12 @@ class CommandsListView(discord.ui.View):
     def create_edit_callback(self, cmd_name: str):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+                return await interaction.response.send_message("? Not your session.", ephemeral=True)
             
             cmd_code = self.all_commands.get(cmd_name, "")
             
             embed = discord.Embed(
-                title=f"✏️ Edit Command: !{cmd_name}",
+                title=f"?? Edit Command: !{cmd_name}",
                 description=f"Current code:\n```json\n{cmd_code[:1500]}\n```",
                 color=discord.Color.orange()
             )
@@ -1413,7 +1453,7 @@ class CommandsListView(discord.ui.View):
     def create_parent_prev_callback(self, page: int):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+                return await interaction.response.send_message("? Not your session.", ephemeral=True)
             view = CommandsListView(self.all_commands, self.command_groups, self.user_id, None, page - 1)
             await interaction.response.edit_message(view=view)
         return callback
@@ -1421,7 +1461,7 @@ class CommandsListView(discord.ui.View):
     def create_parent_next_callback(self, page: int):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+                return await interaction.response.send_message("? Not your session.", ephemeral=True)
             view = CommandsListView(self.all_commands, self.command_groups, self.user_id, None, page + 1)
             await interaction.response.edit_message(view=view)
         return callback
@@ -1429,7 +1469,7 @@ class CommandsListView(discord.ui.View):
     def create_sub_prev_callback(self, page: int):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+                return await interaction.response.send_message("? Not your session.", ephemeral=True)
             view = CommandsListView(self.all_commands, self.command_groups, self.user_id, self.parent, page - 1)
             await interaction.response.edit_message(view=view)
         return callback
@@ -1437,14 +1477,14 @@ class CommandsListView(discord.ui.View):
     def create_sub_next_callback(self, page: int):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+                return await interaction.response.send_message("? Not your session.", ephemeral=True)
             view = CommandsListView(self.all_commands, self.command_groups, self.user_id, self.parent, page + 1)
             await interaction.response.edit_message(view=view)
         return callback
     
     async def back_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+            return await interaction.response.send_message("? Not your session.", ephemeral=True)
         view = CommandsListView(self.all_commands, self.command_groups, self.user_id, None, 0)
         custom_cmds = self.all_commands
         command_groups = self.command_groups
@@ -1458,18 +1498,18 @@ class CommandsListView(discord.ui.View):
                 command_list.append(f"**!{parent}**")
         
         embed = discord.Embed(
-            title="📋 All Custom Commands",
+            title="?? All Custom Commands",
             description=f"Total: {len(custom_cmds)} commands\n\nClick a command to view/edit its subcommands.",
             color=discord.Color.blue()
         )
-        embed.add_field(name="🎮 Commands", value="\n".join(command_list[:25]), inline=False)
+        embed.add_field(name="?? Commands", value="\n".join(command_list[:25]), inline=False)
         
         await interaction.response.edit_message(embed=embed, view=view)
     
     async def close_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        await interaction.response.edit_message(content="📋 Commands closed.", view=None)
+            return await interaction.response.send_message("? Not your session.", ephemeral=True)
+        await interaction.response.edit_message(content="?? Commands closed.", view=None)
 
     async def handle_staffpromo_status(self, message: discord.Message) -> bool:
         guild = message.guild
@@ -1490,7 +1530,7 @@ class CommandsListView(discord.ui.View):
                 current_tier = tier["name"]
                 break
         
-        embed = discord.Embed(title="📊 Your Staff Promotion Status", color=discord.Color.blue())
+        embed = discord.Embed(title="?? Your Staff Promotion Status", color=discord.Color.blue())
         embed.add_field(name="Current Role", value=current_tier, inline=True)
         embed.add_field(name="Score", value=f"{score*100:.1f}%", inline=True)
         
@@ -1508,7 +1548,7 @@ class CommandsListView(discord.ui.View):
             else:
                 val = udata.get(metric_name, 0)
             normalized = max(0, min(1, val / max_val)) if max_val > 0 else 0
-            breakdown.append(f"• {metric_name}: {val}/{max_val} ({normalized*weight*100:.1f}%)")
+            breakdown.append(f". {metric_name}: {val}/{max_val} ({normalized*weight*100:.1f}%)")
         
         embed.add_field(name="Score Breakdown", value="\n".join(breakdown), inline=False)
         embed.set_thumbnail(url=member.display_avatar.url)
@@ -1534,7 +1574,7 @@ class CommandsListView(discord.ui.View):
         scores.sort(key=lambda x: x[1], reverse=True)
         top_10 = scores[:10]
         
-        embed = discord.Embed(title="🏆 Staff Promotion Leaderboard", color=discord.Color.gold())
+        embed = discord.Embed(title="?? Staff Promotion Leaderboard", color=discord.Color.gold())
         
         if not top_10:
             embed.add_field(name="No data", value="No staff members evaluated yet", inline=False)
@@ -1547,7 +1587,7 @@ class CommandsListView(discord.ui.View):
 
     async def handle_staffpromo_config(self, message: discord.Message) -> bool:
         if not message.author.guild_permissions.administrator:
-            await message.channel.send("❌ This command is only for administrators.")
+            await message.channel.send("? This command is only for administrators.")
             return True
         
         guild = message.guild
@@ -1557,14 +1597,14 @@ class CommandsListView(discord.ui.View):
         settings = config.get("settings", staff_promo._default_settings)
         tiers = config.get("tiers", staff_promo._default_tiers)
         
-        embed = discord.Embed(title="⚙️ Staff Promo Configuration", color=discord.Color.orange())
+        embed = discord.Embed(title="?? Staff Promo Configuration", color=discord.Color.orange())
         
         embed.add_field(name="Auto Promote", value=str(settings.get("auto_promote", True)), inline=True)
         embed.add_field(name="Auto Demote", value=str(settings.get("auto_demote", False)), inline=True)
         embed.add_field(name="Min Tenure", value=f"{settings.get('min_tenure_hours', 72)} hours", inline=True)
         embed.add_field(name="Cooldown", value=f"{settings.get('promotion_cooldown_hours', 24)} hours", inline=True)
         
-        tiers_text = "\n".join([f"• {t['name']}: {int(t['threshold']*100)}%" for t in tiers])
+        tiers_text = "\n".join([f". {t['name']}: {int(t['threshold']*100)}%" for t in tiers])
         embed.add_field(name="Tiers", value=tiers_text or "None", inline=False)
         
         await message.channel.send(embed=embed)
@@ -1593,7 +1633,7 @@ class CommandsListView(discord.ui.View):
         score = promotion_service._compute_score(guild.id, member.id, member, metrics)
         current_index = staff_promo._get_current_tier_index(member, tiers, role_ids)
         
-        embed = discord.Embed(title="📈 Your Promotion Progress", color=discord.Color.blue())
+        embed = discord.Embed(title="?? Your Promotion Progress", color=discord.Color.blue())
         embed.add_field(name="Current Score", value=f"{score*100:.1f}%", inline=True)
         
         if current_index < len(tiers) - 1:
@@ -1604,11 +1644,11 @@ class CommandsListView(discord.ui.View):
             embed.add_field(name="Next Tier", value=next_tier.get("name"), inline=True)
             embed.add_field(name="Progress", value=f"{percent_away:.1f}% away", inline=True)
             
-            progress_bar = "█" * int(score * 10) + "░" * (10 - int(score * 10))
+            progress_bar = "?" * int(score * 10) + "?" * (10 - int(score * 10))
             embed.add_field(name="Progress Bar", value=f"`{progress_bar}` {score*100:.0f}%", inline=False)
             
             if percent_away <= 5:
-                embed.add_field(name="🎯 Almost there!", value="You're very close to your next promotion!", inline=False)
+                embed.add_field(name="?? Almost there!", value="You're very close to your next promotion!", inline=False)
         else:
             embed.add_field(name="Status", value="You've reached the highest tier!", inline=True)
         
@@ -1618,7 +1658,7 @@ class CommandsListView(discord.ui.View):
 
     async def handle_staffpromo_promote(self, message: discord.Message) -> bool:
         if not message.author.guild_permissions.administrator:
-            await message.channel.send("❌ This command is only for administrators.")
+            await message.channel.send("? This command is only for administrators.")
             return True
         
         guild = message.guild
@@ -1633,7 +1673,7 @@ class CommandsListView(discord.ui.View):
             user_id = int(parts[2].strip("<@!>"))
             target_member = await guild.fetch_member(user_id)
         except:
-            await message.channel.send("❌ Could not find user. Use `@user` format.")
+            await message.channel.send("? Could not find user. Use `@user` format.")
             return True
         
         tier_name = " ".join(parts[3:])
@@ -1642,14 +1682,14 @@ class CommandsListView(discord.ui.View):
         success, result = await staff_promo.manual_promote(guild, target_member, tier_name, config)
         
         if success:
-            await message.channel.send(f"✅ {target_member.mention} {result}")
+            await message.channel.send(f"? {target_member.mention} {result}")
         else:
-            await message.channel.send(f"❌ {result}")
+            await message.channel.send(f"? {result}")
         return True
 
     async def handle_staffpromo_demote(self, message: discord.Message) -> bool:
         if not message.author.guild_permissions.administrator:
-            await message.channel.send("❌ This command is only for administrators.")
+            await message.channel.send("? This command is only for administrators.")
             return True
         
         guild = message.guild
@@ -1664,7 +1704,7 @@ class CommandsListView(discord.ui.View):
             user_id = int(parts[2].strip("<@!>"))
             target_member = await guild.fetch_member(user_id)
         except:
-            await message.channel.send("❌ Could not find user. Use `@user` format.")
+            await message.channel.send("? Could not find user. Use `@user` format.")
             return True
         
         tier_name = " ".join(parts[3:])
@@ -1673,14 +1713,14 @@ class CommandsListView(discord.ui.View):
         success, result = await staff_promo.manual_demote(guild, target_member, tier_name, config)
         
         if success:
-            await message.channel.send(f"✅ {target_member.mention} {result}")
+            await message.channel.send(f"? {target_member.mention} {result}")
         else:
-            await message.channel.send(f"❌ {result}")
+            await message.channel.send(f"? {result}")
         return True
 
     async def handle_staffpromo_exclude(self, message: discord.Message) -> bool:
         if not message.author.guild_permissions.administrator:
-            await message.channel.send("❌ This command is only for administrators.")
+            await message.channel.send("? This command is only for administrators.")
             return True
         
         guild = message.guild
@@ -1700,7 +1740,7 @@ class CommandsListView(discord.ui.View):
             user_id = int(parts[3].strip("<@!>"))
             target_member = await guild.fetch_member(user_id)
         except:
-            await message.channel.send("❌ Could not find user. Use `@user` format.")
+            await message.channel.send("? Could not find user. Use `@user` format.")
             return True
         
         config = staff_promo._get_full_config(guild.id)
@@ -1710,15 +1750,15 @@ class CommandsListView(discord.ui.View):
         if action == "add":
             if user_id not in excluded:
                 excluded.append(user_id)
-                await message.channel.send(f"✅ {target_member.mention} added to exclusion list.")
+                await message.channel.send(f"? {target_member.mention} added to exclusion list.")
             else:
-                await message.channel.send(f"ℹ️ {target_member.mention} is already excluded.")
+                await message.channel.send(f"?? {target_member.mention} is already excluded.")
         else:
             if user_id in excluded:
                 excluded.remove(user_id)
-                await message.channel.send(f"✅ {target_member.mention} removed from exclusion list.")
+                await message.channel.send(f"? {target_member.mention} removed from exclusion list.")
             else:
-                await message.channel.send(f"ℹ️ {target_member.mention} is not in the exclusion list.")
+                await message.channel.send(f"?? {target_member.mention} is not in the exclusion list.")
         
         settings["excluded_users"] = excluded
         config["settings"] = settings
@@ -1733,15 +1773,15 @@ class TierManagementView(discord.ui.View):
         self.staff_promo = staff_promo
         self.config = config
     
-    @discord.ui.button(label="Add Tier", style=discord.ButtonStyle.success, emoji="➕")
+    @discord.ui.button(label="Add Tier", style=discord.ButtonStyle.success, emoji="?")
     async def add_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(AddTierModal(self.guild, self.staff_promo, self.config))
     
-    @discord.ui.button(label="Edit Tier", style=discord.ButtonStyle.primary, emoji="✏️")
+    @discord.ui.button(label="Edit Tier", style=discord.ButtonStyle.primary, emoji="??")
     async def edit_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(EditTierModal(self.guild, self.staff_promo, self.config))
     
-    @discord.ui.button(label="Remove Tier", style=discord.ButtonStyle.danger, emoji="🗑️")
+    @discord.ui.button(label="Remove Tier", style=discord.ButtonStyle.danger, emoji="???")
     async def remove_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(RemoveTierModal(self.guild, self.staff_promo, self.config))
 
@@ -1760,7 +1800,7 @@ class AddTierModal(discord.ui.Modal, title="Add Promotion Tier"):
         try:
             threshold_val = float(self.threshold.value) / 100
             if threshold_val < 0 or threshold_val > 1:
-                await interaction.response.send_message("❌ Threshold must be between 0 and 100", ephemeral=True)
+                await interaction.response.send_message("? Threshold must be between 0 and 100", ephemeral=True)
                 return
             
             tiers = self.config.get("tiers", self.staff_promo._default_tiers)
@@ -1776,11 +1816,11 @@ class AddTierModal(discord.ui.Modal, title="Add Promotion Tier"):
             from data_manager import dm
             dm.update_guild_data(self.guild.id, "staff_promo_config", self.config)
             
-            await interaction.response.send_message(f"✅ Added tier **{self.name.value}** with threshold {self.threshold.value}%", ephemeral=True)
+            await interaction.response.send_message(f"? Added tier **{self.name.value}** with threshold {self.threshold.value}%", ephemeral=True)
         except ValueError:
-            await interaction.response.send_message("❌ Invalid threshold value", ephemeral=True)
+            await interaction.response.send_message("? Invalid threshold value", ephemeral=True)
         except Exception as e:
-            await interaction.response.send_message(f"❌ Error adding tier: {str(e)}", ephemeral=True)
+            await interaction.response.send_message(f"? Error adding tier: {str(e)}", ephemeral=True)
 
 class EditTierModal(discord.ui.Modal, title="Edit Promotion Tier"):
     def __init__(self, guild: discord.Guild, staff_promo, config: dict):
@@ -1808,7 +1848,7 @@ class EditTierModal(discord.ui.Modal, title="Edit Promotion Tier"):
                     break
             
             if not tier_to_edit:
-                await interaction.response.send_message(f"❌ Tier '{self.tier_select.value}' not found", ephemeral=True)
+                await interaction.response.send_message(f"? Tier '{self.tier_select.value}' not found", ephemeral=True)
                 return
             
             # Update fields if provided
@@ -1817,7 +1857,7 @@ class EditTierModal(discord.ui.Modal, title="Edit Promotion Tier"):
             if self.new_threshold.value:
                 threshold_val = float(self.new_threshold.value) / 100
                 if threshold_val < 0 or threshold_val > 1:
-                    await interaction.response.send_message("❌ Threshold must be between 0 and 100", ephemeral=True)
+                    await interaction.response.send_message("? Threshold must be between 0 and 100", ephemeral=True)
                     return
                 tier_to_edit["threshold"] = threshold_val
             if self.new_role.value is not None:  # Allow empty string to remove role
@@ -1829,11 +1869,11 @@ class EditTierModal(discord.ui.Modal, title="Edit Promotion Tier"):
             from data_manager import dm
             dm.update_guild_data(self.guild.id, "staff_promo_config", self.config)
             
-            await interaction.response.send_message(f"✅ Updated tier **{self.tier_select.value}**", ephemeral=True)
+            await interaction.response.send_message(f"? Updated tier **{self.tier_select.value}**", ephemeral=True)
         except ValueError:
-            await interaction.response.send_message("❌ Invalid threshold value", ephemeral=True)
+            await interaction.response.send_message("? Invalid threshold value", ephemeral=True)
         except Exception as e:
-            await interaction.response.send_message(f"❌ Error editing tier: {str(e)}", ephemeral=True)
+            await interaction.response.send_message(f"? Error editing tier: {str(e)}", ephemeral=True)
 
 class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
     def __init__(self, guild: discord.Guild, staff_promo, config: dict):
@@ -1856,7 +1896,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             if self.confirm.value != "CONFIRM":
-                await interaction.response.send_message("❌ Confirmation failed. Type 'CONFIRM' to delete.", ephemeral=True)
+                await interaction.response.send_message("? Confirmation failed. Type 'CONFIRM' to delete.", ephemeral=True)
                 return
             
             tiers = self.config.get("tiers", self.staff_promo._default_tiers)
@@ -1867,7 +1907,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
                     break
             
             if tier_to_remove is None:
-                await interaction.response.send_message(f"❌ Tier '{self.tier_select.value}' not found", ephemeral=True)
+                await interaction.response.send_message(f"? Tier '{self.tier_select.value}' not found", ephemeral=True)
                 return
             
             removed_tier = tiers.pop(tier_to_remove)
@@ -1877,14 +1917,14 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             from data_manager import dm
             dm.update_guild_data(self.guild.id, "staff_promo_config", self.config)
             
-            await interaction.response.send_message(f"✅ Removed tier **{removed_tier.get('name')}**", ephemeral=True)
+            await interaction.response.send_message(f"? Removed tier **{removed_tier.get('name')}**", ephemeral=True)
         except Exception as e:
-            await interaction.response.send_message(f"❌ Error removing tier: {str(e)}", ephemeral=True)
+            await interaction.response.send_message(f"? Error removing tier: {str(e)}", ephemeral=True)
 
     async def handle_staffpromo_tiers(self, message: discord.Message) -> bool:
         """Handle !staffpromo tiers command - Interactive tier management"""
         if not message.author.guild_permissions.administrator:
-            await message.channel.send("❌ This command is only for administrators.")
+            await message.channel.send("? This command is only for administrators.")
             return True
         
         guild = message.guild
@@ -1895,7 +1935,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         
         # Create embed showing current tiers
         embed = discord.Embed(
-            title="⚙️ Promotion Tiers Management",
+            title="?? Promotion Tiers Management",
             description="Manage promotion tiers for this server",
             color=discord.Color.blue()
         )
@@ -1907,7 +1947,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
                 threshold = int(tier.get("threshold", 0) * 100)
                 role_id = role_ids.get(name)
                 role_mention = f"<@&{role_id}>" if role_id and guild.get_role(role_id) else "Not set"
-                tiers_text += f"**{name}**: {threshold}% → {role_mention}\n"
+                tiers_text += f"**{name}**: {threshold}% ? {role_mention}\n"
             embed.add_field(name="Current Tiers", value=tiers_text or "None", inline=False)
         else:
             embed.add_field(name="Current Tiers", value="No tiers configured", inline=False)
@@ -1919,7 +1959,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
 
     async def handle_staffpromo_roles(self, message: discord.Message) -> bool:
         if not message.author.guild_permissions.administrator:
-            await message.channel.send("❌ This command is only for administrators.")
+            await message.channel.send("? This command is only for administrators.")
             return True
         
         guild = message.guild
@@ -1943,7 +1983,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             role_ids = config.get("roles_by_tier", {})
             tiers = config.get("tiers", staff_promo._default_tiers)
             
-            embed = discord.Embed(title="🔗 Role Mappings", color=discord.Color.orange())
+            embed = discord.Embed(title="?? Role Mappings", color=discord.Color.orange())
             for tier in tiers:
                 tier_name = tier.get("name")
                 rid = role_ids.get(tier_name)
@@ -1963,7 +2003,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             role_id = int(parts[4].strip("<@&>"))
             target_role = guild.get_role(role_id)
         except:
-            await message.channel.send("❌ Could not find role. Use `@role` format.")
+            await message.channel.send("? Could not find role. Use `@role` format.")
             return True
         
         config = staff_promo._get_full_config(guild.id)
@@ -1974,16 +2014,16 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         
         if tier_name.lower() not in valid_tiers:
             valid_list = ", ".join([t.get("name") for t in tiers])
-            await message.channel.send(f"❌ Invalid tier. Valid tiers: {valid_list}")
+            await message.channel.send(f"? Invalid tier. Valid tiers: {valid_list}")
             return True
         
         if action == "add":
             role_ids[tier_name] = target_role.id
-            await message.channel.send(f"✅ Mapped **{tier_name}** to {target_role.mention}")
+            await message.channel.send(f"? Mapped **{tier_name}** to {target_role.mention}")
         else:
             if tier_name in role_ids:
                 del role_ids[tier_name]
-            await message.channel.send(f"✅ Removed mapping for **{tier_name}**")
+            await message.channel.send(f"? Removed mapping for **{tier_name}**")
         
         config["roles_by_tier"] = role_ids
         dm.update_guild_data(guild.id, "staff_promo_config", config)
@@ -2006,10 +2046,10 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             pending = config.get("pending_reviews", [])
             
             if not pending:
-                await message.channel.send("ℹ️ No pending promotion reviews.")
+                await message.channel.send("?? No pending promotion reviews.")
                 return True
             
-            embed = discord.Embed(title="📋 Pending Promotion Reviews", color=discord.Color.yellow())
+            embed = discord.Embed(title="?? Pending Promotion Reviews", color=discord.Color.yellow())
             for review in pending:
                 user_id = review.get("user_id")
                 tier_name = review.get("tier_name")
@@ -2026,9 +2066,9 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             user_pending = [r for r in pending if r.get("user_id") == message.author.id]
             if user_pending:
                 for review in user_pending:
-                    await message.channel.send(f"📋 Your promotion to **{review.get('tier_name')}** is pending review. Score: {review.get('score', 0)*100:.1f}%")
+                    await message.channel.send(f"?? Your promotion to **{review.get('tier_name')}** is pending review. Score: {review.get('score', 0)*100:.1f}%")
             else:
-                await message.channel.send("ℹ️ You have no pending reviews.")
+                await message.channel.send("?? You have no pending reviews.")
             return True
 
     async def handle_promotion_decision(self, message: discord.Message, decision: str, parts: list) -> bool:
@@ -2043,7 +2083,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             user_id = int(parts[2].strip("<@!>"))
             target_member = await guild.fetch_member(user_id)
         except:
-            await message.channel.send("❌ Could not find user. Use `@user` format.")
+            await message.channel.send("? Could not find user. Use `@user` format.")
             return True
         
         config = staff_promo._get_full_config(guild.id)
@@ -2058,7 +2098,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
                 break
         
         if not review_to_remove:
-            await message.channel.send(f"❌ No pending review found for that user.")
+            await message.channel.send(f"? No pending review found for that user.")
             return True
         
         pending = [r for r in pending if r.get("user_id") != user_id]
@@ -2083,13 +2123,13 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
                 current_index = staff_promo._get_current_tier_index(target_member, tiers, role_ids)
                 settings = config.get("settings", staff_promo._default_settings)
                 await staff_promo._promote_member(guild, target_member, tier, tiers, role_ids, current_index, settings, config)
-                await message.channel.send(f"✅ Approved! {target_member.mention} promoted to **{target_tier_name}**")
+                await message.channel.send(f"? Approved! {target_member.mention} promoted to **{target_tier_name}**")
         else:
             try:
-                await target_member.send(f"❌ Your promotion to **{target_tier_name}** was rejected.")
+                await target_member.send(f"? Your promotion to **{target_tier_name}** was rejected.")
             except:
                 pass
-            await message.channel.send(f"❌ Rejected promotion for {target_member.mention}")
+            await message.channel.send(f"? Rejected promotion for {target_member.mention}")
         
         return True
 
@@ -2101,14 +2141,14 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         requirements = config.get("tier_requirements", staff_promo._default_tier_requirements)
         tiers = config.get("tiers", staff_promo._default_tiers)
         
-        embed = discord.Embed(title="📋 Tier Requirements", color=discord.Color.blue())
+        embed = discord.Embed(title="?? Tier Requirements", color=discord.Color.blue())
         
         for tier in tiers:
             tier_name = tier.get("name")
             tier_reqs = requirements.get(tier_name, {})
             
             if tier_reqs:
-                req_text = "\n".join([f"• {k}: {v}" for k, v in tier_reqs.items()])
+                req_text = "\n".join([f". {k}: {v}" for k, v in tier_reqs.items()])
             else:
                 req_text = "No requirements"
             
@@ -2124,7 +2164,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         config = staff_promo._get_full_config(guild.id)
         bonuses = config.get("achievement_bonuses", staff_promo._default_achievement_bonuses)
         
-        embed = discord.Embed(title="🏆 Achievement Score Bonuses", color=discord.Color.gold())
+        embed = discord.Embed(title="?? Achievement Score Bonuses", color=discord.Color.gold())
         
         total_bonus = 1.0
         for ach_name, multiplier in bonuses.items():

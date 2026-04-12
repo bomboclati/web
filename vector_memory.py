@@ -28,6 +28,8 @@ class VectorMemory:
         self.collection = None
         self._fallback_enabled = False
         self._keyword_index = {}  # fallback: word -> list of (doc_id, content)
+        self._last_retry = 0
+        self._retry_interval = 300  # Retry ChromaDB every 5 minutes if it fails
         self._initialize()
     
     def _initialize(self):
@@ -67,6 +69,8 @@ class VectorMemory:
         except Exception as e:
             logger.error("ChromaDB initialization failed: %s. Using fallback keyword search.", e)
             self._fallback_enabled = True
+        finally:
+            self._last_retry = time.time() if hasattr(time, 'time') else datetime.now().timestamp()
     
     def _load_keyword_index(self):
         """Load keyword index from disk for fallback."""
@@ -128,6 +132,19 @@ class VectorMemory:
     def is_healthy(self) -> bool:
         """Check if vector memory is operational."""
         return not self._fallback_enabled and self.client is not None and self.collection is not None
+
+    def _check_reconnect(self):
+        """Periodically attempt to reconnect to ChromaDB if in fallback mode."""
+        if not self._fallback_enabled:
+            return
+            
+        now = datetime.now().timestamp()
+        if now - self._last_retry > self._retry_interval:
+            logger.info("Attempting to reconnect to ChromaDB...")
+            self._fallback_enabled = False  # Reset to try initialization
+            self._initialize()
+            if not self._fallback_enabled:
+                logger.info("Successfully reconnected to ChromaDB.")
     
     def _generate_id(self, guild_id: int, user_id: int, timestamp: float) -> str:
         """Generate a unique ID for a conversation entry."""
@@ -235,6 +252,8 @@ Walkthrough: {walkthrough}
         Returns:
             List of relevant conversation dictionaries
         """
+        self._check_reconnect()
+        
         if self._fallback_enabled:
             return self._keyword_search(guild_id, query, n_results)
         

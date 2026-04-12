@@ -7,13 +7,24 @@ from logging.handlers import RotatingFileHandler
 class SensitiveDataFilter(logging.Filter):
     """Filter to redact sensitive data from log messages."""
     def filter(self, record):
-        if isinstance(record.msg, str):
-            record.msg = re.sub(
-                r'(api_key|token|secret|password|key)[=:]\s*[\w\-]+',
-                r'\1=***REDACTED***',
-                record.msg,
-                flags=re.IGNORECASE
-            )
+        if not isinstance(record.msg, str):
+            return True
+            
+        # Redact keys and secrets
+        record.msg = re.sub(
+            r'(api_key|token|secret|password|key|client_id|client_secret)[=:]\s*["\']?([\w\.\-]+)["\']?',
+            r'\1=***REDACTED***',
+            record.msg,
+            flags=re.IGNORECASE
+        )
+        
+        # Redact Discord tokens specifically (MTA...)
+        record.msg = re.sub(
+            r'[MN][A-Za-z\d]{23}\.[\w-]{6}\.[\w-]{27}',
+            '***DISCORD_TOKEN_REDACTED***',
+            record.msg
+        )
+        
         return True
 
 def setup_logger(name: str = "immortal_bot") -> logging.Logger:
