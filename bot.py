@@ -1321,7 +1321,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
                 del bot.ai_sessions[user_id]
             
             await it.response.edit_message(content="?? Proceeding with defaults...", embed=None, view=None)
-            await _process_ai_turn(it, thinking_msg=None, "[User said to use defaults]")
+            await _process_ai_turn(it, "[User said to use defaults]", thinking_msg=None)
         
         reply_btn.callback = reply_callback
         skip_btn.callback = skip_callback
