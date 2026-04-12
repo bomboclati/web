@@ -181,6 +181,11 @@ class AdaptiveGamification:
                 await self._generate_daily_quest(guild.id, member.id)
 
     async def _generate_daily_quest(self, guild_id: int, user_id: int):
+        # Skip AI quest generation silently if no API key is configured for this guild
+        keys = self.bot.ai._get_all_guild_keys(guild_id)
+        if not keys:
+            return
+
         existing_quest_count = sum(
             1 for q in self._active_quests.values()
             if q.guild_id == guild_id and q.user_id == user_id and q.quest_type == QuestType.DAILY and q.status == QuestStatus.ACTIVE
