@@ -269,33 +269,47 @@ class AIClient:
             active_model = "gemini-1.5-flash-latest"
         elif provider == "openai" and (not active_model or "/" in active_model):
             active_model = "gpt-3.5-turbo"
+        elif provider == "anthropic" and (not active_model or "gpt" in active_model.lower()):
+            active_model = "claude-3-5-sonnet-20240620"
         elif provider in ["qwen", "dashscope"] and (not active_model or "gpt" in active_model.lower()):
-            active_model = "qwen3.6-plus"
+            active_model = "qwen2.5-72b-instruct" # Updated to newest stable qwen
         elif not active_model:
             active_model = self.model or "gpt-3.5-turbo"
         
-        headers = {
-            "Authorization": f"Bearer {api_key.strip()}",
-            "Content-Type": "application/json"
-        }
-        
-        if provider == "openrouter":
-            headers["HTTP-Referer"] = "https://github.com/antigravity"
-            headers["X-Title"] = "Miro AI Discord Bot"
-        elif provider == "anthropic":
-            headers["x-api-key"] = api_key
-            headers["anthropic-version"] = "2023-06-01"
+        if provider == "anthropic":
+            headers = {
+                "x-api-key": api_key.strip(),
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json"
+            }
+        else:
+            headers = {
+                "Authorization": f"Bearer {api_key.strip()}",
+                "Content-Type": "application/json"
+            }
+            if provider == "openrouter":
+                headers["HTTP-Referer"] = "https://github.com/antigravity"
+                headers["X-Title"] = "Miro AI Discord Bot"
 
         logger.info(f"AI Handshake: {provider} | Model: {active_model}")
 
         payload = {
             "model": active_model,
-            "messages": messages,
+            "messages": [m for m in messages if m["role"] != "system"],
             "temperature": 0.7,
         }
         
-        if provider in ["openai", "openrouter", "gemini", "groq", "mistral", "deepseek", "qwen", "dashscope"]:
-            payload["response_format"] = {"type": "json_object"}
+        # Anthropic specific payload structure
+        if provider == "anthropic":
+            system_msg = next((m["content"] for m in messages if m["role"] == "system"), None)
+            if system_msg:
+                payload["system"] = system_msg
+            payload["max_tokens"] = 4096
+        else:
+            # Add system message back for OpenAI compatible providers
+            payload["messages"] = messages
+            if provider in ["openai", "openrouter", "gemini", "groq", "mistral", "deepseek", "qwen", "dashscope"]:
+                payload["response_format"] = {"type": "json_object"}
 
         timeout = aiohttp.ClientTimeout(total=45, connect=10)
         async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
