@@ -95,6 +95,19 @@ class CoreCommands(commands.Cog):
         dm.update_guild_data(interaction.guild.id, "prefix", prefix)
         await interaction.response.send_message(f"? Server prefix set to **{prefix}**.", ephemeral=True)
 
+    @config.command(name="sync", description="Force sync slash commands (Admin only)")
+    async def config_sync(self, interaction: discord.Interaction):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("Only Administrators can sync commands.", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await self.bot.tree.sync()
+            await interaction.followup.send("? Slash commands synced successfully! It may take a few minutes to refresh in your Discord client.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"? Sync failed: {e}", ephemeral=True)
+
     @config.command(name="depth", description="Set memory depth")
     @app_commands.describe(depth="Number of messages to remember (5-100)")
     async def config_depth(self, interaction: discord.Interaction, depth: int):
