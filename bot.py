@@ -148,16 +148,13 @@ class MiroBot(commands.Bot):
         # Register Persistent Views for long-term button functionality
         from modules.staff_system import StaffApplicationPersistentView, StaffReviewPersistentView
         from modules.tickets import TicketPersistentView
-        from modules.auto_setup import VerifyButton, AcceptRulesButton, CreateTicketButton, SuggestionButton, ApplyStaffButton
+        from modules.auto_setup import VerifyButton, AcceptRulesButton, CreateTicketButton, SuggestionButton, ApplyStaffButton, RoleSelectButton
+        
+        # Note: We don't register auto-setup views here with dummy IDs since they need real guild/role/channel IDs
+        # Instead, each setup function sends its own view with proper IDs when called
         self.add_view(StaffApplicationPersistentView(self))
         self.add_view(StaffReviewPersistentView())
         self.add_view(TicketPersistentView())
-        # Register auto-setup persistent views (guild-agnostic versions will be used)
-        self.add_view(VerifyButton(0, 0))
-        self.add_view(AcceptRulesButton(0, None))
-        self.add_view(CreateTicketButton(0, 0))
-        self.add_view(SuggestionButton(0))
-        self.add_view(ApplyStaffButton(0))
         
         # Support for Manual Sync (Prefix command !sync)
         @self.command(name="sync")

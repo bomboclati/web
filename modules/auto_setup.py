@@ -139,37 +139,84 @@ class ApplyStaffButton(discord.ui.View):
     
     @discord.ui.button(label="Apply Now", style=discord.ButtonStyle.primary, custom_id="staff_apply_persistent")
     async def apply_staff_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = discord.ui.Modal(title="Staff Application")
-        
-        reason_input = discord.ui.TextInput(
-            label="Why do you want to be staff?",
-            style=discord.TextStyle.paragraph,
-            placeholder="Tell us about yourself..."
-        )
-        experience_input = discord.ui.TextInput(
-            label="Experience",
-            style=discord.TextStyle.paragraph,
-            placeholder="Any previous moderation experience?"
-        )
-        
-        modal.add_item(reason_input)
-        modal.add_item(experience_input)
-        
+        modal = StaffApplicationModal(guild_id=self.guild_id)
         await interaction.response.send_modal(modal)
 
 
-class RoleSelectButton(discord.ui.View):
-    def __init__(self, guild_id: int, role_name: str, role_id: Optional[int] = None):
-        super().__init__(timeout=None)
+class StaffApplicationModal(discord.ui.Modal):
+    """Modal for staff applications"""
+    def __init__(self, guild_id: int):
+        super().__init__(title="Staff Application", timeout=None)
+        self.guild_id = guild_id
+        
+        self.reason_input = discord.ui.TextInput(
+            label="Why do you want to be staff?",
+            style=discord.TextStyle.paragraph,
+            placeholder="Tell us about yourself and why you'd be a good fit...",
+            required=True,
+            min_length=50,
+            max_length=1000
+        )
+        
+        self.experience_input = discord.ui.TextInput(
+            label="Experience",
+            style=discord.TextStyle.paragraph,
+            placeholder="Any previous moderation experience? (optional)",
+            required=False,
+            min_length=0,
+            max_length=1000
+        )
+        
+        self.add_item(self.reason_input)
+        self.add_item(self.experience_input)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        if not guild:
+            await interaction.response.send_message("Error: Guild not found.", ephemeral=True)
+            return
+        
+        # Find or create applications channel
+        apps_channel = discord.utils.get(guild.text_channels, name="applications")
+        if not apps_channel:
+            apps_channel = discord.utils.get(guild.text_channels, name="staff-applications")
+        
+        if apps_channel:
+            embed = discord.Embed(
+                title="📝 New Staff Application",
+                description=f"Application from {interaction.user.mention}",
+                color=discord.Color.purple()
+            )
+            embed.add_field(name="Reason", value=self.reason_input.value or "Not provided", inline=False)
+            embed.add_field(name="Experience", value=self.experience_input.value or "Not provided", inline=False)
+            embed.set_footer(text=f"User ID: {interaction.user.id}")
+            
+            await apps_channel.send(embed=embed)
+            await interaction.response.send_message("✅ Your application has been submitted!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Applications channel not found. Please contact staff.", ephemeral=True)
+    
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        logger.error(f"Error in staff application modal: {error}")
+        await interaction.response.send_message("❌ An error occurred while submitting your application.", ephemeral=True)
+
+
+class RoleSelectButton(discord.ui.Button):
+    """A single button for role selection, not a View"""
+    def __init__(self, guild_id: int, role_name: str, role_id: Optional[int] = None, emoji: str = None):
+        # Create unique custom_id for each role button
+        custom_id = f"role_select_{guild_id}_{role_name.replace(' ', '_').lower()}"
+        super().__init__(
+            label=role_name,
+            style=discord.ButtonStyle.secondary,
+            custom_id=custom_id,
+            emoji=emoji
+        )
         self.guild_id = guild_id
         self.role_name = role_name
         self.role_id = role_id
     
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        return True
-    
-    @discord.ui.button(style=discord.ButtonStyle.secondary, custom_id="role_select_persistent")
-    async def role_select_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def callback(self, interaction: discord.Interaction):
         guild = interaction.guild
         if not guild:
             await interaction.response.send_message("Error: Guild not found.", ephemeral=True)
@@ -798,8 +845,8 @@ class AutoSetup:
         embed.add_field(name="🎮 Gaming", value="Gaming updates and events", inline=True)
         embed.add_field(name="🎨 Art", value="Art sharing and feedback", inline=True)
         
-        # Use persistent views for reliable button functionality
-        view = discord.ui.View()
+        # Create a View with role selection buttons
+        view = discord.ui.View(timeout=None)
         
         role_data = [
             ("Ping Updates", "🔔", ping_role.id if ping_role else None),
@@ -808,9 +855,7 @@ class AutoSetup:
         ]
         
         for role_name, emoji, role_id in role_data:
-            btn = RoleSelectButton(guild.id, role_name, role_id)
-            # Update the button label and emoji
-            btn.label = role_name
+            btn = RoleSelectButton(guild.id, role_name, role_id, emoji)
             view.add_item(btn)
         
         try:
