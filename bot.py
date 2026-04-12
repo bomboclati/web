@@ -141,12 +141,13 @@ class MiroBot(commands.Bot):
         if hasattr(self, 'analytics') and self.analytics:
             self.analytics.start_monitoring_loop()
         
-        # Load core commands cog
-        try:
-            await self.load_extension("cogs.core_commands")
-            logger.info("Loaded core commands cog")
         except Exception as e:
-            logger.error(f"Failed to load core commands cog: {e}")
+        # Support for Manual Sync (Prefix command !sync)
+        @self.command(name="sync")
+        @commands.is_owner()
+        async def manual_sync(ctx):
+            await self.tree.sync()
+            await ctx.send("? Slash commands synced.")
 
         # Final sync after all commands and cogs are loaded
         if os.getenv("SYNC_COMMANDS", "false").lower() == "true":
@@ -1649,6 +1650,51 @@ async def health_cmd(interaction: discord.Interaction):
     embed.set_footer(text="Community Health Analysis")
     
     await interaction.followup.send(embed=embed)
+
+# --- Configuration Commands Group ---
+config_group = app_commands.Group(name="config", description="Configure server-specific AI settings")
+
+@config_group.command(name="model", description="Set the default AI model for this server")
+async def config_model(it: discord.Interaction, model: str):
+    if not it.user.guild_permissions.administrator:
+        return await it.response.send_message("? Admin only.", ephemeral=True)
+    dm.update_guild_data(it.guild.id, "custom_model", model)
+    await it.response.send_message(f"? AI model set to **{model}**.", ephemeral=True)
+
+@config_group.command(name="provider", description="Set the active AI provider (OpenRouter, OpenAI, Gemini)")
+@app_commands.choices(provider=[
+    app_commands.Choice(name="OpenRouter", value="openrouter"),
+    app_commands.Choice(name="OpenAI", value="openai"),
+    app_commands.Choice(name="Gemini", value="gemini"),
+])
+async def config_provider(it: discord.Interaction, provider: str):
+    if not it.user.guild_permissions.administrator:
+        return await it.response.send_message("? Admin only.", ephemeral=True)
+    dm.update_guild_data(it.guild.id, "active_provider", provider)
+    await it.response.send_message(f"? AI provider switched to **{provider}**.", ephemeral=True)
+
+@config_group.command(name="key", description="Set your own API key for a specific provider")
+@app_commands.choices(provider=[
+    app_commands.Choice(name="OpenRouter", value="openrouter"),
+    app_commands.Choice(name="OpenAI", value="openai"),
+    app_commands.Choice(name="Gemini", value="gemini"),
+])
+async def config_key(it: discord.Interaction, provider: str, api_key: str):
+    if not it.user.guild_permissions.administrator:
+        return await it.response.send_message("? Admin only.", ephemeral=True)
+    dm.set_guild_api_key(it.guild.id, api_key, provider)
+    await it.response.send_message(f"? API key for **{provider}** encrypted and saved.", ephemeral=True)
+
+@config_group.command(name="prefix", description="Set the server command prefix")
+async def config_prefix(it: discord.Interaction, prefix: str):
+    if not it.user.guild_permissions.administrator:
+        return await it.response.send_message("? Admin only.", ephemeral=True)
+    if len(prefix) > 5:
+        return await it.response.send_message("? Prefix too long (max 5).", ephemeral=True)
+    dm.update_guild_data(it.guild.id, "prefix", prefix)
+    await it.response.send_message(f"? Prefix set to **{prefix}**.", ephemeral=True)
+
+bot.tree.add_command(config_group)
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
