@@ -1886,6 +1886,6 @@ if __name__ == "__main__":
     
     ai_key = os.getenv("AI_API_KEY")
     if not ai_key:
-        logger.warning("AI_API_KEY not found. The /bot command will not work.")
+        logger.warning("AI_API_KEY not found. You can set a per-server key using /config apikey in Discord. Without a key, AI features will be disabled.")
     
     bot.run(token)
