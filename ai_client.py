@@ -271,63 +271,69 @@ class AIClient:
                 if resp.status != 200:
                     text = await resp.text()
                     logger.error(f"AI API Error from {provider} ({resp.status}): {text}")
+                    
+                    # Fallback Logic for 403 (Unpurchased/Access Denied)
+                    if resp.status == 403 and ("Unpurchased" in text or "denied" in text.lower()) and "turbo" not in active_model:
+                        fallback = "qwen-turbo" if provider in ["qwen", "dashscope"] else "gpt-3.5-turbo"
+                        logger.warning(f"Access Denied for {active_model}. Falling back to {fallback}...")
+                        payload["model"] = fallback
+                        async with session.post(provider_url, json=payload, allow_redirects=False) as fallback_resp:
+                            if fallback_resp.status == 200:
+                                return await self._parse_and_handle_response(session, provider, provider_url, payload, messages, fallback_resp)
+                    
                     if 400 <= resp.status < 500:
                         raise AIClientError(resp.status, text)
                     raise Exception(f"AI API Error ({resp.status}): {text}")
                 
-                res_data = await resp.json()
-                
-                # Flexible extraction for different provider formats
-                try:
-                    if 'choices' in res_data:
-                        # OpenAI / OpenRouter / Gemini style
-                        ai_msg = res_data['choices'][0]['message']['content']
-                    elif 'content' in res_data:
-                        # Anthropic style
-                        ai_msg = res_data['content'][0]['text']
-                    elif 'message' in res_data and 'content' in res_data['message']:
-                        # Generic secondary style
-                        ai_msg = res_data['message']['content']
-                    else:
-                        logger.error(f"Unknown response structure from {provider}: {res_data}")
-                        raise KeyError(f"No valid 'choices' or 'content' in response from {provider}")
-                except (KeyError, IndexError, TypeError) as e:
-                    logger.error(f"Failed to parse {provider} response: {e}\nData: {res_data}")
-                    raise
-                
-                logger.debug(f"AI Handshake Successful | Provider: {provider} | Response Length: {len(ai_msg)}")
+                return await self._parse_and_handle_response(session, provider, provider_url, payload, messages, resp)
 
-                # Try to parse JSON from AI message
-                try:
-                    res_json = self._extract_json(ai_msg)
+    async def _parse_and_handle_response(self, session, provider, provider_url, payload, messages, resp) -> dict:
+        """Parses the AI response and handles any requested actions (like web search)."""
+        res_data = await resp.json()
+        
+        # Flexible extraction for different provider formats
+        try:
+            if 'choices' in res_data:
+                ai_msg = res_data['choices'][0]['message']['content']
+            elif 'content' in res_data:
+                ai_msg = res_data['content'][0]['text']
+            elif 'message' in res_data and 'content' in res_data['message']:
+                ai_msg = res_data['message']['content']
+            else:
+                logger.error(f"Unknown response structure from {provider}: {res_data}")
+                raise KeyError(f"No valid 'choices' or 'content' in response from {provider}")
+        except (KeyError, IndexError, TypeError) as e:
+            logger.error(f"Failed to parse {provider} response: {e}\nData: {res_data}")
+            raise
+
+        logger.debug(f"AI Handshake Successful | Provider: {provider} | Response Length: {len(ai_msg)}")
+
+        # Try to parse JSON from AI message
+        try:
+            res_json = self._extract_json(ai_msg)
+            
+            # Handle Web Search requested by AI
+            if res_json.get("action") == "web_search":
+                query = res_json.get("parameters", {}).get("query")
+                if query:
+                    search_results = await self.get_search_results(query)
+                    messages.append({"role": "assistant", "content": ai_msg})
+                    messages.append({"role": "user", "content": f"Web Search Results for '{query}':\n{search_results}"})
                     
-                    # Handle Web Search requested by AI
-                    if res_json.get("action") == "web_search":
-                        query = res_json.get("parameters", {}).get("query")
-                        if query:
-                            search_results = await self.get_search_results(query)
-                            messages.append({"role": "assistant", "content": ai_msg})
-                            messages.append({"role": "user", "content": f"Web Search Results for '{query}':\n{search_results}"})
-                            
-                            # Retry with search context
-                            payload["messages"] = messages
-                            async with session.post(provider_url, json=payload, allow_redirects=False) as search_resp:
-                                if search_resp.status != 200:
-                                    search_text = await search_resp.text()
-                                    logger.error(f"AI Search Retry Error ({search_resp.status}): {search_text}")
-                                    raise Exception(f"AI Search API Error ({search_resp.status})")
-                                    
-                                search_data = await search_resp.json()
-                                if not search_data.get('choices'):
-                                    raise Exception("Invalid AI response body after search")
-                                    
-                                ai_msg = search_data['choices'][0]['message']['content']
-                                res_json = self._extract_json(ai_msg)
-                    
-                    return res_json
-                except Exception as e:
-                    logger.error(f"AI output processing failed. AI Message: {ai_msg[:500]}... Error: {e}")
-                    raise Exception(f"AI failed to return valid JSON: {e}")
+                    payload["messages"] = messages
+                    async with session.post(provider_url, json=payload, allow_redirects=False) as search_resp:
+                        if search_resp.status == 200:
+                            return await self._parse_and_handle_response(session, provider, provider_url, payload, messages, search_resp)
+                        else:
+                            search_text = await search_resp.text()
+                            logger.error(f"AI Search Retry Error ({search_resp.status}): {search_text}")
+                            raise Exception(f"AI Search API Error ({search_resp.status})")
+            
+            return res_json
+        except Exception as e:
+            logger.debug(f"Response was not pure JSON or parse failed: {e}")
+            return {"response": ai_msg, "reasoning": "Standard response", "summary": ai_msg}
+
 
     def _extract_json(self, text: str) -> Dict[str, Any]:
         """Robustly extract JSON from AI response, handling Markdown and conversational filler."""
