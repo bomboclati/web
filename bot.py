@@ -1686,7 +1686,14 @@ COMMON_MODELS = [
     # Groq Models
     "llama-3.1-405b-reasoning", "llama-3.1-70b-versatile", "llama-3.1-8b-instant",
     "llama-3-groq-70b-tool-use-preview", "llama-3-groq-8b-tool-use-preview",
-    "mixtral-8x7b-32768", "gemma-7b-it", "gemma2-9b-it"
+    "mixtral-8x7b-32768", "gemma-7b-it", "gemma2-9b-it",
+    "llama-3.3-70b-versatile", "llama-3.3-8b-instant",
+    "llama-3.2-1b-preview", "llama-3.2-3b-preview", "llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview",
+    "llama-guard-3-8b", "llama-3.2-3b-preview",
+    "whisper-large-v3-turbo", "distil-whisper-large-v3-en",
+    "qwen-qwq-32b", "qwen-2.5-coder-32b-instruct", "qwen-2.5-32b-instruct",
+    "mistral-saba-24b", "moonshot-v1-8k", "deepseek-r1-distill-qwen-32b",
+    "meta-llama/llama-4-maverick-17b-128e-instruct-fp8", "meta-llama/llama-4-scout-17b-16e-instruct"
 ]
 
 @config_group.command(name="model", description="Set the default AI model for this server")
