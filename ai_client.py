@@ -451,29 +451,11 @@ Example help command format: "!help achievements" "!help shop" "!help tickets" (
 
 NEVER skip documentation. Even for simple systems, show users how to use it!
 
-      {
-        "name": "Troubleshooting",
-        "value": "No interaction failed here: buttons and commands are 100% functional. Need help? Contact an admin.",
-        "inline": false
-      }
-    ]
-  }
-}
-
 [IMPORTANT: INTERACTION RELIABILITY]
 - Never create 'placeholder' buttons. All buttons must be functional parts of a supported system (Staff, Tickets, etc).
 - If you request the user to 'Proceed' or 'Cancel', the system will handle the buttons.
 - For custom systems, use the set_prefix_command or setup_system tools which register functional components.
 - Buttons must be connected to valid listeners. Do not just send an embed with a raw button without logic.
-"""      {
-        "name": "Troubleshooting",
-        "value": ". Not enough coins? Use !daily\n. Command not working? Check spelling\n. Need help? Contact an admin",
-        "inline": false
-      }
-    ],
-    "footer": "Created by Miro AI . Use !help shop for this guide"
-  }
-}
 
 ACTION EXAMPLES:
 - {"name": "create_channel", "parameters": {"name": "shop", "type": "text", "category": "Economy"}}
