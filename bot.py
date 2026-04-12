@@ -1292,7 +1292,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
     if not summary:
         summary = "Ready to proceed."
         
-    needs_input = res.get("needs_input", False)
+    needs_input = res.get("needs_input", False)  # Default to False so AI can act immediately unless it explicitly asks for input
     question = res.get("question", "")
     
     if needs_input and question:
@@ -1373,68 +1373,39 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
                 await _self_reflect_on_response(guild_id, user_id, user_input, summary, reasoning, walkthrough)
             return
         
-        bot.pending_confirms[user_id] = {
-            "actions": actions,
-            "summary": summary,
-            "interaction": interaction
-        }
+        # AUTO-EXECUTE: If needs_input is False, execute actions immediately without confirmation
+        # This allows the AI to create channels, roles, etc. automatically
+        await interaction.followup.send(f"[AI] Executing actions...\n\n**Plan:**\n{walkthrough}", ephemeral=False)
         
-        embed = discord.Embed(title="[AI] AI Reasoning & Plan", description=f"**Reasoning:**\n{reasoning}\n\n**Walkthrough:**\n{walkthrough}", color=discord.Color.blue())
+        from actions import ActionHandler
+        handler = ActionHandler(bot)
+        result = await handler.execute_sequence(interaction, actions)
         
-        view = discord.ui.View()
-        proceed_btn = discord.ui.Button(label="Proceed", style=discord.ButtonStyle.success, custom_id="proceed")
-        cancel_btn = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.danger, custom_id="cancel")
+        summary_text = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in result["results"]])
         
-        async def proceed_callback(it: discord.Interaction):
-            if it.user.id != user_id:
-                return await it.response.send_message("Only the user who started this can proceed.", ephemeral=False)
-            
-            await it.response.edit_message(content="[AI] Execution in progress...", embed=None, view=None)
-            
-            from actions import ActionHandler
-            handler = ActionHandler(bot)
-            result = await handler.execute_sequence(it, bot.pending_confirms[user_id]["actions"])
-            
-            summary_text = "\n".join([f"{'?' if s else '?'} {n}" for n, s in result["results"]])
-            
-            if result["success"]:
-                final_msg = f"**Execution Summary:**\n{summary_text}\n\n{bot.pending_confirms[user_id]['summary']}"
-            else:
-                rollback_text = ""
-                if result["rolled_back"]:
-                    rb = "\n".join([f"{'?' if s else '??'} {n}" for n, s in result["rolled_back"]])
-                    rollback_text = f"\n\n**Auto-Rollback ({len(result['rolled_back'])} actions):**\n{rb}"
-                final_msg = f"**Failed at step {result['failed_at'] + 1}: `{result['failed_action']}`**\nError: {result['error']}\n\n**Executed:**\n{summary_text}{rollback_text}"
-            
-            await it.followup.send(final_msg, ephemeral=False)
-            await history_manager.add_exchange(guild_id, user_id, user_input, summary)
-            # Store in vector memory for long-term recall
-            await vector_memory.store_conversation(
-                guild_id=guild_id,
-                user_id=user_id,
-                user_message=user_input,
-                bot_response=summary,
-                reasoning=reasoning,
-                walkthrough=walkthrough
-            )
-            # Self-reflection (opt-in)
-            if os.getenv("SELF_REFLECT_ENABLED", "false").lower() == "true":
-                await _self_reflect_on_response(guild_id, user_id, user_input, summary, reasoning, walkthrough)
-            
-            del bot.pending_confirms[user_id]
+        if result["success"]:
+            final_msg = f"**✅ Execution Complete!**\n{summary_text}\n\n{summary}"
+        else:
+            rollback_text = ""
+            if result["rolled_back"]:
+                rb = "\n".join([f"{'↩️' if s else '⚠️'} {n}" for n, s in result["rolled_back"]])
+                rollback_text = f"\n\n**Auto-Rollback ({len(result['rolled_back'])} actions):**\n{rb}"
+            final_msg = f"**❌ Failed at step {result['failed_at'] + 1}: `{result['failed_action']}`**\nError: {result['error']}\n\n**Executed:**\n{summary_text}{rollback_text}"
         
-        async def cancel_callback(it: discord.Interaction):
-            if it.user.id != user_id:
-                return await it.response.send_message("Only the user who started this can cancel.", ephemeral=False)
-            await it.response.edit_message(content="[AI] Action cancelled.", embed=None, view=None)
-            del bot.pending_confirms[user_id]
-        
-        proceed_btn.callback = proceed_callback
-        cancel_btn.callback = cancel_callback
-        view.add_item(proceed_btn)
-        view.add_item(cancel_btn)
-        
-        await interaction.followup.send(embed=embed, view=view, ephemeral=False)
+        await interaction.channel.send(final_msg)
+        await history_manager.add_exchange(guild_id, user_id, user_input, summary)
+        # Store in vector memory for long-term recall
+        await vector_memory.store_conversation(
+            guild_id=guild_id,
+            user_id=user_id,
+            user_message=user_input,
+            bot_response=summary,
+            reasoning=reasoning,
+            walkthrough=walkthrough
+        )
+        # Self-reflection (opt-in)
+        if os.getenv("SELF_REFLECT_ENABLED", "false").lower() == "true":
+            await _self_reflect_on_response(guild_id, user_id, user_input, summary, reasoning, walkthrough)
 
 # --- Utility Commands ---
 
@@ -1670,17 +1641,20 @@ async def health_cmd(interaction: discord.Interaction):
 config_group = app_commands.Group(name="config", description="Configure server-specific AI settings")
 
 COMMON_MODELS = [
-    # Groq Models (Prioritized - Ultra-Fast)
-    "llama-3.1-405b-reasoning", "llama-3.1-70b-versatile", "llama-3.1-8b-instant",
-    "llama-3-groq-70b-tool-use-preview", "llama-3-groq-8b-tool-use-preview",
-    "mixtral-8x7b-32768", "gemma-7b-it", "gemma2-9b-it",
+    # Groq Models (Prioritized - Ultra-Fast) - ONLY ACTIVE MODELS
     "llama-3.3-70b-versatile", "llama-3.3-8b-instant",
     "llama-3.2-1b-preview", "llama-3.2-3b-preview", "llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview",
+    "llama-3.1-8b-instant",
     "llama-guard-3-8b",
-    "whisper-large-v3-turbo", "distil-whisper-large-v3-en",
-    "qwen-qwq-32b", "qwen-2.5-coder-32b-instruct", "qwen-2.5-32b-instruct",
-    "mistral-saba-24b", "moonshot-v1-8k", "deepseek-r1-distill-qwen-32b",
+    "whisper-large-v3-turbo", "whisper-large-v3",
+    "gemma2-9b-it", "gemma-7b-it",
+    "mixtral-8x7b-32768",
+    "qwen-2.5-coder-32b-instruct", "qwen-2.5-32b-instruct", "qwen-k1-0905",
+    "mistral-saba-24b",
+    "moonshot-v1-8k",
+    "deepseek-r1-distill-qwen-32b",
     "meta-llama/llama-4-maverick-17b-128e-instruct-fp8", "meta-llama/llama-4-scout-17b-16e-instruct",
+    "llama-3-groq-70b-tool-use-preview", "llama-3-groq-8b-tool-use-preview",
     
     # Qwen Family (Latest 2026)
     "qwen3.6-plus", "qwen3.6-max", "qwen3.5-omni", "qwen-max-latest", "qwen-turbo-latest",
@@ -1690,16 +1664,16 @@ COMMON_MODELS = [
     "gemini-3-pro", "gemini-3-flash",
     
     # Gemini 2.5 Family (Stable)
-    "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite",
+    "gemini-2.5-pro", "gemini-2.5-flash-lite",
     "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash",
     
     # OpenAI & Other Flagships
-    "gpt-5", "gpt-4o", "gpt-4o-mini", "o1",
-    "claude-3-5-sonnet", "claude-4-preview",
+    "gpt-5", "gpt-4o", "gpt-4o-mini", "o1", "o3-mini",
+    "claude-3-5-sonnet", "claude-3-7-sonnet", "claude-4-opus",
     "llama-4-405b", "llama-3.1-405b",
     
     # OpenRouter Specific Aliases
-    "google/gemini-3.1-pro", "google/gemini-2.5-flash",
+    "google/gemini-3.1-pro",
     "deepseek/deepseek-v3", "meta-llama/llama-3.1-70b"
 ]
 

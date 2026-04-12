@@ -281,8 +281,8 @@ class AIClient:
             active_model = "llama3.3-70b"
         elif provider == "sambanova" and (not active_model or "gpt" in active_model.lower()):
             active_model = "llama3.1-70b-instruct"
-        elif provider == "groq" and (not active_model or "gpt" in active_model.lower()):
-            active_model = "mixtral-8x7b-32768"
+        elif provider == "groq" and (not active_model or "gpt" in active_model.lower() or "/" in active_model):
+            active_model = "llama-3.3-70b-versatile"
         elif provider == "together" and (not active_model or "gpt" in active_model.lower()):
             active_model = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
         elif provider in ["qwen", "dashscope"] and (not active_model or "gpt" in active_model.lower()):
@@ -470,7 +470,8 @@ You MUST ALWAYS respond with a JSON object containing the following keys:
 MANDATORY CLARIFICATION RULE:
 If the user's request is vague or missing critical details (e.g., "build a shop" without items/prices), you MUST ask a clarifying question first.
 NEVER guess or assume details for system creation. Always confirm with the user.
-Set "needs_input": true and provide a specific "question" in the "summary" key when you need details.
+Set "needs_input": true ONLY when you absolutely need user input to proceed. By DEFAULT, set "needs_input": false so you can take action immediately.
+Only use "needs_input": true when you cannot proceed without user clarification.
 
 MANDATORY IMPLEMENTATION PLAN:
 Before executing ANY action, you MUST provide a detailed "walkthrough" of what you will build.
