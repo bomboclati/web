@@ -160,6 +160,14 @@ class AIClient:
         from data_manager import dm
         active_model = dm.get_guild_data(guild_id, "custom_model", self.model)
         
+        # Provider-specific default overrides to prevent INVALID_ARGUMENT errors
+        if provider == "gemini" and (not active_model or "gpt" in active_model.lower()):
+            active_model = "gemini-1.5-flash-latest"
+        elif provider == "openai" and (not active_model or "/" in active_model):
+            active_model = "gpt-3.5-turbo"
+        elif not active_model:
+            active_model = self.model or "gpt-3.5-turbo"
+        
         if api_key:
             api_key = api_key.strip()
             
