@@ -529,6 +529,13 @@ ACTION EXAMPLES:
 - {"name": "give_points", "parameters": {"username": "john", "points": 500}}
 - {"name": "remove_points", "parameters": {"username": "john", "points": 100}}
 - {"name": "warn_user", "parameters": {"username": "john", "reason": "Spamming in chat"}}
+- {"name": "mute_user", "parameters": {"username": "john", "reason": "Voice spam"}}
+- {"name": "unmute_user", "parameters": {"username": "john"}}
+- {"name": "deafen_user", "parameters": {"username": "john"}}
+- {"name": "set_nickname", "parameters": {"username": "john", "nickname": "CoolUser"}}
+- {"name": "slowmode", "parameters": {"channel": "general", "delay": 5}}
+- {"name": "lock_channel", "parameters": {"channel": "general"}}
+- {"name": "unlock_channel", "parameters": {"channel": "general"}}
 
 WHEN TO USE PING vs SEND_DM:
 - Use "ping" when user wants to mention/ping "@user" or check their status - shows in CHANNEL

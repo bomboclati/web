@@ -146,7 +146,10 @@ class ActionHandler:
         "setup_tickets", "setup_applications", "setup_appeals", "setup_moderation",
         "send_dm", "create_invite", "schedule_ai_action", "ping",
         "kick_user", "ban_user", "timeout_user",
-        "delete_role", "delete_channel", "announce", "poll", "give_points", "remove_points", "warn_user"
+        "delete_role", "delete_channel", "announce", "poll", "give_points", "remove_points", "warn_user",
+        "create_verify_system", "create_tickets_system", "create_applications_system", "create_appeals_system",
+        "create_welcome_system", "create_staff_system", "create_leveling_system", "create_economy_system",
+        "mute_user", "unmute_user", "deafen_user", "set_nickname", "slowmode", "lock_channel", "unlock_channel"
     }
     
     def __init__(self, bot):
@@ -1364,6 +1367,171 @@ class ActionHandler:
             return True, {"user_id": user_id, "reason": reason}
         except Exception as e:
             logger.error(f"Error warning user: {e}")
+            return False, None
+
+    async def action_mute_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Server mutes a user (voice mute)."""
+        user_id = params.get("user_id")
+        username = params.get("username")
+        reason = params.get("reason", "Muted via bot")
+        
+        if not user_id and username:
+            member = discord.utils.get(interaction.guild.members, name=username)
+            if not member:
+                member = discord.utils.get(interaction.guild.members, nick=username)
+            if member:
+                user_id = member.id
+        
+        if not user_id:
+            return False, None
+        
+        member = interaction.guild.get_member(user_id)
+        if not member:
+            return False, None
+        
+        try:
+            await member.edit(mute=True, reason=reason)
+            return True, {"user_id": user_id, "action": "mute"}
+        except Exception as e:
+            logger.error(f"Error muting user: {e}")
+            return False, None
+
+    async def action_unmute_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Removes server mute from a user."""
+        user_id = params.get("user_id")
+        username = params.get("username")
+        
+        if not user_id and username:
+            member = discord.utils.get(interaction.guild.members, name=username)
+            if not member:
+                member = discord.utils.get(interaction.guild.members, nick=username)
+            if member:
+                user_id = member.id
+        
+        if not user_id:
+            return False, None
+        
+        member = interaction.guild.get_member(user_id)
+        if not member:
+            return False, None
+        
+        try:
+            await member.edit(mute=False)
+            return True, {"user_id": user_id, "action": "unmute"}
+        except Exception as e:
+            logger.error(f"Error unmuting user: {e}")
+            return False, None
+
+    async def action_deafen_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Voice deafens a user."""
+        user_id = params.get("user_id")
+        username = params.get("username")
+        reason = params.get("reason", "Deafened via bot")
+        
+        if not user_id and username:
+            member = discord.utils.get(interaction.guild.members, name=username)
+            if not member:
+                member = discord.utils.get(interaction.guild.members, nick=username)
+            if member:
+                user_id = member.id
+        
+        if not user_id:
+            return False, None
+        
+        member = interaction.guild.get_member(user_id)
+        if not member:
+            return False, None
+        
+        try:
+            await member.edit(deafen=True, reason=reason)
+            return True, {"user_id": user_id, "action": "deafen"}
+        except Exception as e:
+            logger.error(f"Error deafening user: {e}")
+            return False, None
+
+    async def action_set_nickname(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Sets a user's server nickname."""
+        user_id = params.get("user_id")
+        username = params.get("username")
+        nickname = params.get("nickname", "")
+        
+        if not user_id and username:
+            member = discord.utils.get(interaction.guild.members, name=username)
+            if not member:
+                member = discord.utils.get(interaction.guild.members, nick=username)
+            if member:
+                user_id = member.id
+        
+        if not user_id:
+            return False, None
+        
+        member = interaction.guild.get_member(user_id)
+        if not member:
+            return False, None
+        
+        try:
+            await member.edit(nick=nickname)
+            return True, {"user_id": user_id, "nickname": nickname}
+        except Exception as e:
+            logger.error(f"Error setting nickname: {e}")
+            return False, None
+
+    async def action_slowmode(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Sets slowmode for a channel."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        delay = params.get("delay", 5)  # seconds
+        
+        target_channel = None
+        if channel_name:
+            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        if not target_channel:
+            target_channel = interaction.channel
+        
+        try:
+            await target_channel.edit(slowmode_delay=delay)
+            return True, {"channel_id": target_channel.id, "delay": delay}
+        except Exception as e:
+            logger.error(f"Error setting slowmode: {e}")
+            return False, None
+
+    async def action_lock_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Locks a channel (removes @everyone permission to send."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        
+        target_channel = None
+        if channel_name:
+            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        if not target_channel:
+            target_channel = interaction.channel
+        
+        everyone_role = interaction.guild.default_role
+        
+        try:
+            overwrite = discord.PermissionOverwrite(send_messages=False)
+            await target_channel.set_permissions(everyone_role, overwrite=overwrite)
+            return True, {"channel_id": target_channel.id, "action": "lock"}
+        except Exception as e:
+            logger.error(f"Error locking channel: {e}")
+            return False, None
+
+    async def action_unlock_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Unlocks a channel (restores @everyone permission to send."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        
+        target_channel = None
+        if channel_name:
+            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        if not target_channel:
+            target_channel = interaction.channel
+        
+        everyone_role = interaction.guild.default_role
+        
+        try:
+            overwrite = discord.PermissionOverwrite(send_messages=None)
+            await target_channel.set_permissions(everyone_role, overwrite=overwrite)
+            return True, {"channel_id": target_channel.id, "action": "unlock"}
+        except Exception as e:
+            logger.error(f"Error unlocking channel: {e}")
             return False, None
 
     # --- Execution Logic ---
