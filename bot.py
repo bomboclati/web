@@ -1529,68 +1529,223 @@ async def cancel_cmd(interaction: discord.Interaction):
     else:
         await interaction.response.send_message("No pending action to cancel.", ephemeral=False)
 
-@bot.tree.command(name="analyze", description="AI analyzes your server and suggests improvements")
+@bot.tree.command(name="analyze", description="AI gives a deep analysis of your entire server")
 async def analyze_cmd(interaction: discord.Interaction):
-    """AI analyzes the server and provides suggestions."""
-    await interaction.response.send_message("🔍 Analyzing server...", ephemeral=False)
-    
+    """Deep AI analysis with full server context."""
+    await interaction.response.send_message("🔍 Scanning your entire server... this may take a moment.", ephemeral=False)
+
     guild = interaction.guild
-    
-    # Gather server data
-    members = len(guild.members)
-    channels = len(guild.channels)
-    roles = len(guild.roles)
-    
-    # Get community health data
-    health_data = dm.get_guild_data(guild.id, "server_health", {})
+    guild_id = guild.id
+
+    # ── Members ──────────────────────────────────────────────────────────────
+    all_members  = guild.members
+    total        = len(all_members)
+    bots         = [m for m in all_members if m.bot]
+    humans       = [m for m in all_members if not m.bot]
+    online       = [m for m in humans if m.status != discord.Status.offline] if hasattr(all_members[0], 'status') else []
+    admins       = [m for m in humans if m.guild_permissions.administrator]
+    bot_names    = [b.name for b in bots]
+    recent_joins = sorted(humans, key=lambda m: m.joined_at or guild.created_at, reverse=True)[:5]
+    recent_names = [m.display_name for m in recent_joins]
+
+    # ── Channels ─────────────────────────────────────────────────────────────
+    text_channels  = [c for c in guild.channels if isinstance(c, discord.TextChannel)]
+    voice_channels = [c for c in guild.channels if isinstance(c, discord.VoiceChannel)]
+    categories     = guild.categories
+    ch_names       = [c.name for c in text_channels]
+    cat_names      = [c.name for c in categories]
+
+    # ── Roles ─────────────────────────────────────────────────────────────────
+    roles = [r for r in guild.roles if r.name != "@everyone"]
+    role_info = []
+    for r in roles[:30]:  # cap at 30 to avoid prompt overflow
+        perms = []
+        if r.permissions.administrator: perms.append("admin")
+        if r.permissions.manage_guild:  perms.append("manage_server")
+        if r.permissions.manage_channels: perms.append("manage_channels")
+        if r.permissions.manage_roles:  perms.append("manage_roles")
+        if r.permissions.kick_members:  perms.append("kick")
+        if r.permissions.ban_members:   perms.append("ban")
+        role_info.append(f"{r.name}({'|'.join(perms) if perms else 'basic'})")
+
+    # ── Bot-stored data ───────────────────────────────────────────────────────
+    custom_cmds  = dm.get_guild_data(guild_id, "custom_commands", {})
+    triggers     = dm.get_guild_data(guild_id, "trigger_roles", {})
+    xp_data      = dm.get_guild_data(guild_id, "leveling_xp", {})
+    health_data  = dm.get_guild_data(guild_id, "server_health", {})
+    action_logs  = dm.get_guild_data(guild_id, "action_logs", [])
+    action_fails = dm.get_guild_data(guild_id, "action_failures", {})
+    cmd_usage    = dm.get_guild_data(guild_id, "command_usage", {})
+    economy_data = dm.get_guild_data(guild_id, "economy", {})
+    shop_items   = dm.get_guild_data(guild_id, "shop", {})
+    scheduled    = dm.load_json("ai_scheduled_tasks", default={})
+    guild_sched  = {k: v for k, v in scheduled.items() if str(v.get("guild_id")) == str(guild_id)}
+
+    # Setup status flags
+    verify_role    = dm.get_guild_data(guild_id, "verify_role")
+    ticket_ch      = dm.get_guild_data(guild_id, "tickets_channel") or dm.get_guild_data(guild_id, "ticket_queue_channel")
+    welcome_cfg    = dm.get_guild_data(guild_id, "welcome_config", {})
+    log_channel    = dm.get_guild_data(guild_id, "log_channel")
+    mod_log        = dm.get_guild_data(guild_id, "modlog_channel")
+    appeals_cfg    = dm.get_guild_data(guild_id, "appeals_config", {})
+    app_cfg        = dm.get_guild_data(guild_id, "applications_config", {})
+    suggestions_ch = dm.get_guild_data(guild_id, "suggestions_channel")
+    modmail_ch     = dm.get_guild_data(guild_id, "modmail_channel")
+    economy_en     = dm.get_guild_data(guild_id, "economy_enabled", False)
+    leveling_en    = dm.get_guild_data(guild_id, "leveling_enabled", False)
+
+    # Leaderboard top 5
+    lb = sorted(xp_data.items(), key=lambda x: x[1], reverse=True)[:5]
+    lb_str = ", ".join([f"uid:{uid}={xp}xp" for uid, xp in lb]) if lb else "none"
+
+    # Most used commands
+    top_cmds = sorted(cmd_usage.items(), key=lambda x: x[1], reverse=True)[:8]
+    top_cmds_str = ", ".join([f"!{k}({v})" for k, v in top_cmds]) if top_cmds else "none"
+
+    # Recent bot actions
+    recent_actions = [a.get("action", "?") for a in action_logs[-10:]] if action_logs else []
+
+    # Failed actions
+    failed_actions = list(action_fails.keys()) if action_fails else []
+
+    # Economy top balances
+    if isinstance(economy_data, dict):
+        top_eco = sorted(economy_data.items(), key=lambda x: x[1].get("balance", 0) if isinstance(x[1], dict) else 0, reverse=True)[:5]
+        eco_str = ", ".join([f"uid:{uid}={v.get('balance',0)}" for uid, v in top_eco if isinstance(v, dict)]) if top_eco else "none"
+    else:
+        eco_str = "none"
+
     engagement = health_data.get("engagement_score", 0)
-    active = health_data.get("active_members", 0)
-    
-    # Get systems data
-    custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
-    triggers = dm.get_guild_data(guild.id, "trigger_roles", {})
-    xp_data = dm.get_guild_data(guild.id, "leveling_xp", {})
-    
-    # Let AI analyze and suggest
-    analysis_prompt = f"""Analyze this Discord server and suggest improvements:
+    active_m   = health_data.get("active_members", 0)
 
-SERVER STATS:
-- Members: {members}
-- Channels: {channels}
-- Roles: {roles}
-- Engagement Score: {engagement}/100
-- Active Members: {active}
+    # ── Build the full prompt ─────────────────────────────────────────────────
+    analysis_prompt = f"""You are performing a DEEP ANALYSIS of a Discord server. You know everything about it listed below.
+Give a thorough, honest assessment with specific suggestions. Reference actual channel names, role names, and systems.
+Respond in JSON format with a 'summary' key containing your FULL analysis.
 
-SYSTEMS:
-- Custom Commands: {len(custom_cmds)}
-- Trigger Roles: {len(triggers)}
-- Leveling Users: {len(xp_data)}
+=== SERVER: {guild.name} (ID: {guild_id}) ===
+Owner: {guild.owner.display_name if guild.owner else 'Unknown'}
+Created: {guild.created_at.strftime('%Y-%m-%d') if guild.created_at else 'Unknown'}
+Verification Level: {str(guild.verification_level)}
+Boost Level: {guild.premium_tier} ({guild.premium_subscription_count} boosts)
 
-Suggest 3 specific improvements the server should make. Keep it brief and actionable."""
+=== MEMBERS ===
+Total: {total} | Humans: {len(humans)} | Bots: {len(bots)}
+Admins: {len(admins)} ({', '.join([a.display_name for a in admins[:5]])})
+Bots installed: {', '.join(bot_names) if bot_names else 'none'}
+Recently joined: {', '.join(recent_names) if recent_names else 'none'}
+Engagement Score: {engagement}/100 | Active: {active_m}
+
+=== CHANNELS ({len(text_channels)} text, {len(voice_channels)} voice) ===
+Categories: {', '.join(cat_names) if cat_names else 'none'}
+Text channels: {', '.join(ch_names[:40]) if ch_names else 'none'}
+Voice channels: {', '.join([c.name for c in voice_channels[:20]]) if voice_channels else 'none'}
+
+=== ROLES ({len(roles)}) ===
+{chr(10).join(role_info) if role_info else 'No roles'}
+
+=== SYSTEMS & CONFIGURATION ===
+Verification: {'✅ ENABLED (role ID: ' + str(verify_role) + ')' if verify_role else '❌ NOT SET UP'}
+Tickets: {'✅ ENABLED' if ticket_ch else '❌ NOT SET UP'}
+Welcome/Leave: {'✅ ENABLED' if welcome_cfg else '❌ NOT SET UP'}
+Logging: {'✅ ENABLED' if log_channel else '❌ NOT SET UP'}
+Mod Log: {'✅ ENABLED' if mod_log else '❌ NOT SET UP'}
+Modmail: {'✅ ENABLED' if modmail_ch else '❌ NOT SET UP'}
+Suggestions: {'✅ ENABLED' if suggestions_ch else '❌ NOT SET UP'}
+Economy: {'✅ ENABLED' if economy_en else '❌ NOT SET UP'} | Shop items: {len(shop_items)}
+Leveling/XP: {'✅ ENABLED' if leveling_en else '❌ NOT SET UP'} | Users tracked: {len(xp_data)}
+Appeals: {'✅ ENABLED' if appeals_cfg else '❌ NOT SET UP'}
+Applications: {'✅ ENABLED' if app_cfg else '❌ NOT SET UP'}
+Scheduled tasks: {len(guild_sched)} active
+
+=== CUSTOM COMMANDS ({len(custom_cmds)}) ===
+{', '.join(['!' + k for k in list(custom_cmds.keys())[:30]]) if custom_cmds else 'None set up'}
+
+=== ACTIVITY & USAGE ===
+Top commands used: {top_cmds_str}
+XP Leaderboard top 5: {lb_str}
+Economy top balances: {eco_str}
+Recent bot actions: {', '.join(recent_actions) if recent_actions else 'none'}
+Failed/broken actions: {', '.join(failed_actions) if failed_actions else 'none'}
+Role triggers: {len(triggers)} configured
+
+=== TRIGGER ROLES ===
+{', '.join([f'{k}->{v}' for k,v in list(triggers.items())[:10]]) if triggers else 'None'}
+
+Based on ALL of the above, provide a comprehensive server analysis covering:
+1. What the server is about / its purpose
+2. What's working well
+3. Missing systems or gaps (based on what's NOT set up)
+4. Specific improvements with exact channel/role names to create
+5. Community growth tips
+6. Security or moderation concerns
+7. Overall health score (0-100) with reasoning
+
+Be specific — reference the actual names you see above. Do NOT give generic advice."""
 
     try:
         result = await bot.ai.chat(
-            guild_id=guild.id,
+            guild_id=guild_id,
             user_id=interaction.user.id,
             user_input=analysis_prompt,
-            system_prompt="You are a helpful Discord server consultant. Give concrete, actionable suggestions. Always respond in valid JSON format with a 'summary' key containing your full analysis text."
+            system_prompt="You are a Discord server analyst with deep expertise. You have full context of the server. Respond in valid JSON with a 'summary' key containing your complete analysis. Be specific, reference real data, and give actionable suggestions."
         )
-        
+
         if result.get("error"):
             await interaction.edit_original_response(content=f"❌ AI not configured: {result['error']}")
             return
-        suggestions = result.get("summary") or result.get("message") or "Could not generate suggestions at this time."
-        
-        embed = discord.Embed(
-            title="📊 Server Analysis & Suggestions",
-            description=suggestions,
-            color=discord.Color.green()
+
+        analysis = result.get("summary") or result.get("message") or result.get("response") or "Could not generate analysis."
+
+        # Store in vector memory so AI remembers this server
+        await vector_memory.store_conversation(
+            guild_id=guild_id,
+            user_id=interaction.user.id,
+            user_message=f"Server analysis for {guild.name}",
+            bot_response=analysis,
+            reasoning=f"Full server scan: {total} members, {len(text_channels)} channels, {len(roles)} roles",
+            walkthrough="Comprehensive server analysis stored for future context"
         )
-        embed.set_footer(text=f"Analyzed {guild.name}")
-        embed.add_field(name="Quick Stats", value=f"Members: {members} | Active: {active} | Engagement: {engagement}%", inline=False)
-        
+
+        # Split into chunks if too long (Discord 4096 char embed limit)
+        chunks = []
+        while len(analysis) > 3900:
+            split_at = analysis.rfind('\n', 0, 3900)
+            if split_at == -1: split_at = 3900
+            chunks.append(analysis[:split_at])
+            analysis = analysis[split_at:].lstrip()
+        chunks.append(analysis)
+
+        # First embed
+        embed = discord.Embed(
+            title=f"📊 Deep Analysis: {guild.name}",
+            description=chunks[0],
+            color=discord.Color.blurple()
+        )
+        embed.add_field(
+            name="📋 Quick Stats",
+            value=f"👥 {total} members ({len(bots)} bots) | 📢 {len(text_channels)} channels | 🎭 {len(roles)} roles | ⚡ {engagement}% engagement",
+            inline=False
+        )
+        systems_status = []
+        systems_status.append(f"{'✅' if verify_role else '❌'} Verification")
+        systems_status.append(f"{'✅' if ticket_ch else '❌'} Tickets")
+        systems_status.append(f"{'✅' if welcome_cfg else '❌'} Welcome")
+        systems_status.append(f"{'✅' if log_channel else '❌'} Logging")
+        systems_status.append(f"{'✅' if economy_en else '❌'} Economy")
+        systems_status.append(f"{'✅' if leveling_en else '❌'} Leveling")
+        systems_status.append(f"{'✅' if suggestions_ch else '❌'} Suggestions")
+        systems_status.append(f"{'✅' if modmail_ch else '❌'} Modmail")
+        embed.add_field(name="⚙️ Systems", value=" | ".join(systems_status), inline=False)
+        embed.set_footer(text=f"Analysis stored in memory • {guild.name} • {len(custom_cmds)} custom commands")
+
         await interaction.edit_original_response(content=None, embed=embed)
-        
+
+        # Send overflow chunks as follow-up messages
+        for chunk in chunks[1:]:
+            follow_embed = discord.Embed(description=chunk, color=discord.Color.blurple())
+            await interaction.followup.send(embed=follow_embed)
+
     except Exception as e:
         logger.error(f"Analysis error: {e}", exc_info=True)
         await interaction.edit_original_response(content=f"❌ Analysis failed: {str(e)[:200]}\n\nMake sure an AI API key is configured with `/config apikey`")
