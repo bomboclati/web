@@ -247,7 +247,7 @@ class MiroBot(commands.Bot):
                 elif action.get("type") == "role" and "id" in action:
                     role = guild.get_role(action["id"])
                     if role:
-                        asyncio.create_task(role.delete())
+                        await role.delete()
                         logger.info("Cleaned up orphaned role: %s", role.name)
             except Exception as e:
                 logger.error("Failed to clean up crash artifact: %s", e)
@@ -424,7 +424,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 return
             
             # Handle staff commands
-            if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "trainingtasks", "appeal"]):
+            if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "trainingtasks", "appeal", "shift"]):
                 await self._handle_staff_command(message, cmd_content)
                 return
             
@@ -553,12 +553,14 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         global_usage[cmd_name]["last_used"] = time.time()
         
         # Track which guilds use this command (anonymized)
-        guilds_used = global_usage[cmd_name].get("guilds_used", set())
-        if isinstance(guilds_used, list):
-            guilds_used = set(guilds_used)
+        guilds_used = global_usage[cmd_name].get("guilds_used", [])
+        if not isinstance(guilds_used, list):
+            guilds_used = list(guilds_used)
         if context and context.get("guild_id"):
-            guilds_used.add(str(context["guild_id"]))  # Store as string for JSON serialization
-        global_usage[cmd_name]["guilds_used"] = list(guilds_used)[-1000:]  # Keep last 1000 guilds
+            guild_str = str(context["guild_id"])
+            if guild_str not in guilds_used:
+                guilds_used.append(guild_str)
+        global_usage[cmd_name]["guilds_used"] = guilds_used[-1000:]  # Keep last 1000 guilds
         
         dm.save_json("global_command_usage", global_usage)
     
@@ -643,7 +645,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         reply_btn = discord.ui.Button(label="Reply", style=discord.ButtonStyle.primary)
         
         async def reply_callback(it: discord.Interaction):
-            await it.response.send_modal(ModmailReplyModal(self.bot, user, guild.id))
+            await it.response.send_modal(ModmailReplyModal(self, user, guild.id))
         
         reply_btn.callback = reply_callback
         view.add_item(reply_btn)
@@ -669,7 +671,8 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         try:
             await user.send(embed=embed)
             await interaction.response.send_message("✅ Reply sent!", ephemeral=False)
-        except:
+        except Exception as e:
+            logger.warning("Failed to send modmail reply DM: %s", e)
             await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=False)
     
     async def _handle_suggest_command(self, message, cmd_content):
@@ -1213,7 +1216,8 @@ class ModmailReplyModal(ui.Modal, title='Reply to User'):
         try:
             await user.send(embed=embed)
             await interaction.response.send_message("✅ Reply sent!", ephemeral=False)
-        except:
+        except Exception as e:
+            logger.warning("Failed to send modmail reply DM: %s", e)
             await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=False)
 
 # --- Slash Commands ---
@@ -1406,7 +1410,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
             )
             # Self-reflection mechanism (opt-in via SELF_REFLECT_ENABLED env var)
             if os.getenv("SELF_REFLECT_ENABLED", "false").lower() == "true":
-                await _self_reflect_on_response(guild_id, user_id, user_input, summary, reasoning, walkthrough)
+                await bot._self_reflect_on_response(guild_id, user_id, user_input, summary, reasoning, walkthrough)
             return
         
         # Show plan with Confirm/Cancel buttons before executing
@@ -1474,7 +1478,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
         )
         # Self-reflection (opt-in)
         if os.getenv("SELF_REFLECT_ENABLED", "false").lower() == "true":
-            await _self_reflect_on_response(guild_id, user_id, user_input, summary, reasoning, walkthrough)
+            await bot._self_reflect_on_response(guild_id, user_id, user_input, summary, reasoning, walkthrough)
 
 # --- Utility Commands ---
 

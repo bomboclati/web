@@ -309,6 +309,15 @@ class ActionHandler:
         allowed_roles = params.get("allowed_roles", [])
         denied_roles = params.get("denied_roles", [])
 
+        if not guild.me.guild_permissions.manage_channels:
+            logger.error("Bot lacks manage_channels permission in guild %s", guild.id)
+            return False, None
+
+        existing = discord.utils.get(guild.channels, name=name)
+        if existing:
+            logger.info("Channel '%s' already exists, skipping creation", name)
+            return True, None
+
         category = None
         if category_name:
             category = discord.utils.get(guild.categories, name=category_name)
@@ -344,50 +353,53 @@ class ActionHandler:
         name_lower = channel_name.lower()
         
         # Permission rules based on channel keywords
-        channel_rules = {
+        # Ordered most-specific first to prevent substring false matches
+        channel_rules = [
+            # Most specific rules first
+            ("apply-public", {"allowed": [], "denied": []}),
+            ("bot-logs", {"allowed": ["Moderator", "Admin"], "denied": ["@everyone"]}),
+            ("ticket-queue", {"allowed": ["Moderator", "Support"], "denied": ["@everyone"]}),
+            
             # Staff/Admin channels - only staff can see
-            "staff": {"allowed": ["Moderator", "Admin", "Administrator"], "denied": ["@everyone"]},
-            "modmail": {"allowed": ["Moderator", "Admin", "Administrator"], "denied": ["@everyone"]},
-            "admin": {"allowed": ["Administrator", "Admin"], "denied": ["@everyone"]},
-            "logs": {"allowed": ["Moderator", "Admin", "Administrator"], "denied": ["@everyone"]},
-            "bot-logs": {"allowed": ["Moderator", "Admin"], "denied": ["@everyone"]},
+            ("staff", {"allowed": ["Moderator", "Admin", "Administrator"], "denied": ["@everyone"]}),
+            ("modmail", {"allowed": ["Moderator", "Admin", "Administrator"], "denied": ["@everyone"]}),
+            ("admin", {"allowed": ["Administrator", "Admin"], "denied": ["@everyone"]}),
+            ("logs", {"allowed": ["Moderator", "Admin", "Administrator"], "denied": ["@everyone"]}),
             
             # Applications - hidden from regular users until they apply
-            "applications": {"allowed": ["Moderator", "Admin", "Administrator"], "denied": ["@everyone"]},
-            "apply": {"allowed": ["Moderator", "Admin"], "denied": ["@everyone"]},
-            "apply-public": {"allowed": [], "denied": []},  # Public but use button
+            ("applications", {"allowed": ["Moderator", "Admin", "Administrator"], "denied": ["@everyone"]}),
+            ("apply", {"allowed": ["Moderator", "Admin"], "denied": ["@everyone"]}),
             
             # Verification - new users need to verify
-            "verify": {"allowed": [], "denied": []},  # Everyone can see, needs button
+            ("verify", {"allowed": [], "denied": []}),
             
             # General channels - everyone can see
-            "general": {"allowed": [], "denied": []},
-            "chat": {"allowed": [], "denied": []},
-            "talk": {"allowed": [], "denied": []},
+            ("general", {"allowed": [], "denied": []}),
+            ("chat", {"allowed": [], "denied": []}),
+            ("talk", {"allowed": [], "denied": []}),
             
             # Public channels - everyone can see
-            "announcements": {"allowed": [], "denied": []},
-            "rules": {"allowed": [], "denied": []},
-            "welcome": {"allowed": [], "denied": []},
-            "suggestions": {"allowed": [], "denied": []},
+            ("announcements", {"allowed": [], "denied": []}),
+            ("rules", {"allowed": [], "denied": []}),
+            ("welcome", {"allowed": [], "denied": []}),
+            ("suggestions", {"allowed": [], "denied": []}),
             
             # Support channels
-            "tickets": {"allowed": ["Moderator", "Support"], "denied": ["@everyone"]},
-            "ticket-queue": {"allowed": ["Moderator", "Support"], "denied": ["@everyone"]},
+            ("tickets", {"allowed": ["Moderator", "Support"], "denied": ["@everyone"]}),
             
             # Media channels
-            "media": {"allowed": [], "denied": []},
-            "art": {"allowed": [], "denied": []},
-            "gaming": {"allowed": [], "denied": []},
-            "vc": {"allowed": [], "denied": []},
+            ("media", {"allowed": [], "denied": []}),
+            ("art", {"allowed": [], "denied": []}),
+            ("gaming", {"allowed": [], "denied": []}),
+            ("vc", {"allowed": [], "denied": []}),
             
             # Voice channels - everyone can join
-            "voice": {"allowed": [], "denied": []},
-            "lounge": {"allowed": [], "denied": []},
-        }
+            ("voice", {"allowed": [], "denied": []}),
+            ("lounge", {"allowed": [], "denied": []}),
+        ]
         
-        # Find matching rule
-        for keyword, perms in channel_rules.items():
+        # Find matching rule (most specific first)
+        for keyword, perms in channel_rules:
             if keyword in name_lower:
                 return perms
         
@@ -485,6 +497,16 @@ class ActionHandler:
     async def action_create_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         guild = interaction.guild
         name = params.get("name")
+
+        if not guild.me.guild_permissions.manage_roles:
+            logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
+            return False, None
+
+        existing = discord.utils.get(guild.roles, name=name)
+        if existing:
+            logger.info("Role '%s' already exists, skipping creation", name)
+            return True, None
+
         color_hex = params.get("color", "#99AAB5").replace("#", "")
         color = discord.Color(int(color_hex, 16))
         
@@ -827,19 +849,19 @@ class ActionHandler:
         from modules.staff_system import StaffSystem
         system = StaffSystem(self.bot)
         result = await system.setup(interaction, params)
-        return result, {"action": "undo_staff_system", "guild_id": interaction.guild.id}
+        return bool(result) if result is not None else True, {"action": "undo_staff_system", "guild_id": interaction.guild.id}
 
     async def action_setup_economy(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         from modules.economy import Economy
         system = Economy(self.bot)
         result = await system.setup(interaction, params)
-        return result, {"action": "undo_economy", "guild_id": interaction.guild.id}
+        return bool(result) if result is not None else True, {"action": "undo_economy", "guild_id": interaction.guild.id}
 
     async def action_setup_trigger_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         from modules.trigger_roles import TriggerRoles
         system = TriggerRoles(self.bot)
         result = await system.setup(interaction, params)
-        return result, {"action": "undo_trigger_role", "guild_id": interaction.guild.id}
+        return bool(result) if result is not None else True, {"action": "undo_trigger_role", "guild_id": interaction.guild.id}
 
     # --- Setup System Actions (Auto-Setup with Buttons) ---
     
@@ -1077,8 +1099,8 @@ class ActionHandler:
                     prevention = stored_data.get("error_prevention")
                     if prevention and prevention.get("prevention_enabled"):
                         return prevention
-            except:
-                pass
+            except Exception as e:
+                logger.debug("Error reading stored command prevention for %s: %s", cmd_name, e)
         
         return None
 
@@ -1838,7 +1860,8 @@ class CommandsListView(discord.ui.View):
         try:
             user_id = int(parts[2].strip("<@!>"))
             target_member = await guild.fetch_member(user_id)
-        except:
+        except (ValueError, IndexError, discord.NotFound) as e:
+            logger.debug("User lookup failed in promote: %s", e)
             await message.channel.send("? Could not find user. Use `@user` format.")
             return True
         
@@ -1869,7 +1892,8 @@ class CommandsListView(discord.ui.View):
         try:
             user_id = int(parts[2].strip("<@!>"))
             target_member = await guild.fetch_member(user_id)
-        except:
+        except (ValueError, IndexError, discord.NotFound) as e:
+            logger.debug("User lookup failed in demote: %s", e)
             await message.channel.send("? Could not find user. Use `@user` format.")
             return True
         
@@ -1905,7 +1929,8 @@ class CommandsListView(discord.ui.View):
         try:
             user_id = int(parts[3].strip("<@!>"))
             target_member = await guild.fetch_member(user_id)
-        except:
+        except (ValueError, IndexError, discord.NotFound) as e:
+            logger.debug("User lookup failed in exclude: %s", e)
             await message.channel.send("? Could not find user. Use `@user` format.")
             return True
         
@@ -2168,7 +2193,8 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         try:
             role_id = int(parts[4].strip("<@&>"))
             target_role = guild.get_role(role_id)
-        except:
+        except (ValueError, IndexError, discord.NotFound) as e:
+            logger.debug("Role lookup failed: %s", e)
             await message.channel.send("? Could not find role. Use `@role` format.")
             return True
         
@@ -2248,7 +2274,8 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         try:
             user_id = int(parts[2].strip("<@!>"))
             target_member = await guild.fetch_member(user_id)
-        except:
+        except (ValueError, IndexError, discord.NotFound) as e:
+            logger.debug("User lookup failed in promotion decision: %s", e)
             await message.channel.send("? Could not find user. Use `@user` format.")
             return True
         
@@ -2293,8 +2320,8 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         else:
             try:
                 await target_member.send(f"? Your promotion to **{target_tier_name}** was rejected.")
-            except:
-                pass
+            except Exception as e:
+                logger.debug("Could not DM user about rejected promotion: %s", e)
             await message.channel.send(f"? Rejected promotion for {target_member.mention}")
         
         return True

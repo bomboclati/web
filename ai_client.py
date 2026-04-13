@@ -451,7 +451,7 @@ class AIClient:
                 content = text[start:end+1]
                 content = re.sub(r',\s*([\]}])', r'\1', content)
                 return json.loads(content)
-        except:
+        except Exception:
             pass
                 
         # Cannot parse as JSON - return the raw text as the summary
