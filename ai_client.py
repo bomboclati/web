@@ -516,6 +516,8 @@ ACTION EXAMPLES:
 - {"name": "assign_role", "parameters": {"role_name": "Bots", "username": "john"}}
 - {"name": "assign_role", "parameters": {"role_name": "Member", "user_id": "123456789"}}
 - {"name": "schedule_ai_action", "parameters": {"name": "daily_welcome", "cron": "0 9 * * *", "action_type": "announcement", "action_params": {"title": "Good Morning!", "message": "Start your day with positivity!"}, "channel_id": 123456789}}
+- {"name": "send_dm", "parameters": {"user_id": "123456789", "content": "Hello!"}}
+- {"name": "send_dm", "parameters": {"username": "john", "content": "Hello john!"}}
 
 ROLE ASSIGNMENT RULES:
 - To create a role AND give it to a user, use TWO actions in sequence:

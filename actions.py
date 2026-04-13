@@ -144,7 +144,7 @@ class ActionHandler:
         "create_prefix_command", "delete_prefix_command", "setup_welcome",
         "setup_logging", "setup_verification", "setup_economy", "setup_leveling",
         "setup_tickets", "setup_applications", "setup_appeals", "setup_moderation",
-        "send_dm", "create_invite", "schedule_ai_action"
+        "send_dm", "create_invite", "schedule_ai_action", "ping"
     }
     
     def __init__(self, bot):
@@ -837,6 +837,39 @@ class ActionHandler:
             logger.error(f"Error sending DM: {e}")
             return False, None
 
+    async def action_ping(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Pings a user and shows their latency/online status."""
+        user_id = params.get("user_id")
+        username = params.get("username")
+        
+        if not user_id and not username:
+            return False, None
+        
+        if username:
+            member = discord.utils.get(interaction.guild.members, name=username)
+            if member:
+                user_id = member.id
+            else:
+                return False, {"error": f"User '{username}' not found"}
+        
+        member = interaction.guild.get_member(user_id) if user_id else None
+        if not member:
+            return False, {"error": "Member not found"}
+        
+        latency = round(self.bot.latency * 1000, 1) if self.bot.latency else 0
+        status_emoji = str(member.status).replace("online", "\\U0001f7e2").replace("idle", "\\U0001f7e1").replace("dnd", "\\U0001f7e0").replace("offline", "\\U0001f507")
+        status_text = f"Status: {member.status}"
+        
+        embed = discord.Embed(
+            title=f"@ {member.display_name}",
+            description=f"{status_text}\nBot Latency: {latency}ms\nJoined: {member.joined_at.strftime('%Y-%m-%d') if member.joined_at else 'Unknown'}",
+            color=member.color or discord.Color.blurple()
+        )
+        embed.set_thumbnail(url=member.display_avatar.url)
+        
+        await interaction.channel.send(f"{member.mention}", embed=embed, delete_after=30)
+        return True, None
+
     async def action_post_documentation(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Posts a comprehensive, multi-section documentation embed for a newly created system."""
         channel_name = params.get("channel")
@@ -1218,7 +1251,7 @@ class ActionHandler:
         last_time = last_daily.get(str(user_id))
         
         if last_time:
-            last_date = dt.fromisoformat(last_time)
+            last_date = dt.datetime.fromisoformat(last_time)
             if (dt.datetime.now() - last_date).days < 1:
                 await message.channel.send("Daily reward already claimed today!")
                 return True
