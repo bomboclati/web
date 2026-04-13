@@ -527,6 +527,19 @@ WHEN TO USE PING vs SEND_DM:
 - Use "ping" when user wants to mention/ping "@user" or check their status - shows in CHANNEL
 - Use "send_dm" when user wants to privately message someone - sends to their DM
 
+EMBED COLORS:
+- Use hex color codes like "#FF5733" or "#99AAB5" (Discord hex format)
+- Colors are optional - if not specified, defaults to blurple
+
+ROLE ASSIGNMENT:
+- Use "assign_role" action with "role_name" (the role's text name, not the mention)
+- Example: {"name": "assign_role", "parameters": {"role_name": "Member", "username": "john"}}
+- NEVER mention @role in parameters - use the role name text
+
+CHANNEL CREATION:
+- "create_channel" with "name", "type" (text/voice/category), optional "category"
+- Example: {"name": "create_channel", "parameters": {"name": "general", "type": "text"}}
+
 ROLE ASSIGNMENT RULES:
 - To create a role AND give it to a user, use TWO actions in sequence:
   1. {"name": "create_role", "parameters": {"name": "Bots", "color": "#99AAB5"}}
