@@ -13,7 +13,8 @@ import time
 from dotenv import load_dotenv
 from data_manager import dm
 from history_manager import history_manager
-from ai_client import AIClient, SYSTEM_PROMPT
+from ai_client import AIClient, AIClientError, SYSTEM_PROMPT
+from tenacity import RetryError
 from logger import logger
 from task_scheduler import TaskScheduler
 from vector_memory import vector_memory
@@ -1293,7 +1294,14 @@ async def slash_bot(interaction: discord.Interaction, text: str):
         logger.error(f"Error in /bot command for user {interaction.user.id}: {e}", exc_info=True)
         try:
             # Update the thinking message with the error
-            await thinking_msg.edit(content=f"❌ **AI Error:** {str(e)}\n*Suggestions: Check your API key with `/config apikey`, or try a different model.*")
+            if isinstance(e, RetryError):
+                cause = e.last_attempt.exception()
+                err_text = cause.message if isinstance(cause, AIClientError) else str(cause)
+            elif isinstance(e, AIClientError):
+                err_text = e.message
+            else:
+                err_text = str(e)
+            await thinking_msg.edit(content=f"❌ **AI Error:** {err_text}\n*Tip: Use /config key to set your API key, or /config provider to switch provider.*")
         except discord.errors.NotFound:
             pass
         return
@@ -1328,7 +1336,7 @@ async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: st
         for i, mem in enumerate(relevant_memories, 1):
             memory_context += f"\n{i}. Similar conversation (similarity: {mem['similarity']:.2f}):\n{mem['document'][:500]}...\n"
 
-    res = await bot.ai.chat(guild_id, user_id, user_input, SYSTEM_PROMPT + memory_context)
+    res = await bot.ai.safe_chat(guild_id, user_id, user_input, SYSTEM_PROMPT + memory_context)
 
     
     reasoning = res.get("reasoning", "Thinking...")

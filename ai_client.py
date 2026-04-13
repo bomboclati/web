@@ -230,6 +230,31 @@ class AIClient:
         
         raise Exception("AI failed to respond after trying all configured fallback providers.")
 
+
+    async def safe_chat(self, guild_id: int, user_id: int, user_input: str, system_prompt: str) -> Dict[str, Any]:
+        """
+        Public wrapper around chat() that converts tenacity RetryError into a
+        clean, human-readable exception so callers never see the raw RetryError.
+        """
+        from tenacity import RetryError
+        try:
+            return await self.chat(guild_id, user_id, user_input, system_prompt)
+        except RetryError as e:
+            cause = e.last_attempt.exception()
+            if isinstance(cause, AIClientError):
+                status = cause.status
+                msg = cause.message
+                if status == 401:
+                    raise AIClientError(status, 'Invalid or expired API key. Set a new one with /config key.') from cause
+                if status == 429:
+                    raise AIClientError(status, 'Rate limit hit. Wait a moment, or switch providers with /config provider.') from cause
+                if status == 403:
+                    raise AIClientError(status, f'Access denied by the AI provider. Try a different model or provider.') from cause
+                if status >= 500:
+                    raise AIClientError(status, f'AI provider server error ({status}). Try again in a moment.') from cause
+                raise AIClientError(status, msg) from cause
+            raise Exception(f'AI failed after multiple attempts: {cause}') from cause
+
     async def _chat_internal(self, guild_id: int, user_id: int, user_input: str, system_prompt: str, api_key: str, provider: str) -> Dict[str, Any]:
         """Internal execution for a single AI provider request."""
         # Get recent history
