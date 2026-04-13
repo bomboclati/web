@@ -503,10 +503,28 @@ NEVER skip documentation. Show users how to use every feature you create!
 
 ACTION EXAMPLES:
 - {"name": "create_channel", "parameters": {"name": "shop", "type": "text", "category": "Economy"}}
-- {"name": "create_prefix_command", "parameters": {"name": "buy", "code": "..."}}
-- {"name": "send_embed", "parameters": {"channel": "...", "title": "...", "description": "..."}}
+- {"name": "create_prefix_command", "parameters": {"name": "buy", "code": "{\"command_type\": \"simple\", \"content\": \"Welcome!\"}"}}
+- {"name": "send_embed", "parameters": {"channel": "verify", "title": "Verify", "description": "Click to verify!", "buttons": [{"label": "Verify Me", "type": "verify", "style": "success"}]}}
+- {"name": "send_embed", "parameters": {"channel": "rules", "title": "Rules", "description": "Read!", "buttons": [{"label": "I Accept", "type": "accept_rules"}], "fields": [{"name": "Rule 1", "value": "Be respectful", "inline": false}]}}
+- {"name": "send_embed", "parameters": {"channel": "tickets", "title": "Support", "description": "Need help?", "buttons": [{"label": "Open Ticket", "type": "ticket"}]}}
+- {"name": "send_embed", "parameters": {"channel": "staff-apps", "title": "Staff Apply", "description": "Join our team!", "buttons": [{"label": "Apply Now", "type": "apply_staff"}]}}
 - {"name": "web_search", "parameters": {"query": "..."}}
 - {"name": "schedule_ai_action", "parameters": {"name": "daily_welcome", "cron": "0 9 * * *", "action_type": "announcement", "action_params": {"title": "Good Morning!", "message": "Start your day with positivity!"}, "channel_id": 123456789}}
+
+BUTTON TYPES for send_embed (all fully functional, no placeholders):
+- "verify" = Gives user Verified/Member role automatically
+- "ticket" = Creates a support ticket thread
+- "accept_rules" = Accepts rules and grants Verified role
+- "apply_staff" = Opens a staff application form
+- "suggestion" = Prompts user to submit a suggestion
+- "custom" = Shows a custom response (add "response": "message" field)
+
+PREFIX COMMAND code MUST be valid JSON string. Formats:
+- Simple text: {"command_type": "simple", "content": "Your message"}
+- Help embed: {"command_type": "help_embed", "title": "Help", "commands": [{"name": "!cmd", "description": "What it does"}]}
+- Economy daily: {"command_type": "economy_daily"}
+- Balance: {"command_type": "economy_balance"}
+- Show all commands: {"command_type": "help_all"}
 
 SCHEDULED ACTIONS:
 Schedule automatic actions using cron expressions:
