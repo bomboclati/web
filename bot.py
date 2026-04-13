@@ -1426,18 +1426,26 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
             if it.user.id != user_id:
                 return await it.response.send_message("Only the user who started this can confirm.", ephemeral=True)
             await it.response.edit_message(content="⚙️ Executing...", embed=None, view=None)
-            from actions import ActionHandler
-            handler = ActionHandler(bot)
-            result = await handler.execute_sequence(it, actions)
-            summary_text = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in result["results"]])
-            if result["success"]:
-                final_msg = f"**✅ Execution Complete!**\n{summary_text}\n\n{summary}"
-            else:
-                rollback_text = ""
-                if result["rolled_back"]:
-                    rb = "\n".join([f"{'↩️' if s else '⚠️'} {n}" for n, s in result["rolled_back"]])
-                    rollback_text = f"\n\n**Auto-Rollback ({len(result['rolled_back'])} actions):**\n{rb}"
-                final_msg = f"**❌ Failed at step {result['failed_at'] + 1}: `{result['failed_action']}`**\nError: {result['error']}\n\n**Steps:**\n{summary_text}{rollback_text}"
+            final_msg = "❌ Something went wrong during execution. Please try again."
+            try:
+                from actions import ActionHandler
+                handler = ActionHandler(bot)
+                result = await handler.execute_sequence(it, actions)
+                summary_text = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in result["results"]])
+                if result["success"]:
+                    final_msg = f"**✅ Execution Complete!**\n{summary_text}\n\n{summary}"
+                else:
+                    rollback_text = ""
+                    if result["rolled_back"]:
+                        rb = "\n".join([f"{'↩️' if s else '⚠️'} {n}" for n, s in result["rolled_back"]])
+                        rollback_text = f"\n\n**Auto-Rollback ({len(result['rolled_back'])} actions):**\n{rb}"
+                    final_msg = f"**❌ Failed at step {result['failed_at'] + 1}: `{result['failed_action']}`**\nError: {result['error']}\n\n**Steps:**\n{summary_text}{rollback_text}"
+            except Exception as exec_err:
+                import traceback
+                logger.error("confirm_callback crashed: %s", exec_err, exc_info=True)
+                final_msg = f"**❌ Execution crashed:** {exec_err}
+
+Something went wrong running the actions. Please try again or rephrase your request."
             await it.channel.send(final_msg)
             await history_manager.add_exchange(guild_id, user_id, user_input, summary)
             await vector_memory.store_conversation(guild_id=guild_id, user_id=user_id, user_message=user_input, bot_response=summary, reasoning=reasoning, walkthrough=walkthrough)
