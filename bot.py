@@ -183,6 +183,17 @@ class MiroBot(commands.Bot):
 
     async def on_ready(self):
         logger.info("Logged in as %s (ID: %s) (IMMORTAL)", self.user, self.user.id)
+        # Restore persistent button views with real role/channel IDs for each guild
+        from modules.auto_setup import VerifyButton, AcceptRulesButton, CreateTicketButton
+        for guild in self.guilds:
+            verify_role_id = dm.get_guild_data(guild.id, "verify_role")
+            ticket_channel_id = dm.get_guild_data(guild.id, "ticket_channel")
+            if verify_role_id:
+                self.add_view(VerifyButton(guild_id=guild.id, role_id=verify_role_id))
+                self.add_view(AcceptRulesButton(guild_id=guild.id, role_id=verify_role_id))
+            ticket_ch = dm.get_guild_data(guild.id, 'tickets_channel') or dm.get_guild_data(guild.id, 'ticket_queue_channel')
+            if ticket_ch:
+                self.add_view(CreateTicketButton(guild_id=guild.id, channel_id=ticket_ch))
         self.loop.create_task(self._auto_backup_loop())
         self.loop.create_task(self._cleanup_expired_sessions())
         self.loop.create_task(self._command_refinement_loop())
@@ -622,7 +633,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         
         # Forward DM to modmail channel
         embed = discord.Embed(
-            title=f"?? Modmail from {user}",
+            title=f"📬 Modmail from {user}",
             description=message.content,
             color=discord.Color.blurple()
         )
@@ -646,20 +657,20 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         user = self.get_user(user_id)
         
         if not user or not guild:
-            await interaction.response.send_message("? User not found.", ephemeral=False)
+            await interaction.response.send_message("❌ User not found.", ephemeral=False)
             return
         
         embed = discord.Embed(
-            title=f"?? Reply from {guild.name} Staff",
+            title=f"📩 Reply from {guild.name} Staff",
             description=reply_text,
             color=discord.Color.green()
         )
         
         try:
             await user.send(embed=embed)
-            await interaction.response.send_message("? Reply sent!", ephemeral=False)
+            await interaction.response.send_message("✅ Reply sent!", ephemeral=False)
         except:
-            await interaction.response.send_message("? Could not send DM to user.", ephemeral=False)
+            await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=False)
     
     async def _handle_suggest_command(self, message, cmd_content):
         guild = message.guild
@@ -686,18 +697,18 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             return
         
         embed = discord.Embed(
-            title=f"?? {title}",
+            title=f"💡 {title}",
             description=description,
             color=discord.Color.blue()
         )
         embed.set_footer(text=f"Suggested by {message.author}")
-        embed.add_field(name="Status", value="? Pending Review", inline=False)
+        embed.add_field(name="Status", value="⏳ Pending Review", inline=False)
         
         msg = await channel.send(embed=embed)
         await msg.add_reaction("?")
         await msg.add_reaction("?")
         
-        await message.channel.send("? Suggestion submitted!")
+        await message.channel.send("✅ Suggestion submitted!")
     
     async def _handle_export_memory(self, message):
         """Handle !exportmemory command"""
@@ -1119,7 +1130,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         type_label = suggestion_type.replace("_", " ").title()
         
         embed = discord.Embed(
-            title=f"? Command Auto-Improved: !{cmd_name}",
+            title=f"✨ Command Auto-Improved: !{cmd_name}",
             description=f"The AI has automatically improved this command based on usage patterns.",
             color=discord.Color.green()
         )
@@ -1190,20 +1201,20 @@ class ModmailReplyModal(ui.Modal, title='Reply to User'):
         user = self.bot.get_user(self.user.id)
         
         if not user or not guild:
-            await interaction.response.send_message("? User not found.", ephemeral=False)
+            await interaction.response.send_message("❌ User not found.", ephemeral=False)
             return
         
         embed = discord.Embed(
-            title=f"?? Reply from {guild.name} Staff",
+            title=f"📩 Reply from {guild.name} Staff",
             description=self.reply.value,
             color=discord.Color.green()
         )
         
         try:
             await user.send(embed=embed)
-            await interaction.response.send_message("? Reply sent!", ephemeral=False)
+            await interaction.response.send_message("✅ Reply sent!", ephemeral=False)
         except:
-            await interaction.response.send_message("? Could not send DM to user.", ephemeral=False)
+            await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=False)
 
 # --- Slash Commands ---
 
@@ -1252,7 +1263,7 @@ async def slash_bot(interaction: discord.Interaction, text: str):
         logger.error(f"Error in /bot command for user {interaction.user.id}: {e}", exc_info=True)
         try:
             # Update the thinking message with the error
-            await thinking_msg.edit(content=f"? **AI Error:** {str(e)}\n*Suggestions: Check your API key with `/config apikey`, or try a different model.*")
+            await thinking_msg.edit(content=f"❌ **AI Error:** {str(e)}\n*Suggestions: Check your API key with `/config apikey`, or try a different model.*")
         except discord.errors.NotFound:
             pass
         return
@@ -1388,26 +1399,53 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
                 await _self_reflect_on_response(guild_id, user_id, user_input, summary, reasoning, walkthrough)
             return
         
-        # AUTO-EXECUTE: If needs_input is False, execute actions immediately without confirmation
-        # This allows the AI to create channels, roles, etc. automatically
-        await interaction.followup.send(f"[AI] Executing actions...\n\n**Plan:**\n{walkthrough}", ephemeral=False)
-        
-        from actions import ActionHandler
-        handler = ActionHandler(bot)
-        result = await handler.execute_sequence(interaction, actions)
-        
-        summary_text = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in result["results"]])
-        
-        if result["success"]:
-            final_msg = f"**✅ Execution Complete!**\n{summary_text}\n\n{summary}"
+        # Show plan with Confirm/Cancel buttons before executing
+        action_list = "\n".join([f"• {a.get('name','?')}" for a in actions])
+        plan_embed = discord.Embed(
+            title="🤖 AI Action Plan",
+            description=f"**What I will do:**\n{walkthrough}\n\n**Actions ({len(actions)}):**\n{action_list}",
+            color=discord.Color.orange()
+        )
+        plan_embed.set_footer(text="Click Confirm to execute, or Cancel to abort.")
+
+        confirm_view = discord.ui.View(timeout=120)
+        confirm_btn = discord.ui.Button(label="✅ Confirm & Execute", style=discord.ButtonStyle.success, custom_id="confirm_execute")
+        cancel_btn = discord.ui.Button(label="❌ Cancel", style=discord.ButtonStyle.danger, custom_id="cancel_execute")
+
+        async def confirm_callback(it: discord.Interaction):
+            if it.user.id != user_id:
+                return await it.response.send_message("Only the user who started this can confirm.", ephemeral=True)
+            await it.response.edit_message(content="⚙️ Executing...", embed=None, view=None)
+            from actions import ActionHandler
+            handler = ActionHandler(bot)
+            result = await handler.execute_sequence(it, actions)
+            summary_text = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in result["results"]])
+            if result["success"]:
+                final_msg = f"**✅ Execution Complete!**\n{summary_text}\n\n{summary}"
+            else:
+                rollback_text = ""
+                if result["rolled_back"]:
+                    rb = "\n".join([f"{'↩️' if s else '⚠️'} {n}" for n, s in result["rolled_back"]])
+                    rollback_text = f"\n\n**Auto-Rollback ({len(result['rolled_back'])} actions):**\n{rb}"
+                final_msg = f"**❌ Failed at step {result['failed_at'] + 1}: `{result['failed_action']}`**\nError: {result['error']}\n\n**Steps:**\n{summary_text}{rollback_text}"
+            await it.channel.send(final_msg)
+            await history_manager.add_exchange(guild_id, user_id, user_input, summary)
+            await vector_memory.store_conversation(guild_id=guild_id, user_id=user_id, user_message=user_input, bot_response=summary, reasoning=reasoning, walkthrough=walkthrough)
+
+        async def cancel_callback(it: discord.Interaction):
+            if it.user.id != user_id:
+                return await it.response.send_message("Only the user who started this can cancel.", ephemeral=True)
+            await it.response.edit_message(content="❌ Action cancelled.", embed=None, view=None)
+
+        confirm_btn.callback = confirm_callback
+        cancel_btn.callback = cancel_callback
+        confirm_view.add_item(confirm_btn)
+        confirm_view.add_item(cancel_btn)
+
+        if thinking_msg:
+            await thinking_msg.edit(content="", embed=plan_embed, view=confirm_view)
         else:
-            rollback_text = ""
-            if result["rolled_back"]:
-                rb = "\n".join([f"{'↩️' if s else '⚠️'} {n}" for n, s in result["rolled_back"]])
-                rollback_text = f"\n\n**Auto-Rollback ({len(result['rolled_back'])} actions):**\n{rb}"
-            final_msg = f"**❌ Failed at step {result['failed_at'] + 1}: `{result['failed_action']}`**\nError: {result['error']}\n\n**Executed:**\n{summary_text}{rollback_text}"
-        
-        await interaction.channel.send(final_msg)
+            await interaction.followup.send(embed=plan_embed, view=confirm_view, ephemeral=False)
         await history_manager.add_exchange(guild_id, user_id, user_input, summary)
         # Store in vector memory for long-term recall
         await vector_memory.store_conversation(
@@ -1447,13 +1485,13 @@ async def status_cmd(interaction: discord.Interaction):
         else:
             provider_status.append(f"{p.capitalize()} {status}")
 
-    embed.add_field(name="?? AI Configuration", value="\n".join(provider_status), inline=False)
-    embed.add_field(name="?? AI Model", value=f"`{bot.ai.model}`", inline=True)
-    embed.add_field(name="?? Memory", value=f"{os.getenv('MEMORY_DEPTH', '20')} msgs", inline=True)
-    embed.add_field(name="Bot", value="?? Online", inline=True)
+    embed.add_field(name="⚙️ AI Configuration", value="\n".join(provider_status), inline=False)
+    embed.add_field(name="🤖 AI Model", value=f"`{bot.ai.model}`", inline=True)
+    embed.add_field(name="💾 Memory", value=f"{os.getenv('MEMORY_DEPTH', '20')} msgs", inline=True)
+    embed.add_field(name="Bot", value="🟢 Online", inline=True)
     embed.add_field(name="Guild", value=f"?? {guild.name}", inline=True)
     embed.add_field(name="Vector Memory", value=f"{vm_stats.get('count', 0)} memories stored", inline=False)
-    embed.add_field(name="Self-Reflection", value="?? Disabled" if os.getenv("SELF_REFLECT_ENABLED", "false").lower() != "true" else "?? Enabled", inline=True)
+    embed.add_field(name="Self-Reflection", value="🔴 Disabled" if os.getenv("SELF_REFLECT_ENABLED", "false").lower() != "true" else "?? Enabled", inline=True)
     
     await interaction.response.send_message(embed=embed)
 
@@ -1478,7 +1516,7 @@ async def cancel_cmd(interaction: discord.Interaction):
 @bot.tree.command(name="analyze", description="AI analyzes your server and suggests improvements")
 async def analyze_cmd(interaction: discord.Interaction):
     """AI analyzes the server and provides suggestions."""
-    await interaction.response.send_message("?? Analyzing server...", ephemeral=False)
+    await interaction.response.send_message("🔍 Analyzing server...", ephemeral=False)
     
     guild = interaction.guild
     
@@ -1522,10 +1560,13 @@ Suggest 3 specific improvements the server should make. Keep it brief and action
             system_prompt="You are a helpful Discord server consultant. Give concrete, actionable suggestions."
         )
         
-        suggestions = result.get("summary", "Could not generate suggestions at this time.")
+        if result.get("error"):
+            await interaction.edit_original_response(content=f"❌ AI not configured: {result['error']}")
+            return
+        suggestions = result.get("summary") or result.get("message") or "Could not generate suggestions at this time."
         
         embed = discord.Embed(
-            title="?? Server Analysis & Suggestions",
+            title="📊 Server Analysis & Suggestions",
             description=suggestions,
             color=discord.Color.green()
         )
@@ -1535,8 +1576,8 @@ Suggest 3 specific improvements the server should make. Keep it brief and action
         await interaction.edit_original_response(content=None, embed=embed)
         
     except Exception as e:
-        logger.error(f"Analysis error: {e}")
-        await interaction.edit_original_response(content="? Could not complete analysis. Try again later.")
+        logger.error(f"Analysis error: {e}", exc_info=True)
+        await interaction.edit_original_response(content=f"❌ Analysis failed: {str(e)[:200]}\n\nMake sure an AI API key is configured with `/config apikey`")
 
 @bot.tree.command(name="suggest", description="Submit a suggestion for the server")
 @app_commands.describe(title="Suggestion title", description="Describe your suggestion")
@@ -1554,18 +1595,18 @@ async def suggest_cmd(interaction: discord.Interaction, title: str, description:
         return
     
     embed = discord.Embed(
-        title=f"?? {title}",
+        title=f"💡 {title}",
         description=description,
         color=discord.Color.blue()
     )
     embed.set_footer(text=f"Suggested by {interaction.user}")
-    embed.add_field(name="Status", value="? Pending Review", inline=False)
+    embed.add_field(name="Status", value="⏳ Pending Review", inline=False)
     
     message = await channel.send(embed=embed)
     await message.add_reaction("?")
     await message.add_reaction("?")
     
-    await interaction.response.send_message("? Suggestion submitted!", ephemeral=False)
+    await interaction.response.send_message("✅ Suggestion submitted!", ephemeral=False)
 
 @bot.tree.command(name="autoanalyze", description="Enable automatic AI analysis of your server")
 @app_commands.describe(interval="How often to analyze (hours)", enabled="Enable or disable")
@@ -1578,7 +1619,7 @@ async def autoanalyze_cmd(interaction: discord.Interaction, interval: int = 24, 
     dm.update_guild_data(interaction.guild.id, "auto_analyze", config)
     
     status = "enabled" if enabled else "disabled"
-    await interaction.response.send_message(f"?? Auto-analyze {status} (every {interval} hours). Use /analyze to see results.", ephemeral=False)
+    await interaction.response.send_message(f"⏰ Auto-analyze {status} (every {interval} hours). Use /analyze to see results.", ephemeral=False)
 
 @bot.tree.command(name="list", description="Shows all active automations")
 async def list_cmd(interaction: discord.Interaction):
@@ -1637,7 +1678,7 @@ async def health_cmd(interaction: discord.Interaction):
     color = discord.Color.green() if health > 0.6 else discord.Color.orange() if health > 0.4 else discord.Color.red()
     
     embed = discord.Embed(
-        title="?? Community Health",
+        title="💚 Community Health",
         description=f"Health Score: **{health:.1f}/10**",
         color=color
     )
