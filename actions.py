@@ -801,11 +801,22 @@ class ActionHandler:
     async def action_send_dm(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Sends a DM to a user with deduplication."""
         user_id = params.get("user_id")
+        username = params.get("username")
         content = params.get("content")
         embed_data = params.get("embed")
         
+        # Support both user_id and username
+        if not user_id and username:
+            member = discord.utils.get(interaction.guild.members, name=username)
+            if member:
+                user_id = member.id
+            else:
+                member = discord.utils.get(interaction.guild.members, nick=username)
+                if member:
+                    user_id = member.id
+        
         if not user_id:
-            return False, None
+            return False, {"error": "User not found"}
             
         # Deduplication check
         dedup_key = f"dm_{user_id}_{hash(content or '')}_{hash(str(embed_data) if embed_data else '')}"
