@@ -152,7 +152,10 @@ class ActionHandler:
         "mute_user", "unmute_user", "deafen_user", "set_nickname", "slowmode", "lock_channel", "unlock_channel",
         "send_message", "reply_message", "add_reaction", "edit_channel_name", "edit_role_name",
         "change_role_color", "move_channel", "clone_channel", "create_thread", "pin_message", "unpin_message",
-        "set_topic", "delete_messages"
+        "set_topic", "delete_messages", "remove_reaction", "delete_message", "bulk_delete_messages",
+        "create_role_with_permissions", "edit_channel_permissions", "create_voice_channel", "create_text_channel",
+        "create_category_channel", "edit_channel_bitrate", "edit_channel_user_limit", "follow_announcement_channel",
+        "create_scheduled_event"
     }
     
     def __init__(self, bot):
@@ -1749,6 +1752,160 @@ class ActionHandler:
             return True, {"topic": topic}
         except Exception as e:
             logger.error(f"Error setting topic: {e}")
+            return False, None
+
+    async def action_remove_reaction(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Removes emoji reaction from a message."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        message_id = params.get("message_id")
+        emoji = params.get("emoji", "")
+        
+        if not emoji:
+            return False, None
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
+        if not channel:
+            return False, None
+        
+        try:
+            msg = await channel.fetch_message(message_id) if message_id else None
+            if msg:
+                await msg.remove_reaction(emoji)
+            return True, {"emoji": emoji}
+        except Exception as e:
+            logger.error(f"Error removing reaction: {e}")
+            return False, None
+
+    async def action_delete_message(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Deletes a specific message."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        message_id = params.get("message_id")
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
+        if not channel:
+            return False, None
+        
+        try:
+            msg = await channel.fetch_message(message_id) if message_id else None
+            if msg:
+                await msg.delete()
+            return True, {"message_id": message_id}
+        except Exception as e:
+            logger.error(f"Error deleting message: {e}")
+            return False, None
+
+    async def action_create_voice_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Creates a voice channel."""
+        name = params.get("name", "Voice Channel")
+        category = params.get("category")
+        
+        category_obj = discord.utils.get(interaction.guild.categories, name=category) if category else None
+        
+        try:
+            channel = await interaction.guild.create_voice_channel(name, category=category_obj)
+            return True, {"channel": channel.name}
+        except Exception as e:
+            logger.error(f"Error creating voice channel: {e}")
+            return False, None
+
+    async def action_create_text_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Creates a text channel."""
+        name = params.get("name", "text-channel")
+        category = params.get("category")
+        
+        category_obj = discord.utils.get(interaction.guild.categories, name=category) if category else None
+        
+        try:
+            channel = await interaction.guild.create_text_channel(name, category=category_obj)
+            return True, {"channel": channel.name}
+        except Exception as e:
+            logger.error(f"Error creating text channel: {e}")
+            return False, None
+
+    async def action_create_category_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Creates a category."""
+        name = params.get("name", "New Category")
+        
+        try:
+            channel = await interaction.guild.create_category(name)
+            return True, {"category": channel.name}
+        except Exception as e:
+            logger.error(f"Error creating category: {e}")
+            return False, None
+
+    async def action_edit_channel_bitrate(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Sets voice channel bitrate."""
+        channel_name = params.get("channel_name")
+        bitrate = params.get("bitrate", 128000)
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else None
+        if not channel or not channel.voice:
+            return False, None
+        
+        try:
+            await channel.edit(bitrate=bitrate)
+            return True, {"bitrate": bitrate}
+        except Exception as e:
+            logger.error(f"Error editing bitrate: {e}")
+            return False, None
+
+    async def action_edit_channel_user_limit(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Sets voice channel user limit."""
+        channel_name = params.get("channel_name")
+        user_limit = params.get("user_limit", 0)
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else None
+        if not channel or not channel.voice:
+            return False, None
+        
+        try:
+            await channel.edit(user_limit=user_limit)
+            return True, {"user_limit": user_limit}
+        except Exception as e:
+            logger.error(f"Error editing user limit: {e}")
+            return False, None
+
+    async def action_follow_announcement_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Follows an announcement channel."""
+        source = params.get("source_channel")
+        target = params.get("target_channel")
+        
+        source_channel = discord.utils.get(interaction.guild.channels, name=source) if source else None
+        target_channel = discord.utils.get(interaction.guild.channels, name=target) if target else None
+        
+        if not source_channel or not target_channel:
+            return False, None
+        
+        try:
+            await source_channel.followers.append(target_channel)
+            return True, {"source": source, "target": target}
+        except Exception as e:
+            logger.error(f"Error following channel: {e}")
+            return False, None
+
+    async def action_create_scheduled_event(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Creates a scheduled event."""
+        name = params.get("name", "Event")
+        description = params.get("description", "")
+        start_time = params.get("start_time")  # ISO format
+        end_time = params.get("end_time")
+        location = params.get("location", "Voice Channel")
+        
+        import datetime
+        try:
+            start = datetime.datetime.fromisoformat(start_time) if start_time else datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+            end = datetime.datetime.fromisoformat(end_time) if end_time else start + datetime.timedelta(hours=1)
+            
+            event = await interaction.guild.create_scheduled_event(
+                name=name,
+                description=description,
+                start_time=start,
+                end_time=end,
+                location=location
+            )
+            return True, {"event": event.name}
+        except Exception as e:
+            logger.error(f"Error creating event: {e}")
             return False, None
 
     # --- Execution Logic ---

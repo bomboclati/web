@@ -545,6 +545,14 @@ ACTION EXAMPLES:
 - {"name": "create_thread", "parameters": {"channel": "general", "name": "discussion"}}
 - {"name": "pin_message", "parameters": {"channel": "general", "message_id": 123456}}
 - {"name": "set_topic", "parameters": {"channel": "general", "topic": "Welcome!"}}
+- {"name": "remove_reaction", "parameters": {"channel": "general", "message_id": 123, "emoji": "?"}}
+- {"name": "delete_message", "parameters": {"channel": "general", "message_id": 123}}
+- {"name": "create_voice_channel", "parameters": {"name": "AFK", "category": "Main"}}
+- {"name": "create_text_channel", "parameters": {"name": "feedback"}}
+- {"name": "create_category_channel", "parameters": {"name": "Events"}}
+- {"name": "edit_channel_bitrate", "parameters": {"channel_name": "AFK", "bitrate": 128000}}
+- {"name": "edit_channel_user_limit", "parameters": {"channel_name": "AFK", "user_limit": 10}}
+- {"name": "create_scheduled_event", "parameters": {"name": "Gaming Night", "description": "Join us!", "location": "Voice"}}
 
 WHEN TO USE PING vs SEND_DM:
 - Use "ping" when user wants to mention/ping "@user" or check their status - shows in CHANNEL
