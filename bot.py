@@ -223,18 +223,23 @@ class MiroBot(commands.Bot):
         """Check for incomplete setups from previous crashes and clean up."""
         pending_setups = dm.load_json("pending_setups", default={})
         cleanup_failed = []
+        # Collect entries to delete after iteration to avoid modifying dict during iteration
+        to_delete = []
         for setup_id, setup_data in pending_setups.items():
             logger.warning("Found incomplete setup %s from crash - cleaning up", setup_id)
             guild_id = setup_data.get("guild_id")
             actions_taken = setup_data.get("actions_taken", [])
             success = await self._cleanup_crash_setup(guild_id, actions_taken)
-            if not success:
-                cleanup_failed.append(setup_id)
+            if success:
+                to_delete.append(setup_id)
             else:
-                del pending_setups[setup_id]
+                cleanup_failed.append(setup_id)
         # Only delete entries that were successfully cleaned up
-        for setup_id in cleanup_failed:
+        for setup_id in to_delete:
             pending_setups.pop(setup_id, None)
+        # Keep failed entries in pending_setups for retry on next restart
+        if cleanup_failed:
+            logger.warning("Failed to clean up %d setups, will retry on next restart", len(cleanup_failed))
         if pending_setups:
             dm.save_json("pending_setups", pending_setups)
         logger.info("Crash recovery check completed")

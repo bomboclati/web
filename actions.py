@@ -200,7 +200,7 @@ class ActionHandler:
                         "user_id": user_id,
                         "timestamp": time.time()
                     })
-                elif not success:
+                elif success is False:
                     raise Exception(f"Action returned failure: {name}")
             except Exception as e:
                 error_msg = str(e)
