@@ -831,9 +831,31 @@ class ActionHandler:
         embed_data = params.get("embed")
         guild = interaction.guild
 
+        # ── 0. Parse user_id from Discord mention format (e.g. <@!123456789> or <@123456789>) ─────
+        if user_id:
+            try:
+                # Handle both <@! and <@ mention formats
+                user_id_str = str(user_id).strip()
+                if user_id_str.startswith("<@") and user_id_str.endswith(">"):
+                    # Strip <@! or <@ prefix and > suffix to get the numeric ID
+                    cleaned = user_id_str.lstrip("<@!").lstrip("<@").rstrip(">")
+                    if cleaned.isdigit():
+                        user_id = int(cleaned)
+                    else:
+                        user_id = None
+                elif user_id_str.isdigit():
+                    user_id = int(user_id_str)
+                else:
+                    user_id = None
+            except (ValueError, TypeError):
+                user_id = None
+
         # ── 1. Resolve user_id from username ──────────────────────────────────
         if not user_id and username:
-            if isinstance(username, str) and username.startswith("@"):
+            # Handle Discord mention format <@!user> or <@user>
+            if isinstance(username, str) and username.startswith("<@"):
+                username = username.lstrip("<@!").lstrip("<@").rstrip(">")
+            elif isinstance(username, str) and username.startswith("@"):
                 username = username[1:]
 
             # a) Check in-memory guild member cache (name / nick / display_name)
