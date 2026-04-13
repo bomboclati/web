@@ -155,7 +155,8 @@ class ActionHandler:
         "set_topic", "delete_messages", "remove_reaction", "delete_message", "bulk_delete_messages",
         "create_role_with_permissions", "edit_channel_permissions", "create_voice_channel", "create_text_channel",
         "create_category_channel", "edit_channel_bitrate", "edit_channel_user_limit", "follow_announcement_channel",
-        "create_scheduled_event", "allow_channel_permission", "deny_channel_permission"
+        "create_scheduled_event", "allow_channel_permission", "deny_channel_permission",
+        "deny_all_channels_for_role", "allow_all_channels_for_role", "deny_category_for_role"
     }
     
     def __init__(self, bot):
@@ -1968,6 +1969,90 @@ class ActionHandler:
             return True, {"role": role_name, "permission": permission}
         except Exception as e:
             logger.error(f"Error denying permission: {e}")
+            return False, None
+
+    async def action_deny_all_channels_for_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Denies a role to read ALL text channels in the server."""
+        role_name = params.get("role_name")
+        
+        if not role_name:
+            return False, None
+        
+        role = discord.utils.get(interaction.guild.roles, name=role_name)
+        if not role:
+            return False, None
+        
+        channels_updated = 0
+        overwrite = discord.PermissionOverwrite(read_messages=False)
+        
+        try:
+            for channel in interaction.guild.text_channels:
+                try:
+                    await channel.set_permissions(role, overwrite=overwrite)
+                    channels_updated += 1
+                except:
+                    pass
+            
+            return True, {"channels_updated": channels_updated, "role": role_name}
+        except Exception as e:
+            logger.error(f"Error denying all channels: {e}")
+            return False, None
+
+    async def action_allow_all_channels_for_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Allows a role to read ALL text channels in the server."""
+        role_name = params.get("role_name")
+        
+        if not role_name:
+            return False, None
+        
+        role = discord.utils.get(interaction.guild.roles, name=role_name)
+        if not role:
+            return False, None
+        
+        channels_updated = 0
+        overwrite = discord.PermissionOverwrite(read_messages=True)
+        
+        try:
+            for channel in interaction.guild.text_channels:
+                try:
+                    await channel.set_permissions(role, overwrite=overwrite)
+                    channels_updated += 1
+                except:
+                    pass
+            
+            return True, {"channels_updated": channels_updated, "role": role_name}
+        except Exception as e:
+            logger.error(f"Error allowing all channels: {e}")
+            return False, None
+
+    async def action_deny_category_for_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Denies a role in all channels under a category."""
+        category_name = params.get("category_name") or params.get("category")
+        role_name = params.get("role_name")
+        
+        if not category_name or not role_name:
+            return False, None
+        
+        category = discord.utils.get(interaction.guild.categories, name=category_name)
+        role = discord.utils.get(interaction.guild.roles, name=role_name)
+        
+        if not category or not role:
+            return False, None
+        
+        channels_updated = 0
+        overwrite = discord.PermissionOverwrite(read_messages=False)
+        
+        try:
+            for channel in category.channels:
+                try:
+                    await channel.set_permissions(role, overwrite=overwrite)
+                    channels_updated += 1
+                except:
+                    pass
+            
+            return True, {"channels_updated": channels_updated, "category": category_name, "role": role_name}
+        except Exception as e:
+            logger.error(f"Error denying category: {e}")
             return False, None
 
     # --- Execution Logic ---
