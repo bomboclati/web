@@ -515,9 +515,18 @@ PERMISSION EXAMPLES:
 - {"name": "deny_category_for_role", "parameters": {"category": "Voice Channels", "role_name": "Unverified"}}
 
 HIDE ALL CHANNELS FROM UNVERIFIED:
-- Use "deny_all_channels_for_role" with role_name: "Unverified" to hide ALL channels
-- Use "allow_all_channels_for_role" with role_name: "Verified" to show ALL channels
-- Use "deny_category_for_role" to hide specific category
+When user says "hide channels from unverified" or "lock channels from unverified":
+1. Use "deny_all_channels_for_role" action with role_name: "Unverified"
+2. This will hide ALL text channels from that role
+
+When user says "hide category from unverified":
+1. Use "deny_category_for_role" action with category_name and role_name
+2. This will hide all channels in that category
+
+CRITICAL - USE THESE EXACT ACTIONS:
+- deny_all_channels_for_role = {"name": "deny_all_channels_for_role", "parameters": {"role_name": "ROLE_NAME"}}
+- allow_all_channels_for_role = {"name": "allow_all_channels_for_role", "parameters": {"role_name": "ROLE_NAME"}}
+- deny_category_for_role = {"name": "deny_category_for_role", "parameters": {"category_name": "CATEGORY", "role_name": "ROLE_NAME"}}
 
 WHEN TO USE PING vs SEND_DM:
 - Use "ping" when user wants to mention/ping "@user" or check their status - shows in CHANNEL
