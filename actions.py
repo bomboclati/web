@@ -824,49 +824,85 @@ class ActionHandler:
         return True, {"action": "delete_message", "channel_id": channel.id, "message_id": msg.id}
 
     async def action_send_dm(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Sends a DM to a user with deduplication."""
+        """Sends a DM to a user. Returns True even when DMs are disabled (soft failure) so the action sequence keeps going."""
         user_id = params.get("user_id")
         username = params.get("username")
         content = params.get("content")
         embed_data = params.get("embed")
-        
-        # Support both user_id and username
+        guild = interaction.guild
+
+        # ── 1. Resolve user_id from username ──────────────────────────────────
         if not user_id and username:
-            # Strip @ prefix if present
-            if username.startswith("@"):
+            if isinstance(username, str) and username.startswith("@"):
                 username = username[1:]
-            
-            # Try by name first
-            member = discord.utils.get(interaction.guild.members, name=username)
+
+            # a) Check in-memory guild member cache (name / nick / display_name)
+            member = (
+                discord.utils.get(guild.members, name=username)
+                or discord.utils.get(guild.members, nick=username)
+                or discord.utils.get(guild.members, display_name=username)
+            )
+
+            # b) Case-insensitive fallback over cached members
             if not member:
-                # Try by nick
-                member = discord.utils.get(interaction.guild.members, nick=username)
+                lower = username.lower()
+                for m in guild.members:
+                    if (m.name.lower() == lower
+                            or (m.nick and m.nick.lower() == lower)
+                            or m.display_name.lower() == lower):
+                        member = m
+                        break
+
+            # c) Discord API member search (finds members not in cache)
             if not member:
-                # Try by display name
-                member = discord.utils.get(interaction.guild.members, display_name=username)
+                try:
+                    results = await guild.query_members(query=username, limit=5)
+                    if results:
+                        member = results[0]
+                except Exception:
+                    pass
+
             if member:
                 user_id = member.id
-        
+
+        # d) username is a raw numeric ID
         if not user_id and username:
-            # Try fetching by ID if username looks like a number
             try:
-                user_id = int(username)
-            except ValueError:
+                user_id = int(str(username).strip())
+            except (ValueError, TypeError):
                 pass
-        
+
+        # ── 2. No user resolved — soft pass so action sequence doesn't break ──
         if not user_id:
-            return False, None
-            
-        # Deduplication check
+            logger.warning(f"[send_dm] Could not resolve user from username={username!r}")
+            try:
+                await interaction.channel.send(
+                    f"⚠️ Could not find user **{username}** to send them a DM.", delete_after=10
+                )
+            except Exception:
+                pass
+            return True, None
+
+        # ── 3. Deduplication ──────────────────────────────────────────────────
         dedup_key = f"dm_{user_id}_{hash(content or '')}_{hash(str(embed_data) if embed_data else '')}"
         if not deduplicator.should_send(dedup_key):
-            logger.info(f"Deduplicated DM to user {user_id}")
-            return True, None # Still return true as we "handled" it by skipping
+            logger.info(f"[send_dm] Deduplicated DM to user {user_id}")
+            return True, None
 
-        user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+        # ── 4. Fetch the User object ──────────────────────────────────────────
+        try:
+            user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+        except discord.NotFound:
+            logger.warning(f"[send_dm] User {user_id} not found on Discord")
+            return True, None
+        except Exception as e:
+            logger.error(f"[send_dm] Error fetching user {user_id}: {e}")
+            return True, None
+
         if not user:
-            return False, None
-            
+            return True, None
+
+        # ── 5. Build embed ────────────────────────────────────────────────────
         embed = None
         if embed_data:
             embed = discord.Embed(
@@ -875,16 +911,33 @@ class ActionHandler:
                 color=parse_color(embed_data.get("color", "blue"))
             )
             for field in embed_data.get("fields", []):
-                embed.add_field(name=field.get("name"), value=field.get("value"), inline=field.get("inline", False))
+                embed.add_field(
+                    name=field.get("name"),
+                    value=field.get("value"),
+                    inline=field.get("inline", False)
+                )
 
+        # ── 6. Send the DM ────────────────────────────────────────────────────
         try:
             await user.send(content=content, embed=embed)
-            return True, None # Rollback for DM is hard, usually not needed for simple notifications
+            logger.info(f"[send_dm] DM sent to {user} ({user_id})")
+            return True, None
         except discord.Forbidden:
-            logger.warning(f"Failed to send DM to {user_id}: DMs disabled")
-            return False, None
+            # User has DMs disabled — not a bot error, treat as soft pass
+            logger.warning(f"[send_dm] {user} ({user_id}) has DMs disabled")
+            try:
+                await interaction.channel.send(
+                    f"⚠️ Could not DM **{user.display_name}** — they have DMs disabled.",
+                    delete_after=10
+                )
+            except Exception:
+                pass
+            return True, None
+        except discord.HTTPException as e:
+            logger.error(f"[send_dm] HTTP error sending DM to {user_id}: {e}")
+            return True, None
         except Exception as e:
-            logger.error(f"Error sending DM: {e}")
+            logger.error(f"[send_dm] Unexpected error sending DM to {user_id}: {e}")
             return False, None
 
     async def action_ping(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
