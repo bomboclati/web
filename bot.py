@@ -1282,7 +1282,7 @@ async def slash_bot(interaction: discord.Interaction, text: str):
         return
     
     try:
-        await _process_ai_turn(interaction, text, thinking_msg)
+        await self._process_ai_turn(interaction, text, thinking_msg)
     except discord.errors.NotFound:
         pass
     except Exception as e:
@@ -1294,7 +1294,7 @@ async def slash_bot(interaction: discord.Interaction, text: str):
             pass
         return
 
-async def _process_ai_turn(interaction: discord.Interaction, user_input: str, thinking_msg=None):
+async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: str, thinking_msg=None):
     """Process a single turn of the AI conversation."""
     guild_id = interaction.guild.id
     user_id = interaction.user.id
@@ -1324,7 +1324,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
         for i, mem in enumerate(relevant_memories, 1):
             memory_context += f"\n{i}. Similar conversation (similarity: {mem['similarity']:.2f}):\n{mem['document'][:500]}...\n"
 
-    res = await self.ai.chat(guild_id, user_id, user_input, SYSTEM_PROMPT + memory_context)
+    res = await bot.ai.chat(guild_id, user_id, user_input, SYSTEM_PROMPT + memory_context)
 
     
     reasoning = res.get("reasoning", "Thinking...")
@@ -1382,7 +1382,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
                     del bot.ai_sessions[user_id]
                 
                 await modal_it.response.send_message("[AI] Processing your answer...", ephemeral=False)
-                await _process_ai_turn(modal_it, f"[User answered your question]: {answer}", thinking_msg=None)
+                await self._process_ai_turn(modal_it, f"[User answered your question]: {answer}", thinking_msg=None)
             
             modal.on_submit = on_submit_wrapper
         
@@ -1394,7 +1394,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
                 del bot.ai_sessions[user_id]
             
             await it.response.edit_message(content="[AI] Proceeding with defaults...", embed=None, view=None)
-            await _process_ai_turn(it, "[User said to use defaults]", thinking_msg=None)
+            await self._process_ai_turn(it, "[User said to use defaults]", thinking_msg=None)
         
         reply_btn.callback = reply_callback
         skip_btn.callback = skip_callback
