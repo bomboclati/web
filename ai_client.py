@@ -570,6 +570,8 @@ ACTION EXAMPLES:
 - {"name": "edit_channel_bitrate", "parameters": {"channel_name": "AFK", "bitrate": 128000}}
 - {"name": "edit_channel_user_limit", "parameters": {"channel_name": "AFK", "user_limit": 10}}
 - {"name": "create_scheduled_event", "parameters": {"name": "Gaming Night", "description": "Join us!", "location": "Voice"}}
+- {"name": "allow_channel_permission", "parameters": {"channel": "general", "role_name": "Member", "permission": "send_messages"}}
+- {"name": "deny_channel_permission", "parameters": {"channel": "general", "role_name": "Muted", "permission": "send_messages"}}
 
 WHEN TO USE PING vs SEND_DM:
 - Use "ping" when user wants to mention/ping "@user" or check their status - shows in CHANNEL

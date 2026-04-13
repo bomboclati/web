@@ -155,7 +155,7 @@ class ActionHandler:
         "set_topic", "delete_messages", "remove_reaction", "delete_message", "bulk_delete_messages",
         "create_role_with_permissions", "edit_channel_permissions", "create_voice_channel", "create_text_channel",
         "create_category_channel", "edit_channel_bitrate", "edit_channel_user_limit", "follow_announcement_channel",
-        "create_scheduled_event"
+        "create_scheduled_event", "allow_channel_permission", "deny_channel_permission"
     }
     
     def __init__(self, bot):
@@ -1906,6 +1906,68 @@ class ActionHandler:
             return True, {"event": event.name}
         except Exception as e:
             logger.error(f"Error creating event: {e}")
+            return False, None
+
+    async def action_allow_channel_permission(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Allows a permission for a role in a channel."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        role_name = params.get("role_name")
+        permission = params.get("permission", "send_messages")  # e.g., send_messages, read_messages, connect
+        
+        if not channel_name or not role_name:
+            return False, None
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        role = discord.utils.get(interaction.guild.roles, name=role_name)
+        
+        if not channel or not role:
+            return False, None
+        
+        try:
+            # Map common permission names to Discord permissions
+            perm_map = {
+                "send_messages": discord.PermissionOverwrite(send_messages=True),
+                "read_messages": discord.PermissionOverwrite(read_messages=True),
+                "connect": discord.PermissionOverwrite(connect=True),
+                "speak": discord.PermissionOverwrite(speak=True),
+                "mute_members": discord.PermissionOverwrite(mute_members=True),
+                "deafen_members": discord.PermissionOverwrite(deafen_members=True),
+                "move_members": discord.PermissionOverwrite(move_members=True),
+            }
+            overwrite = perm_map.get(permission, discord.PermissionOverwrite(send_messages=True))
+            await channel.set_permissions(role, overwrite=overwrite)
+            return True, {"role": role_name, "permission": permission}
+        except Exception as e:
+            logger.error(f"Error allowing permission: {e}")
+            return False, None
+
+    async def action_deny_channel_permission(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Denies a permission for a role in a channel."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        role_name = params.get("role_name")
+        permission = params.get("permission", "send_messages")
+        
+        if not channel_name or not role_name:
+            return False, None
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        role = discord.utils.get(interaction.guild.roles, name=role_name)
+        
+        if not channel or not role:
+            return False, None
+        
+        try:
+            perm_map = {
+                "send_messages": discord.PermissionOverwrite(send_messages=False),
+                "read_messages": discord.PermissionOverwrite(read_messages=False),
+                "connect": discord.PermissionOverwrite(connect=False),
+                "speak": discord.PermissionOverwrite(speak=False),
+            }
+            overwrite = perm_map.get(permission, discord.PermissionOverwrite(send_messages=False))
+            await channel.set_permissions(role, overwrite=overwrite)
+            return True, {"role": role_name, "permission": permission}
+        except Exception as e:
+            logger.error(f"Error denying permission: {e}")
             return False, None
 
     # --- Execution Logic ---
