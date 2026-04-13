@@ -434,32 +434,28 @@ class ActionHandler:
         return {"allowed": [], "denied": []}
 
     async def _set_channel_permissions(self, channel, guild, allowed_roles, denied_roles):
-        """Set view permissions for roles"""
+        """Set view permissions for roles without wiping existing overwrites"""
         from discord import PermissionOverwrite
         
-        overwrites = {}
-        
-        # Allow specified roles
         for role_name in allowed_roles:
             role = discord.utils.get(guild.roles, name=role_name)
             if role:
-                overwrites[role] = PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=True
-                )
+                existing = channel.overwrites_for(role)
+                existing.view_channel = True
+                existing.send_messages = True
+                await channel.set_permissions(role, overwrite=existing)
         
-        # Deny specified roles
         for role_name in denied_roles:
-            role = discord.utils.get(guild.roles, name=role_name)
+            if role_name == "@everyone":
+                role = guild.default_role
+            else:
+                role = discord.utils.get(guild.roles, name=role_name)
             if role:
-                overwrites[role] = PermissionOverwrite(
-                    view_channel=False
-                )
+                existing = channel.overwrites_for(role)
+                existing.view_channel = False
+                await channel.set_permissions(role, overwrite=existing)
         
-        # If there's any permission changes, apply them
-        if overwrites:
-            await channel.edit(overwrites=overwrites)
-            logger.info(f"Set permissions on channel {channel.name}: +{allowed_roles} -{denied_roles}")
+        logger.info(f"Set permissions on channel {channel.name}: +{allowed_roles} -{denied_roles}")
 
     async def _send_channel_guide(self, channel, channel_name: str):
         """Send a guide embed explaining what the channel is and available commands"""
@@ -547,15 +543,26 @@ class ActionHandler:
         role_perms = self._detect_role_permissions(name)
         
         permissions = discord.Permissions(
-            view_channel=role_perms.get("view_channel", False),
-            send_messages=role_perms.get("send_messages", False),
+            view_channel=role_perms.get("view_channel", True),
+            send_messages=role_perms.get("send_messages", True),
+            read_message_history=role_perms.get("read_message_history", True),
+            attach_files=role_perms.get("attach_files", True),
+            embed_links=role_perms.get("embed_links", True),
+            add_reactions=role_perms.get("add_reactions", True),
+            use_external_emojis=role_perms.get("use_external_emojis", True),
+            use_application_commands=role_perms.get("use_application_commands", True),
+            connect=role_perms.get("connect", True),
+            speak=role_perms.get("speak", True),
             manage_channels=role_perms.get("manage_channels", False),
             manage_roles=role_perms.get("manage_roles", False),
             kick_members=role_perms.get("kick_members", False),
             ban_members=role_perms.get("ban_members", False),
             moderate_members=role_perms.get("moderate_members", False),
             manage_messages=role_perms.get("manage_messages", False),
-            mention_everyone=role_perms.get("mention_everyone", False)
+            mention_everyone=role_perms.get("mention_everyone", False),
+            mute_members=role_perms.get("mute_members", False),
+            move_members=role_perms.get("move_members", False),
+            create_instant_invite=role_perms.get("create_instant_invite", True),
         )
         
         role = await guild.create_role(
@@ -1909,41 +1916,26 @@ class ActionHandler:
             logger.error(f"Error creating event: {e}")
             return False, None
 
-    async def action_allow_channel_permission(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Allows a permission for a role in a channel."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        role_name = params.get("role_name")
-        permission = params.get("permission", "send_messages")  # e.g., send_messages, read_messages, connect
-        
-        if not channel_name or not role_name:
-            return False, None
-        
-        channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        role = discord.utils.get(interaction.guild.roles, name=role_name)
-        
-        if not channel or not role:
-            return False, None
-        
-        try:
-            # Map common permission names to Discord permissions
-            perm_map = {
-                "send_messages": discord.PermissionOverwrite(send_messages=True),
-                "read_messages": discord.PermissionOverwrite(read_messages=True),
-                "connect": discord.PermissionOverwrite(connect=True),
-                "speak": discord.PermissionOverwrite(speak=True),
-                "mute_members": discord.PermissionOverwrite(mute_members=True),
-                "deafen_members": discord.PermissionOverwrite(deafen_members=True),
-                "move_members": discord.PermissionOverwrite(move_members=True),
-            }
-            overwrite = perm_map.get(permission, discord.PermissionOverwrite(send_messages=True))
-            await channel.set_permissions(role, overwrite=overwrite)
-            return True, {"role": role_name, "permission": permission}
-        except Exception as e:
-            logger.error(f"Error allowing permission: {e}")
-            return False, None
+    def _resolve_role(self, guild, role_name: str):
+        """Resolve a role by name, handling @everyone specially."""
+        if not role_name:
+            return None
+        if role_name == "@everyone":
+            return guild.default_role
+        role = discord.utils.get(guild.roles, name=role_name)
+        if not role:
+            role = discord.utils.find(lambda r: r.name.lower() == role_name.lower(), guild.roles)
+        return role
 
-    async def action_deny_channel_permission(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Denies a permission for a role in a channel."""
+    async def _merge_channel_permission(self, channel, role, **kwargs):
+        """Merge permission changes into existing overwrites instead of replacing them."""
+        existing = channel.overwrites_for(role)
+        for perm_name, perm_value in kwargs.items():
+            setattr(existing, perm_name, perm_value)
+        await channel.set_permissions(role, overwrite=existing)
+
+    async def action_allow_channel_permission(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Allows a permission for a role in a channel (merges with existing overwrites)."""
         channel_name = params.get("channel") or params.get("channel_name")
         role_name = params.get("role_name")
         permission = params.get("permission", "send_messages")
@@ -1952,45 +1944,106 @@ class ActionHandler:
             return False, None
         
         channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        role = discord.utils.get(interaction.guild.roles, name=role_name)
+        role = self._resolve_role(interaction.guild, role_name)
         
         if not channel or not role:
+            logger.error(f"allow_channel_permission: channel='{channel_name}' found={channel is not None}, role='{role_name}' found={role is not None}")
             return False, None
         
         try:
-            perm_map = {
-                "send_messages": discord.PermissionOverwrite(send_messages=False),
-                "read_messages": discord.PermissionOverwrite(read_messages=False),
-                "connect": discord.PermissionOverwrite(connect=False),
-                "speak": discord.PermissionOverwrite(speak=False),
+            perm_names = {
+                "send_messages": "send_messages",
+                "read_messages": "read_messages",
+                "view_channel": "view_channel",
+                "connect": "connect",
+                "speak": "speak",
+                "mute_members": "mute_members",
+                "deafen_members": "deafen_members",
+                "move_members": "move_members",
+                "manage_messages": "manage_messages",
+                "manage_channels": "manage_channels",
+                "attach_files": "attach_files",
+                "embed_links": "embed_links",
+                "add_reactions": "add_reactions",
+                "use_external_emojis": "use_external_emojis",
+                "manage_permissions": "manage_permissions",
+                "create_instant_invite": "create_instant_invite",
+                "mention_everyone": "mention_everyone",
+                "manage_webhooks": "manage_webhooks",
+                "read_message_history": "read_message_history",
+                "use_application_commands": "use_application_commands",
+                "stream": "stream",
+                "use_voice_activation": "use_voice_activation",
             }
-            overwrite = perm_map.get(permission, discord.PermissionOverwrite(send_messages=False))
-            await channel.set_permissions(role, overwrite=overwrite)
+            perm_attr = perm_names.get(permission, permission)
+            await self._merge_channel_permission(channel, role, **{perm_attr: True})
+            return True, {"role": role_name, "permission": permission}
+        except Exception as e:
+            logger.error(f"Error allowing permission: {e}")
+            return False, None
+
+    async def action_deny_channel_permission(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Denies a permission for a role in a channel (merges with existing overwrites)."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        role_name = params.get("role_name")
+        permission = params.get("permission", "send_messages")
+        
+        if not channel_name or not role_name:
+            return False, None
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        role = self._resolve_role(interaction.guild, role_name)
+        
+        if not channel or not role:
+            logger.error(f"deny_channel_permission: channel='{channel_name}' found={channel is not None}, role='{role_name}' found={role is not None}")
+            return False, None
+        
+        try:
+            perm_names = {
+                "send_messages": "send_messages",
+                "read_messages": "read_messages",
+                "view_channel": "view_channel",
+                "connect": "connect",
+                "speak": "speak",
+                "mute_members": "mute_members",
+                "deafen_members": "deafen_members",
+                "move_members": "move_members",
+                "manage_messages": "manage_messages",
+                "manage_channels": "manage_channels",
+                "attach_files": "attach_files",
+                "embed_links": "embed_links",
+                "add_reactions": "add_reactions",
+                "use_external_emojis": "use_external_emojis",
+                "manage_permissions": "manage_permissions",
+                "read_message_history": "read_message_history",
+            }
+            perm_attr = perm_names.get(permission, permission)
+            await self._merge_channel_permission(channel, role, **{perm_attr: False})
             return True, {"role": role_name, "permission": permission}
         except Exception as e:
             logger.error(f"Error denying permission: {e}")
             return False, None
 
     async def action_deny_all_channels_for_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Denies a role to read ALL text channels in the server."""
+        """Denies a role from viewing ALL channels (text, voice, and categories) in the server."""
         role_name = params.get("role_name")
         
         if not role_name:
             return False, None
         
-        role = discord.utils.get(interaction.guild.roles, name=role_name)
+        role = self._resolve_role(interaction.guild, role_name)
         if not role:
             return False, None
         
         channels_updated = 0
-        overwrite = discord.PermissionOverwrite(read_messages=False)
         
         try:
-            for channel in interaction.guild.text_channels:
+            all_channels = list(interaction.guild.categories) + list(interaction.guild.text_channels) + list(interaction.guild.voice_channels)
+            for channel in all_channels:
                 try:
-                    await channel.set_permissions(role, overwrite=overwrite)
+                    await self._merge_channel_permission(channel, role, view_channel=False, send_messages=False)
                     channels_updated += 1
-                except:
+                except Exception:
                     pass
             
             return True, {"channels_updated": channels_updated, "role": role_name}
@@ -1999,25 +2052,25 @@ class ActionHandler:
             return False, None
 
     async def action_allow_all_channels_for_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Allows a role to read ALL text channels in the server."""
+        """Allows a role to view ALL channels (text, voice, and categories) in the server."""
         role_name = params.get("role_name")
         
         if not role_name:
             return False, None
         
-        role = discord.utils.get(interaction.guild.roles, name=role_name)
+        role = self._resolve_role(interaction.guild, role_name)
         if not role:
             return False, None
         
         channels_updated = 0
-        overwrite = discord.PermissionOverwrite(read_messages=True)
         
         try:
-            for channel in interaction.guild.text_channels:
+            all_channels = list(interaction.guild.categories) + list(interaction.guild.text_channels) + list(interaction.guild.voice_channels)
+            for channel in all_channels:
                 try:
-                    await channel.set_permissions(role, overwrite=overwrite)
+                    await self._merge_channel_permission(channel, role, view_channel=True, send_messages=True)
                     channels_updated += 1
-                except:
+                except Exception:
                     pass
             
             return True, {"channels_updated": channels_updated, "role": role_name}
@@ -2026,7 +2079,7 @@ class ActionHandler:
             return False, None
 
     async def action_deny_category_for_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Denies a role in all channels under a category."""
+        """Denies a role in a category AND all its child channels."""
         category_name = params.get("category_name") or params.get("category")
         role_name = params.get("role_name")
         
@@ -2034,25 +2087,191 @@ class ActionHandler:
             return False, None
         
         category = discord.utils.get(interaction.guild.categories, name=category_name)
-        role = discord.utils.get(interaction.guild.roles, name=role_name)
+        role = self._resolve_role(interaction.guild, role_name)
         
         if not category or not role:
             return False, None
         
         channels_updated = 0
-        overwrite = discord.PermissionOverwrite(read_messages=False)
         
         try:
+            await self._merge_channel_permission(category, role, view_channel=False, send_messages=False)
+            channels_updated += 1
+            
             for channel in category.channels:
                 try:
-                    await channel.set_permissions(role, overwrite=overwrite)
+                    await self._merge_channel_permission(channel, role, view_channel=False, send_messages=False)
                     channels_updated += 1
-                except:
+                except Exception:
                     pass
             
             return True, {"channels_updated": channels_updated, "category": category_name, "role": role_name}
         except Exception as e:
             logger.error(f"Error denying category: {e}")
+            return False, None
+
+    async def action_create_role_with_permissions(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Creates a role with specific permissions."""
+        guild = interaction.guild
+        name = params.get("name")
+        
+        if not name:
+            return False, None
+        
+        if not guild.me.guild_permissions.manage_roles:
+            logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
+            return False, None
+        
+        existing = discord.utils.get(guild.roles, name=name)
+        if existing:
+            logger.info("Role '%s' already exists, skipping creation", name)
+            return True, None
+        
+        color_hex = params.get("color", "#99AAB5").replace("#", "")
+        color = discord.Color(int(color_hex, 16))
+        hoist = params.get("hoist", True)
+        mentionable = params.get("mentionable", False)
+        
+        perm_params = params.get("permissions", {})
+        permissions = discord.Permissions(
+            view_channel=perm_params.get("view_channel", True),
+            send_messages=perm_params.get("send_messages", True),
+            read_messages=perm_params.get("read_messages", True),
+            manage_channels=perm_params.get("manage_channels", False),
+            manage_roles=perm_params.get("manage_roles", False),
+            kick_members=perm_params.get("kick_members", False),
+            ban_members=perm_params.get("ban_members", False),
+            moderate_members=perm_params.get("moderate_members", False),
+            manage_messages=perm_params.get("manage_messages", False),
+            mention_everyone=perm_params.get("mention_everyone", False),
+            attach_files=perm_params.get("attach_files", True),
+            embed_links=perm_params.get("embed_links", True),
+            add_reactions=perm_params.get("add_reactions", True),
+            use_external_emojis=perm_params.get("use_external_emojis", True),
+            connect=perm_params.get("connect", True),
+            speak=perm_params.get("speak", True),
+            read_message_history=perm_params.get("read_message_history", True),
+            use_application_commands=perm_params.get("use_application_commands", True),
+            administrator=perm_params.get("administrator", False),
+            manage_guild=perm_params.get("manage_guild", False),
+            mute_members=perm_params.get("mute_members", False),
+            deafen_members=perm_params.get("deafen_members", False),
+            move_members=perm_params.get("move_members", False),
+            manage_webhooks=perm_params.get("manage_webhooks", False),
+            manage_expressions=perm_params.get("manage_expressions", False),
+            create_instant_invite=perm_params.get("create_instant_invite", True),
+        )
+        
+        role = await guild.create_role(
+            name=name,
+            color=color,
+            permissions=permissions,
+            hoist=hoist,
+            mentionable=mentionable,
+            reason="AI Action - create_role_with_permissions"
+        )
+        
+        self._track_artifact("role", role.id, role.name)
+        logger.info("Created role with permissions: %s", role.name)
+        return True, {"action": "delete_role", "role_id": role.id}
+
+    async def action_edit_channel_permissions(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Edit permissions for a role on a specific channel (merges with existing overwrites)."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        role_name = params.get("role_name")
+        permissions = params.get("permissions", {})
+        
+        if not channel_name or not role_name:
+            return False, None
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        role = self._resolve_role(interaction.guild, role_name)
+        
+        if not channel or not role:
+            return False, None
+        
+        try:
+            existing = channel.overwrites_for(role)
+            for perm_name, perm_value in permissions.items():
+                if isinstance(perm_value, bool) or perm_value is None:
+                    setattr(existing, perm_name, perm_value)
+            await channel.set_permissions(role, overwrite=existing)
+            return True, {"channel": channel_name, "role": role_name, "permissions": permissions}
+        except Exception as e:
+            logger.error(f"Error editing channel permissions: {e}")
+            return False, None
+
+    async def action_edit_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Edit channel properties (name, topic, slowmode, category, nsfw, position)."""
+        channel_name = params.get("channel_name") or params.get("name")
+        
+        if not channel_name:
+            return False, None
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        if not channel:
+            return False, None
+        
+        try:
+            edit_kwargs = {}
+            if "new_name" in params:
+                edit_kwargs["name"] = params["new_name"]
+            if "topic" in params:
+                edit_kwargs["topic"] = params["topic"]
+            if "slowmode_delay" in params:
+                edit_kwargs["slowmode_delay"] = params["slowmode_delay"]
+            if "nsfw" in params:
+                edit_kwargs["nsfw"] = params["nsfw"]
+            if "position" in params:
+                edit_kwargs["position"] = params["position"]
+            if "category" in params:
+                cat = discord.utils.get(interaction.guild.categories, name=params["category"])
+                if cat:
+                    edit_kwargs["category"] = cat
+            
+            if edit_kwargs:
+                await channel.edit(**edit_kwargs)
+            return True, {"channel": channel_name}
+        except Exception as e:
+            logger.error(f"Error editing channel: {e}")
+            return False, None
+
+    async def action_edit_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Edit role properties (name, color, hoist, mentionable, permissions)."""
+        role_name = params.get("role_name") or params.get("name")
+        
+        if not role_name:
+            return False, None
+        
+        role = discord.utils.get(interaction.guild.roles, name=role_name)
+        if not role:
+            return False, None
+        
+        try:
+            edit_kwargs = {}
+            if "new_name" in params:
+                edit_kwargs["name"] = params["new_name"]
+            if "color" in params:
+                edit_kwargs["color"] = parse_color(params["color"])
+            if "hoist" in params:
+                edit_kwargs["hoist"] = params["hoist"]
+            if "mentionable" in params:
+                edit_kwargs["mentionable"] = params["mentionable"]
+            if "permissions" in params:
+                perm_params = params["permissions"]
+                current_perms = role.permissions
+                perm_value = current_perms.value
+                new_perms = discord.Permissions(perm_value)
+                for perm_name, perm_val in perm_params.items():
+                    if hasattr(new_perms, perm_name):
+                        setattr(new_perms, perm_name, perm_val)
+                edit_kwargs["permissions"] = new_perms
+            
+            if edit_kwargs:
+                await role.edit(**edit_kwargs, reason="AI Action - edit_role")
+            return True, {"role": role_name}
+        except Exception as e:
+            logger.error(f"Error editing role: {e}")
             return False, None
 
     # --- Execution Logic ---

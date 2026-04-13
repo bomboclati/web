@@ -481,6 +481,20 @@ class AutoSetup:
             verify_role = await guild.create_role(
                 name="Verified",
                 color=discord.Color.green(),
+                permissions=discord.Permissions(
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True,
+                    attach_files=True,
+                    embed_links=True,
+                    add_reactions=True,
+                    use_external_emojis=True,
+                    use_application_commands=True,
+                    connect=True,
+                    speak=True,
+                    use_voice_activation=True,
+                    create_instant_invite=True,
+                ),
                 hoist=True
             )
         
@@ -690,6 +704,18 @@ class AutoSetup:
             support_role = await guild.create_role(
                 name="Support",
                 color=discord.Color.blue(),
+                permissions=discord.Permissions(
+                    view_channel=True,
+                    send_messages=True,
+                    manage_messages=True,
+                    read_message_history=True,
+                    attach_files=True,
+                    embed_links=True,
+                    add_reactions=True,
+                    use_application_commands=True,
+                    connect=True,
+                    speak=True,
+                ),
                 hoist=True
             )
         
@@ -800,7 +826,21 @@ class AutoSetup:
             role = discord.utils.get(guild.roles, name=role_name)
             if not role:
                 try:
-                    role = await guild.create_role(name=role_name)
+                    role = await guild.create_role(
+                        name=role_name,
+                        permissions=discord.Permissions(
+                            view_channel=True,
+                            send_messages=True,
+                            read_message_history=True,
+                            attach_files=True,
+                            embed_links=True,
+                            add_reactions=True,
+                            use_application_commands=True,
+                            connect=True,
+                            speak=True,
+                        ),
+                        hoist=True
+                    )
                 except:
                     pass
         
@@ -878,7 +918,22 @@ class AutoSetup:
             mod_role = await guild.create_role(
                 name="Moderator",
                 color=discord.Color.red(),
-                permissions=discord.Permissions(moderate_members=True),
+                permissions=discord.Permissions(
+                    view_channel=True,
+                    send_messages=True,
+                    manage_messages=True,
+                    kick_members=True,
+                    moderate_members=True,
+                    read_message_history=True,
+                    attach_files=True,
+                    embed_links=True,
+                    add_reactions=True,
+                    use_application_commands=True,
+                    connect=True,
+                    speak=True,
+                    mute_members=True,
+                    move_members=True,
+                ),
                 hoist=True
             )
         
@@ -1094,13 +1149,27 @@ class AutoSetup:
         if not logs_channel:
             logs_channel = await guild.create_text_channel(logs_channel_name, category=category)
         
-        # Create mod role
         mod_role = discord.utils.get(guild.roles, name="Moderator")
         if not mod_role:
             mod_role = await guild.create_role(
                 name="Moderator",
                 color=discord.Color.red(),
-                permissions=discord.Permissions(moderate_members=True),
+                permissions=discord.Permissions(
+                    view_channel=True,
+                    send_messages=True,
+                    manage_messages=True,
+                    kick_members=True,
+                    moderate_members=True,
+                    read_message_history=True,
+                    attach_files=True,
+                    embed_links=True,
+                    add_reactions=True,
+                    use_application_commands=True,
+                    connect=True,
+                    speak=True,
+                    mute_members=True,
+                    move_members=True,
+                ),
                 hoist=True
             )
         
