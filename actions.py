@@ -637,16 +637,51 @@ class ActionHandler:
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def action_assign_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        user_id = params.get("user_id")
-        role_id = params.get("role_id")
+        """Assign a role to a user. Supports lookup by name OR id for both role and user."""
         guild = interaction.guild
-        member = guild.get_member(user_id) or await guild.fetch_member(user_id)
-        role = guild.get_role(role_id)
         
-        if member and role:
-            await member.add_roles(role)
-            return True, {"action": "remove_role", "user_id": user_id, "role_id": role_id}
-        return False, None
+        # --- Resolve role (by id first, then by name) ---
+        role = None
+        role_id = params.get("role_id")
+        role_name = params.get("role_name") or params.get("name")
+        if role_id:
+            try:
+                role = guild.get_role(int(role_id))
+            except (TypeError, ValueError):
+                role = None
+        if not role and role_name:
+            role = discord.utils.find(lambda r: r.name.lower() == str(role_name).lower(), guild.roles)
+        if not role and role_name:
+            role = discord.utils.find(lambda r: str(role_name).lower() in r.name.lower(), guild.roles)
+        
+        # --- Resolve member (by id first, then by name/mention) ---
+        member = None
+        user_id = params.get("user_id") or params.get("user")
+        username = params.get("username") or params.get("user_name")
+        if user_id:
+            try:
+                uid = int(str(user_id).strip().lstrip("<@!").rstrip(">"))
+                member = guild.get_member(uid) or await guild.fetch_member(uid)
+            except (TypeError, ValueError, discord.NotFound, discord.HTTPException):
+                member = None
+        if not member and username:
+            search = str(username).lstrip("@").lower()
+            member = discord.utils.find(
+                lambda m: m.name.lower() == search or m.display_name.lower() == search,
+                guild.members
+            )
+        
+        if not role:
+            logger.error("assign_role: could not find role. role_id=%s role_name=%s", role_id, role_name)
+            return False, None
+        if not member:
+            logger.error("assign_role: could not find member. user_id=%s username=%s", user_id, username)
+            return False, None
+        
+        await member.add_roles(role)
+        logger.info("Assigned role %s to %s", role.name, member.display_name)
+        return True, {"action": "remove_role", "user_id": member.id, "role_id": role.id}
+
 
     async def action_create_prefix_command(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Adds a custom '!' command to the guild structure."""
