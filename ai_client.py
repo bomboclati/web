@@ -570,6 +570,16 @@ BUTTON TYPES for send_embed (all fully functional, no placeholders):
 - "suggestion" = Prompts user to submit a suggestion
 - "custom" = Shows a custom response (add "response": "message" field)
 
+SYSTEM SETUP ACTIONS (use these EXACT names):
+- {"name": "setup_verification", "parameters": {}} - creates verify system with button
+- {"name": "setup_tickets", "parameters": {}} - creates ticket system
+- {"name": "setup_applications", "parameters": {}} - creates application form system
+- {"name": "setup_appeals", "parameters": {}} - creates appeal system
+- {"name": "setup_welcome", "parameters": {}} - creates welcome messages
+- {"name": "setup_staff_system", "parameters": {}} - creates staff roles/commands
+- {"name": "setup_leveling", "parameters": {}} - creates leveling/XP system
+- {"name": "setup_economy", "parameters": {}} - creates economy/coins system
+
 PREFIX COMMAND code MUST be valid JSON string. Formats:
 - Simple text: {"command_type": "simple", "content": "Your message"}
 - Help embed: {"command_type": "help_embed", "title": "Help", "commands": [{"name": "!cmd", "description": "What it does"}]}
