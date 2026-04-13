@@ -536,6 +536,15 @@ ACTION EXAMPLES:
 - {"name": "slowmode", "parameters": {"channel": "general", "delay": 5}}
 - {"name": "lock_channel", "parameters": {"channel": "general"}}
 - {"name": "unlock_channel", "parameters": {"channel": "general"}}
+- {"name": "send_message", "parameters": {"channel": "general", "content": "Hello!"}}
+- {"name": "edit_channel_name", "parameters": {"channel_name": "general", "new_name": "chat"}}
+- {"name": "edit_role_name", "parameters": {"role_name": "Member", "new_name": "Server Member"}}
+- {"name": "change_role_color", "parameters": {"role_name": "Admin", "color": "#FF0000"}}
+- {"name": "move_channel", "parameters": {"channel_name": "general", "category": "Main"}}
+- {"name": "clone_channel", "parameters": {"channel_name": "general"}}
+- {"name": "create_thread", "parameters": {"channel": "general", "name": "discussion"}}
+- {"name": "pin_message", "parameters": {"channel": "general", "message_id": 123456}}
+- {"name": "set_topic", "parameters": {"channel": "general", "topic": "Welcome!"}}
 
 WHEN TO USE PING vs SEND_DM:
 - Use "ping" when user wants to mention/ping "@user" or check their status - shows in CHANNEL

@@ -149,7 +149,10 @@ class ActionHandler:
         "delete_role", "delete_channel", "announce", "poll", "give_points", "remove_points", "warn_user",
         "create_verify_system", "create_tickets_system", "create_applications_system", "create_appeals_system",
         "create_welcome_system", "create_staff_system", "create_leveling_system", "create_economy_system",
-        "mute_user", "unmute_user", "deafen_user", "set_nickname", "slowmode", "lock_channel", "unlock_channel"
+        "mute_user", "unmute_user", "deafen_user", "set_nickname", "slowmode", "lock_channel", "unlock_channel",
+        "send_message", "reply_message", "add_reaction", "edit_channel_name", "edit_role_name",
+        "change_role_color", "move_channel", "clone_channel", "create_thread", "pin_message", "unpin_message",
+        "set_topic", "delete_messages"
     }
     
     def __init__(self, bot):
@@ -1532,6 +1535,220 @@ class ActionHandler:
             return True, {"channel_id": target_channel.id, "action": "unlock"}
         except Exception as e:
             logger.error(f"Error unlocking channel: {e}")
+            return False, None
+
+    async def action_send_message(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Sends a simple text message to a channel."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        content = params.get("content", "")
+        
+        if not content:
+            return False, None
+        
+        target_channel = None
+        if channel_name:
+            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        if not target_channel:
+            target_channel = interaction.channel
+        
+        try:
+            await target_channel.send(content)
+            return True, {"channel_id": target_channel.id}
+        except Exception as e:
+            logger.error(f"Error sending message: {e}")
+            return False, None
+
+    async def action_reply_message(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Replies to a message."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        message_id = params.get("message_id")
+        content = params.get("content", "")
+        
+        if not content:
+            return False, None
+        
+        target_channel = None
+        if channel_name:
+            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        if not target_channel:
+            target_channel = interaction.channel
+        
+        try:
+            msg = await target_channel.fetch_message(message_id) if message_id else None
+            if msg:
+                await msg.reply(content)
+            else:
+                await target_channel.send(content)
+            return True, {"message_id": message_id}
+        except Exception as e:
+            logger.error(f"Error replying: {e}")
+            return False, None
+
+    async def action_add_reaction(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Adds emoji reaction to a message."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        message_id = params.get("message_id")
+        emoji = params.get("emoji", "")
+        
+        if not emoji:
+            return False, None
+        
+        target_channel = None
+        if channel_name:
+            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        if not target_channel:
+            target_channel = interaction.channel
+        
+        try:
+            msg = await target_channel.fetch_message(message_id) if message_id else None
+            if msg:
+                await msg.add_reaction(emoji)
+            return True, {"emoji": emoji}
+        except Exception as e:
+            logger.error(f"Error adding reaction: {e}")
+            return False, None
+
+    async def action_edit_channel_name(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Renames a channel."""
+        channel_name = params.get("channel_name")
+        new_name = params.get("new_name") or params.get("name")
+        
+        if not new_name:
+            return False, None
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
+        if not channel:
+            return False, None
+        
+        try:
+            await channel.edit(name=new_name)
+            return True, {"new_name": new_name}
+        except Exception as e:
+            logger.error(f"Error editing channel: {e}")
+            return False, None
+
+    async def action_edit_role_name(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Renames a role."""
+        role_name = params.get("role_name")
+        new_name = params.get("new_name") or params.get("name")
+        
+        if not new_name:
+            return False, None
+        
+        role = discord.utils.get(interaction.guild.roles, name=role_name) if role_name else None
+        if not role:
+            return False, None
+        
+        try:
+            await role.edit(name=new_name)
+            return True, {"new_name": new_name}
+        except Exception as e:
+            logger.error(f"Error editing role: {e}")
+            return False, None
+
+    async def action_change_role_color(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Changes role color."""
+        role_name = params.get("role_name")
+        color = params.get("color", "#99AAB5")
+        
+        if not role_name:
+            return False, None
+        
+        role = discord.utils.get(interaction.guild.roles, name=role_name)
+        if not role:
+            return False, None
+        
+        try:
+            await role.edit(color=parse_color(color))
+            return True, {"role_name": role_name, "color": color}
+        except Exception as e:
+            logger.error(f"Error changing role color: {e}")
+            return False, None
+
+    async def action_move_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Moves channel to a category."""
+        channel_name = params.get("channel_name")
+        category_name = params.get("category")
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
+        if not channel:
+            return False, None
+        
+        category = discord.utils.get(interaction.guild.categories, name=category_name) if category_name else None
+        
+        try:
+            await channel.edit(category=category)
+            return True, {"channel": channel.name}
+        except Exception as e:
+            logger.error(f"Error moving channel: {e}")
+            return False, None
+
+    async def action_clone_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Duplicates a channel."""
+        channel_name = params.get("channel_name")
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
+        if not channel:
+            return False, None
+        
+        try:
+            new_channel = await channel.clone(name=f"{channel.name}-copy")
+            await new_channel.edit(position=channel.position + 1)
+            return True, {"new_channel": new_channel.name}
+        except Exception as e:
+            logger.error(f"Error cloning channel: {e}")
+            return False, None
+
+    async def action_create_thread(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Creates a thread in a channel."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        name = params.get("name", "new-thread")
+        message = params.get("message", "Thread created")
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
+        if not channel:
+            return False, None
+        
+        try:
+            msg = await channel.send(content=message)
+            thread = await msg.create_thread(name=name)
+            return True, {"thread": thread.name}
+        except Exception as e:
+            logger.error(f"Error creating thread: {e}")
+            return False, None
+
+    async def action_pin_message(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Pins a message."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        message_id = params.get("message_id")
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
+        if not channel:
+            return False, None
+        
+        try:
+            msg = await channel.fetch_message(message_id) if message_id else None
+            if msg:
+                await msg.pin()
+            return True, {"message_id": message_id}
+        except Exception as e:
+            logger.error(f"Error pinning message: {e}")
+            return False, None
+
+    async def action_set_topic(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Sets channel topic/description."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        topic = params.get("topic", "")
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
+        if not channel:
+            return False, None
+        
+        try:
+            await channel.edit(topic=topic)
+            return True, {"topic": topic}
+        except Exception as e:
+            logger.error(f"Error setting topic: {e}")
             return False, None
 
     # --- Execution Logic ---
