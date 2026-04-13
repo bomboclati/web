@@ -322,7 +322,9 @@ class AIClient:
         else:
             # Add system message back for OpenAI compatible providers
             payload["messages"] = messages
-            if provider in ["openai", "openrouter", "gemini", "groq", "mistral", "deepseek", "qwen", "dashscope", "cerebras", "sambanova", "together"]:
+            # Only force JSON response format if prompt contains 'json' (required by most providers)
+            prompt_has_json = 'json' in system_prompt.lower() or any('json' in str(m.get('content','')).lower() for m in messages[:3])
+            if provider in ["openai", "openrouter", "gemini", "groq", "mistral", "deepseek", "qwen", "dashscope", "cerebras", "sambanova", "together"] and prompt_has_json:
                 payload["response_format"] = {"type": "json_object"}
 
         timeout = aiohttp.ClientTimeout(total=45, connect=10)
@@ -452,7 +454,9 @@ class AIClient:
         except:
             pass
                 
-        raise ValueError(f"Could not extract valid JSON from AI response. Output: {text[:200]}...")
+        # Cannot parse as JSON - return the raw text as the summary
+        logger.warning(f"Could not parse AI response as JSON, using raw text. Preview: {text[:100]}")
+        return {"summary": text.strip(), "reasoning": "Raw text response", "walkthrough": ""}
 
 # Default System Prompt
 SYSTEM_PROMPT = """
