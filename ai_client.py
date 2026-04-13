@@ -522,6 +522,13 @@ ACTION EXAMPLES:
 - {"name": "kick_user", "parameters": {"username": "john", "reason": "Rule violation"}}
 - {"name": "ban_user", "parameters": {"username": "john", "reason": "Spamming"}}
 - {"name": "timeout_user", "parameters": {"username": "john", "duration": 600, "reason": "Time out for 10 mins"}}
+- {"name": "delete_role", "parameters": {"role_name": "OldRole"}}
+- {"name": "delete_channel", "parameters": {"channel_name": "temp-channel"}}
+- {"name": "announce", "parameters": {"channel": "announcements", "title": "Server News", "content": "Big update!"}}
+- {"name": "poll", "parameters": {"channel": "general", "question": "Favorite color?", "options": ["Red", "Blue", "Green"]}}
+- {"name": "give_points", "parameters": {"username": "john", "points": 500}}
+- {"name": "remove_points", "parameters": {"username": "john", "points": 100}}
+- {"name": "warn_user", "parameters": {"username": "john", "reason": "Spamming in chat"}}
 
 WHEN TO USE PING vs SEND_DM:
 - Use "ping" when user wants to mention/ping "@user" or check their status - shows in CHANNEL

@@ -145,7 +145,8 @@ class ActionHandler:
         "setup_logging", "setup_verification", "setup_economy", "setup_leveling",
         "setup_tickets", "setup_applications", "setup_appeals", "setup_moderation",
         "send_dm", "create_invite", "schedule_ai_action", "ping",
-        "kick_user", "ban_user", "timeout_user"
+        "kick_user", "ban_user", "timeout_user",
+        "delete_role", "delete_channel", "announce", "poll", "give_points", "remove_points", "warn_user"
     }
     
     def __init__(self, bot):
@@ -1164,6 +1165,205 @@ class ActionHandler:
             return False, {"error": "Missing permission to timeout"}
         except Exception as e:
             logger.error(f"Error timeout user: {e}")
+            return False, None
+
+    async def action_delete_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Deletes a role from the server."""
+        role_name = params.get("role_name")
+        
+        if not role_name:
+            return False, None
+        
+        role = discord.utils.get(interaction.guild.roles, name=role_name)
+        if not role:
+            return False, None
+        
+        try:
+            await role.delete()
+            return True, {"role_name": role_name}
+        except discord.Forbidden:
+            return False, {"error": "Missing permission to delete role"}
+        except Exception as e:
+            logger.error(f"Error deleting role: {e}")
+            return False, None
+
+    async def action_delete_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Deletes a channel from the server."""
+        channel_name = params.get("channel_name") or params.get("name")
+        
+        if not channel_name:
+            return False, None
+        
+        channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        if not channel:
+            return False, None
+        
+        try:
+            await channel.delete()
+            return True, {"channel_name": channel_name}
+        except discord.Forbidden:
+            return False, {"error": "Missing permission to delete channel"}
+        except Exception as e:
+            logger.error(f"Error deleting channel: {e}")
+            return False, None
+
+    async def action_announce(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Makes an announcement in a channel."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        title = params.get("title", "Announcement")
+        content = params.get("content", "")
+        color = params.get("color", "#3498db")
+        
+        target_channel = None
+        if channel_name:
+            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        if not target_channel:
+            target_channel = interaction.channel
+        
+        embed = discord.Embed(
+            title=title,
+            description=content,
+            color=parse_color(color)
+        )
+        
+        try:
+            await target_channel.send(embed=embed)
+            return True, {"channel_id": target_channel.id}
+        except Exception as e:
+            logger.error(f"Error sending announcement: {e}")
+            return False, None
+
+    async def action_poll(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Creates a poll with options."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        question = params.get("question", "Poll")
+        options = params.get("options", [])  # list of option strings
+        duration = params.get("duration", 300)  # seconds
+        
+        target_channel = None
+        if channel_name:
+            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        if not target_channel:
+            target_channel = interaction.channel
+        
+        if not options:
+            options = ["Yes", "No"]
+        
+        options_text = "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(options)])
+        embed = discord.Embed(
+            title=f"? {question}",
+            description=options_text,
+            color=discord.Color.blurple()
+        )
+        embed.set_footer(text=f"Poll ends in {duration//60} minutes")
+        
+        try:
+            msg = await target_channel.send(embed=embed)
+            for i in range(len(options)):
+                await msg.add_reaction(f"{i+1}\u20e3")
+            return True, {"message_id": msg.id, "options": options}
+        except Exception as e:
+            logger.error(f"Error creating poll: {e}")
+            return False, None
+
+    async def action_give_points(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Gives economy points to a user."""
+        user_id = params.get("user_id")
+        username = params.get("username")
+        points = params.get("points", 100)
+        
+        if not user_id and username:
+            member = discord.utils.get(interaction.guild.members, name=username)
+            if not member:
+                member = discord.utils.get(interaction.guild.members, nick=username)
+            if member:
+                user_id = member.id
+        
+        if not user_id:
+            return False, None
+        
+        try:
+            from modules.economy import economy
+            if economy:
+                economy.add_balance(user_id, points)
+            return True, {"user_id": user_id, "points": points, "action": "give_points"}
+        except Exception as e:
+            logger.error(f"Error giving points: {e}")
+            return False, None
+
+    async def action_remove_points(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Removes economy points from a user."""
+        user_id = params.get("user_id")
+        username = params.get("username")
+        points = params.get("points", 100)
+        
+        if not user_id and username:
+            member = discord.utils.get(interaction.guild.members, name=username)
+            if not member:
+                member = discord.utils.get(interaction.guild.members, nick=username)
+            if member:
+                user_id = member.id
+        
+        if not user_id:
+            return False, None
+        
+        try:
+            from modules.economy import economy
+            if economy:
+                economy.add_balance(user_id, -points)
+            return True, {"user_id": user_id, "points": points, "action": "remove_points"}
+        except Exception as e:
+            logger.error(f"Error removing points: {e}")
+            return False, None
+
+    async def action_warn_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Warns a user (moderation)."""
+        user_id = params.get("user_id")
+        username = params.get("username")
+        reason = params.get("reason", "Warning issued")
+        
+        if not user_id and username:
+            member = discord.utils.get(interaction.guild.members, name=username)
+            if not member:
+                member = discord.utils.get(interaction.guild.members, nick=username)
+            if member:
+                user_id = member.id
+        
+        if not user_id:
+            return False, None
+        
+        member = interaction.guild.get_member(user_id)
+        if not member:
+            return False, None
+        
+        try:
+            dm_channel = member.dm_channel if hasattr(member, 'dm_channel') else None
+            if not dm_channel:
+                dm_channel = await member.create_dm()
+            
+            embed = discord.Embed(
+                title="? You have been warned",
+                description=f"**Reason:** {reason}\n\nPlease follow the server rules.",
+                color=discord.Color.orange()
+            )
+            await dm_channel.send(embed=embed)
+            
+            # Log warning
+            guild_id = interaction.guild.id
+            from data_manager import dm
+            warnings = dm.get_guild_data(guild_id, "warnings", {})
+            if str(user_id) not in warnings:
+                warnings[str(user_id)] = []
+            warnings[str(user_id)].append({
+                "reason": reason,
+                "timestamp": time.time(),
+                "moderator": interaction.user.id
+            })
+            dm.update_guild_data(guild_id, "warnings", warnings)
+            
+            return True, {"user_id": user_id, "reason": reason}
+        except Exception as e:
+            logger.error(f"Error warning user: {e}")
             return False, None
 
     # --- Execution Logic ---
