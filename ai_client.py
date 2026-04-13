@@ -583,6 +583,12 @@ CRITICAL - USE THESE EXACT ACTIONS FOR PRIVACY:
 - allow_all_channels_for_role = {"name": "allow_all_channels_for_role", "parameters": {"role_name": "ROLE_NAME"}}
 - deny_category_for_role = {"name": "deny_category_for_role", "parameters": {"category_name": "CATEGORY", "role_name": "ROLE_NAME"}}
 
+SEND_DM ACTION - CRITICAL:
+- ALWAYS use "username" parameter with the USER'S DISPLAY NAME (not the mention)
+- Example: {"name": "send_dm", "parameters": {"username": "john", "content": "Hello!"}}
+- NEVER use @mention in username - strip the @ and use just the name
+- If user says "@user" in their request, extract just "user" for the username field
+
 WHEN TO USE PING vs SEND_DM:
 - Use "ping" when user wants to mention/ping "@user" or check their status - shows in CHANNEL
 - Use "send_dm" when user wants to privately message someone - sends to their DM
