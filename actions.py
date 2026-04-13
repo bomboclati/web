@@ -885,7 +885,7 @@ class ActionHandler:
 
         # ── 3. Deduplication ──────────────────────────────────────────────────
         dedup_key = f"dm_{user_id}_{hash(content or '')}_{hash(str(embed_data) if embed_data else '')}"
-        if not deduplicator.should_send(dedup_key):
+        if not deduplicator.should_send(dedup_key, interval=3):
             logger.info(f"[send_dm] Deduplicated DM to user {user_id}")
             return True, None
 
@@ -941,55 +941,103 @@ class ActionHandler:
             return False, None
 
     async def action_ping(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Pings a user and shows their latency/online status."""
+        """Pings a user and shows their latency/online status. Resolves by username with cache + API fallback."""
         user_id = params.get("user_id")
         username = params.get("username")
-        
+        guild = interaction.guild
+
+        # ── Resolve member from username ──────────────────────────────────────
+        member = None
+
         if not user_id and not username:
-            return False, None
-        
-        if username:
-            # Strip @ prefix if present
-            if username.startswith("@"):
-                username = username[1:]
-            
-            # Try by name first
-            member = discord.utils.get(interaction.guild.members, name=username)
-            if not member:
-                # Try by nick
-                member = discord.utils.get(interaction.guild.members, nick=username)
-            if not member:
-                # Try by display name
-                member = discord.utils.get(interaction.guild.members, display_name=username)
-            if member:
-                user_id = member.id
-        
-        if not user_id and username:
-            # Try fetching by ID if username looks like a number
             try:
-                user_id = int(username)
-            except ValueError:
+                await interaction.channel.send("⚠️ No user specified to ping.", delete_after=8)
+            except Exception:
                 pass
-        
-        if not user_id:
-            return False, None
-        
-        member = interaction.guild.get_member(user_id) if user_id else None
+            return True, None
+
+        if username:
+            if isinstance(username, str) and username.startswith("@"):
+                username = username[1:]
+
+            # a) Exact cache match
+            member = (
+                discord.utils.get(guild.members, name=username)
+                or discord.utils.get(guild.members, nick=username)
+                or discord.utils.get(guild.members, display_name=username)
+            )
+
+            # b) Case-insensitive cache scan
+            if not member:
+                lower = username.lower()
+                for m in guild.members:
+                    if (m.name.lower() == lower
+                            or (m.nick and m.nick.lower() == lower)
+                            or m.display_name.lower() == lower):
+                        member = m
+                        break
+
+            # c) Discord API member search (finds members not in cache)
+            if not member:
+                try:
+                    results = await guild.query_members(query=username, limit=5)
+                    if results:
+                        member = results[0]
+                except Exception:
+                    pass
+
+            # d) Numeric ID passed as username string
+            if not member:
+                try:
+                    user_id = int(str(username).strip())
+                except (ValueError, TypeError):
+                    pass
+
+        # e) Lookup by user_id if we have one but no member yet
+        if not member and user_id:
+            member = guild.get_member(int(user_id))
+            if not member:
+                try:
+                    member = await guild.fetch_member(int(user_id))
+                except Exception:
+                    pass
+
+        # ── Member not found — soft pass ──────────────────────────────────────
         if not member:
-            return False, None
-        
+            logger.warning(f"[ping] Could not find member: username={username!r} user_id={user_id!r}")
+            try:
+                await interaction.channel.send(
+                    f"⚠️ Could not find member **{username or user_id}** to ping.", delete_after=8
+                )
+            except Exception:
+                pass
+            return True, None
+
+        # ── Build and send the ping embed ─────────────────────────────────────
         latency = round(self.bot.latency * 1000, 1) if self.bot.latency else 0
-        status_emoji = str(member.status).replace("online", "\\U0001f7e2").replace("idle", "\\U0001f7e1").replace("dnd", "\\U0001f7e0").replace("offline", "\\U0001f507")
-        status_text = f"Status: {member.status}"
-        
+
+        status_map = {
+            "online": "U0001f7e2 Online",
+            "idle": "U0001f7e1 Idle",
+            "dnd": "U0001f7e0 Do Not Disturb",
+            "offline": "⚫ Offline",
+        }
+        status_text = status_map.get(str(member.status), str(member.status).title())
+        joined = member.joined_at.strftime("%Y-%m-%d") if member.joined_at else "Unknown"
+
         embed = discord.Embed(
-            title=f"@ {member.display_name}",
-            description=f"{status_text}\nBot Latency: {latency}ms\nJoined: {member.joined_at.strftime('%Y-%m-%d') if member.joined_at else 'Unknown'}",
-            color=member.color or discord.Color.blurple()
+            title=f"📣 {member.display_name}",
+            description=f"{status_text}\nBot Latency: {latency}ms\nJoined: {joined}",
+            color=member.color if member.color != discord.Color.default() else discord.Color.blurple()
         )
         embed.set_thumbnail(url=member.display_avatar.url)
-        
-        await interaction.channel.send(f"{member.mention}", embed=embed, delete_after=30)
+
+        try:
+            await interaction.channel.send(f"{member.mention}", embed=embed, delete_after=30)
+        except Exception as e:
+            logger.error(f"[ping] Error sending ping embed: {e}")
+            return False, None
+
         return True, None
 
     async def action_post_documentation(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
