@@ -1451,7 +1451,14 @@ async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: st
         async def confirm_callback(it: discord.Interaction):
             if it.user.id != user_id:
                 return await it.response.send_message("Only the user who started this can confirm.", ephemeral=True)
-            await it.response.edit_message(content="⚙️ Executing...", embed=None, view=None)
+            try:
+                await it.response.edit_message(content="⚙️ Executing...", embed=None, view=None)
+            except discord.NotFound:
+                # Interaction already expired, try using followup instead
+                try:
+                    await it.followup.send("⚙️ Executing...", ephemeral=True)
+                except:
+                    pass
             final_msg = "❌ Something went wrong during execution. Please try again."
             try:
                 from actions import ActionHandler

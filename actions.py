@@ -807,6 +807,10 @@ class ActionHandler:
         
         # Support both user_id and username
         if not user_id and username:
+            # Strip @ prefix if present
+            if username.startswith("@"):
+                username = username[1:]
+            
             # Try by name first
             member = discord.utils.get(interaction.guild.members, name=username)
             if not member:
@@ -817,6 +821,13 @@ class ActionHandler:
                 member = discord.utils.get(interaction.guild.members, display_name=username)
             if member:
                 user_id = member.id
+        
+        if not user_id and username:
+            # Try fetching by ID if username looks like a number
+            try:
+                user_id = int(username)
+            except ValueError:
+                pass
         
         if not user_id:
             return False, None
@@ -860,6 +871,10 @@ class ActionHandler:
             return False, None
         
         if username:
+            # Strip @ prefix if present
+            if username.startswith("@"):
+                username = username[1:]
+            
             # Try by name first
             member = discord.utils.get(interaction.guild.members, name=username)
             if not member:
@@ -870,12 +885,20 @@ class ActionHandler:
                 member = discord.utils.get(interaction.guild.members, display_name=username)
             if member:
                 user_id = member.id
-            else:
-                return False, None
+        
+        if not user_id and username:
+            # Try fetching by ID if username looks like a number
+            try:
+                user_id = int(username)
+            except ValueError:
+                pass
+        
+        if not user_id:
+            return False, None
         
         member = interaction.guild.get_member(user_id) if user_id else None
         if not member:
-            return False, {"error": "Member not found"}
+            return False, None
         
         latency = round(self.bot.latency * 1000, 1) if self.bot.latency else 0
         status_emoji = str(member.status).replace("online", "\\U0001f7e2").replace("idle", "\\U0001f7e1").replace("dnd", "\\U0001f7e0").replace("offline", "\\U0001f507")
