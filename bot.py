@@ -5,7 +5,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands, ui
 import asyncio
-import datetime
+import datetime as dt
 import random
 import signal
 import json
@@ -222,21 +222,32 @@ class MiroBot(commands.Bot):
     async def _setup_crash_recovery(self):
         """Check for incomplete setups from previous crashes and clean up."""
         pending_setups = dm.load_json("pending_setups", default={})
+        cleanup_failed = []
         for setup_id, setup_data in pending_setups.items():
             logger.warning("Found incomplete setup %s from crash - cleaning up", setup_id)
             guild_id = setup_data.get("guild_id")
             actions_taken = setup_data.get("actions_taken", [])
-            await self._cleanup_crash_setup(guild_id, actions_taken)
-            del pending_setups[setup_id]
+            success = await self._cleanup_crash_setup(guild_id, actions_taken)
+            if not success:
+                cleanup_failed.append(setup_id)
+            else:
+                del pending_setups[setup_id]
+        # Only delete entries that were successfully cleaned up
+        for setup_id in cleanup_failed:
+            pending_setups.pop(setup_id, None)
         if pending_setups:
             dm.save_json("pending_setups", pending_setups)
         logger.info("Crash recovery check completed")
 
-    async def _cleanup_crash_setup(self, guild_id: int, actions_taken: list):
-        """Clean up half-built setups from a crash."""
+    async def _cleanup_crash_setup(self, guild_id: int, actions_taken: list) -> bool:
+        """Clean up half-built setups from a crash. Returns True if cleanup succeeded or was not needed."""
+        # Wait a bit for guild cache to populate
+        await asyncio.sleep(1)
         guild = self.get_guild(guild_id)
         if not guild:
-            return
+            logger.warning("Guild %d not found for crash cleanup (may still be loading)", guild_id)
+            return False
+        cleanup_success = True
         for action in actions_taken:
             try:
                 if action.get("type") == "channel" and "id" in action:
@@ -251,6 +262,8 @@ class MiroBot(commands.Bot):
                         logger.info("Cleaned up orphaned role: %s", role.name)
             except Exception as e:
                 logger.error("Failed to clean up crash artifact: %s", e)
+                cleanup_success = False
+        return cleanup_success
 
     def _setup_signal_handlers(self):
         """Set up graceful shutdown on SIGINT/SIGTERM."""
@@ -420,11 +433,12 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             if cmd_content.strip() == "help":
                 from actions import ActionHandler
                 handler = ActionHandler(self)
+                handler.set_guild_context(message.guild)
                 await handler.handle_help_all(message)
                 return
             
             # Handle staff commands
-            if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "trainingtasks", "appeal", "shift"]):
+            if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "trainingtasks", "appeal"]) or cmd_content.startswith("shift"):
                 await self._handle_staff_command(message, cmd_content)
                 return
             
@@ -732,7 +746,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             
             json_str = json.dumps(export_data, indent=2)
             bytes_io = io.BytesIO(json_str.encode('utf-8'))
-            file = discord.File(bytes_io, filename=f"memory_export_{guild.id}_{datetime.datetime.now().strftime('%Y%m%d')}.json")
+            file = discord.File(bytes_io, filename=f"memory_export_{guild.id}_{dt.datetime.now().strftime('%Y%m%d')}.json")
             
             await message.channel.send("?? Here is your conversation memory export:", file=file)
             
@@ -845,30 +859,33 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         
         command = parts[0].lower()
         
+        # Handle "shift start", "shift end", "show shifts" as full commands
         shift_commands = {
             "shift start": self.staff_shift.handle_shift_start,
             "shift end": self.staff_shift.handle_shift_end,
             "show shifts": self.staff_shift.handle_show_shifts,
         }
         
-        if command in ["shift start", "shift end", "show shifts"]:
-            func = shift_commands[command]
-            await func(message)
+        # Check for multi-word shift commands first
+        if cmd_content in shift_commands:
+            await shift_commands[cmd_content](message)
             return
         
-        shift_only_commands = {
-            "start": self.staff_shift.handle_shift_start,
-            "end": self.staff_shift.handle_shift_end,
-            "show": self.staff_shift.handle_show_shifts,
-        }
-        
-        if cmd_content.startswith("shift") and len(parts) > 1:
+        # Handle "start", "end", "show" after "shift" prefix was already stripped
+        # e.g., user types "!shift start" -> cmd_content is "shift start"
+        # or user types "!staff shift start" -> cmd_content might be "shift start"
+        if command == "shift" and len(parts) > 1:
             sub_cmd = parts[1].lower()
+            shift_only_commands = {
+                "start": self.staff_shift.handle_shift_start,
+                "end": self.staff_shift.handle_shift_end,
+                "show": self.staff_shift.handle_show_shifts,
+            }
             if sub_cmd in shift_only_commands:
-                func = shift_only_commands[sub_cmd]
-                await func(message)
+                await shift_only_commands[sub_cmd](message)
                 return
         
+        # Handle other staff commands
         activity_commands = {
             "logs": self.staff_shift.handle_activity_logs,
             "allactivity": self.staff_shift.handle_all_activity,
@@ -1140,7 +1157,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         embed.add_field(name="Improvement Type", value=type_label, inline=True)
         embed.add_field(name="Confidence", value=f"{conf_pct}%", inline=True)
         embed.add_field(name="Change Applied", value=suggestion, inline=False)
-        embed.timestamp = datetime.datetime.now()
+        embed.timestamp = dt.datetime.now()
         embed.set_footer(text="Adaptive Command Refinement . AI Self-Improvement")
         
         # Find all guilds that have this command and notify
@@ -1233,7 +1250,7 @@ async def slash_bot(interaction: discord.Interaction, text: str):
             pass
         return
 
-    now = datetime.datetime.now().timestamp()
+    now = dt.datetime.now().timestamp()
     last_use = bot._bot_cooldowns.get(interaction.user.id, 0)
     remaining = bot._bot_cooldown_seconds - (now - last_use)
     if remaining > 0:
@@ -1302,7 +1319,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
         for i, mem in enumerate(relevant_memories, 1):
             memory_context += f"\n{i}. Similar conversation (similarity: {mem['similarity']:.2f}):\n{mem['document'][:500]}...\n"
 
-    res = await bot.ai.chat(guild_id, user_id, user_input, SYSTEM_PROMPT + memory_context)
+    res = await self.ai.chat(guild_id, user_id, user_input, SYSTEM_PROMPT + memory_context)
 
     
     reasoning = res.get("reasoning", "Thinking...")
@@ -1506,7 +1523,7 @@ async def status_cmd(interaction: discord.Interaction):
             provider_status.append(f"{p.capitalize()} {status}")
 
     embed.add_field(name="⚙️ AI Configuration", value="\n".join(provider_status), inline=False)
-    embed.add_field(name="🤖 AI Model", value=f"`{bot.ai.model}`", inline=True)
+    embed.add_field(name="🤖 AI Model", value=f"`{self.ai.model}`", inline=True)
     embed.add_field(name="💾 Memory", value=f"{os.getenv('MEMORY_DEPTH', '20')} msgs", inline=True)
     embed.add_field(name="Bot", value="🟢 Online", inline=True)
     embed.add_field(name="Guild", value=f"?? {guild.name}", inline=True)
@@ -1688,7 +1705,7 @@ Based on ALL of the above, provide a comprehensive server analysis covering:
 Be specific — reference the actual names you see above. Do NOT give generic advice."""
 
     try:
-        result = await bot.ai.chat(
+        result = await self.ai.chat(
             guild_id=guild_id,
             user_id=interaction.user.id,
             user_input=analysis_prompt,
@@ -1863,7 +1880,7 @@ async def health_cmd(interaction: discord.Interaction):
         inline=False
     )
     embed.add_field(name="Clusters", value=f"{len(report.get('clusters', []))} active groups", inline=True)
-    embed.timestamp = datetime.datetime.now()
+    embed.timestamp = dt.datetime.now()
     embed.set_footer(text="Community Health Analysis")
     
     await interaction.followup.send(embed=embed)
