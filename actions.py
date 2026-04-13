@@ -807,16 +807,19 @@ class ActionHandler:
         
         # Support both user_id and username
         if not user_id and username:
+            # Try by name first
             member = discord.utils.get(interaction.guild.members, name=username)
+            if not member:
+                # Try by nick
+                member = discord.utils.get(interaction.guild.members, nick=username)
+            if not member:
+                # Try by display name
+                member = discord.utils.get(interaction.guild.members, display_name=username)
             if member:
                 user_id = member.id
-            else:
-                member = discord.utils.get(interaction.guild.members, nick=username)
-                if member:
-                    user_id = member.id
         
         if not user_id:
-            return False, {"error": "User not found"}
+            return False, None
             
         # Deduplication check
         dedup_key = f"dm_{user_id}_{hash(content or '')}_{hash(str(embed_data) if embed_data else '')}"
@@ -857,11 +860,18 @@ class ActionHandler:
             return False, None
         
         if username:
+            # Try by name first
             member = discord.utils.get(interaction.guild.members, name=username)
+            if not member:
+                # Try by nick
+                member = discord.utils.get(interaction.guild.members, nick=username)
+            if not member:
+                # Try by display name
+                member = discord.utils.get(interaction.guild.members, display_name=username)
             if member:
                 user_id = member.id
             else:
-                return False, {"error": f"User '{username}' not found"}
+                return False, None
         
         member = interaction.guild.get_member(user_id) if user_id else None
         if not member:
