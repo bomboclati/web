@@ -1282,7 +1282,7 @@ async def slash_bot(interaction: discord.Interaction, text: str):
         return
     
     try:
-        await self._process_ai_turn(interaction, text, thinking_msg)
+        await bot._process_ai_turn(bot, interaction, text, thinking_msg)
     except discord.errors.NotFound:
         pass
     except Exception as e:
@@ -1382,7 +1382,7 @@ async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: st
                     del bot.ai_sessions[user_id]
                 
                 await modal_it.response.send_message("[AI] Processing your answer...", ephemeral=False)
-                await self._process_ai_turn(modal_it, f"[User answered your question]: {answer}", thinking_msg=None)
+                await bot._process_ai_turn(bot, modal_it, f"[User answered your question]: {answer}", thinking_msg=None)
             
             modal.on_submit = on_submit_wrapper
         
@@ -1394,7 +1394,7 @@ async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: st
                 del bot.ai_sessions[user_id]
             
             await it.response.edit_message(content="[AI] Proceeding with defaults...", embed=None, view=None)
-            await self._process_ai_turn(it, "[User said to use defaults]", thinking_msg=None)
+            await bot._process_ai_turn(bot, it, "[User said to use defaults]", thinking_msg=None)
         
         reply_btn.callback = reply_callback
         skip_btn.callback = skip_callback
