@@ -114,19 +114,19 @@ class EditCommandModal(discord.ui.Modal):
     
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("? Not your session.", ephemeral=True)
+            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
         
         new_code = self.code_input.value
         
         try:
             data = json.loads(new_code)
         except json.JSONDecodeError:
-            await interaction.response.send_message("? Invalid JSON! Please enter valid JSON.", ephemeral=True)
+            await interaction.response.send_message("❌ Invalid JSON! Please enter valid JSON.", ephemeral=True)
             return
         
         valid, error_msg = validate_command_json(data)
         if not valid:
-            await interaction.response.send_message(f"? {error_msg}", ephemeral=True)
+            await interaction.response.send_message(f"❌ {error_msg}", ephemeral=True)
             return
         
         custom_cmds = dm.get_guild_data(interaction.guild.id, "custom_commands", {})
@@ -472,7 +472,7 @@ class ActionHandler:
             return
         
         embed = discord.Embed(
-            title=f"?? {channel_name}",
+            title=f"📢 {channel_name}",
             description=guide["description"],
             color=discord.Color.blue()
         )
@@ -620,7 +620,7 @@ class ActionHandler:
                 break
         
         embed = discord.Embed(
-            title=f"?? Role: {role_name}",
+            title=f"🎭 Role: {role_name}",
             description=description,
             color=discord.Color.blue()
         )
@@ -665,10 +665,59 @@ class ActionHandler:
         title = params.get("title")
         description = params.get("description")
         color = parse_color(params.get("color", 0x3498db))
+        buttons = params.get("buttons", [])  # List of {"label": ..., "type": ..., "style": ...}
+        fields = params.get("fields", [])
 
         channel = discord.utils.get(interaction.guild.channels, name=channel_name) or interaction.channel
         embed = discord.Embed(title=title, description=description, color=color)
-        msg = await channel.send(embed=embed)
+
+        for field in fields:
+            embed.add_field(name=field.get("name", ""), value=field.get("value", ""), inline=field.get("inline", False))
+
+        view = None
+        if buttons:
+            from modules.auto_setup import VerifyButton, AcceptRulesButton, CreateTicketButton, ApplyStaffButton, SuggestionButton
+            view = discord.ui.View(timeout=None)
+            for btn_def in buttons:
+                label = btn_def.get("label", "Click")
+                btn_type = btn_def.get("type", "custom")
+                style_str = btn_def.get("style", "primary")
+                style_map = {"primary": discord.ButtonStyle.primary, "success": discord.ButtonStyle.success, "danger": discord.ButtonStyle.danger, "secondary": discord.ButtonStyle.secondary}
+                style = style_map.get(style_str, discord.ButtonStyle.primary)
+
+                if btn_type == "verify":
+                    role = discord.utils.get(interaction.guild.roles, name="Verified") or discord.utils.get(interaction.guild.roles, name="Member")
+                    sub_view = VerifyButton(interaction.guild.id, role.id if role else 0)
+                    for item in sub_view.children:
+                        view.add_item(item)
+                elif btn_type == "ticket":
+                    sub_view = CreateTicketButton(interaction.guild.id, channel.id)
+                    for item in sub_view.children:
+                        view.add_item(item)
+                elif btn_type == "apply_staff":
+                    sub_view = ApplyStaffButton(interaction.guild.id)
+                    for item in sub_view.children:
+                        view.add_item(item)
+                elif btn_type == "accept_rules":
+                    sub_view = AcceptRulesButton(interaction.guild.id)
+                    for item in sub_view.children:
+                        view.add_item(item)
+                elif btn_type == "suggestion":
+                    sub_view = SuggestionButton(interaction.guild.id)
+                    for item in sub_view.children:
+                        view.add_item(item)
+                else:
+                    # Generic button with a response message
+                    response_msg = btn_def.get("response", f"You clicked **{label}**!")
+                    btn = discord.ui.Button(label=label, style=style)
+                    async def make_callback(msg):
+                        async def callback(it: discord.Interaction):
+                            await it.response.send_message(msg, ephemeral=True)
+                        return callback
+                    btn.callback = await make_callback(response_msg)
+                    view.add_item(btn)
+
+        msg = await channel.send(embed=embed, view=view)
         return True, {"action": "delete_message", "channel_id": channel.id, "message_id": msg.id}
 
     async def action_send_dm(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
@@ -849,7 +898,7 @@ class ActionHandler:
         if cooldown_key in self._custom_cmd_cooldowns:
             remaining = self._custom_cmd_cooldown_seconds - (now - self._custom_cmd_cooldowns[cooldown_key])
             if remaining > 0:
-                await message.channel.send(f"? Command on cooldown. Wait {int(remaining)}s.", delete_after=2)
+                await message.channel.send(f"⏳ Command on cooldown. Wait {int(remaining)}s.", delete_after=2)
                 return None
         self._custom_cmd_cooldowns[cooldown_key] = now
         
@@ -859,7 +908,7 @@ class ActionHandler:
             
             valid, error_msg = validate_command_json(data)
             if not valid:
-                await message.channel.send(f"? {error_msg}")
+                await message.channel.send(f"❌ {error_msg}")
                 return False
             
             if isinstance(data, list):
@@ -871,7 +920,38 @@ class ActionHandler:
             # Handle special command objects
             elif isinstance(data, dict):
                 command_type = data.get("command_type")
-                
+
+                # Handle action-style JSON: {"action": "...", "parameters": {...}}
+                # or {"actions": [{"name": "...", "parameters": {...}}]}
+                if not command_type and (data.get("action") or data.get("actions")):
+                    await message.channel.send(f"⚙️ Running **!{cmd_name}**...")
+                    # Build a fake interaction-like context using message
+                    class _FakeInteraction:
+                        def __init__(self, msg):
+                            self.guild = msg.guild
+                            self.channel = msg.channel
+                            self.user = msg.author
+                            self.response = self
+                            self._responded = False
+                        async def send_message(self, content=None, embed=None, ephemeral=False):
+                            await message.channel.send(content=content, embed=embed)
+                        async def defer(self, ephemeral=False):
+                            pass
+                        async def followup_send(self, *a, **kw):
+                            await message.channel.send(*a, **kw)
+                        async def edit_message(self, *a, **kw):
+                            pass
+                    fake = _FakeInteraction(message)
+                    actions = data.get("actions", [])
+                    if not actions and data.get("action"):
+                        actions = [{"name": data["action"], "parameters": data.get("parameters", {})}]
+                    result = await self.execute_sequence(fake, actions)
+                    if result["success"]:
+                        await message.channel.send(f"✅ **!{cmd_name}** completed!")
+                    else:
+                        await message.channel.send(f"❌ **!{cmd_name}** failed: {result.get('error', 'Unknown error')}")
+                    return True
+
                 if command_type == "application_status":
                     return await self.handle_application_status(message)
                 elif command_type == "appeal_status":
@@ -1070,7 +1150,7 @@ class ActionHandler:
         last_daily[str(user_id)] = str(datetime.now())
         dm.update_guild_data(guild_id, "last_daily", last_daily)
         
-        await message.channel.send(f"?? {message.author.mention} claimed **{reward} coins**!")
+        await message.channel.send(f"🎉 {message.author.mention} claimed **{reward} coins**!")
         return True
 
     async def handle_economy_balance(self, message: discord.Message) -> bool:
@@ -1104,13 +1184,13 @@ class ActionHandler:
         
         if not user_achievements:
             embed = discord.Embed(
-                title="?? Your Achievements",
+                title="🏆 Your Achievements",
                 description="No achievements yet! Keep being active to earn some.",
                 color=discord.Color.gold()
             )
         else:
             embed = discord.Embed(
-                title=f"?? {message.author.display_name}'s Achievements",
+                title=f"🏆 {message.author.display_name}'s Achievements",
                 description=f"**{len(user_achievements)} achievements earned**",
                 color=discord.Color.gold()
             )
@@ -1145,7 +1225,7 @@ class ActionHandler:
         
         if not user_titles:
             embed = discord.Embed(
-                title="??? Your Titles",
+                title="👑 Your Titles",
                 description="No titles yet! Keep being active to unlock titles.",
                 color=discord.Color.gold()
             )
@@ -1153,7 +1233,7 @@ class ActionHandler:
             active_name = f"{active_title['icon']} {active_title['name']}" if active_title else "None"
             
             embed = discord.Embed(
-                title=f"??? {message.author.display_name}'s Titles",
+                title=f"👑 {message.author.display_name}'s Titles",
                 description=f"Active: **{active_name}**\n" +
                            f"Total unlocked: **{len(user_titles)}**",
                 color=discord.Color.gold()
@@ -1201,7 +1281,7 @@ class ActionHandler:
         # Set active title
         achievements.set_active_title(message.guild.id, message.author.id, matched_title['id'])
         
-        await message.channel.send(f"? Title set to **{matched_title['icon']} {matched_title['name']}**!")
+        await message.channel.send(f"✅ Title set to **{matched_title['icon']} {matched_title['name']}**!")
         return True
 
     async def handle_achievements_leaderboard(self, message: discord.Message) -> bool:
@@ -1216,7 +1296,7 @@ class ActionHandler:
             return True
         
         embed = discord.Embed(
-            title="?? Achievement Leaderboard",
+            title="🏆 Achievement Leaderboard",
             description="Top achievement collectors in this server:",
             color=discord.Color.gold()
         )
@@ -1363,7 +1443,7 @@ class ActionHandler:
                     command_groups[cmd_name] = []
         
         embed = discord.Embed(
-            title="?? All Custom Commands",
+            title="📋 All Custom Commands",
             description=f"Total: {len(non_help_commands)} commands\n\nClick a command to view/edit its subcommands.",
             color=discord.Color.blue()
         )
@@ -1377,7 +1457,7 @@ class ActionHandler:
                 parent_list.append(f"**!{parent}**")
         
         embed.add_field(
-            name="?? Commands",
+            name="📋 Commands",
             value="\n".join(parent_list[:25]),
             inline=False
         )
@@ -1469,7 +1549,7 @@ class CommandsListView(discord.ui.View):
     def create_view_callback(self, parent: str):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("? Not your session.", ephemeral=True)
+                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
             view = CommandsListView(self.all_commands, self.command_groups, self.user_id, parent, 0)
             subcommands = self.command_groups.get(parent, [])
             if parent not in subcommands:
@@ -1477,7 +1557,7 @@ class CommandsListView(discord.ui.View):
             total = len(subcommands)
             
             embed = discord.Embed(
-                title=f"?? Command: !{parent}",
+                title=f"📋 Command: !{parent}",
                 description=f"Subcommands: {total}\n\nClick to edit each command's code.",
                 color=discord.Color.orange()
             )
@@ -1487,12 +1567,12 @@ class CommandsListView(discord.ui.View):
     def create_edit_callback(self, cmd_name: str):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("? Not your session.", ephemeral=True)
+                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
             
             cmd_code = self.all_commands.get(cmd_name, "")
             
             embed = discord.Embed(
-                title=f"?? Edit Command: !{cmd_name}",
+                title=f"✏️ Edit Command: !{cmd_name}",
                 description=f"Current code:\n```json\n{cmd_code[:1500]}\n```",
                 color=discord.Color.orange()
             )
@@ -1504,7 +1584,7 @@ class CommandsListView(discord.ui.View):
     def create_parent_prev_callback(self, page: int):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("? Not your session.", ephemeral=True)
+                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
             view = CommandsListView(self.all_commands, self.command_groups, self.user_id, None, page - 1)
             await interaction.response.edit_message(view=view)
         return callback
@@ -1512,7 +1592,7 @@ class CommandsListView(discord.ui.View):
     def create_parent_next_callback(self, page: int):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("? Not your session.", ephemeral=True)
+                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
             view = CommandsListView(self.all_commands, self.command_groups, self.user_id, None, page + 1)
             await interaction.response.edit_message(view=view)
         return callback
@@ -1520,7 +1600,7 @@ class CommandsListView(discord.ui.View):
     def create_sub_prev_callback(self, page: int):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("? Not your session.", ephemeral=True)
+                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
             view = CommandsListView(self.all_commands, self.command_groups, self.user_id, self.parent, page - 1)
             await interaction.response.edit_message(view=view)
         return callback
@@ -1528,14 +1608,14 @@ class CommandsListView(discord.ui.View):
     def create_sub_next_callback(self, page: int):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("? Not your session.", ephemeral=True)
+                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
             view = CommandsListView(self.all_commands, self.command_groups, self.user_id, self.parent, page + 1)
             await interaction.response.edit_message(view=view)
         return callback
     
     async def back_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("? Not your session.", ephemeral=True)
+            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
         view = CommandsListView(self.all_commands, self.command_groups, self.user_id, None, 0)
         custom_cmds = self.all_commands
         command_groups = self.command_groups
@@ -1549,17 +1629,17 @@ class CommandsListView(discord.ui.View):
                 command_list.append(f"**!{parent}**")
         
         embed = discord.Embed(
-            title="?? All Custom Commands",
+            title="📋 All Custom Commands",
             description=f"Total: {len(custom_cmds)} commands\n\nClick a command to view/edit its subcommands.",
             color=discord.Color.blue()
         )
-        embed.add_field(name="?? Commands", value="\n".join(command_list[:25]), inline=False)
+        embed.add_field(name="📋 Commands", value="\n".join(command_list[:25]), inline=False)
         
         await interaction.response.edit_message(embed=embed, view=view)
     
     async def close_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("? Not your session.", ephemeral=True)
+            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
         await interaction.response.edit_message(content="?? Commands closed.", view=None)
 
     async def handle_staffpromo_status(self, message: discord.Message) -> bool:
