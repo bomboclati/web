@@ -513,7 +513,17 @@ ACTION EXAMPLES:
 - {"name": "send_embed", "parameters": {"channel": "tickets", "title": "Support", "description": "Need help?", "buttons": [{"label": "Open Ticket", "type": "ticket"}]}}
 - {"name": "send_embed", "parameters": {"channel": "staff-apps", "title": "Staff Apply", "description": "Join our team!", "buttons": [{"label": "Apply Now", "type": "apply_staff"}]}}
 - {"name": "web_search", "parameters": {"query": "..."}}
+- {"name": "assign_role", "parameters": {"role_name": "Bots", "username": "john"}}
+- {"name": "assign_role", "parameters": {"role_name": "Member", "user_id": "123456789"}}
 - {"name": "schedule_ai_action", "parameters": {"name": "daily_welcome", "cron": "0 9 * * *", "action_type": "announcement", "action_params": {"title": "Good Morning!", "message": "Start your day with positivity!"}, "channel_id": 123456789}}
+
+ROLE ASSIGNMENT RULES:
+- To create a role AND give it to a user, use TWO actions in sequence:
+  1. {"name": "create_role", "parameters": {"name": "Bots", "color": "#99AAB5"}}
+  2. {"name": "assign_role", "parameters": {"role_name": "Bots", "username": "john"}}
+- ALWAYS use "role_name" (the role's text name) and "username" (the user's display name, without @) in assign_role parameters
+- NEVER use role_id or numeric user_id — the bot will resolve names automatically
+- When the user mentions someone with @, extract just their username for the "username" field
 
 BUTTON TYPES for send_embed (all fully functional, no placeholders):
 - "verify" = Gives user Verified/Member role automatically
