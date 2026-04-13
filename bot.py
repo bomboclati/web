@@ -1443,9 +1443,7 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
             except Exception as exec_err:
                 import traceback
                 logger.error("confirm_callback crashed: %s", exec_err, exc_info=True)
-                final_msg = f"**❌ Execution crashed:** {exec_err}
-
-Something went wrong running the actions. Please try again or rephrase your request."
+                final_msg = "Execution crashed: " + str(exec_err) + "\n\nSomething went wrong running the actions. Please try again or rephrase your request."
             await it.channel.send(final_msg)
             await history_manager.add_exchange(guild_id, user_id, user_input, summary)
             await vector_memory.store_conversation(guild_id=guild_id, user_id=user_id, user_message=user_input, bot_response=summary, reasoning=reasoning, walkthrough=walkthrough)
