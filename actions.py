@@ -156,7 +156,8 @@ class ActionHandler:
         "create_role_with_permissions", "edit_channel_permissions", "create_voice_channel", "create_text_channel",
         "create_category_channel", "edit_channel_bitrate", "edit_channel_user_limit", "follow_announcement_channel",
         "create_scheduled_event", "allow_channel_permission", "deny_channel_permission",
-        "deny_all_channels_for_role", "allow_all_channels_for_role", "deny_category_for_role"
+        "deny_all_channels_for_role", "allow_all_channels_for_role", "deny_category_for_role",
+        "make_channel_private", "make_category_private"
     }
     
     def __init__(self, bot):
@@ -324,8 +325,13 @@ class ActionHandler:
         name = params.get("name", "new-channel")
         channel_type = params.get("type", "text")
         category_name = params.get("category")
+        private = params.get("private", False)
         allowed_roles = params.get("allowed_roles", [])
         denied_roles = params.get("denied_roles", [])
+        
+        # If private=true, always deny @everyone view_channel
+        if private and "@everyone" not in denied_roles:
+            denied_roles = list(denied_roles) + ["@everyone"]
 
         if not guild.me.guild_permissions.manage_channels:
             logger.error("Bot lacks manage_channels permission in guild %s", guild.id)
@@ -1831,15 +1837,33 @@ class ActionHandler:
             return False, None
 
     async def action_create_category_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Creates a category."""
+        """Creates a category with optional privacy settings."""
+        guild = interaction.guild
         name = params.get("name", "New Category")
+        private = params.get("private", False)
+        allowed_roles = params.get("allowed_roles", [])
+        denied_roles = params.get("denied_roles", [])
+        
+        if private and "@everyone" not in denied_roles:
+            denied_roles = list(denied_roles) + ["@everyone"]
         
         try:
-            channel = await interaction.guild.create_category(name)
-            return True, {"category": channel.name}
+            category = await guild.create_category(name)
+            
+            if denied_roles or allowed_roles:
+                await self._set_channel_permissions(category, guild, allowed_roles, denied_roles)
+                for child in category.channels:
+                    await self._set_channel_permissions(child, guild, allowed_roles, denied_roles)
+            
+            self._track_artifact("category", category.id, category.name)
+            return True, {"category": category.name}
         except Exception as e:
             logger.error(f"Error creating category: {e}")
             return False, None
+
+    async def action_create_category(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Alias for create_category_channel — supports name, private, allowed_roles, denied_roles."""
+        return await self.action_create_category_channel(interaction, params)
 
     async def action_edit_channel_bitrate(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Sets voice channel bitrate."""
@@ -2108,6 +2132,81 @@ class ActionHandler:
             return True, {"channels_updated": channels_updated, "category": category_name, "role": role_name}
         except Exception as e:
             logger.error(f"Error denying category: {e}")
+            return False, None
+
+    async def action_make_channel_private(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Makes an existing channel private: denies @everyone view_channel and allows specified roles."""
+        guild = interaction.guild
+        channel_name = params.get("channel") or params.get("channel_name")
+        allowed_roles = params.get("allowed_roles", [])
+        
+        if not channel_name:
+            return False, None
+        
+        channel = discord.utils.get(guild.channels, name=channel_name)
+        if not channel:
+            logger.error(f"make_channel_private: channel '{channel_name}' not found")
+            return False, None
+        
+        try:
+            # Deny @everyone
+            await self._merge_channel_permission(channel, guild.default_role, view_channel=False, send_messages=False)
+            
+            # Allow each specified role
+            for role_name in allowed_roles:
+                role = self._resolve_role(guild, role_name)
+                if role:
+                    await self._merge_channel_permission(channel, role, view_channel=True, send_messages=True, read_message_history=True)
+            
+            logger.info(f"Made channel '{channel_name}' private. Allowed roles: {allowed_roles}")
+            return True, {"channel": channel_name, "allowed_roles": allowed_roles}
+        except Exception as e:
+            logger.error(f"Error making channel private: {e}")
+            return False, None
+
+    async def action_make_category_private(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Makes an existing category private: denies @everyone and allows specified roles on the category and all child channels."""
+        guild = interaction.guild
+        category_name = params.get("category") or params.get("category_name")
+        allowed_roles = params.get("allowed_roles", [])
+        
+        if not category_name:
+            return False, None
+        
+        category = discord.utils.get(guild.categories, name=category_name)
+        if not category:
+            logger.error(f"make_category_private: category '{category_name}' not found")
+            return False, None
+        
+        try:
+            channels_updated = 0
+            
+            # Deny @everyone on the category itself
+            await self._merge_channel_permission(category, guild.default_role, view_channel=False, send_messages=False)
+            channels_updated += 1
+            
+            # Allow each specified role on the category
+            for role_name in allowed_roles:
+                role = self._resolve_role(guild, role_name)
+                if role:
+                    await self._merge_channel_permission(category, role, view_channel=True, send_messages=True, read_message_history=True)
+            
+            # Do the same for all child channels
+            for child in category.channels:
+                try:
+                    await self._merge_channel_permission(child, guild.default_role, view_channel=False, send_messages=False)
+                    channels_updated += 1
+                    for role_name in allowed_roles:
+                        role = self._resolve_role(guild, role_name)
+                        if role:
+                            await self._merge_channel_permission(child, role, view_channel=True, send_messages=True, read_message_history=True)
+                except Exception:
+                    pass
+            
+            logger.info(f"Made category '{category_name}' private. Updated {channels_updated} channels. Allowed: {allowed_roles}")
+            return True, {"category": category_name, "channels_updated": channels_updated, "allowed_roles": allowed_roles}
+        except Exception as e:
+            logger.error(f"Error making category private: {e}")
             return False, None
 
     async def action_create_role_with_permissions(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
