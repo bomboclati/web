@@ -144,7 +144,8 @@ class ActionHandler:
         "create_prefix_command", "delete_prefix_command", "setup_welcome",
         "setup_logging", "setup_verification", "setup_economy", "setup_leveling",
         "setup_tickets", "setup_applications", "setup_appeals", "setup_moderation",
-        "send_dm", "create_invite", "schedule_ai_action", "ping"
+        "send_dm", "create_invite", "schedule_ai_action", "ping",
+        "kick_user", "ban_user", "timeout_user"
     }
     
     def __init__(self, bot):
@@ -1031,6 +1032,138 @@ class ActionHandler:
             return True, {"action": "remove_ai_task", "name": name}
         else:
             logger.error("Scheduler not available")
+            return False, None
+
+    async def action_create_invite(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Creates an invite link for a channel or the server."""
+        channel = params.get("channel")
+        max_uses = params.get("max_uses", 0)
+        max_age = params.get("max_age", 86400)  # 24 hours by default
+        temporary = params.get("temporary", False)
+        
+        target_channel = None
+        if channel:
+            target_channel = discord.utils.get(interaction.guild.channels, name=channel)
+            if not target_channel:
+                target_channel = interaction.channel
+        else:
+            target_channel = interaction.channel
+        
+        try:
+            invite = await target_channel.create_invite(
+                max_uses=max_uses if max_uses else None,
+                max_age=max_age if max_age else None,
+                temporary=temporary
+            )
+            return True, {"invite_url": invite.url, "channel_id": target_channel.id}
+        except discord.Forbidden:
+            return False, {"error": "Missing permission to create invite"}
+        except Exception as e:
+            logger.error(f"Error creating invite: {e}")
+            return False, None
+
+    async def action_kick_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Kicks a user from the server."""
+        user_id = params.get("user_id")
+        username = params.get("username")
+        reason = params.get("reason", "Kicked via bot command")
+        
+        if not user_id and username:
+            member = discord.utils.get(interaction.guild.members, name=username)
+            if not member:
+                member = discord.utils.get(interaction.guild.members, nick=username)
+            if not member:
+                member = discord.utils.get(interaction.guild.members, display_name=username)
+            if member:
+                user_id = member.id
+        
+        if not user_id:
+            return False, None
+        
+        member = interaction.guild.get_member(user_id)
+        if not member:
+            return False, None
+        
+        try:
+            await member.kick(reason=reason)
+            return True, {"user_id": user_id, "action": "kick"}
+        except discord.Forbidden:
+            return False, {"error": "Missing permission to kick"}
+        except Exception as e:
+            logger.error(f"Error kicking user: {e}")
+            return False, None
+
+    async def action_ban_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Bans a user from the server."""
+        user_id = params.get("user_id")
+        username = params.get("username")
+        reason = params.get("reason", "Banned via bot command")
+        delete_days = params.get("delete_messages_days", 0)
+        
+        if not user_id and username:
+            member = discord.utils.get(interaction.guild.members, name=username)
+            if not member:
+                member = discord.utils.get(interaction.guild.members, nick=username)
+            if not member:
+                member = discord.utils.get(interaction.guild.members, display_name=username)
+            if member:
+                user_id = member.id
+        
+        if not user_id:
+            return False, None
+        
+        member = interaction.guild.get_member(user_id)
+        if not member:
+            # Try to fetch user
+            try:
+                member = await interaction.guild.fetch_member(user_id)
+            except:
+                pass
+        
+        try:
+            if member:
+                await member.ban(reason=reason, delete_message_days=delete_days)
+            else:
+                await interaction.guild.ban(discord.Object(user_id), reason=reason, delete_message_days=delete_days)
+            return True, {"user_id": user_id, "action": "ban"}
+        except discord.Forbidden:
+            return False, {"error": "Missing permission to ban"}
+        except Exception as e:
+            logger.error(f"Error banning user: {e}")
+            return False, None
+
+    async def action_timeout_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Times out a user (modifies their communication timeout)."""
+        user_id = params.get("user_id")
+        username = params.get("username")
+        duration = params.get("duration", 600)  # seconds, default 10 minutes
+        reason = params.get("reason", "Timed out via bot command")
+        
+        if not user_id and username:
+            member = discord.utils.get(interaction.guild.members, name=username)
+            if not member:
+                member = discord.utils.get(interaction.guild.members, nick=username)
+            if not member:
+                member = discord.utils.get(interaction.guild.members, display_name=username)
+            if member:
+                user_id = member.id
+        
+        if not user_id:
+            return False, None
+        
+        member = interaction.guild.get_member(user_id)
+        if not member:
+            return False, None
+        
+        try:
+            import datetime
+            timeout_until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=duration)
+            await member.timeout(timeout_until, reason=reason)
+            return True, {"user_id": user_id, "duration": duration, "action": "timeout"}
+        except discord.Forbidden:
+            return False, {"error": "Missing permission to timeout"}
+        except Exception as e:
+            logger.error(f"Error timeout user: {e}")
             return False, None
 
     # --- Execution Logic ---

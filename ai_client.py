@@ -518,6 +518,10 @@ ACTION EXAMPLES:
 - {"name": "schedule_ai_action", "parameters": {"name": "daily_welcome", "cron": "0 9 * * *", "action_type": "announcement", "action_params": {"title": "Good Morning!", "message": "Start your day with positivity!"}, "channel_id": 123456789}}
 - {"name": "send_dm", "parameters": {"username": "john", "content": "Hello!"}}
 - {"name": "ping", "parameters": {"username": "john"}}
+- {"name": "create_invite", "parameters": {"channel": "general"}}
+- {"name": "kick_user", "parameters": {"username": "john", "reason": "Rule violation"}}
+- {"name": "ban_user", "parameters": {"username": "john", "reason": "Spamming"}}
+- {"name": "timeout_user", "parameters": {"username": "john", "duration": 600, "reason": "Time out for 10 mins"}}
 
 WHEN TO USE PING vs SEND_DM:
 - Use "ping" when user wants to mention/ping "@user" or check their status - shows in CHANNEL
