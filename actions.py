@@ -180,7 +180,7 @@ class ActionHandler:
             if name not in self.ALLOWED_ACTIONS:
                 logger.warning("Blocked disallowed action: %s", name)
                 results.append((name, False))
-                raise Exception(f"Disallowed action: {name}")
+                return {"results": results, "rolled_back": [], "failed_at": i, "failed_action": name, "error": f"Action not allowed: {name}", "success": False}
             
             try:
                 success, undo_data = await self.dispatch(interaction, name, params)
