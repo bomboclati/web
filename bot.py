@@ -52,6 +52,7 @@ from modules.auto_setup import AutoSetup
 from modules.promotion_service import PromotionService
 from modules.guardian import GuardianSystem
 from modules.server_analytics import setup_analytics, get_analytics
+from modules.verification import Verification
 
 load_dotenv()
 
@@ -117,6 +118,7 @@ class MiroBot(commands.Bot):
         self.auto_setup = AutoSetup(self)
         self.guardian = GuardianSystem(self)
         self.analytics = setup_analytics(self)
+        self.verification = Verification(self)
 
     async def get_dynamic_prefix(self, bot, message):
         if not message.guild:
@@ -149,12 +151,14 @@ class MiroBot(commands.Bot):
         from modules.staff_system import StaffApplicationPersistentView, StaffReviewPersistentView
         from modules.tickets import TicketPersistentView
         from modules.auto_setup import VerifyButton, AcceptRulesButton, CreateTicketButton, SuggestionButton, ApplyStaffButton, RoleSelectButton
+        from modules.verification import VerifyView
         
         # Note: We don't register auto-setup views here with dummy IDs since they need real guild/role/channel IDs
         # Instead, each setup function sends its own view with proper IDs when called
         self.add_view(StaffApplicationPersistentView(self))
         self.add_view(StaffReviewPersistentView())
         self.add_view(TicketPersistentView())
+        self.add_view(VerifyView(self))
         
         # Register persistent views for auto-setup buttons (these work across restarts)
         # Each view uses a unique custom_id pattern that gets matched when buttons are clicked
@@ -1997,6 +2001,15 @@ async def config_prefix(it: discord.Interaction, prefix: str):
 
 bot.tree.add_command(config_group)
 
+@bot.tree.command(name="setup_verification", description="Set up the verification system (admin only)")
+async def setup_verification(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    try:
+        await bot.verification.setup_interaction(interaction)
+    except Exception as e:
+        logger.error(f"Setup verification error: {e}")
+        await interaction.followup.send(f"Error: {str(e)}", ephemeral=True)
+
 @bot.event
 async def on_guild_join(guild: discord.Guild):
     logger.info("Joined guild: %s (ID: %d)", guild.name, guild.id)
@@ -2006,6 +2019,19 @@ async def on_guild_join(guild: discord.Guild):
 async def on_guild_remove(guild: discord.Guild):
     logger.info("Left guild: %s (ID: %d)", guild.name, guild.id)
     await bot.auto_setup.on_guild_remove(guild)
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    if member.bot:
+        return
+    try:
+        await bot.verification.on_member_join(member)
+    except Exception as e:
+        logger.warning(f"Verification on_member_join error: {e}")
+    try:
+        await bot.welcome_leave.on_member_join(member)
+    except Exception as e:
+        logger.warning(f"Welcome_leave on_member_join error: {e}")
 
 @bot.event  
 async def on_member_remove(member):

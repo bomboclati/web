@@ -333,20 +333,12 @@ Respond with JSON only:
     async def _handle_web_search(self, user_input: str, system_prompt: str) -> str:
         """Web Search System - Search the web and include results in AI response."""
         try:
-            from modules.chat_channels import TavilyAIWrapper
+            search_results = await self.bot.ai.get_search_results(user_input)
             
-            search_wrapper = TavilyAIWrapper(self.bot.ai)
-            search_results = await search_wrapper.search(user_input)
-            
-            if not search_results:
+            if not search_results or "disabled" in search_results.lower() or "error" in search_results.lower():
                 return None
             
-            # Add search context to prompt
-            search_context = "\n\n".join([
-                f"- {r['content'][:300]}" for r in search_results[:3]
-            ])
-            
-            enhanced_prompt = f"{system_prompt}\n\nWEB SEARCH RESULTS:\n{search_context}\n\nBased on these results, answer the user's question."
+            enhanced_prompt = f"{system_prompt}\n\nWEB SEARCH RESULTS:\n{search_results}\n\nBased on these results, answer the user's question."
             
             result = await self.bot.ai.chat(
                 guild_id=0,
