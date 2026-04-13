@@ -3,6 +3,7 @@ import json
 import asyncio
 import time
 from datetime import datetime, timezone
+import datetime as dt
 from typing import List, Dict, Any, Tuple, Optional
 from data_manager import dm
 from logger import logger
@@ -151,6 +152,11 @@ class ActionHandler:
         self._action_log = []
         self._setup_id = None
         self._artifacts = []
+        self._guild_context = None
+    
+    def set_guild_context(self, guild):
+        """Set the guild context for help and other commands"""
+        self._guild_context = guild
 
     async def execute_sequence(self, interaction: discord.Interaction, actions: List[Dict[str, Any]], auto_rollback: bool = True) -> Dict[str, Any]:
         """Executes a list of actions with automatic rollback on failure and crash recovery tracking."""
@@ -313,6 +319,12 @@ class ActionHandler:
             logger.error("Bot lacks manage_channels permission in guild %s", guild.id)
             return False, None
 
+        # Check for duplicate channel creation using deduplicator
+        dedup_key = f"channel_{guild.id}_{name}"
+        if not deduplicator.should_send(dedup_key, interval=5):
+            logger.info("Channel '%s' creation skipped (duplicate request)", name)
+            return True, None
+
         existing = discord.utils.get(guild.channels, name=name)
         if existing:
             logger.info("Channel '%s' already exists, skipping creation", name)
@@ -322,7 +334,10 @@ class ActionHandler:
         if category_name:
             category = discord.utils.get(guild.categories, name=category_name)
             if not category:
-                category = await guild.create_category(category_name)
+                # Also deduplicate category creation
+                cat_dedup_key = f"category_{guild.id}_{category_name}"
+                if deduplicator.should_send(cat_dedup_key, interval=5):
+                    category = await guild.create_category(category_name)
 
         if channel_type == "text":
             channel = await guild.create_text_channel(name, category=category)
@@ -501,6 +516,12 @@ class ActionHandler:
         if not guild.me.guild_permissions.manage_roles:
             logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
             return False, None
+
+        # Check for duplicate role creation using deduplicator
+        dedup_key = f"role_{guild.id}_{name}"
+        if not deduplicator.should_send(dedup_key, interval=5):
+            logger.info("Role '%s' creation skipped (duplicate request)", name)
+            return True, None
 
         existing = discord.utils.get(guild.roles, name=name)
         if existing:
@@ -1197,14 +1218,14 @@ class ActionHandler:
         last_time = last_daily.get(str(user_id))
         
         if last_time:
-            last_date = datetime.fromisoformat(last_time)
-            if (datetime.now() - last_date).days < 1:
+            last_date = dt.fromisoformat(last_time)
+            if (dt.datetime.now() - last_date).days < 1:
                 await message.channel.send("Daily reward already claimed today!")
                 return True
         
         reward = 100
         economy.add_coins(guild_id, user_id, reward)
-        last_daily[str(user_id)] = str(datetime.now())
+        last_daily[str(user_id)] = str(dt.datetime.now())
         dm.update_guild_data(guild_id, "last_daily", last_daily)
         
         await message.channel.send(f"🎉 {message.author.mention} claimed **{reward} coins**!")
