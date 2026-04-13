@@ -1305,8 +1305,18 @@ async def _process_ai_turn(interaction: discord.Interaction, user_input: str, th
     walkthrough = res.get("walkthrough", "Planning...")
     # Flexible key check for AI response content
     summary = res.get("summary") or res.get("message") or res.get("response") or res.get("question")
-    if not summary and reasoning:
-        summary = f"*AI Reasoning/Fallback:* {reasoning}"
+    if not summary:
+        # Try to find any non-empty string value in the response
+        for key in ["text", "content", "output", "result", "answer", "reply"]:
+            val = res.get(key)
+            if val and isinstance(val, str) and val.strip():
+                summary = val.strip()
+                break
+    if not summary and reasoning and reasoning not in ("Thinking...", "Standard response"):
+        # Use reasoning as the response text (without the ugly prefix)
+        summary = reasoning
+    if not summary:
+        summary = "I'm ready to help! What would you like me to do?"
     if not summary:
         summary = "Ready to proceed."
         
@@ -1557,7 +1567,7 @@ Suggest 3 specific improvements the server should make. Keep it brief and action
             guild_id=guild.id,
             user_id=interaction.user.id,
             user_input=analysis_prompt,
-            system_prompt="You are a helpful Discord server consultant. Give concrete, actionable suggestions."
+            system_prompt="You are a helpful Discord server consultant. Give concrete, actionable suggestions. Always respond in valid JSON format with a 'summary' key containing your full analysis text."
         )
         
         if result.get("error"):
