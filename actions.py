@@ -894,7 +894,7 @@ class ActionHandler:
             except (ValueError, TypeError):
                 pass
 
-        # ── 2. No user resolved — soft pass so action sequence doesn't break ──
+        # ── 2. No user resolved — return failure so action sequence stops ──
         if not user_id:
             logger.warning(f"[send_dm] Could not resolve user from username={username!r}")
             try:
@@ -903,7 +903,7 @@ class ActionHandler:
                 )
             except Exception:
                 pass
-            return True, None
+            return False, None
 
         # ── 3. Deduplication ──────────────────────────────────────────────────
         dedup_key = f"dm_{user_id}_{hash(content or '')}_{hash(str(embed_data) if embed_data else '')}"
@@ -916,13 +916,13 @@ class ActionHandler:
             user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
         except discord.NotFound:
             logger.warning(f"[send_dm] User {user_id} not found on Discord")
-            return True, None
+            return False, None
         except Exception as e:
             logger.error(f"[send_dm] Error fetching user {user_id}: {e}")
-            return True, None
+            return False, None
 
         if not user:
-            return True, None
+            return False, None
 
         # ── 5. Build embed ────────────────────────────────────────────────────
         embed = None
@@ -945,7 +945,7 @@ class ActionHandler:
             logger.info(f"[send_dm] DM sent to {user} ({user_id})")
             return True, None
         except discord.Forbidden:
-            # User has DMs disabled — not a bot error, treat as soft pass
+            # User has DMs disabled — NOT a soft pass - this is a genuine failure
             logger.warning(f"[send_dm] {user} ({user_id}) has DMs disabled")
             try:
                 await interaction.channel.send(
@@ -954,10 +954,10 @@ class ActionHandler:
                 )
             except Exception:
                 pass
-            return True, None
+            return False, None
         except discord.HTTPException as e:
             logger.error(f"[send_dm] HTTP error sending DM to {user_id}: {e}")
-            return True, None
+            return False, None
         except Exception as e:
             logger.error(f"[send_dm] Unexpected error sending DM to {user_id}: {e}")
             return False, None
