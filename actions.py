@@ -160,7 +160,9 @@ class ActionHandler:
         "make_channel_private", "make_category_private",
         "analyze_server_state",
         # Additional actions from action_catalog
-        "post_documentation", "setup_trigger_role"
+        "post_documentation", "setup_trigger_role",
+        # Button and embed actions
+        "create_button_embed", "create_button", "create_embed"
     }
     
     def __init__(self, bot):
@@ -971,6 +973,28 @@ class ActionHandler:
 
         msg = await channel.send(embed=embed, view=view)
         return True, {"action": "delete_message", "channel_id": channel.id, "message_id": msg.id}
+
+    # Alias actions for AI compatibility
+    async def action_create_button_embed(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Alias for action_send_embed - creates an embed with buttons."""
+        return await self.action_send_embed(interaction, params)
+    
+    async def action_create_button(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Alias for action_send_embed - creates a button (simplified)."""
+        # Ensure buttons are in params
+        if "buttons" not in params:
+            params["buttons"] = [{"label": params.get("label", "Click"), "type": params.get("type", "custom"), "style": params.get("style", "primary")}]
+        if "title" not in params:
+            params["title"] = params.get("label", "Button")
+        if "description" not in params:
+            params["description"] = params.get("description", "")
+        return await self.action_send_embed(interaction, params)
+    
+    async def action_create_embed(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Alias for action_send_embed - creates an embed without buttons."""
+        params["buttons"] = []  # No buttons
+        return await self.action_send_embed(interaction, params)
+
 
     async def action_send_dm(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Sends a DM to a user. Returns True even when DMs are disabled (soft failure) so the action sequence keeps going."""
