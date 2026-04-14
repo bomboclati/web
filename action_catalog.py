@@ -804,6 +804,16 @@ ACTION_CATALOG = {
         "category": "Meta",
         "parameters": {},
         "keywords": ["analyze", "check", "state", "planning", "debug"]
+    },
+    "extract_online_users": {
+        "name": "extract_online_users",
+        "description": "Extracts and returns a list of currently online members from the server. Alias for query_members with status filter.",
+        "category": "Server Query",
+        "parameters": {
+            "status": {"type": "string", "required": False, "description": "Filter by status (online, idle, dnd, offline)", "default": "online"}
+        },
+        "aliases": ["get_online_users", "list_online_members", "who_is_online"],
+        "keywords": ["online", "online users", "who is online", "active members", "extract online", "list online"]
     }
 }
 
@@ -834,7 +844,8 @@ CATEGORY_GROUPS = {
     "Permissions": ["allow_channel_permission", "deny_channel_permission", "allow_all_channels_for_role",
                      "deny_all_channels_for_role", "deny_category_for_role", "edit_channel_permissions"],
     "Events": ["create_scheduled_event"],
-    "Meta": ["analyze_server_state"]
+    "Meta": ["analyze_server_state"],
+    "Server Query": ["extract_online_users", "query_server_info", "query_members", "query_channels", "query_roles"]
 }
 
 

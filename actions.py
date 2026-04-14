@@ -166,7 +166,9 @@ class ActionHandler:
         # Query actions for server introspection
         "query_server_info", "query_channels", "query_roles", "query_members",
         "query_member_details", "query_economy_leaderboard", "query_xp_leaderboard",
-        "query_pending_applications", "query_active_shifts", "query_recent_messages"
+        "query_pending_applications", "query_active_shifts", "query_recent_messages",
+        # Extract actions
+        "extract_online_users"
     }
     
     def __init__(self, bot):
@@ -475,6 +477,18 @@ class ActionHandler:
             return True, {"query_result": result}
         except Exception as e:
             logger.error("query_recent_messages failed: %s", e)
+            return False, {"error": str(e)}
+
+    async def action_extract_online_users(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Extract and return list of online users. Alias for query_members with status filter."""
+        try:
+            from server_query import ServerQueryEngine
+            engine = ServerQueryEngine(self.bot)
+            status = params.get("status", "online")
+            result = await engine.query_members(interaction.guild.id, status=status)
+            return True, {"query_result": result, "message": f"Found {len(result.get('members', []))} online users"}
+        except Exception as e:
+            logger.error("extract_online_users failed: %s", e)
             return False, {"error": str(e)}
 
     # --- Basic Actions ---
