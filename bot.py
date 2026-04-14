@@ -2130,7 +2130,7 @@ async def _handle_mention_ai(self, message):
             "Hello! What can I do for you?",
             "Hi! Need assistance with something?"
         ]
-        await message.channel.send(random.choice(greetings))
+        await message.channel.send(random.choice(greetings), suppress_embeds=True)
         return
     
     guild_id = message.guild.id if message.guild else None
@@ -2204,7 +2204,7 @@ you can use the fetch_server_health tool to get real data."""
         
     except Exception as e:
         logger.error(f"Error in mention AI handler: {e}")
-        await message.channel.send("[WARNING] Sorry, I'm having trouble processing that right now. Please try again!")
+        await message.channel.send("[WARNING] Sorry, I'm having trouble processing that right now. Please try again!", suppress_embeds=True)
 
 
 @bot.event

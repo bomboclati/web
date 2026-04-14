@@ -166,6 +166,13 @@ class Verification:
 
         logger.info(f"[Verification] Server lock complete for {guild.name}")
 
+    async def _merge_channel_permission(self, channel, role, **kwargs):
+        """Merge permission changes into existing overwrites instead of replacing them."""
+        existing = channel.overwrites_for(role)
+        for perm_name, perm_value in kwargs.items():
+            setattr(existing, perm_name, perm_value)
+        await channel.set_permissions(role, overwrite=existing)
+
     async def _lock_category(
         self,
         category: discord.CategoryChannel,
@@ -175,12 +182,15 @@ class Verification:
     ):
         """Edit the category's permission overwrites in-place (no cloning or renaming)."""
         try:
-            overwrites = dict(category.overwrites)
-            overwrites[everyone] = discord.PermissionOverwrite(view_channel=False)
-            overwrites[unverified] = discord.PermissionOverwrite(view_channel=False)
-            overwrites[verified] = discord.PermissionOverwrite(view_channel=True)
-
-            await category.edit(overwrites=overwrites, reason="Verification system — locking category")
+            # Ensure bot always has access to prevent lockout
+            await self._merge_channel_permission(category, self.bot.user, view_channel=True, manage_channels=True, manage_permissions=True)
+            
+            # Apply permissions properly using merge
+            await self._merge_channel_permission(category, everyone, view_channel=False)
+            if unverified:
+                await self._merge_channel_permission(category, unverified, view_channel=False)
+            if verified:
+                await self._merge_channel_permission(category, verified, view_channel=True)
 
             # Lock every channel inside the category too
             for channel in category.channels:
@@ -201,12 +211,17 @@ class Verification:
     ):
         """Edit a text or voice channel's overwrites in-place."""
         try:
-            overwrites = dict(channel.overwrites)
-            overwrites[everyone] = discord.PermissionOverwrite(view_channel=False)
-            overwrites[unverified] = discord.PermissionOverwrite(view_channel=False)
-            overwrites[verified] = discord.PermissionOverwrite(view_channel=True)
+            # Ensure bot always has access to prevent lockout
+            await self._merge_channel_permission(channel, self.bot.user, view_channel=True, manage_channels=True, manage_permissions=True)
+            
+            # Apply permissions properly using merge
+            await self._merge_channel_permission(channel, everyone, view_channel=False)
+            if unverified:
+                await self._merge_channel_permission(channel, unverified, view_channel=False)
+            if verified:
+                await self._merge_channel_permission(channel, verified, view_channel=True)
 
-            await channel.edit(overwrites=overwrites, reason="Verification system — locking channel")
+            logger.info(f"[Verification] Locked channel: {channel.name}")
         except Exception as e:
             logger.error(f"[Verification] Error locking channel {channel.name}: {e}")
 
