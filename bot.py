@@ -1340,6 +1340,25 @@ async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: st
         for i, mem in enumerate(relevant_memories, 1):
             memory_context += f"\n{i}. Similar conversation (similarity: {mem['similarity']:.2f}):\n{mem['document'][:500]}...\n"
 
+    # ── Build live server context ──
+    server_context = ""
+    try:
+        server_info = await bot.server_query.query_server_info(guild_id)
+        if server_info:
+            server_context = f"""
+
+CURRENT SERVER STATE (LIVE DATA):
+- Server: {server_info.get('name', 'Unknown')}
+- Total Members: {server_info.get('member_count', 0)}
+- Online Members: {server_info.get('online_count', 0)}
+- Total Channels: {server_info.get('total_channels', 0)}
+- Total Roles: {server_info.get('total_roles', 0)}
+- Server Owner ID: {server_info.get('owner_id', 'Unknown')}
+"""
+    except Exception as e:
+        logger.error(f"Failed to build server context: {e}")
+        server_context = "\n\nCURRENT SERVER STATE: Unable to retrieve live server data.\n"
+
     # ── Resolve Discord <@ID> mentions in the user's text before sending to AI ──
     # When a user types /bot and uses Discord's mention autocomplete, the text arrives
     # as "<@123456789>" — resolve these to display names and inject explicit user_id
