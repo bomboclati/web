@@ -427,20 +427,36 @@ class AIClient:
                             logger.error(f"AI Search Retry Error ({search_resp.status}): {search_text}")
                             raise Exception(f"AI Search API Error ({search_resp.status})")
             
-            return res_json
+            # Final validation and sanitization
+            if self._validate_json_response(res_json):
+                # Remove optional fields if empty/None
+                if res_json.get("reasoning") in [None, "", "Raw text response", "Standard response"]:
+                    del res_json["reasoning"]
+                if res_json.get("walkthrough") in [None, "", ""]:
+                    del res_json["walkthrough"]
+                if res_json.get("actions") in [None, [], []]:
+                    del res_json["actions"]
+                
+                # Double-serialize to ensure proper escaping
+                serialized = json.dumps(res_json, ensure_ascii=False)
+                return json.loads(serialized)
+            else:
+                return {"summary": str(res_json.get("summary", ai_msg))}
         except Exception as e:
             logger.debug(f"Response was not pure JSON or parse failed: {e}")
-            return {"response": ai_msg, "reasoning": "Standard response", "summary": ai_msg}
+            return {"summary": ai_msg}
 
 
     def _extract_json(self, text: str) -> Dict[str, Any]:
         """Robustly extract JSON from AI response, handling Markdown and conversational filler."""
         if not text:
-            return {}
+            return {"summary": ""}
             
         # Try direct parse first
         try:
-            return json.loads(text.strip())
+            parsed = json.loads(text.strip())
+            if self._validate_json_response(parsed):
+                return parsed
         except json.JSONDecodeError:
             pass
             
@@ -449,9 +465,12 @@ class AIClient:
         match = re.search(json_pattern, text, re.DOTALL)
         if match:
             try:
-                # Remove possible trailing commas before closing braces/brackets
-                content = re.sub(r',\s*([\]}])', r'\1', match.group(1))
-                return json.loads(content)
+                content = match.group(1)
+                # Fix common JSON errors
+                content = self._repair_json(content)
+                parsed = json.loads(content)
+                if self._validate_json_response(parsed):
+                    return parsed
             except json.JSONDecodeError:
                 pass
                 
@@ -460,11 +479,11 @@ class AIClient:
         match = re.search(brace_pattern, text, re.DOTALL)
         if match:
             try:
-                # Basic cleanup: remove everything before first { and after last }
                 content = match.group(1)
-                # Remove possible trailing commas
-                content = re.sub(r',\s*([\]}])', r'\1', content)
-                return json.loads(content)
+                content = self._repair_json(content)
+                parsed = json.loads(content)
+                if self._validate_json_response(parsed):
+                    return parsed
             except json.JSONDecodeError:
                 pass
                 
@@ -474,14 +493,77 @@ class AIClient:
             end = text.rfind('}')
             if start != -1 and end != -1:
                 content = text[start:end+1]
-                content = re.sub(r',\s*([\]}])', r'\1', content)
-                return json.loads(content)
+                content = self._repair_json(content)
+                parsed = json.loads(content)
+                if self._validate_json_response(parsed):
+                    return parsed
         except Exception:
             pass
                 
-        # Cannot parse as JSON - return the raw text as the summary
+        # Cannot parse as JSON - return clean valid JSON response
         logger.warning(f"Could not parse AI response as JSON, using raw text. Preview: {text[:100]}")
-        return {"summary": text.strip(), "reasoning": "Raw text response", "walkthrough": ""}
+        return {"summary": text.strip()}
+        
+    def _repair_json(self, content: str) -> str:
+        """Repair common JSON formatting errors."""
+        if not content:
+            return "{}"
+            
+        # Fix trailing commas before closing braces/brackets
+        content = re.sub(r',\s*([\]}])', r'\1', content)
+        
+        # Fix unescaped quotes inside strings
+        # This handles cases where quotes are not escaped properly
+        def escape_quotes_in_strings(match):
+            string_content = match.group(2)
+            # Escape any unescaped double quotes
+            escaped = re.sub(r'(?<!\\)"', r'\\"', string_content)
+            return f'"{match.group(1)}": "{escaped}"'
+            
+        content = re.sub(r'"([^"]+)":\s*"((?:[^"\\]|\\.)*)"', escape_quotes_in_strings, content)
+        
+        # Ensure balanced braces - add missing closing braces if needed
+        open_braces = content.count('{')
+        close_braces = content.count('}')
+        if open_braces > close_braces:
+            content += '}' * (open_braces - close_braces)
+            
+        # Ensure balanced brackets
+        open_brackets = content.count('[')
+        close_brackets = content.count(']')
+        if open_brackets > close_brackets:
+            content += ']' * (open_brackets - close_brackets)
+            
+        return content
+        
+    def _validate_json_response(self, data: Any) -> bool:
+        """Validate that JSON response has correct structure and types."""
+        if not isinstance(data, dict):
+            return False
+            
+        # Summary is always required
+        if "summary" not in data or not isinstance(data["summary"], str):
+            return False
+            
+        # Validate optional fields if present
+        if "reasoning" in data and not isinstance(data["reasoning"], str):
+            return False
+            
+        if "walkthrough" in data and not isinstance(data["walkthrough"], str):
+            return False
+            
+        if "actions" in data and not isinstance(data["actions"], list):
+            return False
+            
+        # Validate each action if present
+        if "actions" in data:
+            for action in data["actions"]:
+                if not isinstance(action, dict):
+                    return False
+                if "name" not in action or "parameters" not in action:
+                    return False
+                    
+        return True
 
 # Default System Prompt
 SYSTEM_PROMPT = """
@@ -505,13 +587,23 @@ When users ask questions like "who is online?", "what roles do we have?", "show 
 "tell me about @User", "any pending applications?", use these query actions FIRST to get live data,
 then use send_message or send_embed to present the results to the user.
 
-MANDATORY JSON FORMAT:
-You MUST ALWAYS respond with a JSON object containing these keys:
+CONDITIONAL JSON FORMAT:
+You MUST ALWAYS respond with a VALID JSON object.
+
+WHEN USER REQUESTS AN ACTION, TASK, CODE CHANGE, OR SOMETHING REQUIRING EXECUTION:
+Include ALL these keys:
 1. "reasoning": (string) Your internal thoughts and plan.
-2. "summary": (string) Your friendly response to the user. MANDATORY.
-3. "walkthrough": (string) Detailed overview of what you will build. Required for actions.
+2. "summary": (string) Your friendly response to the user. MANDATORY IN ALL CASES.
+3. "walkthrough": (string) Detailed step-by-step implementation plan.
 4. "actions": (list) A list of action objects. ALWAYS use a list, even for one action.
 5. Each action object: {"name": "action_name", "parameters": {...}}
+
+WHEN USER ASKS A NORMAL QUESTION, INFO LOOKUP, OR STATUS CHECK:
+INCLUDE ONLY THE MANDATORY KEY:
+1. "summary": (string) Your clean direct answer to the user.
+
+DO NOT include reasoning, walkthrough, or actions fields when just answering normal questions.
+ALWAYS PRODUCE PERFECT VALID JSON: proper closing braces, correct quotes, no trailing commas, properly escaped quotation marks.
 
 MULTI-STEP ACTIONS (CRITICAL - always use "actions" list, NOT singular "action"):
 "actions": [
