@@ -141,9 +141,9 @@ class ActionHandler:
         "send_message", "send_embed", "add_role", "remove_role",
         "create_channel", "delete_channel", "create_role", "delete_role",
         "create_category", "edit_channel", "edit_role", "assign_role", "remove_role",
-        "create_prefix_command", "delete_prefix_command", "setup_welcome",
-        "setup_logging", "setup_verification", "setup_economy", "setup_leveling",
-        "setup_tickets", "setup_applications", "setup_appeals", "setup_moderation",
+        "create_prefix_command", "delete_prefix_command",
+        "setup_welcome", "setup_logging", "setup_verification", "setup_economy", "setup_leveling",
+        "setup_tickets", "setup_applications", "setup_appeals", "setup_moderation", "setup_staff_system",
         "send_dm", "create_invite", "schedule_ai_action", "ping",
         "kick_user", "ban_user", "timeout_user",
         "delete_role", "delete_channel", "announce", "poll", "give_points", "remove_points", "warn_user",
@@ -1261,6 +1261,39 @@ class ActionHandler:
         system = Gamification(self.bot)
         result = await system.setup(interaction, params)
         return result, {"action": "undo_leveling", "guild_id": interaction.guild.id}
+
+    async def action_setup_welcome(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Setup welcome/leave message system."""
+        from modules.welcome_leave import WelcomeLeaveSystem
+        system = WelcomeLeaveSystem(self.bot)
+        result = await system.setup(interaction, params)
+        return (bool(result) if result is not None else True), {"action": "undo_welcome", "guild_id": interaction.guild.id}
+
+    # --- Aliases: create_*_system → setup_* (AI may use either name) ---
+
+    async def action_create_verify_system(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        return await self.action_setup_verification(interaction, params)
+
+    async def action_create_tickets_system(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        return await self.action_setup_tickets(interaction, params)
+
+    async def action_create_applications_system(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        return await self.action_setup_applications(interaction, params)
+
+    async def action_create_appeals_system(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        return await self.action_setup_appeals(interaction, params)
+
+    async def action_create_welcome_system(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        return await self.action_setup_welcome(interaction, params)
+
+    async def action_create_staff_system(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        return await self.action_setup_staff_system(interaction, params)
+
+    async def action_create_leveling_system(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        return await self.action_setup_leveling(interaction, params)
+
+    async def action_create_economy_system(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        return await self.action_setup_economy(interaction, params)
 
     async def action_schedule_ai_action(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Schedule an AI action to run on a cron schedule."""
