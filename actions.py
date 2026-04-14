@@ -157,7 +157,8 @@ class ActionHandler:
         "create_category_channel", "edit_channel_bitrate", "edit_channel_user_limit", "follow_announcement_channel",
         "create_scheduled_event", "allow_channel_permission", "deny_channel_permission",
         "deny_all_channels_for_role", "allow_all_channels_for_role", "deny_category_for_role",
-        "make_channel_private", "make_category_private"
+        "make_channel_private", "make_category_private",
+        "analyze_server_state"
     }
     
     def __init__(self, bot):
@@ -317,6 +318,22 @@ class ActionHandler:
         else:
             logger.warning("Unknown action: %s", name)
             return False, None
+
+    # --- Meta / Planning Actions ---
+
+    async def action_analyze_server_state(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Read-only no-op. The AI uses this as a planning checkpoint before executing real actions.
+        Logs current guild state to help with debugging; always returns success so the action
+        sequence continues to the actual changes."""
+        guild = interaction.guild
+        channels = [c.name for c in guild.text_channels] + [c.name for c in guild.voice_channels]
+        categories = [c.name for c in guild.categories]
+        roles = [r.name for r in guild.roles if r.name != "@everyone"]
+        logger.info(
+            "[analyze_server_state] guild=%s | categories=%s | channels=%s | roles=%s | members=%d",
+            guild.name, categories, channels, roles, guild.member_count
+        )
+        return True, None
 
     # --- Basic Actions ---
 
