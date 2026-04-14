@@ -936,7 +936,7 @@ class ActionHandler:
         
         # Check role hierarchy - bot can't assign roles higher than itself
         bot_top_role = guild.me.top_role
-        if role.position >= bot_top_role.position:
+        if role.position > bot_top_role.position:
             logger.error("assign_role: role %s is higher than bot's top role %s", role.name, bot_top_role.name)
             return False, None
         
@@ -963,7 +963,12 @@ class ActionHandler:
     async def action_remove_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Removes a role from a user."""
         guild = interaction.guild
-        
+
+        # Check permissions first
+        if not guild.me.guild_permissions.manage_roles:
+            logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
+            return False, None
+
         role = None
         role_id = params.get("role_id")
         role_name = params.get("role_name")
@@ -976,7 +981,7 @@ class ActionHandler:
             role = discord.utils.find(lambda r: r.name.lower() == str(role_name).lower(), guild.roles)
         if not role and role_name:
             role = discord.utils.find(lambda r: str(role_name).lower() in r.name.lower(), guild.roles)
-        
+
         member = None
         user_id = params.get("user_id")
         username = params.get("username")
@@ -992,14 +997,25 @@ class ActionHandler:
                 lambda m: m.name.lower() == search or m.display_name.lower() == search,
                 guild.members
             )
-        
+
         if not role:
             logger.error("remove_role: could not find role. role_id=%s role_name=%s", role_id, role_name)
             return False, None
         if not member:
             logger.error("remove_role: could not find member. user_id=%s username=%s", user_id, username)
             return False, None
-        
+
+        # Check role hierarchy - bot can't remove roles higher than itself
+        bot_top_role = guild.me.top_role
+        if role.position > bot_top_role.position:
+            logger.error("remove_role: role %s is higher than bot's top role %s", role.name, bot_top_role.name)
+            return False, None
+
+        # Check if user has permission to remove this role
+        if not interaction.user.guild_permissions.manage_roles:
+            logger.error("User lacks manage_roles permission to remove roles")
+            return False, None
+
         try:
             await member.remove_roles(role)
             logger.info("Removed role %s from %s", role.name, member.display_name)
@@ -1757,15 +1773,32 @@ class ActionHandler:
 
     async def action_delete_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Deletes a role from the server."""
+        guild = interaction.guild
         role_name = params.get("role_name")
-        
+
         if not role_name:
             return False, None
-        
-        role = discord.utils.get(interaction.guild.roles, name=role_name)
+
+        # Check permissions first
+        if not guild.me.guild_permissions.manage_roles:
+            logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
+            return False, None
+
+        role = discord.utils.get(guild.roles, name=role_name)
         if not role:
             return False, None
-        
+
+        # Check role hierarchy - bot can't delete roles higher than itself
+        bot_top_role = guild.me.top_role
+        if role.position > bot_top_role.position:
+            logger.error("delete_role: role %s is higher than bot's top role %s", role.name, bot_top_role.name)
+            return False, None
+
+        # Check if user has permission to delete this role
+        if not interaction.user.guild_permissions.manage_roles:
+            logger.error("User lacks manage_roles permission to delete roles")
+            return False, None
+
         try:
             await role.delete()
             return True, {"role_name": role_name}
@@ -2211,16 +2244,33 @@ class ActionHandler:
 
     async def action_edit_role_name(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Renames a role."""
+        guild = interaction.guild
         role_name = params.get("role_name")
         new_name = params.get("new_name") or params.get("name")
-        
+
         if not new_name:
             return False, None
-        
-        role = discord.utils.get(interaction.guild.roles, name=role_name) if role_name else None
+
+        # Check permissions first
+        if not guild.me.guild_permissions.manage_roles:
+            logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
+            return False, None
+
+        role = discord.utils.get(guild.roles, name=role_name) if role_name else None
         if not role:
             return False, None
-        
+
+        # Check role hierarchy - bot can't edit roles higher than itself
+        bot_top_role = guild.me.top_role
+        if role.position > bot_top_role.position:
+            logger.error("edit_role_name: role %s is higher than bot's top role %s", role.name, bot_top_role.name)
+            return False, None
+
+        # Check if user has permission to edit this role
+        if not interaction.user.guild_permissions.manage_roles:
+            logger.error("User lacks manage_roles permission to edit roles")
+            return False, None
+
         try:
             await role.edit(name=new_name)
             return True, {"new_name": new_name}
@@ -2230,16 +2280,33 @@ class ActionHandler:
 
     async def action_change_role_color(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Changes role color."""
+        guild = interaction.guild
         role_name = params.get("role_name")
         color = params.get("color", "#99AAB5")
-        
+
         if not role_name:
             return False, None
-        
-        role = discord.utils.get(interaction.guild.roles, name=role_name)
+
+        # Check permissions first
+        if not guild.me.guild_permissions.manage_roles:
+            logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
+            return False, None
+
+        role = discord.utils.get(guild.roles, name=role_name)
         if not role:
             return False, None
-        
+
+        # Check role hierarchy - bot can't edit roles higher than itself
+        bot_top_role = guild.me.top_role
+        if role.position > bot_top_role.position:
+            logger.error("change_role_color: role %s is higher than bot's top role %s", role.name, bot_top_role.name)
+            return False, None
+
+        # Check if user has permission to edit this role
+        if not interaction.user.guild_permissions.manage_roles:
+            logger.error("User lacks manage_roles permission to edit roles")
+            return False, None
+
         try:
             await role.edit(color=parse_color(color))
             return True, {"role_name": role_name, "color": color}
@@ -2960,15 +3027,32 @@ class ActionHandler:
 
     async def action_edit_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Edit role properties (name, color, hoist, mentionable, permissions)."""
+        guild = interaction.guild
         role_name = params.get("role_name") or params.get("name")
-        
+
         if not role_name:
             return False, None
-        
-        role = discord.utils.get(interaction.guild.roles, name=role_name)
+
+        # Check permissions first
+        if not guild.me.guild_permissions.manage_roles:
+            logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
+            return False, None
+
+        role = discord.utils.get(guild.roles, name=role_name)
         if not role:
             return False, None
-        
+
+        # Check role hierarchy - bot can't edit roles higher than itself
+        bot_top_role = guild.me.top_role
+        if role.position > bot_top_role.position:
+            logger.error("edit_role: role %s is higher than bot's top role %s", role.name, bot_top_role.name)
+            return False, None
+
+        # Check if user has permission to edit this role
+        if not interaction.user.guild_permissions.manage_roles:
+            logger.error("User lacks manage_roles permission to edit roles")
+            return False, None
+
         try:
             edit_kwargs = {}
             if "new_name" in params:
