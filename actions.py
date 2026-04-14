@@ -1558,7 +1558,12 @@ class ActionHandler:
         embed.set_thumbnail(url=member.display_avatar.url)
 
         try:
-            await interaction.channel.send(f"{member.mention}", embed=embed, delete_after=30)
+            await interaction.channel.send(
+                content=member.mention,
+                embed=embed,
+                delete_after=30,
+                allowed_mentions=discord.AllowedMentions(users=True)
+            )
         except Exception as e:
             logger.error(f"[ping] Error sending ping embed: {e}")
             return False, None
@@ -2244,7 +2249,11 @@ class ActionHandler:
             target_channel = interaction.channel
         
         try:
-            await target_channel.send(content, suppress_embeds=True)
+            await target_channel.send(
+                content,
+                suppress_embeds=True,
+                allowed_mentions=discord.AllowedMentions(everyone=True, roles=True, users=True)
+            )
             return True, {"channel_id": target_channel.id}
         except Exception as e:
             logger.error(f"Error sending message: {e}")
@@ -2980,16 +2989,25 @@ class ActionHandler:
                 
                 # ONLY AFTER ALL CHILDS ARE PROCESSED, modify the category itself
                 # This prevents lockout while we're still modifying children
-                if bot_member:
-                    await self._merge_channel_permission(category, bot_member, view_channel=True, manage_channels=True)
-                
+                try:
+                    if bot_member:
+                        await self._merge_channel_permission(category, bot_member, view_channel=True, manage_channels=True)
+                except Exception as cat_err:
+                    logger.warning("make_category_private: could not grant bot access to category '%s': %s", category.name, cat_err)
+
                 # Deny @everyone on the category itself
-                await self._merge_channel_permission(category, guild.default_role, view_channel=False, send_messages=False)
-                channels_updated += 1
+                try:
+                    await self._merge_channel_permission(category, guild.default_role, view_channel=False, send_messages=False)
+                    channels_updated += 1
+                except Exception as cat_err:
+                    logger.warning("make_category_private: could not deny @everyone on category '%s': %s", category.name, cat_err)
 
                 # Allow each specified role on the category
                 for role in resolved_roles:
-                    await self._merge_channel_permission(category, role, view_channel=True, send_messages=True, read_message_history=True)
+                    try:
+                        await self._merge_channel_permission(category, role, view_channel=True, send_messages=True, read_message_history=True)
+                    except Exception as cat_err:
+                        logger.warning("make_category_private: could not allow role '%s' on category: %s", role.name, cat_err)
                 
                 total_channels_updated += channels_updated
                 processed_categories.append(category.name)

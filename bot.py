@@ -1530,7 +1530,7 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
         # Show plan with Confirm/Cancel buttons before executing
         action_list = "\n".join([f"• `{a.get('name','?')}`" for a in actions])
         plan_embed = discord.Embed(
-            description=f"{summary}\n\n{action_list}",
+            description=action_list,
             color=discord.Color.orange()
         )
         plan_embed.set_footer(text="Confirm to run · Cancel to abort")
@@ -1557,7 +1557,7 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
                 result = await handler.execute_sequence(it, actions)
                 summary_text = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in result["results"]])
                 if result["success"]:
-                    final_msg = f"**✅ Execution Complete!**\n{summary_text}\n\n{summary}"
+                    final_msg = f"**✅ Done!**\n{summary_text}"
                 else:
                     rollback_text = ""
                     if result["rolled_back"]:
