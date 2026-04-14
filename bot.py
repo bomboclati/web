@@ -2168,8 +2168,17 @@ you can use the fetch_server_health tool to get real data."""
             system_prompt=mention_system_prompt
         )
         
-        # Extract the response
-        response_text = result.get("summary", result.get("response", str(result)))
+        # Extract the response - NEVER send raw JSON to users, only summary field
+        if isinstance(result, dict) and "summary" in result:
+            response_text = str(result["summary"])
+        else:
+            response_text = "I'm having trouble formulating a response right now. Please try again."
+        
+        # Sanitize to remove any remaining JSON brackets or structure
+        import re
+        response_text = re.sub(r'^\s*[\{\[]+', '', response_text)
+        response_text = re.sub(r'[\}\]]+\s*$', '', response_text)
+        response_text = response_text.strip()
         
         # Save the exchange to history
         if guild_id:
