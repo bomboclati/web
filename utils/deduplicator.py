@@ -28,6 +28,14 @@ class MessageDeduplicator:
         self._cache[message_key] = now + interval
         return True
 
+    def should_skip_action(self, guild_id: int, action_name: str, params: Dict[str, Any], interval: int = 30) -> bool:
+        """
+        Check if an action should be skipped as duplicate.
+        Returns True if the action should be skipped, False if it should be executed.
+        """
+        key = f"action:{guild_id}:{action_name}:{hash(frozenset(params.items()))}"
+        return not self.should_send(key, interval)
+
     def _cleanup(self):
         now = time.time()
         self._cache = {k: v for k, v in self._cache.items() if v > now}
