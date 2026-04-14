@@ -284,16 +284,16 @@ Respond with JSON only:
             translations = result.get("translations", {})
             detected = result.get("detected_language", "Unknown")
             
-            embed = discord.Embed(
-                title="🌐 Translation",
-                description=f"Detected: **{detected}**",
-                color=discord.Color.blue()
-            )
-            
+            message_parts = [f"**Translation** (Detected: {detected})\n"]
             for lang, text in translations.items():
-                embed.add_field(name=lang.title(), value=text, inline=False)
+                message_parts.append(f"**{lang.title()}**: {text}")
             
-            return await message.channel.send(embed=embed)
+            full_message = "\n".join(message_parts)
+            
+            if len(full_message) > 2000:
+                full_message = full_message[:1997] + "..."
+            
+            return await message.channel.send(full_message, suppress_embeds=True)
             
         except Exception as e:
             logger.error(f"Translation error: {e}")
