@@ -852,46 +852,74 @@ class ActionHandler:
 
         # ── 1. Resolve user_id from username ──────────────────────────────────
         if not user_id and username:
-            # Handle Discord mention format <@!user> or <@user>
+            # Handle Discord mention format <@!123456789> or <@123456789> (extract numeric ID directly)
             if isinstance(username, str) and username.startswith("<@"):
-                username = username.lstrip("<@!").lstrip("<@").rstrip(">")
+                mention_cleaned = username.lstrip("<@!").lstrip("<@").rstrip(">")
+                if mention_cleaned.isdigit():
+                    user_id = int(mention_cleaned)
+                    username = None  # Clear username since we got the ID directly
+            # Handle plain @username format
             elif isinstance(username, str) and username.startswith("@"):
                 username = username[1:]
 
-            # a) Check in-memory guild member cache (name / nick / display_name)
-            member = (
-                discord.utils.get(guild.members, name=username)
-                or discord.utils.get(guild.members, nick=username)
-                or discord.utils.get(guild.members, display_name=username)
-            )
+            # If we got user_id from mention, skip the name-based lookup
+            if not user_id and username:
+                # a) Check in-memory guild member cache (name / nick / display_name)
+                member = (
+                    discord.utils.get(guild.members, name=username)
+                    or discord.utils.get(guild.members, nick=username)
+                    or discord.utils.get(guild.members, display_name=username)
+                )
 
-            # b) Case-insensitive fallback over cached members
-            if not member:
-                lower = username.lower()
-                for m in guild.members:
-                    if (m.name.lower() == lower
-                            or (m.nick and m.nick.lower() == lower)
-                            or m.display_name.lower() == lower):
-                        member = m
-                        break
+                # b) Case-insensitive fallback over cached members
+                if not member:
+                    lower = username.lower()
+                    for m in guild.members:
+                        if (m.name.lower() == lower
+                                or (m.nick and m.nick.lower() == lower)
+                                or m.display_name.lower() == lower):
+                            member = m
+                            break
 
-            # c) Discord API member search (finds members not in cache)
-            if not member:
-                try:
-                    results = await guild.query_members(query=username, limit=5)
-                    if results:
-                        member = results[0]
-                except Exception:
-                    pass
+                # c) Discord API member search (finds members not in cache)
+                if not member:
+                    try:
+                        results = await guild.query_members(query=username, limit=5)
+                        if results:
+                            member = results[0]
+                    except Exception:
+                        pass
 
-            if member:
-                user_id = member.id
+                if member:
+                    user_id = member.id
 
         # d) username is a raw numeric ID
         if not user_id and username:
             try:
                 user_id = int(str(username).strip())
             except (ValueError, TypeError):
+                pass
+
+        # e) Fallback: Try partial match search with query_members (handles various name formats)
+        if not user_id and username:
+            member = None  # Initialize for this fallback block
+            try:
+                # Try with broader search on the username for partial matching
+                results = await guild.query_members(query=username, limit=100)
+                username_lower = username.lower()
+                for m in results:
+                    # Check exact match on various name formats
+                    if (m.name.lower() == username_lower
+                            or (m.nick and m.nick.lower() == username_lower)
+                            or m.display_name.lower() == username_lower):
+                        member = m
+                        break
+                # If no exact match, use first partial match as fallback
+                if not member and results:
+                    member = results[0]
+                if member:
+                    user_id = member.id
+            except Exception:
                 pass
 
         # ── 2. No user resolved — return failure so action sequence stops ──
@@ -979,40 +1007,65 @@ class ActionHandler:
             return True, None
 
         if username:
-            if isinstance(username, str) and username.startswith("@"):
+            # Handle Discord mention format <@!123456789> or <@123456789> (extract numeric ID directly)
+            if isinstance(username, str) and username.startswith("<@"):
+                mention_cleaned = username.lstrip("<@!").lstrip("<@").rstrip(">")
+                if mention_cleaned.isdigit():
+                    user_id = int(mention_cleaned)
+                    username = None  # Clear username since we got the ID directly
+            # Handle plain @username format
+            elif isinstance(username, str) and username.startswith("@"):
                 username = username[1:]
 
-            # a) Exact cache match
-            member = (
-                discord.utils.get(guild.members, name=username)
-                or discord.utils.get(guild.members, nick=username)
-                or discord.utils.get(guild.members, display_name=username)
-            )
+            # If we have user_id from mention, skip name-based lookup
+            if not user_id and username:
+                # a) Exact cache match
+                member = (
+                    discord.utils.get(guild.members, name=username)
+                    or discord.utils.get(guild.members, nick=username)
+                    or discord.utils.get(guild.members, display_name=username)
+                )
 
-            # b) Case-insensitive cache scan
-            if not member:
-                lower = username.lower()
-                for m in guild.members:
-                    if (m.name.lower() == lower
-                            or (m.nick and m.nick.lower() == lower)
-                            or m.display_name.lower() == lower):
-                        member = m
-                        break
+                # b) Case-insensitive cache scan
+                if not member:
+                    lower = username.lower()
+                    for m in guild.members:
+                        if (m.name.lower() == lower
+                                or (m.nick and m.nick.lower() == lower)
+                                or m.display_name.lower() == lower):
+                            member = m
+                            break
 
-            # c) Discord API member search (finds members not in cache)
-            if not member:
+                # c) Discord API member search (finds members not in cache)
+                if not member:
+                    try:
+                        results = await guild.query_members(query=username, limit=5)
+                        if results:
+                            member = results[0]
+                    except Exception:
+                        pass
+
+                # d) Numeric ID passed as username string
+                if not member:
+                    try:
+                        user_id = int(str(username).strip())
+                    except (ValueError, TypeError):
+                        pass
+
+            # e) Fallback: Try broader search with query_members for partial matches
+            if not member and username:
                 try:
-                    results = await guild.query_members(query=username, limit=5)
-                    if results:
+                    results = await guild.query_members(query=username, limit=100)
+                    username_lower = username.lower()
+                    for m in results:
+                        if (m.name.lower() == username_lower
+                                or (m.nick and m.nick.lower() == username_lower)
+                                or m.display_name.lower() == username_lower):
+                            member = m
+                            break
+                    if not member and results:
                         member = results[0]
                 except Exception:
-                    pass
-
-            # d) Numeric ID passed as username string
-            if not member:
-                try:
-                    user_id = int(str(username).strip())
-                except (ValueError, TypeError):
                     pass
 
         # e) Lookup by user_id if we have one but no member yet
