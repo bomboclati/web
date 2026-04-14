@@ -2347,29 +2347,57 @@ class ActionHandler:
         guild = interaction.guild
         channel_name = params.get("channel") or params.get("channel_name")
         allowed_roles = params.get("allowed_roles", [])
-        
+
         if not channel_name:
+            try:
+                await interaction.channel.send("⚠️ No channel name specified for make_channel_private.", delete_after=10)
+            except Exception:
+                pass
             return False, None
-        
+
+        # Case-insensitive channel lookup
         channel = discord.utils.get(guild.channels, name=channel_name)
         if not channel:
-            logger.error(f"make_channel_private: channel '{channel_name}' not found")
+            lower = channel_name.lower()
+            channel = next((c for c in guild.channels if c.name.lower() == lower), None)
+        if not channel:
+            logger.error(f"make_channel_private: '{channel_name}' not found")
+            try:
+                await interaction.channel.send(
+                    f"⚠️ Could not find channel **{channel_name}**.", delete_after=10
+                )
+            except Exception:
+                pass
             return False, None
-        
+
         try:
             # Deny @everyone
             await self._merge_channel_permission(channel, guild.default_role, view_channel=False, send_messages=False)
-            
+
             # Allow each specified role
             for role_name in allowed_roles:
                 role = self._resolve_role(guild, role_name)
                 if role:
                     await self._merge_channel_permission(channel, role, view_channel=True, send_messages=True, read_message_history=True)
-            
-            logger.info(f"Made channel '{channel_name}' private. Allowed roles: {allowed_roles}")
-            return True, {"channel": channel_name, "allowed_roles": allowed_roles}
+
+            logger.info(f"Made channel '{channel.name}' private. Allowed roles: {allowed_roles}")
+            return True, {"channel": channel.name, "allowed_roles": allowed_roles}
+        except discord.Forbidden:
+            logger.error(f"make_channel_private: bot lacks Manage Channels permission in guild {guild.id}")
+            try:
+                await interaction.channel.send(
+                    "⚠️ I don't have permission to manage channel permissions. "
+                    "Please grant me the **Manage Channels** permission.", delete_after=15
+                )
+            except Exception:
+                pass
+            return False, None
         except Exception as e:
-            logger.error(f"Error making channel private: {e}")
+            logger.error(f"make_channel_private: unexpected error: {e}", exc_info=True)
+            try:
+                await interaction.channel.send(f"⚠️ Error making channel private: {e}", delete_after=10)
+            except Exception:
+                pass
             return False, None
 
     async def action_make_category_private(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
@@ -2377,28 +2405,44 @@ class ActionHandler:
         guild = interaction.guild
         category_name = params.get("category") or params.get("category_name")
         allowed_roles = params.get("allowed_roles", [])
-        
+
         if not category_name:
+            try:
+                await interaction.channel.send("⚠️ No category name specified for make_category_private.", delete_after=10)
+            except Exception:
+                pass
             return False, None
-        
+
+        # Case-insensitive category lookup
         category = discord.utils.get(guild.categories, name=category_name)
         if not category:
-            logger.error(f"make_category_private: category '{category_name}' not found")
+            lower = category_name.lower()
+            category = next((c for c in guild.categories if c.name.lower() == lower), None)
+        if not category:
+            available = ", ".join(f"**{c.name}**" for c in guild.categories) or "none found"
+            logger.error(f"make_category_private: '{category_name}' not found. Available: {[c.name for c in guild.categories]}")
+            try:
+                await interaction.channel.send(
+                    f"⚠️ Could not find category **{category_name}**. "
+                    f"Available categories: {available}", delete_after=15
+                )
+            except Exception:
+                pass
             return False, None
-        
+
         try:
             channels_updated = 0
-            
+
             # Deny @everyone on the category itself
             await self._merge_channel_permission(category, guild.default_role, view_channel=False, send_messages=False)
             channels_updated += 1
-            
+
             # Allow each specified role on the category
             for role_name in allowed_roles:
                 role = self._resolve_role(guild, role_name)
                 if role:
                     await self._merge_channel_permission(category, role, view_channel=True, send_messages=True, read_message_history=True)
-            
+
             # Do the same for all child channels
             for child in category.channels:
                 try:
@@ -2410,11 +2454,25 @@ class ActionHandler:
                             await self._merge_channel_permission(child, role, view_channel=True, send_messages=True, read_message_history=True)
                 except Exception:
                     pass
-            
-            logger.info(f"Made category '{category_name}' private. Updated {channels_updated} channels. Allowed: {allowed_roles}")
-            return True, {"category": category_name, "channels_updated": channels_updated, "allowed_roles": allowed_roles}
+
+            logger.info(f"Made category '{category.name}' private. Updated {channels_updated} channels. Allowed: {allowed_roles}")
+            return True, {"category": category.name, "channels_updated": channels_updated, "allowed_roles": allowed_roles}
+        except discord.Forbidden:
+            logger.error(f"make_category_private: bot lacks Manage Channels permission in guild {guild.id}")
+            try:
+                await interaction.channel.send(
+                    "⚠️ I don't have permission to manage channel permissions. "
+                    "Please grant me the **Manage Channels** permission.", delete_after=15
+                )
+            except Exception:
+                pass
+            return False, None
         except Exception as e:
-            logger.error(f"Error making category private: {e}")
+            logger.error(f"make_category_private: unexpected error: {e}", exc_info=True)
+            try:
+                await interaction.channel.send(f"⚠️ Error making category private: {e}", delete_after=10)
+            except Exception:
+                pass
             return False, None
 
     async def action_create_role_with_permissions(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
