@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import Dict, List
 import io
 import discord
 from discord.ext import commands
@@ -1336,7 +1336,39 @@ async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: st
         for i, mem in enumerate(relevant_memories, 1):
             memory_context += f"\n{i}. Similar conversation (similarity: {mem['similarity']:.2f}):\n{mem['document'][:500]}...\n"
 
-    res = await bot.ai.safe_chat(guild_id, user_id, user_input, SYSTEM_PROMPT + memory_context)
+    # ── Resolve Discord <@ID> mentions in the user's text before sending to AI ──
+    # When a user types /bot and uses Discord's mention autocomplete, the text arrives
+    # as "<@123456789>" — resolve these to display names and inject explicit user_id
+    # mappings into the system prompt so the AI passes user_id (not username) to actions.
+    import re as _re_mentions
+    enriched_input = user_input
+    mention_context = ""
+    mention_map: Dict[int, str] = {}
+    for _m in _re_mentions.finditer(r'<@!?(\d+)>', user_input):
+        _mid = int(_m.group(1))
+        if _mid not in mention_map:
+            try:
+                _mem = interaction.guild.get_member(_mid)
+                if not _mem:
+                    _mem = await interaction.guild.fetch_member(_mid)
+                if _mem:
+                    mention_map[_mid] = _mem.display_name
+                    enriched_input = enriched_input.replace(_m.group(0), f"@{_mem.display_name}")
+            except Exception:
+                pass
+    if mention_map:
+        mention_context = "\n\nMENTION CONTEXT — MANDATORY:\n"
+        for _mid, _mname in mention_map.items():
+            mention_context += (
+                f"- @{_mname} is Discord user_id {_mid}. "
+                f"Use 'user_id': {_mid} (integer) in send_dm/ping parameters for this person.\n"
+            )
+        mention_context += (
+            "CRITICAL: For the users listed above, you MUST use 'user_id' as an integer "
+            "in the action parameters. Do NOT use their username string."
+        )
+
+    res = await bot.ai.safe_chat(guild_id, user_id, enriched_input, SYSTEM_PROMPT + memory_context + mention_context)
 
     
     reasoning = res.get("reasoning", "Thinking...")

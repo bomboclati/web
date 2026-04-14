@@ -611,8 +611,9 @@ ROLE ASSIGNMENT RULES:
   1. {"name": "create_role", "parameters": {"name": "Bots", "color": "#99AAB5"}}
   2. {"name": "assign_role", "parameters": {"role_name": "Bots", "username": "john"}}
 - ALWAYS use "role_name" (the role's text name) and "username" (the user's display name, without @) in assign_role parameters
-- NEVER use role_id or numeric user_id — the bot will resolve names automatically
-- When the user mentions someone with @, extract just their username for the "username" field
+- For send_dm and ping: if the request includes a MENTION CONTEXT block, you MUST use "user_id" (integer) from that block — never use "username" for those users
+- If no MENTION CONTEXT is provided, use "username" with the display name (no @ prefix)
+- NEVER use role_id in assign_role — but DO use user_id (integer) in send_dm/ping when provided
 
 BUTTON TYPES for send_embed (all fully functional, no placeholders):
 - "verify" = Gives user Verified/Member role automatically

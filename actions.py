@@ -922,6 +922,22 @@ class ActionHandler:
             except Exception:
                 pass
 
+        # f) Last resort: extract a Discord snowflake embedded in the username string.
+        #    Discord's pomelo auto-usernames look like "user<snowflake>" e.g. user1357317173470564433.
+        #    We pull out any 17–20 digit number and call fetch_user() directly — no guild cache needed.
+        if not user_id and username:
+            import re as _re_dm
+            snowflake_match = _re_dm.search(r'\b(\d{17,20})\b', str(username))
+            if snowflake_match:
+                try:
+                    potential_id = int(snowflake_match.group(1))
+                    fetched_user = await self.bot.fetch_user(potential_id)
+                    if fetched_user:
+                        user_id = fetched_user.id
+                        logger.info(f"[send_dm] Resolved snowflake from username string: {username!r} → {user_id}")
+                except Exception:
+                    pass
+
         # ── 2. No user resolved — return failure so action sequence stops ──
         if not user_id:
             logger.warning(f"[send_dm] Could not resolve user from username={username!r}")
@@ -1074,6 +1090,22 @@ class ActionHandler:
             if not member:
                 try:
                     member = await guild.fetch_member(int(user_id))
+                except Exception:
+                    pass
+
+        # f) Last resort: extract a Discord snowflake embedded in the username string.
+        #    Discord's pomelo auto-usernames look like "user<snowflake>" e.g. user1357317173470564433.
+        if not member and not user_id and username:
+            import re as _re_ping
+            snowflake_match = _re_ping.search(r'\b(\d{17,20})\b', str(username))
+            if snowflake_match:
+                try:
+                    potential_id = int(snowflake_match.group(1))
+                    member = guild.get_member(potential_id)
+                    if not member:
+                        member = await guild.fetch_member(potential_id)
+                    if member:
+                        logger.info(f"[ping] Resolved snowflake from username string: {username!r} → {member.id}")
                 except Exception:
                     pass
 
