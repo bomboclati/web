@@ -2673,6 +2673,16 @@ class ActionHandler:
         for perm_name, perm_value in kwargs.items():
             setattr(existing, perm_name, perm_value)
         await channel.set_permissions(role, overwrite=existing)
+        
+        # Verify the change was actually applied
+        updated = channel.overwrites_for(role)
+        success = True
+        for perm_name, perm_value in kwargs.items():
+            if getattr(updated, perm_name) != perm_value:
+                success = False
+                logger.warning(f"Permission verification failed for {channel.name} role={role}: expected {perm_name}={perm_value}, got {getattr(updated, perm_name)}")
+                break
+        return success
 
     async def action_allow_channel_permission(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Allows a permission for a role in a channel (merges with existing overwrites)."""
@@ -2880,13 +2890,17 @@ class ActionHandler:
 
         try:
             # Deny @everyone
-            await self._merge_channel_permission(channel, guild.default_role, view_channel=False, send_messages=False)
+            success = await self._merge_channel_permission(channel, guild.default_role, view_channel=False, send_messages=False)
 
             # Allow each specified role
             for role_name in allowed_roles:
                 role = self._resolve_role(guild, role_name)
                 if role:
                     await self._merge_channel_permission(channel, role, view_channel=True, send_messages=True, read_message_history=True)
+
+            if not success:
+                logger.warning(f"Failed to make channel '{channel.name}' private - permission changes did not apply")
+                return False, {"channel": channel.name, "allowed_roles": allowed_roles, "error": "Permissions not applied"}
 
             logger.info(f"Made channel '{channel.name}' private. Allowed roles: {allowed_roles}")
             return True, {"channel": channel.name, "allowed_roles": allowed_roles}
@@ -2961,34 +2975,43 @@ class ActionHandler:
                 try:
                     if bot_member:
                         await self._merge_channel_permission(child, bot_member, view_channel=True, manage_channels=True)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Could not set bot permissions on {child.name}: {e}")
             
             # Now process all child channels (we have access already)
+            successful_changes = 0
             for child in child_channels:
                 try:
-                    await self._merge_channel_permission(child, guild.default_role, view_channel=False, send_messages=False)
-                    channels_updated += 1
+                    success = await self._merge_channel_permission(child, guild.default_role, view_channel=False, send_messages=False)
+                    if success:
+                        successful_changes += 1
                     for role in resolved_roles:
                         await self._merge_channel_permission(child, role, view_channel=True, send_messages=True, read_message_history=True)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Failed to update {child.name}: {e}")
             
             # ONLY AFTER ALL CHILDS ARE PROCESSED, modify the category itself
             # This prevents lockout while we're still modifying children
+            category_success = False
             if bot_member:
                 await self._merge_channel_permission(category, bot_member, view_channel=True, manage_channels=True)
             
             # Deny @everyone on the category itself
-            await self._merge_channel_permission(category, guild.default_role, view_channel=False, send_messages=False)
-            channels_updated += 1
+            category_success = await self._merge_channel_permission(category, guild.default_role, view_channel=False, send_messages=False)
+            if category_success:
+                successful_changes += 1
 
             # Allow each specified role on the category
             for role in resolved_roles:
                 await self._merge_channel_permission(category, role, view_channel=True, send_messages=True, read_message_history=True)
+            
+            # Only report success if we actually made changes
+            if successful_changes == 0:
+                logger.warning(f"No channels were modified when making category '{category.name}' private")
+                return False, {"category": category.name, "channels_updated": 0, "allowed_roles": allowed_roles, "error": "No changes applied"}
 
-            logger.info(f"Made category '{category.name}' private. Updated {channels_updated} channels. Allowed: {allowed_roles}")
-            return True, {"category": category.name, "channels_updated": channels_updated, "allowed_roles": allowed_roles}
+            logger.info(f"Made category '{category.name}' private. Updated {successful_changes} channels. Allowed: {allowed_roles}")
+            return True, {"category": category.name, "channels_updated": successful_changes, "allowed_roles": allowed_roles}
         except discord.Forbidden:
             logger.error(f"make_category_private: bot lacks Manage Channels permission in guild {guild.id}")
             try:
