@@ -324,7 +324,7 @@ class AIClient:
             provider = key_bundle["provider"]
             
             try:
-                return await self._chat_internal(guild_id, user_id, user_input, system_prompt, api_key, provider)
+                return await self._chat_internal(guild_id, user_id, user_input, system_prompt, api_key, provider, enhanced_input)
             except AIClientError as e:
                 # If it's a quota (429) or access (403) error, try the next provider in the guild's list
                 if e.status in [429, 403]:
@@ -366,7 +366,7 @@ class AIClient:
                 raise AIClientError(status, msg) from cause
             raise Exception(f'AI failed after multiple attempts: {cause}') from cause
 
-    async def _chat_internal(self, guild_id: int, user_id: int, user_input: str, system_prompt: str, api_key: str, provider: str) -> Dict[str, Any]:
+    async def _chat_internal(self, guild_id: int, user_id: int, user_input: str, system_prompt: str, api_key: str, provider: str, enhanced_input: str = None) -> Dict[str, Any]:
         """Internal execution for a single AI provider request."""
         # Get recent history
         history_depth = int(os.getenv("MEMORY_DEPTH", 20))
@@ -401,7 +401,7 @@ class AIClient:
         
         messages = [{"role": "system", "content": enhanced_prompt}]
         messages.extend(combined_context)
-        messages.append({"role": "user", "content": enhanced_input if 'enhanced_input' in locals() else user_input})
+        messages.append({"role": "user", "content": user_input})
         
         # Determine model based on provider
         from data_manager import dm
