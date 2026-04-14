@@ -12,6 +12,7 @@ import json
 import time
 from dotenv import load_dotenv
 from data_manager import dm
+from server_query import ServerQueryEngine
 from history_manager import history_manager
 from ai_client import AIClient, AIClientError, SYSTEM_PROMPT
 from tenacity import RetryError
@@ -75,6 +76,9 @@ class MiroBot(commands.Bot):
             provider=os.getenv("AI_PROVIDER", "openrouter"),
             model=os.getenv("AI_MODEL")
         )
+        
+        # Server query engine for live introspection
+        self.server_query = ServerQueryEngine(self)
         
         # State caches (recovered on startup)
         self.custom_commands = {} # guild_id -> {prefix_cmd_name: code}
@@ -1368,7 +1372,7 @@ async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: st
             "in the action parameters. Do NOT use their username string."
         )
 
-    res = await bot.ai.safe_chat(guild_id, user_id, enriched_input, SYSTEM_PROMPT + memory_context + mention_context)
+    res = await bot.ai.safe_chat(guild_id, user_id, enriched_input, SYSTEM_PROMPT + server_context + memory_context + mention_context)
 
     
     reasoning = res.get("reasoning", "Thinking...")

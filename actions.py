@@ -162,7 +162,11 @@ class ActionHandler:
         # Additional actions from action_catalog
         "post_documentation", "setup_trigger_role",
         # Button and embed actions
-        "create_button_embed", "create_button", "create_embed"
+        "create_button_embed", "create_button", "create_embed",
+        # Query actions for server introspection
+        "query_server_info", "query_channels", "query_roles", "query_members",
+        "query_member_details", "query_economy_leaderboard", "query_xp_leaderboard",
+        "query_pending_applications", "query_active_shifts", "query_recent_messages"
     }
     
     def __init__(self, bot):
@@ -315,6 +319,16 @@ class ActionHandler:
 
     async def dispatch(self, interaction: discord.Interaction, name: str, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Routes action names to specific methods. Returns (success, undo_data)."""
+        # Handle query_* actions by routing to ServerQueryEngine
+        if name.startswith("query_"):
+            method_name = f"action_{name}"
+            if hasattr(self, method_name):
+                method = getattr(self, method_name)
+                return await method(interaction, params)
+            else:
+                logger.warning("Unknown query action: %s", name)
+                return False, None
+        
         method_name = f"action_{name}"
         if hasattr(self, method_name):
             method = getattr(self, method_name)
@@ -338,6 +352,130 @@ class ActionHandler:
             guild.name, categories, channels, roles, guild.member_count
         )
         return True, None
+
+    # --- Query Actions (Read-Only Server Introspection) ---
+
+    async def action_query_server_info(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Query comprehensive server information."""
+        try:
+            from server_query import ServerQueryEngine
+            engine = ServerQueryEngine(self.bot)
+            result = await engine.query_server_info(interaction.guild.id)
+            return True, {"query_result": result}
+        except Exception as e:
+            logger.error("query_server_info failed: %s", e)
+            return False, {"error": str(e)}
+
+    async def action_query_channels(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Query list of channels."""
+        try:
+            from server_query import ServerQueryEngine
+            engine = ServerQueryEngine(self.bot)
+            channel_type = params.get("type")
+            result = await engine.query_channels(interaction.guild.id, channel_type)
+            return True, {"query_result": result}
+        except Exception as e:
+            logger.error("query_channels failed: %s", e)
+            return False, {"error": str(e)}
+
+    async def action_query_roles(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Query list of roles."""
+        try:
+            from server_query import ServerQueryEngine
+            engine = ServerQueryEngine(self.bot)
+            result = await engine.query_roles(interaction.guild.id)
+            return True, {"query_result": result}
+        except Exception as e:
+            logger.error("query_roles failed: %s", e)
+            return False, {"error": str(e)}
+
+    async def action_query_members(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Query list of members."""
+        try:
+            from server_query import ServerQueryEngine
+            engine = ServerQueryEngine(self.bot)
+            query = params.get("query")
+            limit = params.get("limit", 100)
+            result = await engine.query_members(interaction.guild.id, query, limit)
+            return True, {"query_result": result}
+        except Exception as e:
+            logger.error("query_members failed: %s", e)
+            return False, {"error": str(e)}
+
+    async def action_query_member_details(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Query detailed information about a specific member."""
+        try:
+            from server_query import ServerQueryEngine
+            engine = ServerQueryEngine(self.bot)
+            user_id = params.get("user_id")
+            if not user_id:
+                return False, {"error": "user_id parameter required"}
+            result = await engine.query_member_details(interaction.guild.id, user_id)
+            return True, {"query_result": result}
+        except Exception as e:
+            logger.error("query_member_details failed: %s", e)
+            return False, {"error": str(e)}
+
+    async def action_query_economy_leaderboard(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Query economy leaderboard."""
+        try:
+            from server_query import ServerQueryEngine
+            engine = ServerQueryEngine(self.bot)
+            limit = params.get("limit", 10)
+            result = await engine.query_economy_leaderboard(interaction.guild.id, limit)
+            return True, {"query_result": result}
+        except Exception as e:
+            logger.error("query_economy_leaderboard failed: %s", e)
+            return False, {"error": str(e)}
+
+    async def action_query_xp_leaderboard(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Query XP leaderboard."""
+        try:
+            from server_query import ServerQueryEngine
+            engine = ServerQueryEngine(self.bot)
+            limit = params.get("limit", 10)
+            result = await engine.query_xp_leaderboard(interaction.guild.id, limit)
+            return True, {"query_result": result}
+        except Exception as e:
+            logger.error("query_xp_leaderboard failed: %s", e)
+            return False, {"error": str(e)}
+
+    async def action_query_pending_applications(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Query pending staff applications."""
+        try:
+            from server_query import ServerQueryEngine
+            engine = ServerQueryEngine(self.bot)
+            result = await engine.query_pending_applications(interaction.guild.id)
+            return True, {"query_result": result}
+        except Exception as e:
+            logger.error("query_pending_applications failed: %s", e)
+            return False, {"error": str(e)}
+
+    async def action_query_active_shifts(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Query active staff shifts."""
+        try:
+            from server_query import ServerQueryEngine
+            engine = ServerQueryEngine(self.bot)
+            result = await engine.query_active_shifts(interaction.guild.id)
+            return True, {"query_result": result}
+        except Exception as e:
+            logger.error("query_active_shifts failed: %s", e)
+            return False, {"error": str(e)}
+
+    async def action_query_recent_messages(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Query recent messages from a channel."""
+        try:
+            from server_query import ServerQueryEngine
+            engine = ServerQueryEngine(self.bot)
+            channel_id = params.get("channel_id")
+            limit = params.get("limit", 10)
+            if not channel_id:
+                return False, {"error": "channel_id parameter required"}
+            result = await engine.query_recent_messages(channel_id, limit)
+            return True, {"query_result": result}
+        except Exception as e:
+            logger.error("query_recent_messages failed: %s", e)
+            return False, {"error": str(e)}
 
     # --- Basic Actions ---
 
