@@ -158,7 +158,9 @@ class ActionHandler:
         "create_scheduled_event", "allow_channel_permission", "deny_channel_permission",
         "deny_all_channels_for_role", "allow_all_channels_for_role", "deny_category_for_role",
         "make_channel_private", "make_category_private",
-        "analyze_server_state"
+        "analyze_server_state",
+        # Additional actions from action_catalog
+        "post_documentation", "setup_trigger_role"
     }
     
     def __init__(self, bot):
