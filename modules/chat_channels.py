@@ -228,7 +228,14 @@ class AIChatSystem:
                     system_prompt=system_prompt
                 )
             
+            # Use actual raw response directly instead of summary field
             response = result.get("summary", "I didn't quite catch that. Could you try again?")
+            # Strip any summary headers/footers
+            import re
+            response = re.sub(r'^(?:Summary|Response):\s*', '', response, flags=re.IGNORECASE)
+            response = re.sub(r'\s*---\s*.*$', '', response, flags=re.DOTALL)
+            response = re.sub(r'\s*\*\*Summary\*\*:.*$', '', response, flags=re.IGNORECASE|re.DOTALL)
+            response = response.strip()
             
             session["messages"].append({"role": "user", "content": user_input})
             session["messages"].append({"role": "assistant", "content": response})
