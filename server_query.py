@@ -27,13 +27,25 @@ class ServerQueryEngine:
         if not guild:
             return {"error": "Guild not found"}
 
-        online_count = sum(1 for m in guild.members if not m.bot and m.status != discord.Status.offline)
+        online_members = [
+            {
+                "name": m.name,
+                "id": m.id,
+                "nick": m.nick,
+                "status": str(m.status),
+                "is_bot": m.bot
+            }
+            for m in guild.members
+            if not m.bot and m.status != discord.Status.offline
+        ]
+        online_count = len(online_members)
         
         return {
             "name": guild.name,
             "id": guild.id,
             "member_count": guild.member_count,
             "online_count": online_count,
+            "online_members": online_members,
             "channel_count": len(guild.channels),
             "role_count": len(guild.roles),
             "owner": str(guild.owner),
