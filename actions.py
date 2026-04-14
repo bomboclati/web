@@ -2251,7 +2251,7 @@ class ActionHandler:
             target_channel = interaction.channel
         
         try:
-            await target_channel.send(content)
+            await target_channel.send(content, suppress_embeds=True)
             return True, {"channel_id": target_channel.id}
         except Exception as e:
             logger.error(f"Error sending message: {e}")
@@ -2275,9 +2275,9 @@ class ActionHandler:
         try:
             msg = await target_channel.fetch_message(message_id) if message_id else None
             if msg:
-                await msg.reply(content)
+                await msg.reply(content, suppress_embeds=True)
             else:
-                await target_channel.send(content)
+                await target_channel.send(content, suppress_embeds=True)
             return True, {"message_id": message_id}
         except Exception as e:
             logger.error(f"Error replying: {e}")
@@ -2953,8 +2953,29 @@ class ActionHandler:
                 if role:
                     resolved_roles.append(role)
             
-            # Always allow the bot itself to view the category first to prevent lockout
+            # Always allow the bot itself to view everything first to prevent lockout
             bot_member = guild.get_member(interaction.client.user.id)
+            
+            # First ensure bot has full access to ALL child channels BEFORE any changes
+            for child in child_channels:
+                try:
+                    if bot_member:
+                        await self._merge_channel_permission(child, bot_member, view_channel=True, manage_channels=True)
+                except Exception:
+                    pass
+            
+            # Now process all child channels (we have access already)
+            for child in child_channels:
+                try:
+                    await self._merge_channel_permission(child, guild.default_role, view_channel=False, send_messages=False)
+                    channels_updated += 1
+                    for role in resolved_roles:
+                        await self._merge_channel_permission(child, role, view_channel=True, send_messages=True, read_message_history=True)
+                except Exception:
+                    pass
+            
+            # ONLY AFTER ALL CHILDS ARE PROCESSED, modify the category itself
+            # This prevents lockout while we're still modifying children
             if bot_member:
                 await self._merge_channel_permission(category, bot_member, view_channel=True, manage_channels=True)
             
@@ -2965,20 +2986,6 @@ class ActionHandler:
             # Allow each specified role on the category
             for role in resolved_roles:
                 await self._merge_channel_permission(category, role, view_channel=True, send_messages=True, read_message_history=True)
-
-            # Do the same for all child channels (we already have the list from before changes)
-            for child in child_channels:
-                try:
-                    # Ensure bot can still modify this child channel
-                    if bot_member:
-                        await self._merge_channel_permission(child, bot_member, view_channel=True, manage_channels=True)
-                    
-                    await self._merge_channel_permission(child, guild.default_role, view_channel=False, send_messages=False)
-                    channels_updated += 1
-                    for role in resolved_roles:
-                        await self._merge_channel_permission(child, role, view_channel=True, send_messages=True, read_message_history=True)
-                except Exception:
-                    pass
 
             logger.info(f"Made category '{category.name}' private. Updated {channels_updated} channels. Allowed: {allowed_roles}")
             return True, {"category": category.name, "channels_updated": channels_updated, "allowed_roles": allowed_roles}
