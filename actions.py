@@ -725,6 +725,11 @@ class ActionHandler:
         """Assign a role to a user. Supports lookup by name OR id for both role and user."""
         guild = interaction.guild
         
+        # Check permissions first
+        if not guild.me.guild_permissions.manage_roles:
+            logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
+            return False, None
+        
         # Log all input parameters
         logger.info("assign_role: input params=%s", params)
         logger.info("assign_role: available roles in guild=%s", [r.name for r in guild.roles])
@@ -773,9 +778,27 @@ class ActionHandler:
             logger.error("assign_role: could not find member. user_id=%s username=%s", user_id, username)
             return False, None
         
-        await member.add_roles(role)
-        logger.info("Assigned role %s to %s", role.name, member.display_name)
-        return True, {"action": "remove_role", "user_id": member.id, "role_id": role.id, "role_name": role.name}
+        # Check role hierarchy - bot can't assign roles higher than itself
+        bot_top_role = guild.me.top_role
+        if role.position >= bot_top_role.position:
+            logger.error("assign_role: role %s is higher than bot's top role %s", role.name, bot_top_role.name)
+            return False, None
+        
+        # Check if user has permission to assign this role
+        if not interaction.user.guild_permissions.manage_roles:
+            logger.error("User lacks manage_roles permission to assign roles")
+            return False, None
+        
+        try:
+            await member.add_roles(role, reason=f"Assigned by {interaction.user.display_name}")
+            logger.info("Assigned role %s to %s", role.name, member.display_name)
+            return True, {"action": "remove_role", "user_id": member.id, "role_id": role.id}
+        except discord.Forbidden:
+            logger.error("assign_role: Forbidden - bot lacks permission to assign role %s to %s", role.name, member.display_name)
+            return False, None
+        except discord.HTTPException as e:
+            logger.error("assign_role: HTTP error - %s", str(e))
+            return False, None
 
     async def action_add_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Adds a role to a user. Alias for action_assign_role."""
