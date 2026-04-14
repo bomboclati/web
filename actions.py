@@ -2917,34 +2917,42 @@ class ActionHandler:
         if isinstance(allowed_roles, str):
             allowed_roles = [allowed_roles]
 
-        if not category_name:
+        # Always ensure bot has full access first - global guild permission check
+        bot_member = guild.get_member(interaction.client.user.id)
+        
+        # Process all categories if "all" is specified, or single category
+        categories_to_process = []
+        
+        if category_name and category_name.lower() == "all":
+            categories_to_process = list(guild.categories)
+        elif category_name:
+            # Case-insensitive category lookup
+            category = discord.utils.get(guild.categories, name=category_name)
+            if not category:
+                lower = category_name.lower()
+                category = next((c for c in guild.categories if c.name.lower() == lower), None)
+            if not category:
+                available = ", ".join(f"**{c.name}**" for c in guild.categories) or "none found"
+                logger.error(f"make_category_private: '{category_name}' not found. Available: {[c.name for c in guild.categories]}")
+                try:
+                    await interaction.channel.send(
+                        f"⚠️ Could not find category **{category_name}**. "
+                        f"Available categories: {available}", delete_after=15
+                    )
+                except Exception:
+                    pass
+                return False, None
+            categories_to_process = [category]
+        else:
             try:
-                await interaction.channel.send("⚠️ No category name specified for make_category_private.", delete_after=10)
-            except Exception:
-                pass
-            return False, None
-
-        # Case-insensitive category lookup
-        category = discord.utils.get(guild.categories, name=category_name)
-        if not category:
-            lower = category_name.lower()
-            category = next((c for c in guild.categories if c.name.lower() == lower), None)
-        if not category:
-            available = ", ".join(f"**{c.name}**" for c in guild.categories) or "none found"
-            logger.error(f"make_category_private: '{category_name}' not found. Available: {[c.name for c in guild.categories]}")
-            try:
-                await interaction.channel.send(
-                    f"⚠️ Could not find category **{category_name}**. "
-                    f"Available categories: {available}", delete_after=15
-                )
+                await interaction.channel.send("⚠️ No category name specified for make_category_private. Use 'all' to process all categories.", delete_after=10)
             except Exception:
                 pass
             return False, None
 
         try:
-            channels_updated = 0
-            # First collect all child channels BEFORE modifying any permissions (so we still have access)
-            child_channels = list(category.channels)
+            total_channels_updated = 0
+            processed_categories = []
             
             # Resolve all roles first before making any changes
             resolved_roles = []
@@ -2953,42 +2961,49 @@ class ActionHandler:
                 if role:
                     resolved_roles.append(role)
             
-            # Always allow the bot itself to view everything first to prevent lockout
-            bot_member = guild.get_member(interaction.client.user.id)
-            
-            # First ensure bot has full access to ALL child channels BEFORE any changes
-            for child in child_channels:
-                try:
-                    if bot_member:
-                        await self._merge_channel_permission(child, bot_member, view_channel=True, manage_channels=True)
-                except Exception:
-                    pass
-            
-            # Now process all child channels (we have access already)
-            for child in child_channels:
-                try:
-                    await self._merge_channel_permission(child, guild.default_role, view_channel=False, send_messages=False)
-                    channels_updated += 1
-                    for role in resolved_roles:
-                        await self._merge_channel_permission(child, role, view_channel=True, send_messages=True, read_message_history=True)
-                except Exception:
-                    pass
-            
-            # ONLY AFTER ALL CHILDS ARE PROCESSED, modify the category itself
-            # This prevents lockout while we're still modifying children
-            if bot_member:
-                await self._merge_channel_permission(category, bot_member, view_channel=True, manage_channels=True)
-            
-            # Deny @everyone on the category itself
-            await self._merge_channel_permission(category, guild.default_role, view_channel=False, send_messages=False)
-            channels_updated += 1
+            # Process each category
+            for category in categories_to_process:
+                channels_updated = 0
+                # First collect all child channels BEFORE modifying any permissions (so we still have access)
+                child_channels = list(category.channels)
+                
+                # First ensure bot has full access to ALL child channels BEFORE any changes
+                for child in child_channels:
+                    try:
+                        if bot_member:
+                            await self._merge_channel_permission(child, bot_member, view_channel=True, manage_channels=True)
+                    except Exception:
+                        pass
+                
+                # Now process all child channels (we have access already)
+                for child in child_channels:
+                    try:
+                        await self._merge_channel_permission(child, guild.default_role, view_channel=False, send_messages=False)
+                        channels_updated += 1
+                        for role in resolved_roles:
+                            await self._merge_channel_permission(child, role, view_channel=True, send_messages=True, read_message_history=True)
+                    except Exception:
+                        pass
+                
+                # ONLY AFTER ALL CHILDS ARE PROCESSED, modify the category itself
+                # This prevents lockout while we're still modifying children
+                if bot_member:
+                    await self._merge_channel_permission(category, bot_member, view_channel=True, manage_channels=True)
+                
+                # Deny @everyone on the category itself
+                await self._merge_channel_permission(category, guild.default_role, view_channel=False, send_messages=False)
+                channels_updated += 1
 
-            # Allow each specified role on the category
-            for role in resolved_roles:
-                await self._merge_channel_permission(category, role, view_channel=True, send_messages=True, read_message_history=True)
+                # Allow each specified role on the category
+                for role in resolved_roles:
+                    await self._merge_channel_permission(category, role, view_channel=True, send_messages=True, read_message_history=True)
+                
+                total_channels_updated += channels_updated
+                processed_categories.append(category.name)
+                logger.info(f"Made category '{category.name}' private. Updated {channels_updated} channels.")
 
-            logger.info(f"Made category '{category.name}' private. Updated {channels_updated} channels. Allowed: {allowed_roles}")
-            return True, {"category": category.name, "channels_updated": channels_updated, "allowed_roles": allowed_roles}
+            logger.info(f"Completed private category operation finished. Processed {len(processed_categories)} categories, {total_channels_updated} total channels. Allowed: {allowed_roles}")
+            return True, {"categories": processed_categories, "channels_updated": total_channels_updated, "allowed_roles": allowed_roles}
         except discord.Forbidden:
             logger.error(f"make_category_private: bot lacks Manage Channels permission in guild {guild.id}")
             try:
