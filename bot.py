@@ -1343,17 +1343,43 @@ async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: st
     # ── Build live server context ──
     server_context = ""
     try:
-        server_info = await bot.server_query.query_server_info(guild_id)
+        sq = bot.server_query
+        server_info = await sq.query_server_info(guild_id)
+        channels = await sq.query_channels(guild_id)
+        roles = await sq.query_roles(guild_id)
+
         if server_info:
+            # Format channels grouped by category
+            chan_lines = []
+            for c in sorted(channels, key=lambda x: (x.get("category") or "", x.get("position", 0))):
+                ctype = c.get("type", "text")
+                cat = c.get("category") or "No Category"
+                prefix = "#" if ctype == "text" else "🔊" if ctype == "voice" else "📁"
+                chan_lines.append(f"  {prefix}{c['name']} [{cat}]")
+            channels_text = "\n".join(chan_lines) if chan_lines else "  (none)"
+
+            # Format roles (skip @everyone)
+            role_lines = [
+                f"  @{r['name']} (id:{r['id']})"
+                for r in sorted(roles, key=lambda x: -x.get("position", 0))
+                if r.get("name") != "@everyone"
+            ]
+            roles_text = "\n".join(role_lines) if role_lines else "  (none)"
+
             server_context = f"""
 
-CURRENT SERVER STATE (LIVE DATA):
-- Server: {server_info.get('name', 'Unknown')}
-- Total Members: {server_info.get('member_count', 0)}
-- Online Members: {server_info.get('online_count', 0)}
-- Total Channels: {server_info.get('total_channels', 0)}
-- Total Roles: {server_info.get('total_roles', 0)}
-- Server Owner ID: {server_info.get('owner_id', 'Unknown')}
+CURRENT SERVER STATE (LIVE DATA — use this to understand what already exists):
+Server: {server_info.get('name', 'Unknown')} (id:{server_info.get('id')})
+Members: {server_info.get('member_count', 0)} total, {server_info.get('online_count', 0)} online
+Owner: {server_info.get('owner', 'Unknown')}
+
+EXISTING CHANNELS ({len(channels)}):
+{channels_text}
+
+EXISTING ROLES ({len(roles) - 1}):
+{roles_text}
+
+IMPORTANT: Do NOT create channels or roles that already exist above. Reference existing ones by name.
 """
     except Exception as e:
         logger.error(f"Failed to build server context: {e}")
@@ -1481,12 +1507,11 @@ CURRENT SERVER STATE (LIVE DATA):
                 actions = [{"name": single_action, "parameters": parameters}]
         
         if not actions:
-            # Edit the thinking message with the final AI response
-            embed = discord.Embed(title="[AI] AI Response", description=summary, color=discord.Color.blue())
+            # Edit the thinking message with the final AI response (plain text, no embed)
             if thinking_msg:
-                await thinking_msg.edit(content="", embed=embed)
+                await thinking_msg.edit(content=summary, embed=None)
             else:
-                await interaction.followup.send(embed=embed, ephemeral=False)
+                await interaction.followup.send(content=summary, ephemeral=False)
             await history_manager.add_exchange(guild_id, user_id, user_input, summary)
             # Store in vector memory for long-term recall
             await vector_memory.store_conversation(
@@ -1503,13 +1528,12 @@ CURRENT SERVER STATE (LIVE DATA):
             return
         
         # Show plan with Confirm/Cancel buttons before executing
-        action_list = "\n".join([f"• {a.get('name','?')}" for a in actions])
+        action_list = "\n".join([f"• `{a.get('name','?')}`" for a in actions])
         plan_embed = discord.Embed(
-            title="🤖 AI Action Plan",
-            description=f"**What I will do:**\n{walkthrough}\n\n**Actions ({len(actions)}):**\n{action_list}",
+            description=f"{summary}\n\n{action_list}",
             color=discord.Color.orange()
         )
-        plan_embed.set_footer(text="Click Confirm to execute, or Cancel to abort.")
+        plan_embed.set_footer(text="Confirm to run · Cancel to abort")
 
         confirm_view = discord.ui.View(timeout=120)
         confirm_btn = discord.ui.Button(label="✅ Confirm & Execute", style=discord.ButtonStyle.success, custom_id="confirm_execute")

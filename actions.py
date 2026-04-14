@@ -590,10 +590,6 @@ class ActionHandler:
         if private and "@everyone" not in denied_roles:
             denied_roles = list(denied_roles) + ["@everyone"]
 
-        if not guild.me.guild_permissions.manage_channels:
-            logger.error("Bot lacks manage_channels permission in guild %s", guild.id)
-            return False, None
-
         # Check for duplicate channel creation using deduplicator
         dedup_key = f"channel_{guild.id}_{name}"
         if not deduplicator.should_send(dedup_key, interval=5):
@@ -603,22 +599,29 @@ class ActionHandler:
         existing = discord.utils.get(guild.channels, name=name)
         if existing:
             logger.info("Channel '%s' already exists, skipping creation", name)
-            return True, None
+            return True, {"action": "delete_channel", "channel_id": existing.id}
 
         category = None
         if category_name:
             category = discord.utils.get(guild.categories, name=category_name)
             if not category:
-                # Also deduplicate category creation
                 cat_dedup_key = f"category_{guild.id}_{category_name}"
                 if deduplicator.should_send(cat_dedup_key, interval=5):
-                    category = await guild.create_category(category_name)
+                    try:
+                        category = await guild.create_category(category_name)
+                    except discord.Forbidden:
+                        logger.warning("Bot lacks permission to create category '%s'", category_name)
 
-        if channel_type == "text":
-            channel = await guild.create_text_channel(name, category=category)
-        elif channel_type == "voice":
-            channel = await guild.create_voice_channel(name, category=category)
-        else:
+        try:
+            if channel_type == "text":
+                channel = await guild.create_text_channel(name, category=category)
+            elif channel_type == "voice":
+                channel = await guild.create_voice_channel(name, category=category)
+            else:
+                logger.error("Unknown channel type: %s", channel_type)
+                return False, None
+        except discord.Forbidden:
+            logger.error("Bot lacks permission to create channel '%s' in guild %s", name, guild.id)
             return False, None
         
         # Auto-detect permissions if not specified
@@ -784,10 +787,6 @@ class ActionHandler:
         guild = interaction.guild
         name = params.get("name")
 
-        if not guild.me.guild_permissions.manage_roles:
-            logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
-            return False, None
-
         # Check for duplicate role creation using deduplicator
         dedup_key = f"role_{guild.id}_{name}"
         if not deduplicator.should_send(dedup_key, interval=5):
@@ -828,14 +827,18 @@ class ActionHandler:
             create_instant_invite=role_perms.get("create_instant_invite", True),
         )
         
-        role = await guild.create_role(
-            name=name, 
-            color=color, 
-            permissions=permissions,
-            hoist=role_perms.get("hoist", False),
-            mentionable=role_perms.get("mentionable", False),
-            reason="AI Action"
-        )
+        try:
+            role = await guild.create_role(
+                name=name,
+                color=color,
+                permissions=permissions,
+                hoist=role_perms.get("hoist", False),
+                mentionable=role_perms.get("mentionable", False),
+                reason="AI Action"
+            )
+        except discord.Forbidden:
+            logger.error("Bot lacks permission to create role '%s' in guild %s", name, guild.id)
+            return False, None
         
         # Send role info
         await self._send_role_guide(interaction, name, role_perms)
@@ -965,11 +968,6 @@ class ActionHandler:
         """Assign a role to a user. Supports lookup by name OR id for both role and user."""
         guild = interaction.guild
         
-        # Check permissions first
-        if not guild.me.guild_permissions.manage_roles:
-            logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
-            return False, None
-        
         # Log all input parameters
         logger.info("assign_role: input params=%s", params)
         logger.info("assign_role: available roles in guild=%s", [r.name for r in guild.roles])
@@ -1047,11 +1045,6 @@ class ActionHandler:
     async def action_remove_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Removes a role from a user."""
         guild = interaction.guild
-
-        # Check permissions first
-        if not guild.me.guild_permissions.manage_roles:
-            logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
-            return False, None
 
         role = None
         role_id = params.get("role_id")
