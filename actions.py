@@ -777,6 +777,103 @@ class ActionHandler:
         logger.info("Assigned role %s to %s", role.name, member.display_name)
         return True, {"action": "remove_role", "user_id": member.id, "role_id": role.id, "role_name": role.name}
 
+    async def action_add_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Adds a role to a user. Alias for action_assign_role."""
+        return await self.action_assign_role(interaction, params)
+
+    async def action_remove_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Removes a role from a user."""
+        guild = interaction.guild
+        
+        role = None
+        role_id = params.get("role_id")
+        role_name = params.get("role_name")
+        if role_id:
+            try:
+                role = guild.get_role(int(role_id))
+            except (TypeError, ValueError):
+                role = None
+        if not role and role_name:
+            role = discord.utils.find(lambda r: r.name.lower() == str(role_name).lower(), guild.roles)
+        if not role and role_name:
+            role = discord.utils.find(lambda r: str(role_name).lower() in r.name.lower(), guild.roles)
+        
+        member = None
+        user_id = params.get("user_id")
+        username = params.get("username")
+        if user_id:
+            try:
+                uid = int(str(user_id).strip().lstrip("<@!").rstrip(">"))
+                member = guild.get_member(uid) or await guild.fetch_member(uid)
+            except (TypeError, ValueError, discord.NotFound, discord.HTTPException):
+                member = None
+        if not member and username:
+            search = str(username).lstrip("@").lower()
+            member = discord.utils.find(
+                lambda m: m.name.lower() == search or m.display_name.lower() == search,
+                guild.members
+            )
+        
+        if not role:
+            logger.error("remove_role: could not find role. role_id=%s role_name=%s", role_id, role_name)
+            return False, None
+        if not member:
+            logger.error("remove_role: could not find member. user_id=%s username=%s", user_id, username)
+            return False, None
+        
+        try:
+            await member.remove_roles(role)
+            logger.info("Removed role %s from %s", role.name, member.display_name)
+            return True, {"action": "add_role", "user_id": member.id, "role_id": role.id, "role_name": role.name}
+        except discord.Forbidden:
+            logger.error("remove_role: missing permissions")
+            return False, None
+        except Exception as e:
+            logger.error(f"Error removing role: {e}")
+            return False, None
+
+    async def action_bulk_delete_messages(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Bulk deletes messages in a channel."""
+        channel_name = params.get("channel") or params.get("channel_name")
+        amount = params.get("amount", 10)
+        
+        target_channel = None
+        if channel_name:
+            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        if not target_channel:
+            target_channel = interaction.channel
+        
+        if not target_channel.permissions_for(interaction.guild.me).manage_messages:
+            logger.error("bulk_delete_messages: missing manage_messages permission")
+            return False, None
+        
+        amount = min(max(amount, 1), 100)
+        
+        try:
+            deleted = []
+            async for msg in target_channel.history(limit=amount + 1):
+                if msg.id == interaction.id:
+                    continue
+                deleted.append(msg)
+                if len(deleted) >= amount:
+                    break
+            
+            if deleted:
+                await target_channel.delete_messages(deleted)
+                logger.info("Bulk deleted %d messages in %s", len(deleted), target_channel.name)
+            
+            return True, {"deleted_count": len(deleted), "channel": target_channel.name}
+        except discord.Forbidden:
+            logger.error("bulk_delete_messages: missing permissions")
+            return False, None
+        except Exception as e:
+            logger.error(f"Error bulk deleting messages: {e}")
+            return False, None
+
+    async def action_delete_messages(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Bulk deletes messages. Alias for action_bulk_delete_messages."""
+        return await self.action_bulk_delete_messages(interaction, params)
+
 
     async def action_create_prefix_command(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Adds a custom '!' command to the guild structure."""
