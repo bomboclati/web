@@ -249,7 +249,7 @@ class AIChatSystem:
             if len(response) > 2000:
                 response = response[:1997] + "..."
             
-            return await message.channel.send(response)
+            return await message.channel.send(response, suppress_embeds=True)
             
         except Exception as e:
             logger.error(f"AI chat error: {e}")
