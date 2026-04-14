@@ -253,7 +253,7 @@ class AIChatSystem:
             
         except Exception as e:
             logger.error(f"AI chat error: {e}")
-            return await message.channel.send("Sorry, I encountered an error. Please try again.")
+            return await message.channel.send("Sorry, I encountered an error. Please try again.", suppress_embeds=True)
 
     async def _handle_translator_mode(self, message: discord.Message, chat_channel: AIChatChannel) -> Optional[discord.Message]:
         user_input = message.content
@@ -297,7 +297,7 @@ Respond with JSON only:
             
         except Exception as e:
             logger.error(f"Translation error: {e}")
-            return await message.channel.send("Sorry, translation failed. Please try again.")
+            return await message.channel.send("Sorry, translation failed. Please try again.", suppress_embeds=True)
 
     async def _get_rpg_context(self, guild_id: int) -> str:
         rpg_data = dm.get_guild_data(guild_id, "rpg_data", {})
