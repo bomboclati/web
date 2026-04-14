@@ -2913,6 +2913,9 @@ class ActionHandler:
         guild = interaction.guild
         category_name = params.get("category") or params.get("category_name")
         allowed_roles = params.get("allowed_roles", [])
+        # Normalize: if passed as single string, convert to list
+        if isinstance(allowed_roles, str):
+            allowed_roles = [allowed_roles]
 
         if not category_name:
             try:
@@ -2940,26 +2943,40 @@ class ActionHandler:
 
         try:
             channels_updated = 0
-
+            # First collect all child channels BEFORE modifying any permissions (so we still have access)
+            child_channels = list(category.channels)
+            
+            # Resolve all roles first before making any changes
+            resolved_roles = []
+            for role_name in allowed_roles:
+                role = self._resolve_role(guild, role_name)
+                if role:
+                    resolved_roles.append(role)
+            
+            # Always allow the bot itself to view the category first to prevent lockout
+            bot_member = guild.get_member(interaction.client.user.id)
+            if bot_member:
+                await self._merge_channel_permission(category, bot_member, view_channel=True, manage_channels=True)
+            
             # Deny @everyone on the category itself
             await self._merge_channel_permission(category, guild.default_role, view_channel=False, send_messages=False)
             channels_updated += 1
 
             # Allow each specified role on the category
-            for role_name in allowed_roles:
-                role = self._resolve_role(guild, role_name)
-                if role:
-                    await self._merge_channel_permission(category, role, view_channel=True, send_messages=True, read_message_history=True)
+            for role in resolved_roles:
+                await self._merge_channel_permission(category, role, view_channel=True, send_messages=True, read_message_history=True)
 
-            # Do the same for all child channels
-            for child in category.channels:
+            # Do the same for all child channels (we already have the list from before changes)
+            for child in child_channels:
                 try:
+                    # Ensure bot can still modify this child channel
+                    if bot_member:
+                        await self._merge_channel_permission(child, bot_member, view_channel=True, manage_channels=True)
+                    
                     await self._merge_channel_permission(child, guild.default_role, view_channel=False, send_messages=False)
                     channels_updated += 1
-                    for role_name in allowed_roles:
-                        role = self._resolve_role(guild, role_name)
-                        if role:
-                            await self._merge_channel_permission(child, role, view_channel=True, send_messages=True, read_message_history=True)
+                    for role in resolved_roles:
+                        await self._merge_channel_permission(child, role, view_channel=True, send_messages=True, read_message_history=True)
                 except Exception:
                     pass
 
