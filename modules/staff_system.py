@@ -4,6 +4,7 @@ import datetime
 import json
 from data_manager import dm
 from typing import Dict, Optional
+from logger import logger
 
 class StaffApplicationPersistentView(ui.View):
     """Persistent view for the 'Apply Now' button."""
@@ -30,21 +31,20 @@ class StaffReviewPersistentView(ui.View):
     async def approve(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.defer(ephemeral=True)
         
-        # Extract applicant ID from embed (or store it in metadata)
         embed = interaction.message.embeds[0]
         try:
             applicant_id = int(embed.fields[0].value)
-        except:
+        except (IndexError, ValueError, AttributeError) as e:
+            logger.error("Failed to parse applicant ID: %s", e)
             return await interaction.followup.send("[ERROR] Could not identify applicant.", ephemeral=True)
 
-        # Notify applicant
         guild = interaction.guild
         applicant = guild.get_member(applicant_id)
         if applicant:
             try:
                 await applicant.send(f"[AI] Your staff application for {guild.name} has been approved!")
-            except:
-                pass # DM closed
+            except (discord.Forbidden, discord.HTTPException) as e:
+                logger.debug("Could not DM applicant: %s", e)
         
         await interaction.message.edit(content=f"[SUCCESS] Approved by {interaction.user.name}", view=None)
         
@@ -60,7 +60,8 @@ class StaffReviewPersistentView(ui.View):
         embed = interaction.message.embeds[0]
         try:
             applicant_id = int(embed.fields[0].value)
-        except:
+        except (IndexError, ValueError, AttributeError) as e:
+            logger.error("Failed to parse applicant ID: %s", e)
             return await interaction.followup.send("[ERROR] Could not identify applicant.", ephemeral=True)
 
         guild = interaction.guild
@@ -68,8 +69,8 @@ class StaffReviewPersistentView(ui.View):
         if applicant:
             try:
                 await applicant.send(f"[AI] Your staff application for {guild.name} has been denied.")
-            except:
-                pass
+            except (discord.Forbidden, discord.HTTPException) as e:
+                logger.debug("Could not DM applicant: %s", e)
         
         await interaction.message.edit(content=f"[ERROR] Denied by {interaction.user.name}", view=None)
         

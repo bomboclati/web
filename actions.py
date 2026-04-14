@@ -1406,11 +1406,10 @@ class ActionHandler:
         
         member = interaction.guild.get_member(user_id)
         if not member:
-            # Try to fetch user
             try:
                 member = await interaction.guild.fetch_member(user_id)
-            except:
-                pass
+            except (discord.NotFound, discord.HTTPException, Exception) as e:
+                logger.debug("Could not fetch member for ban: %s", e)
         
         try:
             if member:
