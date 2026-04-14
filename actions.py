@@ -601,7 +601,7 @@ class ActionHandler:
         await self._send_role_guide(interaction, name, role_perms)
         
         self._track_artifact("role", role.id, role.name)
-        return True, {"action": "delete_role", "role_id": role.id}
+        return True, {"action": "delete_role", "role_id": role.id, "role_name": role.name}
 
     def _detect_role_permissions(self, role_name: str) -> dict:
         """Auto-detect what permissions a role should have based on its name"""
@@ -725,28 +725,37 @@ class ActionHandler:
         """Assign a role to a user. Supports lookup by name OR id for both role and user."""
         guild = interaction.guild
         
+        # Log all input parameters
+        logger.info("assign_role: input params=%s", params)
+        logger.info("assign_role: available roles in guild=%s", [r.name for r in guild.roles])
+        
         # --- Resolve role (by id first, then by name) ---
         role = None
         role_id = params.get("role_id")
         role_name = params.get("role_name") or params.get("name")
+        logger.info("assign_role: looking for role. role_id=%s role_name=%s", role_id, role_name)
         if role_id:
             try:
                 role = guild.get_role(int(role_id))
+                logger.info("assign_role: role lookup by id result=%s", role)
             except (TypeError, ValueError):
                 role = None
         if not role and role_name:
             role = discord.utils.find(lambda r: r.name.lower() == str(role_name).lower(), guild.roles)
         if not role and role_name:
             role = discord.utils.find(lambda r: str(role_name).lower() in r.name.lower(), guild.roles)
+        logger.info("assign_role: final role resolved=%s", role)
         
         # --- Resolve member (by id first, then by name/mention) ---
         member = None
         user_id = params.get("user_id") or params.get("user")
         username = params.get("username") or params.get("user_name")
+        logger.info("assign_role: looking for member. user_id=%s username=%s", user_id, username)
         if user_id:
             try:
                 uid = int(str(user_id).strip().lstrip("<@!").rstrip(">"))
                 member = guild.get_member(uid) or await guild.fetch_member(uid)
+                logger.info("assign_role: member lookup by id result=%s", member)
             except (TypeError, ValueError, discord.NotFound, discord.HTTPException):
                 member = None
         if not member and username:
@@ -755,6 +764,7 @@ class ActionHandler:
                 lambda m: m.name.lower() == search or m.display_name.lower() == search,
                 guild.members
             )
+            logger.info("assign_role: member lookup by name result=%s", member)
         
         if not role:
             logger.error("assign_role: could not find role. role_id=%s role_name=%s", role_id, role_name)
@@ -765,7 +775,7 @@ class ActionHandler:
         
         await member.add_roles(role)
         logger.info("Assigned role %s to %s", role.name, member.display_name)
-        return True, {"action": "remove_role", "user_id": member.id, "role_id": role.id}
+        return True, {"action": "remove_role", "user_id": member.id, "role_id": role.id, "role_name": role.name}
 
 
     async def action_create_prefix_command(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
