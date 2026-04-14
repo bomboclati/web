@@ -139,9 +139,58 @@ class AIClient:
             except Exception as e:
                 return f"Web search failed: {str(e)}"
 
-    def _build_enhanced_prompt(self, system_prompt: str, guild_id: int) -> str:
-        """Build system prompt with action success/failure data and command usage for self-improvement."""
+    async def _build_enhanced_prompt(self, system_prompt: str, guild_id: int) -> str:
+        """Build system prompt with action success/failure data, command usage, and live server context."""
         from data_manager import dm
+        from server_query import ServerQueryEngine
+        
+        base_prompt = system_prompt
+        
+        # Add LIVE SERVER CONTEXT - automatically inject server state for every request
+        if guild_id and guild_id > 0:
+            try:
+                query_engine = ServerQueryEngine(self.bot)
+                server_info = await query_engine.query_server_info(guild_id)
+                channels = await query_engine.query_channels(guild_id)
+                roles = await query_engine.query_roles(guild_id)
+                members = await query_engine.query_members(guild_id)
+                
+                server_context = f"\n\n===== LIVE SERVER CONTEXT =====\n"
+                server_context += "You have full access to this server's real-time state. Use this information to answer questions accurately:\n\n"
+                
+                if server_info:
+                    server_context += f"SERVER: {server_info.get('name', 'Unknown')}\n"
+                    server_context += f"Total Members: {server_info.get('member_count', 0)}\n"
+                    server_context += f"Online Members: {server_info.get('online_count', 0)}\n"
+                    server_context += f"Boost Level: {server_info.get('boost_level', 0)}\n\n"
+                
+                if roles and len(roles) > 0:
+                    server_context += "ROLES (with permissions):\n"
+                    for role in roles[:15]:  # Top 15 most important roles
+                        server_context += f"- {role.get('name', 'Unknown')}: {role.get('member_count', 0)} members\n"
+                    server_context += "\n"
+                
+                if channels and len(channels) > 0:
+                    server_context += "CHANNELS:\n"
+                    for channel in channels[:20]:  # Most visible channels
+                        if channel.get('type') in ['text', 'voice', 'forum']:
+                            server_context += f"- {channel.get('name', 'Unknown')} ({channel.get('type', 'text')})\n"
+                    server_context += "\n"
+                
+                if members and len(members) > 0:
+                    online_members = [m for m in members if m.get('status') == 'online']
+                    server_context += f"ONLINE MEMBERS ({len(online_members)}):\n"
+                    for member in online_members[:20]:  # First 20 online members
+                        server_context += f"- {member.get('username', 'Unknown')}#{member.get('discriminator', '')}\n"
+                
+                server_context += "\nThis data is live and current. You can reference any of this information in your responses without needing to look it up.\n"
+                server_context += "===== END SERVER CONTEXT =====\n\n"
+                
+                base_prompt += server_context
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"Could not load server context: {e}")
         
         successes = dm.get_guild_data(guild_id, "action_successes", {})
         failures = dm.get_guild_data(guild_id, "action_failures", {})
@@ -149,7 +198,7 @@ class AIClient:
         command_usage = dm.get_guild_data(guild_id, "command_usage", {})
         
         if not successes and not failures and not global_intel and not command_usage:
-            return system_prompt
+            return base_prompt
         
         improvement_data = "\n\nACTION PERFORMANCE HISTORY (use this to improve your plans):\n"
         
@@ -286,7 +335,7 @@ class AIClient:
             })
         
         combined_context = history + vector_context
-        enhanced_prompt = self._build_enhanced_prompt(system_prompt, guild_id)
+        enhanced_prompt = await self._build_enhanced_prompt(system_prompt, guild_id)
         
         messages = [{"role": "system", "content": enhanced_prompt}]
         messages.extend(combined_context)
@@ -441,10 +490,28 @@ class AIClient:
                 serialized = json.dumps(res_json, ensure_ascii=False)
                 return json.loads(serialized)
             else:
-                return {"summary": str(res_json.get("summary", ai_msg))}
+                # Always ensure summary is clean text - NEVER return raw JSON structure
+            summary_text = str(res_json.get("summary", ai_msg)).strip()
+            
+            # Final sanitization to remove any JSON artifacts
+            import re
+            summary_text = re.sub(r'^\s*[\{\[]+', '', summary_text)
+            summary_text = re.sub(r'[\}\]]+\s*$', '', summary_text)
+            summary_text = summary_text.strip()
+            
+            # Process actions silently in background - don't return them to user
+            if "actions" in res_json and isinstance(res_json["actions"], list):
+                # Actions are handled internally, not returned to end user
+                pass
+            
+            return {"summary": summary_text}
         except Exception as e:
             logger.debug(f"Response was not pure JSON or parse failed: {e}")
-            return {"summary": ai_msg}
+            # Sanitize even raw text responses
+            import re
+            clean_msg = re.sub(r'^\s*[\{\[]+', '', ai_msg.strip())
+            clean_msg = re.sub(r'[\}\]]+\s*$', '', clean_msg)
+            return {"summary": clean_msg.strip()}
 
 
     def _extract_json(self, text: str) -> Dict[str, Any]:
