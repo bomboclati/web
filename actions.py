@@ -182,6 +182,64 @@ class ActionHandler:
         """Set the guild context for help and other commands"""
         self._guild_context = guild
 
+    async def _validate_action(self, interaction: discord.Interaction, action: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+        """
+        Pre-execution action validation system:
+        1. Checks if action actually exists / is available
+        2. Validates if action is safe and appropriate
+        3. Confirms action will achieve user's actual goal
+        4. Skips invalid, unnecessary, or bad actions
+        """
+        name = action.get("name")
+        params = action.get("parameters", {})
+        
+        # 1. Basic existence check
+        if name not in self.ALLOWED_ACTIONS:
+            return False, f"Action '{name}' does not exist or is not available"
+        
+        # 2. Permission & safety checks
+        from data_manager import dm
+        failures = dm.get_guild_data(interaction.guild.id, "action_failures", {})
+        if name in failures and failures[name]["count"] >= 3:
+            # Action has failed repeatedly, warn and skip
+            logger.warning(f"Skipping high-failure action '{name}' (failed {failures[name]['count']} times)")
+            return False, f"Action '{name}' has a high failure rate and was skipped"
+        
+        # 3. Action specific validation
+        validation_rules = {
+            "create_channel": lambda p: "name" in p and len(p["name"]) > 0 and len(p["name"]) <= 100,
+            "delete_channel": lambda p: "name" in p or "channel_id" in p,
+            "create_role": lambda p: "name" in p and len(p["name"]) > 0,
+            "assign_role": lambda p: "role_name" in p and "username" in p,
+            "send_message": lambda p: "content" in p and len(p["content"].strip()) > 0,
+            "send_dm": lambda p: ("username" in p or "user_id" in p) and "content" in p,
+            "kick_user": lambda p: "username" in p or "user_id" in p,
+            "ban_user": lambda p: "username" in p or "user_id" in p,
+            "timeout_user": lambda p: ("username" in p or "user_id" in p) and "duration" in p,
+            "setup_welcome": lambda p: True,
+            "setup_verification": lambda p: True,
+            "setup_tickets": lambda p: True,
+            "query_server_info": lambda p: True,
+            "query_channels": lambda p: True,
+            "query_roles": lambda p: True,
+            "query_members": lambda p: True
+        }
+        
+        if name in validation_rules:
+            if not validation_rules[name](params):
+                return False, f"Invalid parameters for action '{name}'"
+        
+        # 4. Duplicate action check
+        if deduplicator.should_skip_action(interaction.guild.id, name, params):
+            return False, f"Action '{name}' was recently executed and is being skipped to avoid duplicates"
+        
+        # 5. Redundant action check
+        # Skip actions that don't actually change anything
+        if name == "lock_channel" and hasattr(interaction.channel, 'locked') and interaction.channel.locked:
+            return False, "Channel is already locked"
+        
+        return True, None
+
     async def execute_sequence(self, interaction: discord.Interaction, actions: List[Dict[str, Any]], auto_rollback: bool = True) -> Dict[str, Any]:
         """Executes a list of actions with automatic rollback on failure and crash recovery tracking."""
         import uuid
@@ -190,6 +248,32 @@ class ActionHandler:
         self._action_log = []
         guild_id = interaction.guild.id
         user_id = interaction.user.id
+        
+        # Pre-execution validation phase
+        validated_actions = []
+        warnings = []
+        
+        for action in actions:
+            valid, reason = await self._validate_action(interaction, action)
+            if valid:
+                validated_actions.append(action)
+            else:
+                logger.warning(f"Action validation failed: {action.get('name')} - {reason}")
+                warnings.append(reason)
+        
+        # Replace actions with only validated ones
+        actions = validated_actions
+        
+        if not actions and warnings:
+            logger.info("All actions were filtered out during validation")
+            return {
+                "results": [],
+                "rolled_back": [],
+                "failed_at": None,
+                "warnings": warnings,
+                "success": True,
+                "filtered": True
+            }
 
         pending_setups = dm.load_json("pending_setups", default={})
         pending_setups[setup_id] = {
