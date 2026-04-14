@@ -28,6 +28,21 @@ class MessageDeduplicator:
         self._cache[message_key] = now + interval
         return True
 
+    def should_skip_action(self, guild_id: int, action_name: str, params: dict, interval: int = 30) -> bool:
+        """
+        Check if an action with the given parameters should be skipped (recently executed).
+        Returns True if action should be skipped (duplicate), False if it's okay to execute.
+        """
+        import hashlib
+        import json
+        
+        # Create a stable hash key from guild, action name, and params
+        param_hash = hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest()
+        action_key = f"action:{guild_id}:{action_name}:{param_hash}"
+        
+        # Reuse the existing should_send logic (inverse result)
+        return not self.should_send(action_key, interval)
+
     def _cleanup(self):
         now = time.time()
         self._cache = {k: v for k, v in self._cache.items() if v > now}
