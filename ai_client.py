@@ -491,20 +491,20 @@ class AIClient:
                 return json.loads(serialized)
             else:
                 # Always ensure summary is clean text - NEVER return raw JSON structure
-            summary_text = str(res_json.get("summary", ai_msg)).strip()
+                summary_text = str(res_json.get("summary", ai_msg)).strip()
             
-            # Final sanitization to remove any JSON artifacts
-            import re
-            summary_text = re.sub(r'^\s*[\{\[]+', '', summary_text)
-            summary_text = re.sub(r'[\}\]]+\s*$', '', summary_text)
-            summary_text = summary_text.strip()
+                # Final sanitization to remove any JSON artifacts
+                import re
+                summary_text = re.sub(r'^\s*[\{\[]+', '', summary_text)
+                summary_text = re.sub(r'[\}\]]+\s*$', '', summary_text)
+                summary_text = summary_text.strip()
             
-            # Process actions silently in background - don't return them to user
-            if "actions" in res_json and isinstance(res_json["actions"], list):
-                # Actions are handled internally, not returned to end user
-                pass
+                # Process actions silently in background - don't return them to user
+                if "actions" in res_json and isinstance(res_json["actions"], list):
+                        # Actions are handled internally, not returned to end user
+                    pass
             
-            return {"summary": summary_text}
+                return {"summary": summary_text}
         except Exception as e:
             logger.debug(f"Response was not pure JSON or parse failed: {e}")
             # Sanitize even raw text responses
