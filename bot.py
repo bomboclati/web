@@ -2200,11 +2200,11 @@ you can use the fetch_server_health tool to get real data."""
             )
         
         # Send response
-        await message.channel.send(response_text)
+        await message.channel.send(response_text, suppress_embeds=True)
         
     except Exception as e:
         logger.error(f"Error in mention AI handler: {e}")
-        await message.channel.send("[WARNING] Sorry, I'm having trouble processing that right now. Please try again!")
+        await message.channel.send("[WARNING] Sorry, I'm having trouble processing that right now. Please try again!", suppress_embeds=True)
 
 
 @bot.event
