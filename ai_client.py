@@ -245,11 +245,73 @@ class AIClient:
         stop=stop_after_attempt(5), 
         wait=wait_exponential(multiplier=2, min=2, max=60)
     )
+    async def _enhance_user_request(self, guild_id: int, user_id: int, user_input: str, system_prompt: str) -> str:
+        """
+        Request enhancement layer: interprets, clarifies, and enhances user requests by:
+        1. Filling in missing context
+        2. Understanding actual intent instead of literal input
+        3. Resolving ambiguities based on server context and conversation history
+        4. Expanding incomplete requests into actionable tasks
+        """
+        history_depth = int(os.getenv("MEMORY_DEPTH", 5))
+        recent_history = await history_manager.get_enhanced_context(guild_id, user_id, depth=history_depth)
+        
+        enhancement_prompt = f"""
+        You are a request interpreter. Analyze this user request and enhance it:
+        
+        USER REQUEST: {user_input}
+        
+        RECENT CONVERSATION HISTORY:
+        {recent_history[-5:] if recent_history else "No recent history"}
+        
+        TASK:
+        1. Understand the user's actual intent, not just literal words
+        2. Fill in missing context, assumptions, and implied requirements
+        3. Resolve ambiguities using context
+        4. Expand incomplete requests into clear, actionable tasks
+        5. Preserve all original user requirements
+        6. DO NOT add extra features the user didn't want
+        
+        Return ONLY the enhanced request text, no other commentary.
+        """
+        
+        try:
+            # Make quick lightweight call for enhancement
+            keys = self._get_all_guild_keys(guild_id)
+            if keys:
+                key_bundle = keys[0]
+                headers = {"Authorization": f"Bearer {key_bundle['api_key'].strip()}", "Content-Type": "application/json"}
+                payload = {
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": enhancement_prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 500
+                }
+                
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                    url = self.base_urls.get(key_bundle["provider"])
+                    if url:
+                        async with session.post(url, json=payload, headers=headers) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                if 'choices' in data and len(data['choices']) > 0:
+                                    enhanced = data['choices'][0]['message']['content'].strip()
+                                    logger.debug(f"Original request: {user_input} | Enhanced: {enhanced}")
+                                    return enhanced
+        except Exception as e:
+            logger.debug(f"Request enhancement skipped: {e}")
+        
+        # Fallback to original input if enhancement fails
+        return user_input
+
     async def chat(self, guild_id: int, user_id: int, user_input: str, system_prompt: str) -> Dict[str, Any]:
         """
         Communicates with the LLM using a primary provider, with automatic fallback
         to secondary providers (DashScope, OpenRouter) if the primary hits a quota limit (429/403).
         """
+        # First enhance the user request
+        enhanced_input = await self._enhance_user_request(guild_id, user_id, user_input, system_prompt)
+        
         keys_to_try = self._get_all_guild_keys(guild_id)
         if not keys_to_try:
             logger.error(f"[AI ERROR] No API keys configured for guild {guild_id}")
@@ -339,7 +401,7 @@ class AIClient:
         
         messages = [{"role": "system", "content": enhanced_prompt}]
         messages.extend(combined_context)
-        messages.append({"role": "user", "content": user_input})
+        messages.append({"role": "user", "content": enhanced_input if 'enhanced_input' in locals() else user_input})
         
         # Determine model based on provider
         from data_manager import dm
