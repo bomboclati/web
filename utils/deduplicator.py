@@ -1,5 +1,17 @@
 import time
+import json
 from typing import Dict, Any
+
+def make_hashable(obj: Any) -> Any:
+    """Recursively convert any object into a hashable type for deduplication."""
+    if isinstance(obj, (list, tuple)):
+        return tuple(make_hashable(item) for item in obj)
+    elif isinstance(obj, dict):
+        return tuple(sorted((key, make_hashable(value)) for key, value in obj.items()))
+    elif isinstance(obj, set):
+        return frozenset(make_hashable(item) for item in obj)
+    else:
+        return obj
 
 class MessageDeduplicator:
     """
@@ -33,7 +45,7 @@ class MessageDeduplicator:
         Check if an action should be skipped as duplicate.
         Returns True if the action should be skipped, False if it should be executed.
         """
-        key = f"action:{guild_id}:{action_name}:{hash(frozenset(params.items()))}"
+        key = f"action:{guild_id}:{action_name}:{hash(make_hashable(params))}"
         return not self.should_send(key, interval)
 
     def _cleanup(self):
