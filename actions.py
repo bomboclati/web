@@ -2897,13 +2897,22 @@ class ActionHandler:
                 pass
             return False, None
 
-        # Case-insensitive channel lookup
+        # Case-insensitive channel lookup (includes categories)
         channel = discord.utils.get(guild.channels, name=channel_name)
         if not channel:
             lower = channel_name.lower()
             channel = next((c for c in guild.channels if c.name.lower() == lower), None)
+        # If still not found, try removing common emoji prefixes (e.g., :file_folder: or 📁)
+        if not channel and channel_name.startswith(':') and ':' in channel_name:
+            # Remove the first emoji-like part
+            cleaned_name = channel_name.split(':', 2)[-1].strip()
+            if cleaned_name:
+                channel = discord.utils.get(guild.channels, name=cleaned_name)
+                if not channel:
+                    lower_clean = cleaned_name.lower()
+                    channel = next((c for c in guild.channels if c.name.lower() == lower_clean), None)
         if not channel:
-            logger.error(f"make_channel_private: '{channel_name}' not found")
+            logger.error(f"make_channel_private: '{channel_name}' not found. Available channels: {[f'{c.name} ({c.id}, type: {type(c).__name__})' for c in guild.channels]}")
             try:
                 await interaction.channel.send(
                     f"⚠️ Could not find channel **{channel_name}**.", delete_after=10
