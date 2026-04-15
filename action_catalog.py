@@ -160,18 +160,19 @@ ACTION_CATALOG = {
         "description": "Makes a channel private by denying @everyone and allowing specific roles",
         "category": "Channel Management",
         "parameters": {
-            "channel": {"type": "string", "required": True, "description": "Channel name"},
+            "channel": {"type": "string", "required": False, "description": "Channel name"},
             "channel_name": {"type": "string", "required": False, "description": "Channel name"},
+            "channels": {"type": "array", "required": False, "description": "List of channel names to make private"},
             "allowed_roles": {"type": "array", "required": False, "description": "Roles to allow"}
         },
         "keywords": ["private", "hidden", "restrict", "secret"]
     },
     "make_category_private": {
         "name": "make_category_private",
-        "description": "Makes a category and all its channels private",
+        "description": "Makes a category and all its channels private. Use 'all' to process all categories.",
         "category": "Channel Management",
         "parameters": {
-            "category": {"type": "string", "required": True, "description": "Category name, ID, or mention (e.g., 'Staff Area', '123456789', or '<#123456789>')"},
+            "category": {"type": "string", "required": True, "description": "Category name, ID, or mention, or 'all' to process all categories (e.g., 'Staff Area', '123456789', 'all')"},
             "category_name": {"type": "string", "required": False, "description": "Category name, ID, or mention"},
             "allowed_roles": {"type": "array", "required": False, "description": "Roles to allow"}
         },

@@ -2888,8 +2888,38 @@ class ActionHandler:
         """Makes an existing channel private: denies @everyone view_channel and allows specified roles."""
         guild = interaction.guild
         channel_name = params.get("channel") or params.get("channel_name")
+        channels_list = params.get("channels", [])
         allowed_roles = params.get("allowed_roles", [])
 
+        # Handle multiple channels case
+        if channels_list:
+            if isinstance(channels_list, str):
+                channels_list = [channels_list]
+            elif not isinstance(channels_list, list):
+                channels_list = []
+
+            if not channels_list:
+                try:
+                    await interaction.channel.send("⚠️ No channels specified for make_channel_private.", delete_after=10)
+                except Exception:
+                    pass
+                return False, None
+
+            # Process each channel in the list
+            processed_channels = []
+            for chan_name in channels_list:
+                success, result = await self._make_single_channel_private(guild, chan_name, allowed_roles)
+                if success:
+                    processed_channels.append(chan_name)
+                else:
+                    logger.warning(f"Failed to make channel '{chan_name}' private")
+
+            if processed_channels:
+                return True, {"channels": processed_channels, "allowed_roles": allowed_roles}
+            else:
+                return False, None
+
+        # Single channel case
         if not channel_name:
             try:
                 await interaction.channel.send("⚠️ No channel name specified for make_channel_private.", delete_after=10)
@@ -2897,6 +2927,10 @@ class ActionHandler:
                 pass
             return False, None
 
+        return await self._make_single_channel_private(guild, channel_name, allowed_roles)
+
+    async def _make_single_channel_private(self, guild, channel_name: str, allowed_roles: List[str]) -> Tuple[bool, Optional[Dict]]:
+        """Helper method to make a single channel private."""
         # First, try to lookup by ID if the input looks like an ID
         channel = None
         try:
@@ -2926,12 +2960,6 @@ class ActionHandler:
 
         if not channel:
             logger.error(f"make_channel_private: '{channel_name}' not found. Available channels: {[f'{c.name} ({c.id}, type: {type(c).__name__})' for c in guild.channels]}")
-            try:
-                await interaction.channel.send(
-                    f"⚠️ Could not find channel **{channel_name}**.", delete_after=10
-                )
-            except Exception:
-                pass
             return False, None
 
         try:
@@ -2948,20 +2976,9 @@ class ActionHandler:
             return True, {"channel": channel.name, "allowed_roles": allowed_roles}
         except discord.Forbidden:
             logger.error(f"make_channel_private: bot lacks Manage Channels permission in guild {guild.id}")
-            try:
-                await interaction.channel.send(
-                    "⚠️ I don't have permission to manage channel permissions. "
-                    "Please grant me the **Manage Channels** permission.", delete_after=15
-                )
-            except Exception:
-                pass
             return False, None
         except Exception as e:
             logger.error(f"make_channel_private: unexpected error: {e}", exc_info=True)
-            try:
-                await interaction.channel.send(f"⚠️ Error making channel private: {e}", delete_after=10)
-            except Exception:
-                pass
             return False, None
 
     async def action_make_category_private(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
