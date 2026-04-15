@@ -247,18 +247,19 @@ ACTION_CATALOG = {
     },
     "assign_role": {
         "name": "assign_role",
-        "description": "Assigns a role to a user",
+        "description": "Assigns a role to a user or multiple users",
         "category": "Role Management",
         "parameters": {
             "role_id": {"type": "integer", "required": False, "description": "Role ID"},
             "role_name": {"type": "string", "required": False, "description": "Role name"},
-            "name": {"type": "string", "required": False, "description": "Role name"},
-            "user_id": {"type": "integer", "required": False, "description": "User ID"},
-            "user": {"type": "integer", "required": False, "description": "User ID"},
-            "username": {"type": "string", "required": False, "description": "Username"},
-            "user_name": {"type": "string", "required": False, "description": "Username"}
+            "name": {"type": "string", "required": False, "description": "Role name (alternative)"},
+            "user_id": {"type": "integer", "required": False, "description": "User ID (for single user)"},
+            "user": {"type": "integer", "required": False, "description": "User ID (alternative)"},
+            "username": {"type": "string", "required": False, "description": "Username (for single user)"},
+            "user_name": {"type": "string", "required": False, "description": "Username (alternative)"},
+            "users": {"type": "array", "required": False, "description": "List of user IDs, usernames, or user objects for batch assignment"}
         },
-        "keywords": ["assign", "give role", "add role to user", "promote"]
+        "keywords": ["assign", "give role", "add role to user", "promote", "batch assign"]
     },
     "remove_role": {
         "name": "remove_role",

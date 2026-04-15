@@ -211,7 +211,7 @@ class ActionHandler:
             "create_channel": lambda p: "name" in p and len(p["name"]) > 0 and len(p["name"]) <= 100,
             "delete_channel": lambda p: "name" in p or "channel_id" in p,
             "create_role": lambda p: "name" in p and len(p["name"]) > 0,
-            "assign_role": lambda p: "role_name" in p and "username" in p,
+            "assign_role": lambda p: ("role_name" in p or "role_id" in p) and ("username" in p or "user_id" in p or "users" in p),
             "send_message": lambda p: "content" in p and len(p["content"].strip()) > 0,
             "send_dm": lambda p: ("username" in p or "user_id" in p) and "content" in p,
             "kick_user": lambda p: "username" in p or "user_id" in p,
@@ -966,17 +966,39 @@ class ActionHandler:
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def action_assign_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Assign a role to a user. Supports lookup by name OR id for both role and user."""
+        """Assign a role to a user or multiple users. Supports lookup by name OR id for both role and user. For batch operations, pass 'users' as list of user_ids or usernames."""
         guild = interaction.guild
-        
+
+        # Normalize parameters - handle alternative key names
+        normalized_params = dict(params)
+        if "name" in params and "role_name" not in params:
+            normalized_params["role_name"] = params["name"]
+        if "user" in params and "user_id" not in params:
+            normalized_params["user_id"] = params["user"]
+        if "user_name" in params and "username" not in params:
+            normalized_params["username"] = params["user_name"]
+
         # Log all input parameters
         logger.info("assign_role: input params=%s", params)
+        logger.info("assign_role: normalized params=%s", normalized_params)
         logger.info("assign_role: available roles in guild=%s", [r.name for r in guild.roles])
-        
+
+        # Check for batch operation
+        users = normalized_params.get("users")
+        if users:
+            return await self._assign_role_batch(interaction, normalized_params)
+
+        # Single user assignment
+        return await self._assign_role_single(interaction, normalized_params)
+
+    async def _assign_role_single(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Assign role to a single user."""
+        guild = interaction.guild
+
         # --- Resolve role (by id first, then by name) ---
         role = None
         role_id = params.get("role_id")
-        role_name = params.get("role_name") or params.get("name")
+        role_name = params.get("role_name")
         logger.info("assign_role: looking for role. role_id=%s role_name=%s", role_id, role_name)
         if role_id:
             try:
@@ -989,18 +1011,23 @@ class ActionHandler:
         if not role and role_name:
             role = discord.utils.find(lambda r: str(role_name).lower() in r.name.lower(), guild.roles)
         logger.info("assign_role: final role resolved=%s", role)
-        
+
+        if not role:
+            logger.error("assign_role: could not find role. role_id=%s role_name=%s", role_id, role_name)
+            return False, {"error": f"Could not find role with id {role_id} or name '{role_name}'"}
+
         # --- Resolve member (by id first, then by name/mention) ---
         member = None
-        user_id = params.get("user_id") or params.get("user")
-        username = params.get("username") or params.get("user_name")
+        user_id = params.get("user_id")
+        username = params.get("username")
         logger.info("assign_role: looking for member. user_id=%s username=%s", user_id, username)
         if user_id:
             try:
                 uid = int(str(user_id).strip().lstrip("<@!").rstrip(">"))
                 member = guild.get_member(uid) or await guild.fetch_member(uid)
                 logger.info("assign_role: member lookup by id result=%s", member)
-            except (TypeError, ValueError, discord.NotFound, discord.HTTPException):
+            except (TypeError, ValueError, discord.NotFound, discord.HTTPException) as e:
+                logger.warning("assign_role: failed to fetch member by id %s: %s", user_id, e)
                 member = None
         if not member and username:
             search = str(username).lstrip("@").lower()
@@ -1009,35 +1036,110 @@ class ActionHandler:
                 guild.members
             )
             logger.info("assign_role: member lookup by name result=%s", member)
-        
-        if not role:
-            logger.error("assign_role: could not find role. role_id=%s role_name=%s", role_id, role_name)
-            return False, None
+
         if not member:
             logger.error("assign_role: could not find member. user_id=%s username=%s", user_id, username)
-            return False, None
-        
+            return False, {"error": f"Could not find member with id {user_id} or username '{username}'"}
+
         # Check role hierarchy - bot can't assign roles higher than itself
         bot_top_role = guild.me.top_role
         if role.position > bot_top_role.position:
             logger.error("assign_role: role %s is higher than bot's top role %s", role.name, bot_top_role.name)
-            return False, None
-        
+            return False, {"error": f"Cannot assign role '{role.name}' - it is higher than the bot's top role '{bot_top_role.name}'"}
+
         # Check if user has permission to assign this role
         if not interaction.user.guild_permissions.manage_roles:
             logger.error("User lacks manage_roles permission to assign roles")
-            return False, None
-        
+            return False, {"error": "You do not have permission to manage roles"}
+
         try:
             await member.add_roles(role, reason=f"Assigned by {interaction.user.display_name}")
             logger.info("Assigned role %s to %s", role.name, member.display_name)
             return True, {"action": "remove_role", "user_id": member.id, "role_id": role.id, "role_name": role.name}
         except discord.Forbidden:
             logger.error("assign_role: Forbidden - bot lacks permission to assign role %s to %s", role.name, member.display_name)
-            return False, None
+            return False, {"error": f"Bot lacks permission to assign role '{role.name}' to {member.display_name}"}
         except discord.HTTPException as e:
             logger.error("assign_role: HTTP error - %s", str(e))
-            return False, None
+            return False, {"error": f"HTTP error while assigning role: {str(e)}"}
+
+    async def _assign_role_batch(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Assign role to multiple users."""
+        guild = interaction.guild
+        users = params.get("users", [])
+        role_name = params.get("role_name")
+        role_id = params.get("role_id")
+
+        if not users:
+            return False, {"error": "No users specified for batch assignment"}
+
+        if not isinstance(users, list):
+            return False, {"error": "'users' must be a list"}
+
+        logger.info("assign_role_batch: assigning role %s to %d users", role_name or role_id, len(users))
+
+        # Resolve role once
+        role = None
+        if role_id:
+            try:
+                role = guild.get_role(int(role_id))
+            except (TypeError, ValueError):
+                pass
+        if not role and role_name:
+            role = discord.utils.find(lambda r: r.name.lower() == str(role_name).lower(), guild.roles)
+        if not role and role_name:
+            role = discord.utils.find(lambda r: str(role_name).lower() in r.name.lower(), guild.roles)
+
+        if not role:
+            return False, {"error": f"Could not find role with id {role_id} or name '{role_name}'"}
+
+        # Check permissions
+        bot_top_role = guild.me.top_role
+        if role.position > bot_top_role.position:
+            return False, {"error": f"Cannot assign role '{role.name}' - it is higher than the bot's top role"}
+
+        if not interaction.user.guild_permissions.manage_roles:
+            return False, {"error": "You do not have permission to manage roles"}
+
+        results = []
+        success_count = 0
+        for user_spec in users:
+            try:
+                member = None
+                if isinstance(user_spec, int) or (isinstance(user_spec, str) and user_spec.isdigit()):
+                    uid = int(user_spec)
+                    member = guild.get_member(uid) or await guild.fetch_member(uid)
+                elif isinstance(user_spec, str):
+                    search = user_spec.lstrip("@").lower()
+                    member = discord.utils.find(
+                        lambda m: m.name.lower() == search or m.display_name.lower() == search,
+                        guild.members
+                    )
+                elif isinstance(user_spec, dict):
+                    user_id = user_spec.get("id") or user_spec.get("user_id")
+                    username = user_spec.get("name") or user_spec.get("username")
+                    if user_id:
+                        uid = int(user_id)
+                        member = guild.get_member(uid) or await guild.fetch_member(uid)
+                    elif username:
+                        search = str(username).lstrip("@").lower()
+                        member = discord.utils.find(
+                            lambda m: m.name.lower() == search or m.display_name.lower() == search,
+                            guild.members
+                        )
+
+                if member:
+                    await member.add_roles(role, reason=f"Batch assigned by {interaction.user.display_name}")
+                    results.append({"user_id": member.id, "username": member.display_name, "status": "success"})
+                    success_count += 1
+                else:
+                    results.append({"user_spec": user_spec, "status": "failed", "reason": "Member not found"})
+            except Exception as e:
+                logger.error("assign_role_batch: error assigning to %s: %s", user_spec, e)
+                results.append({"user_spec": user_spec, "status": "failed", "reason": str(e)})
+
+        logger.info("assign_role_batch: completed, %d/%d successful", success_count, len(users))
+        return success_count > 0, {"batch_results": results, "success_count": success_count, "total": len(users)}
 
     async def action_add_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Adds a role to a user. Alias for action_assign_role."""
