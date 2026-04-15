@@ -859,8 +859,14 @@ EMBED COLORS:
 - Colors are optional - if not specified, defaults to blurple
 
 ROLE ASSIGNMENT:
-- Use "assign_role" action with "role_name" (the role's text name, not the mention)
-- Example: {"name": "assign_role", "parameters": {"role_name": "Member", "username": "john"}}
+- Use "assign_role" action with flexible parameters for single or batch operations
+- Examples:
+  - Single user: {"name": "assign_role", "parameters": {"role_name": "Member", "username": "john"}}
+  - Batch users: {"name": "assign_role", "parameters": {"role_name": "Member", "usernames": ["john", "jane"]}}
+  - From query_members: Use the member objects directly as parameters
+- Supported parameter formats:
+  - Role: "role_name", "role_id", or "role" (object from query_roles)
+  - Users: "username", "user_id", "users" (list), "usernames" (list), "user_ids" (list), or member objects from query_members
 - NEVER mention @role in parameters - use the role name text
 
 CHANNEL CREATION:
@@ -871,10 +877,10 @@ ROLE ASSIGNMENT RULES:
 - To create a role AND give it to a user, use TWO actions in sequence:
   1. {"name": "create_role", "parameters": {"name": "Bots", "color": "#99AAB5"}}
   2. {"name": "assign_role", "parameters": {"role_name": "Bots", "username": "john"}}
-- ALWAYS use "role_name" (the role's text name) and "username" (the user's display name, without @) in assign_role parameters
+- assign_role now supports batch operations and flexible parameter formats
 - For send_dm and ping: if the request includes a MENTION CONTEXT block, you MUST use "user_id" (integer) from that block — never use "username" for those users
 - If no MENTION CONTEXT is provided, use "username" with the display name (no @ prefix)
-- NEVER use role_id in assign_role — but DO use user_id (integer) in send_dm/ping when provided
+- role_id can now be used in assign_role, but role_name is preferred
 
 BUTTON TYPES for send_embed (all fully functional, no placeholders):
 - "verify" = Gives user Verified/Member role automatically
