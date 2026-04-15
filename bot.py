@@ -2202,6 +2202,17 @@ you can use the fetch_server_health tool to get real data."""
         import re
         response_text = re.sub(r'^\s*[\{\[]+', '', response_text)
         response_text = re.sub(r'[\}\]]+\s*$', '', response_text)
+        # Remove ALL markdown formatting, embeds, cards, attachments
+        response_text = re.sub(r'\*\*(.*?)\*\*', r'\1', response_text)
+        response_text = re.sub(r'\*(.*?)\*', r'\1', response_text)
+        response_text = re.sub(r'__(.*?)__', r'\1', response_text)
+        response_text = re.sub(r'`(.*?)`', r'\1', response_text)
+        response_text = re.sub(r'```.*?```', '', response_text, flags=re.DOTALL)
+        response_text = re.sub(r'\[.*?\]\(.*?\)', '', response_text)
+        response_text = re.sub(r'<@!?\d+>', '', response_text)
+        response_text = re.sub(r'<#\d+>', '', response_text)
+        response_text = re.sub(r'<@&\d+>', '', response_text)
+        response_text = re.sub(r'https?://\S+', '', response_text)
         response_text = response_text.strip()
         
         # Save the exchange to history
@@ -2223,8 +2234,8 @@ you can use the fetch_server_health tool to get real data."""
                 walkthrough="Provided conversational response"
             )
         
-        # Send response
-        await message.channel.send(response_text, suppress_embeds=True)
+        # Send response - ABSOLUTELY NO EMBEDS, NO RICH FORMATTING, ONLY PLAIN TEXT
+        await message.channel.send(response_text, suppress_embeds=True, embeds=[], files=[], attachments=[])
         
     except Exception as e:
         logger.error(f"Error in mention AI handler: {e}")
