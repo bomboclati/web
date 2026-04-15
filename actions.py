@@ -169,7 +169,13 @@ class ActionHandler:
         "query_member_details", "query_economy_leaderboard", "query_xp_leaderboard",
         "query_pending_applications", "query_active_shifts", "query_recent_messages",
         # Extract actions
-        "extract_online_users"
+        "extract_online_users",
+        # New actions
+        "archive_channel", "unarchive_channel", "create_forum_channel", "create_stage_channel",
+        "mention_user", "dm_all_users_with_role", "get_user_info", "get_user_permissions",
+        "query_user_roles", "query_channel_members", "query_banned_users", "query_server_stats",
+        "purge_messages", "change_server_name", "change_server_icon", "enable_slowmode",
+        "disable_slowmode", "create_webhook", "delete_webhook", "set_channel_position"
     }
     
     def __init__(self, bot):
@@ -1118,7 +1124,33 @@ class ActionHandler:
                 if "id" in member_data:
                     users.append({"user_id": member_data["id"], "username": member_data.get("name", "")})
 
-        return users
+        # Normalize each user spec to handle dict inputs
+        normalized_users = []
+        for user_spec in users:
+            if isinstance(user_spec, dict):
+                if "name" in user_spec and "id" in user_spec:
+                    # It's a member dict
+                    normalized_users.append({"user_id": user_spec["id"], "username": user_spec["name"]})
+                elif isinstance(user_spec.get("username"), dict):
+                    # username is a member dict
+                    member_dict = user_spec["username"]
+                    if "name" in member_dict and "id" in member_dict:
+                        normalized_users.append({"user_id": member_dict["id"], "username": member_dict["name"]})
+                    else:
+                        normalized_users.append(user_spec)
+                elif isinstance(user_spec.get("user_id"), dict):
+                    # user_id is a member dict
+                    member_dict = user_spec["user_id"]
+                    if "name" in member_dict and "id" in member_dict:
+                        normalized_users.append({"user_id": member_dict["id"], "username": member_dict["name"]})
+                    else:
+                        normalized_users.append(user_spec)
+                else:
+                    normalized_users.append(user_spec)
+            else:
+                normalized_users.append({"username": str(user_spec)})
+
+        return normalized_users
 
     async def _resolve_member(self, guild: discord.Guild, user_spec: Dict[str, Any]) -> Optional[discord.Member]:
         """Resolve a member from various specification formats."""
@@ -1205,6 +1237,171 @@ class ActionHandler:
         if not interaction.user.guild_permissions.manage_roles:
             logger.error("User lacks manage_roles permission to remove roles")
             return False, None
+
+        try:
+            await member.remove_roles(role, reason=f"Removed by {interaction.user.display_name}")
+            logger.info("remove_role: Successfully removed role %s from %s", role.name, member.display_name)
+            return True, {"role_removed": role.name, "user": member.display_name}
+        except discord.Forbidden:
+            logger.error("remove_role: Forbidden - bot lacks permission to remove role %s from %s", role.name, member.display_name)
+            return False, {"error": "Bot lacks permission"}
+        except Exception as e:
+            logger.error("remove_role: Unexpected error removing role: %s", str(e))
+            return False, {"error": str(e)}
+
+    async def action_archive_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Archives a channel by making it private and restricting access."""
+        guild = interaction.guild
+        channel_name = params.get("channel_name")
+        reason = params.get("reason", "Archived by admin")
+
+        if not channel_name:
+            return False, {"error": "Channel name required"}
+
+        channel = discord.utils.find(lambda c: c.name.lower() == channel_name.lower(), guild.channels)
+        if not channel:
+            return False, {"error": f"Channel '{channel_name}' not found"}
+
+        if not interaction.user.guild_permissions.manage_channels:
+            return False, {"error": "User lacks manage_channels permission"}
+
+        try:
+            # Make channel private by denying @everyone
+            everyone_role = guild.default_role
+            await channel.set_permissions(everyone_role, view_channel=False, reason=reason)
+            # Optionally set topic to indicate archived
+            if not channel.topic or "archived" not in channel.topic.lower():
+                await channel.edit(topic=f"[ARCHIVED] {channel.topic or ''} - {reason}")
+            return True, {"channel_archived": channel_name, "reason": reason}
+        except Exception as e:
+            logger.error("archive_channel failed: %s", e)
+            return False, {"error": str(e)}
+
+    async def action_unarchive_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Unarchives a previously archived channel."""
+        guild = interaction.guild
+        channel_name = params.get("channel_name")
+
+        if not channel_name:
+            return False, {"error": "Channel name required"}
+
+        channel = discord.utils.find(lambda c: c.name.lower() == channel_name.lower(), guild.channels)
+        if not channel:
+            return False, {"error": f"Channel '{channel_name}' not found"}
+
+        if not interaction.user.guild_permissions.manage_channels:
+            return False, {"error": "User lacks manage_channels permission"}
+
+        try:
+            # Restore @everyone view permission
+            everyone_role = guild.default_role
+            await channel.set_permissions(everyone_role, view_channel=None, reason="Unarchived")
+            # Remove archived from topic
+            if channel.topic and "[ARCHIVED]" in channel.topic:
+                new_topic = channel.topic.replace("[ARCHIVED]", "").strip()
+                await channel.edit(topic=new_topic)
+            return True, {"channel_unarchived": channel_name}
+        except Exception as e:
+            logger.error("unarchive_channel failed: %s", e)
+            return False, {"error": str(e)}
+
+    async def action_mention_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Mentions a user in a channel."""
+        guild = interaction.guild
+        user_id = params.get("user_id")
+        username = params.get("username")
+        channel_name = params.get("channel")
+        message = params.get("message", "")
+
+        member = None
+        if user_id:
+            try:
+                uid = int(str(user_id).strip().lstrip("<@!").rstrip(">"))
+                member = guild.get_member(uid) or await guild.fetch_member(uid)
+            except (TypeError, ValueError, discord.NotFound, discord.HTTPException):
+                pass
+        if not member and username:
+            # Handle dict input
+            if isinstance(username, dict) and "name" in username:
+                username = username["name"]
+            search = str(username).lstrip("@").lower()
+            member = discord.utils.find(
+                lambda m: m.name.lower() == search or m.display_name.lower() == search,
+                guild.members
+            )
+
+        if not member:
+            return False, {"error": "User not found"}
+
+        channel = interaction.channel
+        if channel_name:
+            channel = discord.utils.find(lambda c: c.name.lower() == channel_name.lower(), guild.channels)
+            if not channel:
+                return False, {"error": f"Channel '{channel_name}' not found"}
+
+        try:
+            content = f"{member.mention} {message}".strip()
+            await channel.send(content)
+            return True, {"mentioned_user": member.display_name, "channel": channel.name}
+        except Exception as e:
+            logger.error("mention_user failed: %s", e)
+            return False, {"error": str(e)}
+
+    async def action_get_user_info(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Gets detailed information about a user."""
+        guild = interaction.guild
+        user_id = params.get("user_id")
+        username = params.get("username")
+
+        member = None
+        if user_id:
+            try:
+                uid = int(str(user_id).strip().lstrip("<@!").rstrip(">"))
+                member = guild.get_member(uid) or await guild.fetch_member(uid)
+            except (TypeError, ValueError, discord.NotFound, discord.HTTPException):
+                pass
+        if not member and username:
+            # Handle dict input
+            if isinstance(username, dict) and "name" in username:
+                username = username["name"]
+            search = str(username).lstrip("@").lower()
+            member = discord.utils.find(
+                lambda m: m.name.lower() == search or m.display_name.lower() == search,
+                guild.members
+            )
+
+        if not member:
+            return False, {"error": "User not found"}
+
+        info = {
+            "id": member.id,
+            "name": member.name,
+            "display_name": member.display_name,
+            "nick": member.nick,
+            "status": str(member.status),
+            "activity": str(member.activity) if member.activity else None,
+            "roles": [r.name for r in member.roles[1:]],  # Exclude @everyone
+            "joined_at": member.joined_at.isoformat() if member.joined_at else None,
+            "is_bot": member.bot
+        }
+        return True, info
+
+    async def action_query_server_stats(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Gets server statistics."""
+        guild = interaction.guild
+        stats = {
+            "name": guild.name,
+            "id": guild.id,
+            "member_count": guild.member_count,
+            "channel_count": len(guild.channels),
+            "text_channels": len([c for c in guild.channels if isinstance(c, discord.TextChannel)]),
+            "voice_channels": len([c for c in guild.channels if isinstance(c, discord.VoiceChannel)]),
+            "role_count": len(guild.roles),
+            "emoji_count": len(guild.emojis),
+            "created_at": guild.created_at.isoformat() if guild.created_at else None,
+            "owner_id": guild.owner_id
+        }
+        return True, stats
 
         try:
             await member.remove_roles(role)
@@ -1361,6 +1558,13 @@ class ActionHandler:
         content = params.get("content")
         embed_data = params.get("embed")
         guild = interaction.guild
+
+        # Handle dict inputs from query_members
+        if isinstance(username, dict) and "name" in username and "id" in username:
+            user_id = user_id or username["id"]
+            username = username["name"]
+        if isinstance(user_id, dict) and "id" in user_id:
+            user_id = user_id["id"]
 
         # ── 0. Parse user_id from Discord mention format (e.g. <@!123456789> or <@123456789>) ─────
         if user_id:
@@ -1542,6 +1746,13 @@ class ActionHandler:
         user_id = params.get("user_id")
         username = params.get("username")
         guild = interaction.guild
+
+        # Handle dict inputs from query_members
+        if isinstance(username, dict) and "name" in username and "id" in username:
+            user_id = user_id or username["id"]
+            username = username["name"]
+        if isinstance(user_id, dict) and "id" in user_id:
+            user_id = user_id["id"]
 
         # ── Resolve member from username ──────────────────────────────────────
         member = None
