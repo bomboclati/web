@@ -2947,20 +2947,47 @@ class ActionHandler:
                 )
                 return False, None
 
+        # Ensure fresh channel data to avoid caching issues
+        try:
+            await guild.fetch_channels()
+        except Exception as e:
+            logger.warning(f"make_category_private: Failed to fetch channels: {e}")
+
         # Process all categories if "all" is specified, or single category
         categories_to_process = []
-        
+
         if category_name and category_name.lower() == "all":
             categories_to_process = list(guild.categories)
         elif category_name:
-            # Case-insensitive category lookup
+            category = None
+
+            # First try case-insensitive name lookup
             category = discord.utils.get(guild.categories, name=category_name)
             if not category:
                 lower = category_name.lower()
                 category = next((c for c in guild.categories if c.name.lower() == lower), None)
+
+            # If not found by name, try to parse as channel ID or mention
             if not category:
-                available = ", ".join(f"**{c.name}**" for c in guild.categories) or "none found"
-                logger.error(f"make_category_private: '{category_name}' not found. Available: {[c.name for c in guild.categories]}")
+                category_id = None
+                if category_name.isdigit():
+                    category_id = int(category_name)
+                elif category_name.startswith('<#') and category_name.endswith('>'):
+                    try:
+                        category_id = int(category_name[2:-1])
+                    except ValueError:
+                        pass
+
+                if category_id:
+                    channel = guild.get_channel(category_id)
+                    if channel and isinstance(channel, discord.CategoryChannel):
+                        category = channel
+
+            if not category:
+                # Enhanced logging with IDs for debugging
+                available_names = [f"**{c.name}** (ID: {c.id})" for c in guild.categories]
+                available = ", ".join(available_names) or "none found"
+                logger.error(f"make_category_private: '{category_name}' not found. Available categories: {[f'{c.name} ({c.id})' for c in guild.categories]}")
                 await interaction.followup.send(
                     f"⚠️ Could not find category **{category_name}**. "
                     f"Available categories: {available}"
