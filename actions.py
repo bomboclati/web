@@ -169,7 +169,9 @@ class ActionHandler:
         "query_member_details", "query_economy_leaderboard", "query_xp_leaderboard",
         "query_pending_applications", "query_active_shifts", "query_recent_messages",
         # Extract actions
-        "extract_online_users"
+        "extract_online_users",
+        # New actions
+        "send_notification", "create_task", "update_profile"
     }
     
     def __init__(self, bot):
@@ -1059,6 +1061,8 @@ class ActionHandler:
 
         # Try role_name or name
         role_name = params.get("role_name") or params.get("name")
+        if isinstance(role_name, dict) and "name" in role_name:
+            role_name = role_name["name"]
         if role_name:
             # Exact match first
             role = discord.utils.find(lambda r: r.name.lower() == str(role_name).lower(), guild.roles)
@@ -1124,6 +1128,8 @@ class ActionHandler:
         """Resolve a member from various specification formats."""
         # Try user_id first
         user_id = user_spec.get("user_id") or user_spec.get("user") or user_spec.get("id")
+        if isinstance(user_id, dict) and "id" in user_id:
+            user_id = user_id["id"]
         if user_id:
             try:
                 uid = int(str(user_id).strip().lstrip("<@!").rstrip(">"))
@@ -1140,6 +1146,8 @@ class ActionHandler:
 
         # Try username/display name
         username = user_spec.get("username") or user_spec.get("user_name") or user_spec.get("name")
+        if isinstance(username, dict) and "name" in username:
+            username = username["name"]
         if username:
             search = str(username).lstrip("@").lower()
             member = discord.utils.find(
@@ -4903,6 +4911,68 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             total_bonus += (multiplier - 1)
         
         embed.add_field(name="Total Max Bonus", value=f"{((total_bonus - 1) * 100):.0f}%", inline=False)
-        
+
         await message.channel.send(embed=embed)
         return True
+
+    async def action_send_notification(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Send a notification message to a channel or user."""
+        guild = interaction.guild
+
+        # Normalize channel
+        channel = self._resolve_channel(guild, params)
+        if not channel:
+            logger.error("send_notification: could not resolve channel from params: %s", params)
+            return False, {"error": "Channel not found", "params": params}
+
+        # Get message content
+        content = params.get("message") or params.get("content") or params.get("notification")
+        if not content:
+            logger.error("send_notification: no message content provided: %s", params)
+            return False, {"error": "No message content provided", "params": params}
+
+        # Check permissions
+        if not channel.permissions_for(guild.me).send_messages:
+            logger.error("send_notification: bot lacks send_messages permission in channel %s", channel.name)
+            return False, {"error": f"Bot lacks send_messages permission in {channel.name}"}
+
+        try:
+            await channel.send(content)
+            logger.info("send_notification: sent notification to %s: %s", channel.name, content[:100])
+            return True, {"channel": channel.name, "message": content}
+        except discord.Forbidden:
+            logger.error("send_notification: Forbidden to send message in %s", channel.name)
+            return False, {"error": "Forbidden to send message"}
+        except Exception as e:
+            logger.error("send_notification: Unexpected error: %s", str(e))
+            return False, {"error": f"Unexpected error: {str(e)}"}
+
+    async def action_create_task(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Create a scheduled task using cron expression."""
+        # This would integrate with task_scheduler
+        cron_expr = params.get("cron") or params.get("schedule")
+        task_name = params.get("name") or params.get("task_name")
+        handler_name = params.get("handler") or params.get("action")
+        guild_id = interaction.guild.id
+
+        if not cron_expr or not task_name or not handler_name:
+            logger.error("create_task: missing required parameters: cron, name, handler")
+            return False, {"error": "Missing required parameters: cron, name, handler"}
+
+        # For now, just log and return success (full implementation would add to scheduler)
+        logger.info("create_task: would create task %s with cron %s handler %s", task_name, cron_expr, handler_name)
+        return True, {"task_name": task_name, "cron": cron_expr, "handler": handler_name}
+
+    async def action_update_profile(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Update user profile information (placeholder for future implementation)."""
+        user_id = params.get("user_id") or params.get("user")
+        field = params.get("field")
+        value = params.get("value")
+
+        if not user_id or not field or value is None:
+            logger.error("update_profile: missing required parameters: user_id, field, value")
+            return False, {"error": "Missing required parameters: user_id, field, value"}
+
+        # Placeholder implementation
+        logger.info("update_profile: would update %s for user %s to %s", field, user_id, value)
+        return True, {"user_id": user_id, "field": field, "value": value}

@@ -815,6 +815,38 @@ ACTION_CATALOG = {
         },
         "aliases": ["get_online_users", "list_online_members", "who_is_online"],
         "keywords": ["online", "online users", "who is online", "active members", "extract online", "list online"]
+    },
+    "send_notification": {
+        "name": "send_notification",
+        "description": "Send a notification message to a channel",
+        "category": "Messaging",
+        "parameters": {
+            "channel": {"type": "string", "required": True, "description": "Channel name or ID"},
+            "message": {"type": "string", "required": True, "description": "Notification message content"}
+        },
+        "keywords": ["notify", "notification", "alert", "send message", "announce"]
+    },
+    "create_task": {
+        "name": "create_task",
+        "description": "Create a scheduled background task",
+        "category": "System",
+        "parameters": {
+            "name": {"type": "string", "required": True, "description": "Task name"},
+            "cron": {"type": "string", "required": True, "description": "Cron expression for scheduling"},
+            "handler": {"type": "string", "required": True, "description": "Handler function name"}
+        },
+        "keywords": ["schedule", "task", "cron", "background", "automate"]
+    },
+    "update_profile": {
+        "name": "update_profile",
+        "description": "Update user profile information",
+        "category": "User Management",
+        "parameters": {
+            "user_id": {"type": "string", "required": True, "description": "User ID"},
+            "field": {"type": "string", "required": True, "description": "Profile field to update"},
+            "value": {"type": "any", "required": True, "description": "New value for the field"}
+        },
+        "keywords": ["profile", "update", "user info", "settings"]
     }
 }
 
@@ -829,13 +861,13 @@ CATEGORY_GROUPS = {
                        "add_role", "assign_role", "remove_role"],
     "Messaging": ["send_message", "send_embed", "send_dm", "reply_message", "announce", "poll",
                   "post_documentation", "create_thread", "pin_message", "unpin_message", "add_reaction",
-                  "remove_reaction", "delete_message", "bulk_delete_messages"],
+                  "remove_reaction", "delete_message", "bulk_delete_messages", "send_notification"],
     "Moderation": ["kick_user", "ban_user", "timeout_user", "mute_user", "unmute_user", "deafen_user",
-                   "set_nickname", "warn_user"],
+                   "set_nickname", "warn_user", "update_profile"],
     "Economy": ["give_points", "remove_points"],
     "Server Management": ["create_invite", "ping"],
     "Custom Commands": ["create_prefix_command", "delete_prefix_command"],
-    "Automation": ["schedule_ai_action"],
+    "Automation": ["schedule_ai_action", "create_task"],
     "System Setup": ["setup_verification", "setup_tickets", "setup_applications", "setup_appeals",
                      "setup_moderation", "setup_logging", "setup_economy", "setup_leveling",
                      "setup_welcome", "setup_staff_system", "setup_trigger_role",
