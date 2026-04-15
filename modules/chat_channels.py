@@ -229,12 +229,23 @@ class AIChatSystem:
                 )
             
             # Use actual raw response directly instead of summary field
-            response = result.get("summary", "I didn't quite catch that. Could you try again?")
+            response = result.get("content", result.get("summary", "I didn't quite catch that. Could you try again?"))
             # Strip any summary headers/footers
             import re
             response = re.sub(r'^(?:Summary|Response):\s*', '', response, flags=re.IGNORECASE)
             response = re.sub(r'\s*---\s*.*$', '', response, flags=re.DOTALL)
             response = re.sub(r'\s*\*\*Summary\*\*:.*$', '', response, flags=re.IGNORECASE|re.DOTALL)
+            # Remove ALL markdown formatting, embeds, cards, attachments
+            response = re.sub(r'\*\*(.*?)\*\*', r'\1', response)
+            response = re.sub(r'\*(.*?)\*', r'\1', response)
+            response = re.sub(r'__(.*?)__', r'\1', response)
+            response = re.sub(r'`(.*?)`', r'\1', response)
+            response = re.sub(r'```.*?```', '', response, flags=re.DOTALL)
+            response = re.sub(r'\[.*?\]\(.*?\)', '', response)
+            response = re.sub(r'<@!?\d+>', '', response)
+            response = re.sub(r'<#\d+>', '', response)
+            response = re.sub(r'<@&\d+>', '', response)
+            response = re.sub(r'https?://\S+', '', response)
             response = response.strip()
             
             session["messages"].append({"role": "user", "content": user_input})
@@ -256,7 +267,8 @@ class AIChatSystem:
             if len(response) > 2000:
                 response = response[:1997] + "..."
             
-            return await message.channel.send(response, suppress_embeds=True)
+            # Absolutely NO embeds, NO rich formatting, NO extras - just plain text
+            return await message.channel.send(response, suppress_embeds=True, embeds=[], files=[], attachments=[])
             
         except Exception as e:
             logger.error(f"AI chat error: {e}")

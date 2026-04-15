@@ -2925,14 +2925,26 @@ class ActionHandler:
         # Process all categories if "all" is specified, or single category
         categories_to_process = []
         
+        # Force guild cache refresh before looking up categories
+        await guild.fetch_channels()
+        await asyncio.sleep(0.25)
+        
         if category_name and category_name.lower() == "all":
             categories_to_process = list(guild.categories)
         elif category_name:
-            # Case-insensitive category lookup
+            # Case-insensitive category lookup with proper fetch
             category = discord.utils.get(guild.categories, name=category_name)
             if not category:
                 lower = category_name.lower()
                 category = next((c for c in guild.categories if c.name.lower() == lower), None)
+            # If still not found, try fetching all channels explicitly
+            if not category:
+                all_channels = await guild.fetch_channels()
+                categories = [ch for ch in all_channels if isinstance(ch, discord.CategoryChannel)]
+                category = discord.utils.get(categories, name=category_name)
+                if not category:
+                    lower = category_name.lower()
+                    category = next((c for c in categories if c.name.lower() == lower), None)
             if not category:
                 available = ", ".join(f"**{c.name}**" for c in guild.categories) or "none found"
                 logger.error(f"make_category_private: '{category_name}' not found. Available: {[c.name for c in guild.categories]}")
@@ -2963,6 +2975,20 @@ class ActionHandler:
                 if role:
                     resolved_roles.append(role)
             
+            # Always include guild owner, admins, and bot itself as allowed roles to prevent lockout
+            if bot_member:
+                # Add bot's own role first
+                if bot_member.top_role not in resolved_roles:
+                    resolved_roles.append(bot_member.top_role)
+            # Add all admin roles (roles with administrator permission)
+            for role in guild.roles:
+                if role.permissions.administrator and role not in resolved_roles:
+                    resolved_roles.append(role)
+            # Add guild owner explicitly
+            owner = guild.owner
+            if owner and owner not in resolved_roles:
+                resolved_roles.append(owner)
+            
             # Process each category
             for category in categories_to_process:
                 channels_updated = 0
@@ -2973,17 +2999,22 @@ class ActionHandler:
                 for child in child_channels:
                     try:
                         if bot_member:
-                            await self._merge_channel_permission(child, bot_member, view_channel=True, manage_channels=True)
+                            await self._merge_channel_permission(child, bot_member, view_channel=True, manage_channels=True, manage_permissions=True)
                     except Exception:
                         pass
                 
                 # Now process all child channels (we have access already)
                 for child in child_channels:
                     try:
+                        # Clear existing overwrites first for clean sync
+                        await child.purge()
+                        # Now apply permissions properly
                         await self._merge_channel_permission(child, guild.default_role, view_channel=False, send_messages=False)
                         channels_updated += 1
                         for role in resolved_roles:
-                            await self._merge_channel_permission(child, role, view_channel=True, send_messages=True, read_message_history=True)
+                            await self._merge_channel_permission(child, role, view_channel=True, send_messages=True, read_message_history=True, connect=True, speak=True)
+                        # Sync child channel permissions with parent category
+                        await child.edit(sync_permissions=True)
                     except Exception:
                         pass
                 
@@ -2991,7 +3022,7 @@ class ActionHandler:
                 # This prevents lockout while we're still modifying children
                 try:
                     if bot_member:
-                        await self._merge_channel_permission(category, bot_member, view_channel=True, manage_channels=True)
+                        await self._merge_channel_permission(category, bot_member, view_channel=True, manage_channels=True, manage_permissions=True)
                 except Exception as cat_err:
                     logger.warning("make_category_private: could not grant bot access to category '%s': %s", category.name, cat_err)
 
@@ -3005,7 +3036,7 @@ class ActionHandler:
                 # Allow each specified role on the category
                 for role in resolved_roles:
                     try:
-                        await self._merge_channel_permission(category, role, view_channel=True, send_messages=True, read_message_history=True)
+                        await self._merge_channel_permission(category, role, view_channel=True, send_messages=True, read_message_history=True, connect=True, speak=True)
                     except Exception as cat_err:
                         logger.warning("make_category_private: could not allow role '%s' on category: %s", role.name, cat_err)
                 
@@ -3022,6 +3053,19 @@ class ActionHandler:
                     "⚠️ I don't have permission to manage channel permissions. "
                     "Please grant me the **Manage Channels** permission.", delete_after=15
                 )
+            except Exception:
+                pass
+            return False, None
+        except discord.HTTPException as e:
+            if e.status == 429:
+                retry_after = e.retry_after
+                logger.warning(f"make_category_private: Rate limited, retrying after {retry_after} seconds")
+                await asyncio.sleep(retry_after + 0.5)
+                # Retry once for rate limits
+                return await self.action_make_category_private(interaction, params)
+            logger.error(f"make_category_private: HTTP error: {e}", exc_info=True)
+            try:
+                await interaction.channel.send(f"⚠️ Network error making category private: {e}", delete_after=10)
             except Exception:
                 pass
             return False, None
