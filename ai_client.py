@@ -564,6 +564,10 @@ class AIClient:
                 import re
                 summary_text = re.sub(r'^\s*[\{\[]+', '', summary_text)
                 summary_text = re.sub(r'[\}\]]+\s*$', '', summary_text)
+                # Strip summary/response prefixes and quotes
+                summary_text = re.sub(r'^\s*["\']*\s*(?:summary|Summary|response|Response|answer|Answer|result|Result)\s*:?\s*["\']*', '', summary_text, flags=re.IGNORECASE)
+                summary_text = re.sub(r'^\s*["\']+', '', summary_text)
+                summary_text = re.sub(r'["\']+\s*$', '', summary_text)
                 summary_text = summary_text.strip()
             
                 # Process actions silently in background - don't return them to user
@@ -580,9 +584,11 @@ class AIClient:
             clean_msg = re.sub(r'^\s*[\{\[]+', '', ai_msg.strip())
             clean_msg = re.sub(r'[\}\]]+\s*$', '', clean_msg)
             # Strip summary/response prefixes and quotes for simple tasks
-            clean_msg = re.sub(r'^\s*["\']*\s*(?:summary|Summary|response|Response)\s*:\s*["\']*', '', clean_msg, flags=re.IGNORECASE)
-            clean_msg = re.sub(r'^\s*["\']', '', clean_msg)
-            clean_msg = re.sub(r'["\']\s*$', '', clean_msg)
+            clean_msg = re.sub(r'^\s*["\']*\s*(?:summary|Summary|response|Response|answer|Answer|result|Result)\s*:?\s*["\']*', '', clean_msg, flags=re.IGNORECASE)
+            clean_msg = re.sub(r'^\s*["\']+', '', clean_msg)
+            clean_msg = re.sub(r'["\']+\s*$', '', clean_msg)
+            # Remove any remaining JSON-like prefixes
+            clean_msg = re.sub(r'^\s*,\s*', '', clean_msg)
             logger.debug(f"AI message after sanitization: {clean_msg[:500]}")
             return {"summary": clean_msg.strip()}
 
@@ -732,9 +738,9 @@ You MUST ALWAYS respond with a VALID JSON object.
 
 WHEN USER REQUESTS AN ACTION, TASK, CODE CHANGE, OR SOMETHING REQUIRING EXECUTION:
 Include ALL these keys:
-1. "reasoning": (string) Your internal thoughts and plan.
+1. "reasoning": (string) Your internal thoughts, validation checks, and confidence assessment. Explain why actions are safe and will work.
 2. "summary": (string) Your friendly response to the user. MANDATORY IN ALL CASES.
-3. "walkthrough": (string) Detailed step-by-step implementation plan.
+3. "walkthrough": (string) Detailed step-by-step implementation plan with validation at each step.
 4. "actions": (list) A list of action objects. ALWAYS use a list, even for one action.
 5. Each action object: {"name": "action_name", "parameters": {...}}
 
@@ -758,15 +764,20 @@ ACTION-FIRST APPROACH:
 - Create complete, working systems immediately without asking for confirmation on every detail
 
 DEEP THINKING WALKTHROUGH:
-- Be EXTREMELY specific in walkthrough - list every step
-- Example walkthrough: 
+- Be EXTREMELY specific in walkthrough - list every step with validation
+- For each action, think: "Will this work? Do I have permission? Will it conflict?"
+- Example walkthrough:
   "Step 1: Check if #general exists → YES, use it
-   Step 2: Check if #staff exists → NO, create it
-   Step 3: Create role 'VIP' with color #FFD700
-   Step 4: Allow @VIP to send messages in #staff
-   Step 5: Deny @Muted to speak in voice channels
-   Step 6: Send welcome embed to #general"
-- The more detailed, the better! Include channel names, role names, permission changes
+   Step 2: Check if #staff exists → NO, create it with private=true
+   Step 3: Verify bot has 'Manage Channels' permission → YES
+   Step 4: Create role 'VIP' with color #FFD700 and permissions
+   Step 5: Confirm role hierarchy allows assignment → YES
+   Step 6: Allow @VIP to send messages in #staff
+   Step 7: Verify permission change succeeded
+   Step 8: Deny @Muted to speak in voice channels
+   Step 9: Send welcome embed to #general with working buttons"
+- Include validation checks and error handling in walkthrough
+- Think about what could go wrong and how to handle it
 
 MANDATORY IMPLEMENTATION PLAN:
 Before executing ANY action, you MUST first analyze the current server state:
