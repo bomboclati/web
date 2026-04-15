@@ -815,6 +815,200 @@ ACTION_CATALOG = {
         },
         "aliases": ["get_online_users", "list_online_members", "who_is_online"],
         "keywords": ["online", "online users", "who is online", "active members", "extract online", "list online"]
+    },
+    "archive_channel": {
+        "name": "archive_channel",
+        "description": "Archives a channel by making it private and restricting access",
+        "category": "Channel Management",
+        "parameters": {
+            "channel_name": {"type": "string", "required": True, "description": "Channel to archive"},
+            "reason": {"type": "string", "required": False, "description": "Reason for archiving"}
+        },
+        "keywords": ["archive", "archive channel", "close channel"]
+    },
+    "unarchive_channel": {
+        "name": "unarchive_channel",
+        "description": "Unarchives a previously archived channel",
+        "category": "Channel Management",
+        "parameters": {
+            "channel_name": {"type": "string", "required": True, "description": "Channel to unarchive"}
+        },
+        "keywords": ["unarchive", "unarchive channel", "open channel"]
+    },
+    "create_forum_channel": {
+        "name": "create_forum_channel",
+        "description": "Creates a forum channel for threaded discussions",
+        "category": "Channel Management",
+        "parameters": {
+            "name": {"type": "string", "required": True, "description": "Channel name"},
+            "category": {"type": "string", "required": False, "description": "Category name"},
+            "topic": {"type": "string", "required": False, "description": "Channel topic"}
+        },
+        "keywords": ["forum", "forum channel", "create forum"]
+    },
+    "create_stage_channel": {
+        "name": "create_stage_channel",
+        "description": "Creates a stage channel for live events",
+        "category": "Channel Management",
+        "parameters": {
+            "name": {"type": "string", "required": True, "description": "Channel name"},
+            "category": {"type": "string", "required": False, "description": "Category name"}
+        },
+        "keywords": ["stage", "stage channel", "live event", "create stage"]
+    },
+    "mention_user": {
+        "name": "mention_user",
+        "description": "Mentions a user in a channel",
+        "category": "User Interactions",
+        "parameters": {
+            "user_id": {"type": "integer", "required": False, "description": "User ID"},
+            "username": {"type": "string", "required": False, "description": "Username"},
+            "channel": {"type": "string", "required": False, "description": "Channel name"},
+            "message": {"type": "string", "required": False, "description": "Optional message to send with mention"}
+        },
+        "keywords": ["mention", "tag user", "ping user", "notify user"]
+    },
+    "dm_all_users_with_role": {
+        "name": "dm_all_users_with_role",
+        "description": "Sends a DM to all users with a specific role",
+        "category": "User Interactions",
+        "parameters": {
+            "role_name": {"type": "string", "required": True, "description": "Role name"},
+            "message": {"type": "string", "required": True, "description": "Message to send"}
+        },
+        "keywords": ["dm role", "message role", "notify role"]
+    },
+    "get_user_info": {
+        "name": "get_user_info",
+        "description": "Gets detailed information about a user",
+        "category": "Data Queries",
+        "parameters": {
+            "user_id": {"type": "integer", "required": False, "description": "User ID"},
+            "username": {"type": "string", "required": False, "description": "Username"}
+        },
+        "keywords": ["user info", "user details", "member info"]
+    },
+    "get_user_permissions": {
+        "name": "get_user_permissions",
+        "description": "Gets the permissions of a user in a channel or server-wide",
+        "category": "Data Queries",
+        "parameters": {
+            "user_id": {"type": "integer", "required": False, "description": "User ID"},
+            "username": {"type": "string", "required": False, "description": "Username"},
+            "channel": {"type": "string", "required": False, "description": "Channel name (optional)"}
+        },
+        "keywords": ["user permissions", "permissions", "user rights"]
+    },
+    "query_user_roles": {
+        "name": "query_user_roles",
+        "description": "Lists all roles of a specific user",
+        "category": "Data Queries",
+        "parameters": {
+            "user_id": {"type": "integer", "required": False, "description": "User ID"},
+            "username": {"type": "string", "required": False, "description": "Username"}
+        },
+        "keywords": ["user roles", "member roles", "roles of user"]
+    },
+    "query_channel_members": {
+        "name": "query_channel_members",
+        "description": "Lists members who can see a specific channel",
+        "category": "Data Queries",
+        "parameters": {
+            "channel_name": {"type": "string", "required": True, "description": "Channel name"}
+        },
+        "keywords": ["channel members", "who can see", "channel access"]
+    },
+    "query_banned_users": {
+        "name": "query_banned_users",
+        "description": "Lists all banned users in the server",
+        "category": "Data Queries",
+        "parameters": {},
+        "keywords": ["banned users", "bans", "banned list"]
+    },
+    "query_server_stats": {
+        "name": "query_server_stats",
+        "description": "Gets server statistics (member count, channel count, etc.)",
+        "category": "Data Queries",
+        "parameters": {},
+        "keywords": ["server stats", "statistics", "server info"]
+    },
+    "purge_messages": {
+        "name": "purge_messages",
+        "description": "Purges messages from a channel based on criteria",
+        "category": "Administrative Tasks",
+        "parameters": {
+            "channel": {"type": "string", "required": False, "description": "Channel name"},
+            "amount": {"type": "integer", "required": False, "description": "Number of messages to purge", "default": 10},
+            "user_id": {"type": "integer", "required": False, "description": "Purge messages from specific user"},
+            "contains": {"type": "string", "required": False, "description": "Purge messages containing text"}
+        },
+        "keywords": ["purge", "clean messages", "delete messages", "clear"]
+    },
+    "change_server_name": {
+        "name": "change_server_name",
+        "description": "Changes the server's name",
+        "category": "Administrative Tasks",
+        "parameters": {
+            "name": {"type": "string", "required": True, "description": "New server name"}
+        },
+        "keywords": ["server name", "change name", "rename server"]
+    },
+    "change_server_icon": {
+        "name": "change_server_icon",
+        "description": "Changes the server's icon",
+        "category": "Administrative Tasks",
+        "parameters": {
+            "icon_url": {"type": "string", "required": True, "description": "URL of new icon"}
+        },
+        "keywords": ["server icon", "change icon", "server avatar"]
+    },
+    "enable_slowmode": {
+        "name": "enable_slowmode",
+        "description": "Enables slowmode in a channel",
+        "category": "Administrative Tasks",
+        "parameters": {
+            "channel": {"type": "string", "required": False, "description": "Channel name"},
+            "delay": {"type": "integer", "required": False, "description": "Delay in seconds", "default": 5}
+        },
+        "keywords": ["enable slowmode", "slowmode on", "rate limit"]
+    },
+    "disable_slowmode": {
+        "name": "disable_slowmode",
+        "description": "Disables slowmode in a channel",
+        "category": "Administrative Tasks",
+        "parameters": {
+            "channel": {"type": "string", "required": False, "description": "Channel name"}
+        },
+        "keywords": ["disable slowmode", "slowmode off", "remove rate limit"]
+    },
+    "create_webhook": {
+        "name": "create_webhook",
+        "description": "Creates a webhook in a channel",
+        "category": "Administrative Tasks",
+        "parameters": {
+            "channel": {"type": "string", "required": False, "description": "Channel name"},
+            "name": {"type": "string", "required": False, "description": "Webhook name", "default": "Webhook"}
+        },
+        "keywords": ["webhook", "create webhook", "webhook create"]
+    },
+    "delete_webhook": {
+        "name": "delete_webhook",
+        "description": "Deletes a webhook",
+        "category": "Administrative Tasks",
+        "parameters": {
+            "webhook_id": {"type": "string", "required": True, "description": "Webhook ID"}
+        },
+        "keywords": ["delete webhook", "remove webhook"]
+    },
+    "set_channel_position": {
+        "name": "set_channel_position",
+        "description": "Sets the position of a channel in the channel list",
+        "category": "Channel Management",
+        "parameters": {
+            "channel_name": {"type": "string", "required": True, "description": "Channel name"},
+            "position": {"type": "integer", "required": True, "description": "New position"}
+        },
+        "keywords": ["channel position", "move channel", "reorder channel"]
     }
 }
 
@@ -824,9 +1018,10 @@ CATEGORY_GROUPS = {
                            "delete_channel", "edit_channel", "edit_channel_name", "move_channel", "clone_channel",
                            "set_topic", "slowmode", "lock_channel", "unlock_channel", "make_channel_private",
                            "make_category_private", "edit_channel_bitrate", "edit_channel_user_limit",
-                           "follow_announcement_channel", "create_thread"],
+                           "follow_announcement_channel", "create_thread", "archive_channel", "unarchive_channel",
+                           "create_forum_channel", "create_stage_channel", "set_channel_position"],
     "Role Management": ["create_role", "delete_role", "edit_role", "edit_role_name", "change_role_color",
-                       "add_role", "assign_role", "remove_role"],
+                        "add_role", "assign_role", "remove_role"],
     "Messaging": ["send_message", "send_embed", "send_dm", "reply_message", "announce", "poll",
                   "post_documentation", "create_thread", "pin_message", "unpin_message", "add_reaction",
                   "remove_reaction", "delete_message", "bulk_delete_messages"],
@@ -846,7 +1041,12 @@ CATEGORY_GROUPS = {
                      "deny_all_channels_for_role", "deny_category_for_role", "edit_channel_permissions"],
     "Events": ["create_scheduled_event"],
     "Meta": ["analyze_server_state"],
-    "Server Query": ["extract_online_users", "query_server_info", "query_members", "query_channels", "query_roles"]
+    "Server Query": ["extract_online_users", "query_server_info", "query_members", "query_channels", "query_roles",
+                     "query_user_roles", "query_channel_members", "query_banned_users", "query_server_stats"],
+    "User Interactions": ["mention_user", "dm_all_users_with_role"],
+    "Data Queries": ["get_user_info", "get_user_permissions"],
+    "Administrative Tasks": ["purge_messages", "change_server_name", "change_server_icon", "enable_slowmode",
+                             "disable_slowmode", "create_webhook", "delete_webhook"]
 }
 
 
