@@ -2931,7 +2931,7 @@ class ActionHandler:
             logger.error(f"make_category_private: bot lacks Manage Channels permission in guild {guild.id}")
             await interaction.followup.send(
                 "⚠️ I don't have permission to manage channel permissions. "
-                "Please grant me the **Manage Channels** permission.", delete_after=15
+                "Please grant me the **Manage Channels** permission."
             )
             return False, None
         
@@ -2943,7 +2943,7 @@ class ActionHandler:
             
             if highest_user_role.position >= highest_bot_role.position and not user_member.guild_permissions.administrator:
                 await interaction.followup.send(
-                    "⚠️ Your highest role must be below the bot's highest role to modify channel permissions.", delete_after=15
+                    "⚠️ Your highest role must be below the bot's highest role to modify channel permissions."
                 )
                 return False, None
 
@@ -2963,12 +2963,12 @@ class ActionHandler:
                 logger.error(f"make_category_private: '{category_name}' not found. Available: {[c.name for c in guild.categories]}")
                 await interaction.followup.send(
                     f"⚠️ Could not find category **{category_name}**. "
-                    f"Available categories: {available}", delete_after=15
+                    f"Available categories: {available}"
                 )
                 return False, None
             categories_to_process = [category]
         else:
-            await interaction.followup.send("⚠️ No category name specified for make_category_private. Use 'all' to process all categories.", delete_after=10)
+            await interaction.followup.send("⚠️ No category name specified for make_category_private. Use 'all' to process all categories.")
             return False, None
 
         try:
@@ -3071,8 +3071,7 @@ class ActionHandler:
                         logger.critical(f"ROLLBACK FAILED for category {category.name}: {rollback_error}", exc_info=True)
                     
                     await interaction.followup.send(
-                        f"⚠️ Failed to make category **{category.name}** private. Changes have been rolled back.\nError: {str(category_error)}",
-                        delete_after=20
+                        f"⚠️ Failed to make category **{category.name}** private. Changes have been rolled back.\nError: {str(category_error)}"
                     )
                     return False, None
 
@@ -3086,19 +3085,18 @@ class ActionHandler:
         except discord.Forbidden as forbidden_err:
             logger.error(f"make_category_private: bot lacks permissions: {forbidden_err}")
             await interaction.followup.send(
-                "⚠️ I encountered permission issues while processing. Ensure I have Manage Channels and Manage Permissions.",
-                delete_after=15
+                "⚠️ I encountered permission issues while processing. Ensure I have Manage Channels and Manage Permissions."
             )
             return False, None
         except Exception as e:
             logger.error(f"make_category_private: unexpected error: {e}", exc_info=True)
             try:
-                await interaction.followup.send(f"⚠️ An unexpected error occurred: {str(e)}", delete_after=15)
+                await interaction.followup.send(f"⚠️ An unexpected error occurred: {str(e)}")
             except Exception:
                 pass
             return False, None
             try:
-                await interaction.channel.send(f"⚠️ Error making category private: {e}", delete_after=10)
+                await interaction.channel.send(f"⚠️ Error making category private: {e}")
             except Exception:
                 pass
             return False, None
