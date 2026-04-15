@@ -2670,7 +2670,7 @@ class ActionHandler:
             role = discord.utils.find(lambda r: r.name.lower() == role_name.lower(), guild.roles)
         return role
 
-    def _resolve_category(self, guild, category_input: str):
+    async def _resolve_category(self, guild, category_input: str):
         """Resolve a category by name, ID, or mention."""
         if not category_input:
             return None
@@ -2682,6 +2682,20 @@ class ActionHandler:
         if mention_match:
             category_id = int(mention_match.group(1))
             category = discord.utils.get(guild.categories, id=category_id)
+            if not category:
+                try:
+                    fetched = await guild.fetch_channel(category_id)
+                    if isinstance(fetched, discord.CategoryChannel):
+                        category = fetched
+                        logger.debug(f"Fetched category from API: {category.name} (ID: {category_id})")
+                    else:
+                        logger.debug(f"Fetched channel is not a category: {type(fetched).__name__} (ID: {category_id})")
+                except discord.NotFound:
+                    logger.debug(f"Category not found via API: {category_id}")
+                except discord.Forbidden:
+                    logger.debug(f"Bot lacks permission to fetch category: {category_id}")
+                except Exception as e:
+                    logger.debug(f"Error fetching category {category_id}: {e}")
             logger.debug(f"Resolved mention to category: {category.name if category else 'None'} (ID: {category_id})")
             return category
 
@@ -2689,6 +2703,20 @@ class ActionHandler:
         try:
             category_id = int(category_input)
             category = discord.utils.get(guild.categories, id=category_id)
+            if not category:
+                try:
+                    fetched = await guild.fetch_channel(category_id)
+                    if isinstance(fetched, discord.CategoryChannel):
+                        category = fetched
+                        logger.debug(f"Fetched category from API: {category.name} (ID: {category_id})")
+                    else:
+                        logger.debug(f"Fetched channel is not a category: {type(fetched).__name__} (ID: {category_id})")
+                except discord.NotFound:
+                    logger.debug(f"Category not found via API: {category_id}")
+                except discord.Forbidden:
+                    logger.debug(f"Bot lacks permission to fetch category: {category_id}")
+                except Exception as e:
+                    logger.debug(f"Error fetching category {category_id}: {e}")
             logger.debug(f"Resolved ID to category: {category.name if category else 'None'} (ID: {category_id})")
             return category
         except ValueError:
@@ -2958,8 +2986,20 @@ class ActionHandler:
         bot_member = guild.get_member(interaction.client.user.id)
         bot_guild_perms = bot_member.guild_permissions if bot_member else None
 
-        # Debug: Log available categories
-        logger.info(f"make_category_private: Bot can see {len(guild.categories)} categories in guild {guild.id}: {[f'{c.name} ({c.id})' for c in guild.categories]}")
+        # Fetch all channels to ensure cache is up to date
+        try:
+            await guild.fetch_channels()
+        except Exception as e:
+            logger.warning(f"Failed to fetch channels for guild {guild.id}: {e}")
+
+        # Debug: Log detailed info about all fetched categories
+        category_details = []
+        for cat in guild.categories:
+            perms = cat.permissions_for(bot_member) if bot_member else None
+            visibility = "visible" if perms and perms.view_channel else "hidden"
+            manage_perms = "yes" if perms and perms.manage_channels else "no"
+            category_details.append(f"{cat.name} (ID: {cat.id}, Type: {type(cat).__name__}, Visibility: {visibility}, Manage Channels: {manage_perms})")
+        logger.info(f"make_category_private: Bot can see {len(guild.categories)} categories in guild {guild.id}: {category_details}")
 
         # Fix 9: Correct permission check - Manage Channels required, not Manage Permissions
         if not bot_guild_perms or not bot_guild_perms.manage_channels:
@@ -2989,7 +3029,7 @@ class ActionHandler:
             categories_to_process = list(guild.categories)
         elif category_name:
             # Resolve category by name, ID, or mention
-            category = self._resolve_category(guild, category_name)
+            category = await self._resolve_category(guild, category_name)
             if not category:
                 available = ", ".join(f"**{c.name}** (ID: {c.id})" for c in guild.categories) or "none found"
                 logger.error(f"make_category_private: '{category_name}' not found. Available categories: {[f'{c.name} ({c.id})' for c in guild.categories]}")
