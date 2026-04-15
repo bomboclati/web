@@ -368,6 +368,11 @@ class AIClient:
 
     async def _chat_internal(self, guild_id: int, user_id: int, user_input: str, system_prompt: str, api_key: str, provider: str, enhanced_input: str = None) -> Dict[str, Any]:
         """Internal execution for a single AI provider request."""
+        # Validate guild context
+        if guild_id is None:
+            logger.warning("Guild ID is None, falling back to global context")
+            guild_id = 0
+            
         # Get recent history
         history_depth = int(os.getenv("MEMORY_DEPTH", 20))
         history = await history_manager.get_enhanced_context(guild_id, user_id, depth=history_depth)
