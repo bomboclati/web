@@ -576,12 +576,14 @@ class AIClient:
             logger.debug(f"Response was not pure JSON or parse failed: {e}")
             # Sanitize even raw text responses
             import re
+            logger.debug(f"AI raw message before sanitization: {ai_msg[:500]}")
             clean_msg = re.sub(r'^\s*[\{\[]+', '', ai_msg.strip())
             clean_msg = re.sub(r'[\}\]]+\s*$', '', clean_msg)
             # Strip summary/response prefixes and quotes for simple tasks
-            clean_msg = re.sub(r'^(?:summary|Summary|response|Response):\s*', '', clean_msg, flags=re.IGNORECASE)
+            clean_msg = re.sub(r'^\s*["\']*\s*(?:summary|Summary|response|Response)\s*:\s*["\']*', '', clean_msg, flags=re.IGNORECASE)
             clean_msg = re.sub(r'^\s*["\']', '', clean_msg)
             clean_msg = re.sub(r'["\']\s*$', '', clean_msg)
+            logger.debug(f"AI message after sanitization: {clean_msg[:500]}")
             return {"summary": clean_msg.strip()}
 
 
