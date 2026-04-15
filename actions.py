@@ -1031,7 +1031,7 @@ class ActionHandler:
         try:
             await member.add_roles(role, reason=f"Assigned by {interaction.user.display_name}")
             logger.info("Assigned role %s to %s", role.name, member.display_name)
-            return True, {"action": "remove_role", "user_id": member.id, "role_id": role.id}
+            return True, {"action": "remove_role", "user_id": member.id, "role_id": role.id, "role_name": role.name}
         except discord.Forbidden:
             logger.error("assign_role: Forbidden - bot lacks permission to assign role %s to %s", role.name, member.display_name)
             return False, None
