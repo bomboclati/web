@@ -2919,8 +2919,9 @@ class ActionHandler:
         if isinstance(allowed_roles, str):
             allowed_roles = [allowed_roles]
 
-        # Fix 7: Defer interaction immediately before any work
-        await interaction.response.defer(ephemeral=True)
+        # Fix 7: Defer interaction immediately before any work, if not already responded
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
 
         bot_member = guild.get_member(interaction.client.user.id)
         bot_guild_perms = bot_member.guild_permissions if bot_member else None
