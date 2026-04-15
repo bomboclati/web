@@ -2,6 +2,7 @@ import discord
 import json
 import asyncio
 import time
+import re
 from datetime import datetime, timezone
 import datetime as dt
 from typing import List, Dict, Any, Tuple, Optional
@@ -2669,6 +2670,37 @@ class ActionHandler:
             role = discord.utils.find(lambda r: r.name.lower() == role_name.lower(), guild.roles)
         return role
 
+    def _resolve_category(self, guild, category_input: str):
+        """Resolve a category by name, ID, or mention."""
+        if not category_input:
+            return None
+
+        logger.debug(f"Resolving category: '{category_input}' in guild {guild.id}")
+
+        # Check if it's a mention like <#1493088568502128724>
+        mention_match = re.match(r'<#(\d+)>', category_input)
+        if mention_match:
+            category_id = int(mention_match.group(1))
+            category = discord.utils.get(guild.categories, id=category_id)
+            logger.debug(f"Resolved mention to category: {category.name if category else 'None'} (ID: {category_id})")
+            return category
+
+        # Try to parse as ID directly
+        try:
+            category_id = int(category_input)
+            category = discord.utils.get(guild.categories, id=category_id)
+            logger.debug(f"Resolved ID to category: {category.name if category else 'None'} (ID: {category_id})")
+            return category
+        except ValueError:
+            pass
+
+        # Try as name (case-insensitive)
+        category = discord.utils.get(guild.categories, name=category_input)
+        if not category:
+            category = discord.utils.find(lambda c: c.name.lower() == category_input.lower(), guild.categories)
+        logger.debug(f"Resolved name to category: {category.name if category else 'None'}")
+        return category
+
     async def _merge_channel_permission(self, channel, role, **kwargs):
         """Merge permission changes into existing overwrites instead of replacing them."""
         existing = channel.overwrites_for(role)
@@ -2926,6 +2958,9 @@ class ActionHandler:
         bot_member = guild.get_member(interaction.client.user.id)
         bot_guild_perms = bot_member.guild_permissions if bot_member else None
 
+        # Debug: Log available categories
+        logger.info(f"make_category_private: Bot can see {len(guild.categories)} categories in guild {guild.id}: {[f'{c.name} ({c.id})' for c in guild.categories]}")
+
         # Fix 9: Correct permission check - Manage Channels required, not Manage Permissions
         if not bot_guild_perms or not bot_guild_perms.manage_channels:
             logger.error(f"make_category_private: bot lacks Manage Channels permission in guild {guild.id}")
@@ -2953,14 +2988,11 @@ class ActionHandler:
         if category_name and category_name.lower() == "all":
             categories_to_process = list(guild.categories)
         elif category_name:
-            # Case-insensitive category lookup
-            category = discord.utils.get(guild.categories, name=category_name)
+            # Resolve category by name, ID, or mention
+            category = self._resolve_category(guild, category_name)
             if not category:
-                lower = category_name.lower()
-                category = next((c for c in guild.categories if c.name.lower() == lower), None)
-            if not category:
-                available = ", ".join(f"**{c.name}**" for c in guild.categories) or "none found"
-                logger.error(f"make_category_private: '{category_name}' not found. Available: {[c.name for c in guild.categories]}")
+                available = ", ".join(f"**{c.name}** (ID: {c.id})" for c in guild.categories) or "none found"
+                logger.error(f"make_category_private: '{category_name}' not found. Available categories: {[f'{c.name} ({c.id})' for c in guild.categories]}")
                 await interaction.followup.send(
                     f"⚠️ Could not find category **{category_name}**. "
                     f"Available categories: {available}"

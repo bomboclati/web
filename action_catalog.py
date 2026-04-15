@@ -171,8 +171,8 @@ ACTION_CATALOG = {
         "description": "Makes a category and all its channels private",
         "category": "Channel Management",
         "parameters": {
-            "category": {"type": "string", "required": True, "description": "Category name"},
-            "category_name": {"type": "string", "required": False, "description": "Category name"},
+            "category": {"type": "string", "required": True, "description": "Category name, ID, or mention (e.g., 'Staff Area', '123456789', or '<#123456789>')"},
+            "category_name": {"type": "string", "required": False, "description": "Category name, ID, or mention"},
             "allowed_roles": {"type": "array", "required": False, "description": "Roles to allow"}
         },
         "keywords": ["private", "category private", "restrict category"]
