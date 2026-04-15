@@ -1417,7 +1417,7 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
             "in the action parameters. Do NOT use their username string."
         )
 
-    res = await bot.ai.safe_chat(guild_id, user_id, enriched_input, SYSTEM_PROMPT + server_context + memory_context + mention_context)
+    res = await self.ai.safe_chat(guild_id, user_id, enriched_input, SYSTEM_PROMPT + server_context + memory_context + mention_context)
 
     
     reasoning = res.get("reasoning", "Thinking...")
@@ -1443,7 +1443,7 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
     question = res.get("question", "")
     
     if needs_input and question:
-        bot.ai_sessions[user_id] = {
+        self.ai_sessions[user_id] = {
             "messages": [{"role": "assistant", "content": json.dumps(res)}],
             "last_interaction": interaction,
             "original_request": user_input,
@@ -1471,8 +1471,8 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
             async def on_submit_wrapper(modal_it: discord.Interaction):
                 answer = modal.answer.value
                 
-                if user_id in bot.ai_sessions:
-                    del bot.ai_sessions[user_id]
+                if user_id in self.ai_sessions:
+                    del self.ai_sessions[user_id]
                 
                 await modal_it.response.send_message("[AI] Processing your answer...", ephemeral=False)
                 await _process_ai_turn(bot, modal_it, f"[User answered your question]: {answer}", thinking_msg=None)
@@ -1483,8 +1483,8 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
             if it.user.id != user_id:
                 return await it.response.send_message("Only the user who started this can skip.", ephemeral=False)
             
-            if user_id in bot.ai_sessions:
-                del bot.ai_sessions[user_id]
+            if user_id in self.ai_sessions:
+                del self.ai_sessions[user_id]
             
             await it.response.edit_message(content="[AI] Proceeding with defaults...", embed=None, view=None)
             await _process_ai_turn(bot, it, "[User said to use defaults]", thinking_msg=None)
