@@ -300,7 +300,7 @@ Respond with JSON only:
             for lang, text in translations.items():
                 embed.add_field(name=lang.title(), value=text, inline=False)
             
-            return await message.channel.send(embed=embed)
+            return await message.channel.send(embed=embed, suppress_embeds=True)
             
         except Exception as e:
             logger.error(f"Translation error: {e}")
@@ -324,15 +324,7 @@ Respond with JSON only:
                                 system_prompt: str, provider: AIProvider) -> dict:
         """Multi-AI Provider System - Chat with a specific AI provider."""
         try:
-            if provider == AIProvider.CLAUDE:
-                # Use Claude via existing AI client
-                return await self.bot.ai.chat(guild_id, user_id, user_input, system_prompt)
-            elif provider == AIProvider.GPT4:
-                return await self.bot.ai.chat(guild_id, user_id, user_input, system_prompt)
-            elif provider == AIProvider.DEEPSEEK:
-                return await self.bot.ai.chat(guild_id, user_id, user_input, system_prompt)
-            else:
-                return await self.bot.ai.chat(guild_id, user_id, user_input, system_prompt)
+            return await self.bot.ai.chat(guild_id, user_id, user_input, system_prompt)
         except Exception as e:
             logger.error(f"AI provider error: {e}")
             return {"summary": "Sorry, AI service temporarily unavailable."}

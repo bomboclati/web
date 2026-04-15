@@ -2243,6 +2243,80 @@ async def on_raw_reaction_add(payload):
     except Exception as e:
         logger.warning("Reaction add error: %s", e)
 
+@bot.event
+async def on_command_error(ctx, error):
+    """Global command error handler"""
+    import traceback
+    from discord.ext import commands
+    
+    if hasattr(ctx.command, 'on_error'):
+        return
+    
+    error = getattr(error, 'original', error)
+    
+    if isinstance(error, commands.CommandNotFound):
+        await ctx.send("❌ Command not found. Use `!help` to see available commands.", suppress_embeds=True)
+        return
+    
+    if isinstance(error, commands.MissingPermissions):
+        perms = ', '.join(error.missing_permissions)
+        await ctx.send(f"❌ Missing permissions: `{perms}`", suppress_embeds=True)
+        return
+    
+    if isinstance(error, commands.BotMissingPermissions):
+        perms = ', '.join(error.missing_permissions)
+        await ctx.send(f"❌ Bot is missing required permissions: `{perms}`", suppress_embeds=True)
+        return
+    
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(f"❌ Missing required argument: `{error.param.name}`", suppress_embeds=True)
+        return
+    
+    if isinstance(error, commands.BadArgument):
+        await ctx.send(f"❌ Invalid argument: {str(error)}", suppress_embeds=True)
+        return
+    
+    if isinstance(error, commands.CommandOnCooldown):
+        await ctx.send(f"❌ Command is on cooldown. Wait {int(error.retry_after)}s.", suppress_embeds=True)
+        return
+    
+    if isinstance(error, discord.NotFound):
+        await ctx.send("❌ Requested resource was not found.", suppress_embeds=True)
+        return
+    
+    if isinstance(error, discord.Forbidden):
+        await ctx.send("❌ Bot lacks permission to perform this action.", suppress_embeds=True)
+        return
+    
+    if isinstance(error, discord.HTTPException) and error.status == 429:
+        retry_after = int(error.response.headers.get('Retry-After', 5))
+        await ctx.send(f"⚠️  Rate limited. Try again in {retry_after}s.", suppress_embeds=True)
+        return
+    
+    logger.error(f"Unhandled command error: {type(error).__name__}: {error}")
+    logger.debug(traceback.format_exc())
+    await ctx.send("❌ An unexpected error occurred. This has been logged.", suppress_embeds=True)
+
+
+async def safe_api_call(coro, retries=3, backoff=1.5):
+    """Safe Discord API call with retries and rate limit handling"""
+    import asyncio
+    for attempt in range(retries):
+        try:
+            return await coro
+        except discord.HTTPException as e:
+            if e.status == 429:
+                retry_after = int(e.response.headers.get('Retry-After', backoff * (attempt + 1)))
+                await asyncio.sleep(retry_after)
+                continue
+            raise
+        except (discord.ConnectionClosed, asyncio.TimeoutError):
+            if attempt < retries - 1:
+                await asyncio.sleep(backoff * (attempt + 1))
+                continue
+            raise
+
+
 # Main Execution
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
