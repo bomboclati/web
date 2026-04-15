@@ -2675,21 +2675,41 @@ class ActionHandler:
         if not category_input:
             return None
 
-        logger.debug(f"Resolving category: '{category_input}' in guild {guild.id}")
+        logger.info(f"Resolving category: '{category_input}' in guild {guild.id}")
 
         # Check if it's a mention like <#1493088568502128724>
         mention_match = re.match(r'<#(\d+)>', category_input)
         if mention_match:
             category_id = int(mention_match.group(1))
             category = discord.utils.get(guild.categories, id=category_id)
-            logger.debug(f"Resolved mention to category: {category.name if category else 'None'} (ID: {category_id})")
+            logger.info(f"Resolved mention to category: {category.name if category else 'None'} (ID: {category_id})")
+            if not category:
+                # Check if it exists in other guilds the bot is in
+                for other_guild in self.bot.guilds:
+                    if other_guild.id != guild.id:
+                        other_cat = discord.utils.get(other_guild.categories, id=category_id)
+                        if other_cat:
+                            logger.error(f"Category ID {category_id} found in different guild {other_guild.id} ({other_guild.name}), not in current guild {guild.id}")
+                            break
+                else:
+                    logger.warning(f"Category ID {category_id} not found in any guild. It may be deleted or the bot lacks VIEW_CHANNEL permission on it.")
             return category
 
         # Try to parse as ID directly
         try:
             category_id = int(category_input)
             category = discord.utils.get(guild.categories, id=category_id)
-            logger.debug(f"Resolved ID to category: {category.name if category else 'None'} (ID: {category_id})")
+            logger.info(f"Resolved ID to category: {category.name if category else 'None'} (ID: {category_id})")
+            if not category:
+                # Check other guilds
+                for other_guild in self.bot.guilds:
+                    if other_guild.id != guild.id:
+                        other_cat = discord.utils.get(other_guild.categories, id=category_id)
+                        if other_cat:
+                            logger.error(f"Category ID {category_id} found in different guild {other_guild.id} ({other_guild.name}), not in current guild {guild.id}")
+                            break
+                else:
+                    logger.warning(f"Category ID {category_id} not found in any guild. It may be deleted or the bot lacks VIEW_CHANNEL permission on it.")
             return category
         except ValueError:
             pass
@@ -2698,7 +2718,7 @@ class ActionHandler:
         category = discord.utils.get(guild.categories, name=category_input)
         if not category:
             category = discord.utils.find(lambda c: c.name.lower() == category_input.lower(), guild.categories)
-        logger.debug(f"Resolved name to category: {category.name if category else 'None'}")
+        logger.info(f"Resolved name to category: {category.name if category else 'None'}")
         return category
 
     async def _merge_channel_permission(self, channel, role, **kwargs):
@@ -2958,8 +2978,24 @@ class ActionHandler:
         bot_member = guild.get_member(interaction.client.user.id)
         bot_guild_perms = bot_member.guild_permissions if bot_member else None
 
+        # Ensure comprehensive channel fetching for full visibility
+        try:
+            await guild.fetch_channels()
+            logger.info(f"make_category_private: Fetched channels for guild {guild.id}")
+        except Exception as e:
+            logger.warning(f"make_category_private: Failed to fetch channels: {e}")
+
         # Debug: Log available categories
         logger.info(f"make_category_private: Bot can see {len(guild.categories)} categories in guild {guild.id}: {[f'{c.name} ({c.id})' for c in guild.categories]}")
+
+        # Log all channels for diagnostics
+        all_channels = [c for c in guild.channels if c.type == discord.ChannelType.category]
+        logger.info(f"make_category_private: All categories in guild {guild.id}: {[f'{c.name} ({c.id})' for c in all_channels]}")
+
+        # Check permissions on categories
+        for cat in all_channels:
+            bot_perms = cat.permissions_for(bot_member)
+            logger.debug(f"Category '{cat.name}' ({cat.id}): VIEW_CHANNEL={bot_perms.view_channel}, MANAGE_CHANNELS={bot_perms.manage_channels}")
 
         # Fix 9: Correct permission check - Manage Channels required, not Manage Permissions
         if not bot_guild_perms or not bot_guild_perms.manage_channels:
@@ -2993,10 +3029,21 @@ class ActionHandler:
             if not category:
                 available = ", ".join(f"**{c.name}** (ID: {c.id})" for c in guild.categories) or "none found"
                 logger.error(f"make_category_private: '{category_name}' not found. Available categories: {[f'{c.name} ({c.id})' for c in guild.categories]}")
-                await interaction.followup.send(
-                    f"⚠️ Could not find category **{category_name}**. "
-                    f"Available categories: {available}"
+
+                # Provide detailed diagnostics
+                diagnostic_msg = (
+                    f"⚠️ Could not find category **{category_name}** in this server.\n"
+                    f"Available categories: {available}\n\n"
+                    "**Possible issues:**\n"
+                    "• The category ID may be from a different server\n"
+                    "• The category may be private and the bot lacks VIEW_CHANNEL permission\n"
+                    "• The category may have been deleted\n\n"
+                    "**To resolve:**\n"
+                    "• Ensure you're using the correct category ID/name from this server\n"
+                    "• If the category is private, temporarily grant the bot VIEW_CHANNEL permission on it\n"
+                    "• Check the bot logs for more details"
                 )
+                await interaction.followup.send(diagnostic_msg)
                 return False, None
             categories_to_process = [category]
         else:
