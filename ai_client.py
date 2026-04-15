@@ -818,6 +818,7 @@ Use: {"name": "deny_all_channels_for_role", "parameters": {"role_name": "Unverif
 CRITICAL - USE THESE EXACT ACTIONS FOR PRIVACY:
 - make_channel_private = hides channel from @everyone, allows specific roles
   {"name": "make_channel_private", "parameters": {"channel": "CHANNEL_NAME", "allowed_roles": ["Role1", "Role2"]}}
+  {"name": "make_channel_private", "parameters": {"channels": ["channel1", "channel2"], "allowed_roles": ["Role1", "Role2"]}}
 - make_category_private = hides category AND all child channels from @everyone
   {"name": "make_category_private", "parameters": {"category": "CATEGORY_NAME", "allowed_roles": ["Role1", "Role2"]}}
 - create_channel with private = creates a new hidden channel
