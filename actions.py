@@ -5,7 +5,7 @@ import time
 import re
 from datetime import datetime, timezone
 import datetime as dt
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, Union
 from data_manager import dm
 from logger import logger
 from utils.deduplicator import deduplicator
@@ -2929,8 +2929,15 @@ class ActionHandler:
 
         return await self._make_single_channel_private(guild, channel_name, allowed_roles)
 
-    async def _make_single_channel_private(self, guild, channel_name: str, allowed_roles: List[str]) -> Tuple[bool, Optional[Dict]]:
+    async def _make_single_channel_private(self, guild, channel_name: Union[str, Dict[str, Any]], allowed_roles: List[str]) -> Tuple[bool, Optional[Dict]]:
         """Helper method to make a single channel private."""
+        # Handle dict input from query_channels
+        if isinstance(channel_name, dict):
+            channel_name = channel_name.get('name') or str(channel_name.get('id', ''))
+            if not channel_name:
+                logger.error(f"make_channel_private: Invalid channel dict provided: no 'name' or 'id' field")
+                return False, None
+
         # First, try to lookup by ID if the input looks like an ID
         channel = None
         try:
