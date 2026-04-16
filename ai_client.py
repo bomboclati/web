@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception, retry_if_not_exception_type
 from history_manager import history_manager
 from vector_memory import vector_memory
+from actions import StrictOutputConstraints
 
 logger = logging.getLogger(__name__)
 
@@ -525,15 +526,15 @@ class AIClient:
         # Try to parse JSON from AI message
         try:
             res_json = self._extract_json(ai_msg)
-            
-            # Handle Web Search requested by AI
+
+            # Handle Web Search requested by AI (legacy support)
             if res_json.get("action") == "web_search":
                 query = res_json.get("parameters", {}).get("query")
                 if query:
                     search_results = await self.get_search_results(query)
                     messages.append({"role": "assistant", "content": ai_msg})
                     messages.append({"role": "user", "content": f"Web Search Results for '{query}':\n{search_results}"})
-                    
+
                     payload["messages"] = messages
                     async with session.post(provider_url, json=payload, allow_redirects=False) as search_resp:
                         if search_resp.status == 200:
@@ -542,55 +543,65 @@ class AIClient:
                             search_text = await search_resp.text()
                             logger.error(f"AI Search Retry Error ({search_resp.status}): {search_text}")
                             raise Exception(f"AI Search API Error ({search_resp.status})")
-            
-            # Final validation and sanitization
-            if self._validate_json_response(res_json):
-                # Remove optional fields if empty/None
-                if res_json.get("reasoning") in [None, "", "Raw text response", "Standard response"]:
-                    del res_json["reasoning"]
-                if res_json.get("walkthrough") in [None, "", ""]:
-                    del res_json["walkthrough"]
-                if res_json.get("actions") in [None, [], []]:
-                    del res_json["actions"]
-                
-                # Double-serialize to ensure proper escaping
-                serialized = json.dumps(res_json, ensure_ascii=False)
-                return json.loads(serialized)
-            else:
-                # Always ensure summary is clean text - NEVER return raw JSON structure
-                summary_text = str(res_json.get("summary", ai_msg)).strip()
-            
-                # Final sanitization to remove any JSON artifacts
-                import re
-                summary_text = re.sub(r'^\s*[\{\[]+', '', summary_text)
-                summary_text = re.sub(r'[\}\]]+\s*$', '', summary_text)
-                # Strip summary/response prefixes and quotes
-                summary_text = re.sub(r'^\s*["\']*\s*(?:summary|Summary|response|Response|answer|Answer|result|Result)\s*:?\s*["\']*', '', summary_text, flags=re.IGNORECASE)
-                summary_text = re.sub(r'^\s*["\']+', '', summary_text)
-                summary_text = re.sub(r'["\']+\s*$', '', summary_text)
-                summary_text = summary_text.strip()
-            
-                # Process actions silently in background - don't return them to user
-                if "actions" in res_json and isinstance(res_json["actions"], list):
-                        # Actions are handled internally, not returned to end user
-                    pass
-            
-                return {"summary": summary_text}
-        except Exception as e:
-            logger.debug(f"Response was not pure JSON or parse failed: {e}")
-            # Sanitize even raw text responses
+
+            # ENFORCE STRICT OUTPUT CONSTRAINTS
+            is_valid, error_msg = StrictOutputConstraints.validate_response(res_json)
+
+            if not is_valid:
+                logger.warning(f"AI response failed strict constraints validation: {error_msg}")
+                # Attempt to sanitize and repair the response
+                sanitized = StrictOutputConstraints.sanitize_response(res_json)
+                is_valid, error_msg = StrictOutputConstraints.validate_response(sanitized)
+
+                if is_valid:
+                    logger.info("Successfully sanitized AI response to meet constraints")
+                    res_json = sanitized
+                else:
+                    logger.error(f"Failed to sanitize response: {error_msg}")
+                    # Fallback to minimal valid response
+                    res_json = {
+                        "reasoning": f"Response validation failed: {error_msg[:100]}",
+                        "summary": "I encountered an error processing your request. Please try again.",
+                        "actions": []
+                    }
+
+            # Additional JSON compliance check
+            json_str = json.dumps(res_json, ensure_ascii=False)
+            json_valid, json_error = StrictOutputConstraints.validate_json_compliance(json_str)
+            if not json_valid:
+                logger.error(f"JSON compliance check failed: {json_error}")
+                # Attempt basic repair
+                try:
+                    # Re-serialize to fix basic issues
+                    res_json = json.loads(json_str)
+                except:
+                    # Last resort fallback
+                    res_json = {
+                        "reasoning": "JSON compliance issue detected and repaired",
+                        "summary": "Response processed with compliance fixes",
+                        "actions": []
+                    }
+
+            # Double-serialize to ensure proper escaping
+            serialized = json.dumps(res_json, ensure_ascii=False)
+            return json.loads(serialized)
+
+        except Exception as parse_error:
+            logger.warning(f"JSON parsing failed, falling back to text response: {parse_error}")
+            # For non-JSON responses, create a minimal compliant structure
+            summary_text = str(ai_msg).strip()
+
+            # Final sanitization to remove any JSON artifacts
             import re
-            logger.debug(f"AI raw message before sanitization: {ai_msg[:500]}")
-            clean_msg = re.sub(r'^\s*[\{\[]+', '', ai_msg.strip())
-            clean_msg = re.sub(r'[\}\]]+\s*$', '', clean_msg)
-            # Strip summary/response prefixes and quotes for simple tasks
-            clean_msg = re.sub(r'^\s*["\']*\s*(?:summary|Summary|response|Response|answer|Answer|result|Result)\s*:?\s*["\']*', '', clean_msg, flags=re.IGNORECASE)
-            clean_msg = re.sub(r'^\s*["\']+', '', clean_msg)
-            clean_msg = re.sub(r'["\']+\s*$', '', clean_msg)
-            # Remove any remaining JSON-like prefixes
-            clean_msg = re.sub(r'^\s*,\s*', '', clean_msg)
-            logger.debug(f"AI message after sanitization: {clean_msg[:500]}")
-            return {"summary": clean_msg.strip()}
+            summary_text = re.sub(r'^\s*[\{\[]+', '', summary_text)
+            summary_text = re.sub(r'[\}\]]+\s*$', '', summary_text)
+            # Strip summary/response prefixes and quotes
+            summary_text = re.sub(r'^\s*["\']*\s*(?:summary|Summary|response|Response|answer|Answer|result|Result)\s*:?\s*["\']*', '', summary_text, flags=re.IGNORECASE)
+            summary_text = re.sub(r'^\s*["\']+', '', summary_text)
+            summary_text = re.sub(r'["\']+\s*$', '', summary_text)
+            summary_text = summary_text.strip()
+
+            return {"summary": summary_text}
 
 
     def _extract_json(self, text: str) -> Dict[str, Any]:
@@ -736,20 +747,28 @@ then use send_message or send_embed to present the results to the user.
 CONDITIONAL JSON FORMAT:
 You MUST ALWAYS respond with a VALID JSON object.
 
-WHEN USER REQUESTS AN ACTION, TASK, CODE CHANGE, OR SOMETHING REQUIRING EXECUTION:
-Include ALL these keys:
-1. "reasoning": (string) Your internal thoughts, validation checks, and confidence assessment. Explain why actions are safe and will work.
-2. "summary": (string) Your friendly response to the user. MANDATORY IN ALL CASES.
-3. "walkthrough": (string) Detailed step-by-step implementation plan with validation at each step.
-4. "actions": (list) A list of action objects. ALWAYS use a list, even for one action.
-5. Each action object: {"name": "action_name", "parameters": {...}}
+***STRICT OUTPUT CONSTRAINTS FRAMEWORK - ALWAYS COMPLY***
 
-WHEN USER ASKS A NORMAL QUESTION, INFO LOOKUP, OR STATUS CHECK:
-INCLUDE ONLY THE MANDATORY KEY:
-1. "summary": (string) Your clean direct answer to the user.
+ALL RESPONSES MUST BE VALID JSON OBJECTS WITH EXACTLY THESE KEYS:
+1. "reasoning": (string, max 500 characters) Internal validation and safety assessment
+2. "summary": (string, max 200 characters) User-friendly response
+3. "actions": (array, max 5 actions) List of executable actions
 
-DO NOT include reasoning, walkthrough, or actions fields when just answering normal questions.
-ALWAYS PRODUCE PERFECT VALID JSON: proper closing braces, correct quotes, no trailing commas, properly escaped quotation marks.
+WHEN USER REQUESTS ACTIONS OR TASKS:
+- Include reasoning, summary, and actions (even if actions is empty array [])
+- Actions array limited to maximum 5 items
+- Each action: {"name": "action_name", "parameters": {...}}
+
+WHEN USER ASKS QUESTIONS OR NEEDS INFO:
+- Include reasoning, summary, and actions (actions can be empty [])
+- Use query actions for server information lookup
+
+CRITICAL COMPLIANCE RULES:
+- reasoning: ≤500 chars, explains safety/validation
+- summary: ≤200 chars, user response
+- actions: array with ≤5 objects
+- PERFECT JSON: no trailing commas, proper escaping, valid structure
+- If constraints violated, response will be rejected and sanitized
 
 MULTI-STEP ACTIONS (CRITICAL - always use "actions" list, NOT singular "action"):
 "actions": [
