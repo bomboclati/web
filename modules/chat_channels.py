@@ -255,12 +255,16 @@ class AIChatSystem:
             
             if len(response) > 2000:
                 response = response[:1997] + "..."
-            
-            return await message.channel.send(response, suppress_embeds=True)
+
+            # Suppress embeds only for conversational responses, keep for system messages
+            is_system_message = any(keyword in response.lower() for keyword in ["status", "update", "notification", "alert", "system"])
+            suppress_embeds = not is_system_message
+
+            return await message.channel.send(response, suppress_embeds=suppress_embeds)
             
         except Exception as e:
             logger.error(f"AI chat error: {e}")
-            return await message.channel.send("Sorry, I encountered an error. Please try again.", suppress_embeds=True)
+            return await message.channel.send("Sorry, I encountered an error. Please try again.", suppress_embeds=False)
 
     async def _handle_translator_mode(self, message: discord.Message, chat_channel: AIChatChannel) -> Optional[discord.Message]:
         user_input = message.content
@@ -304,7 +308,7 @@ Respond with JSON only:
             
         except Exception as e:
             logger.error(f"Translation error: {e}")
-            return await message.channel.send("Sorry, translation failed. Please try again.", suppress_embeds=True)
+            return await message.channel.send("Sorry, translation failed. Please try again.", suppress_embeds=False)
 
     async def _get_rpg_context(self, guild_id: int) -> str:
         rpg_data = dm.get_guild_data(guild_id, "rpg_data", {})
