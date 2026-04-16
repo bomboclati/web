@@ -594,61 +594,39 @@ class AIClient:
 
 
     def _extract_json(self, text: str) -> Dict[str, Any]:
-        """Robustly extract JSON from AI response, handling Markdown and conversational filler."""
+        """Extract strict JSON format from AI response."""
         if not text:
-            return {"summary": ""}
-            
-        # Try direct parse first
-        try:
-            parsed = json.loads(text.strip())
-            if self._validate_json_response(parsed):
-                return parsed
-        except json.JSONDecodeError:
-            pass
-            
-        # Try to find JSON block in markdown
-        json_pattern = r"```(?:json)?\s*(\{.*?\})\s*```"
-        match = re.search(json_pattern, text, re.DOTALL)
-        if match:
-            try:
-                content = match.group(1)
-                # Fix common JSON errors
-                content = self._repair_json(content)
-                parsed = json.loads(content)
-                if self._validate_json_response(parsed):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-                
-        # Try to find anything that looks like a JSON object using basic brace matching
-        brace_pattern = r"(\{.*\})"
-        match = re.search(brace_pattern, text, re.DOTALL)
-        if match:
-            try:
-                content = match.group(1)
-                content = self._repair_json(content)
-                parsed = json.loads(content)
-                if self._validate_json_response(parsed):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-                
-        # Final desperate attempt: find first { and last } manually
-        try:
+            return {"reasoning": "No response", "summary": "No response received", "actions": []}
+
+        # Remove any text outside JSON
+        text = text.strip()
+        if not text.startswith('{') or not text.endswith('}'):
+            # Find JSON boundaries
             start = text.find('{')
             end = text.rfind('}')
-            if start != -1 and end != -1:
-                content = text[start:end+1]
-                content = self._repair_json(content)
-                parsed = json.loads(content)
+            if start != -1 and end != -1 and end > start:
+                text = text[start:end+1]
+            else:
+                return {"reasoning": "Invalid format", "summary": "Response format invalid", "actions": []}
+
+        # Parse JSON
+        try:
+            parsed = json.loads(text)
+            if self._validate_json_response(parsed):
+                return parsed
+        except json.JSONDecodeError as e:
+            # Try to repair common issues
+            repaired = self._repair_json(text)
+            try:
+                parsed = json.loads(repaired)
                 if self._validate_json_response(parsed):
                     return parsed
-        except Exception:
-            pass
-                
-        # Cannot parse as JSON - return clean valid JSON response
-        logger.warning(f"Could not parse AI response as JSON, using raw text. Preview: {text[:100]}")
-        return {"summary": text.strip()}
+            except json.JSONDecodeError:
+                pass
+
+        # Fallback for invalid responses
+        logger.warning(f"AI response failed strict JSON validation: {text[:200]}")
+        return {"reasoning": "Parse error", "summary": "Unable to process response", "actions": []}
         
     def _repair_json(self, content: str) -> str:
         """Repair common JSON formatting errors."""
@@ -683,32 +661,36 @@ class AIClient:
         return content
         
     def _validate_json_response(self, data: Any) -> bool:
-        """Validate that JSON response has correct structure and types."""
+        """Validate that JSON response conforms to strict output constraints."""
         if not isinstance(data, dict):
             return False
-            
-        # Summary is always required
-        if "summary" not in data or not isinstance(data["summary"], str):
+
+        # Must have exactly these three keys
+        required_keys = {"reasoning", "summary", "actions"}
+        if set(data.keys()) != required_keys:
             return False
-            
-        # Validate optional fields if present
-        if "reasoning" in data and not isinstance(data["reasoning"], str):
+
+        # Reasoning: string, max 500 chars
+        if not isinstance(data["reasoning"], str) or len(data["reasoning"]) > 500:
             return False
-            
-        if "walkthrough" in data and not isinstance(data["walkthrough"], str):
+
+        # Summary: string, max 200 chars
+        if not isinstance(data["summary"], str) or len(data["summary"]) > 200:
             return False
-            
-        if "actions" in data and not isinstance(data["actions"], list):
+
+        # Actions: array, max 5 actions
+        if not isinstance(data["actions"], list) or len(data["actions"]) > 5:
             return False
-            
-        # Validate each action if present
-        if "actions" in data:
-            for action in data["actions"]:
-                if not isinstance(action, dict):
-                    return False
-                if "name" not in action or "parameters" not in action:
-                    return False
-                    
+
+        # Validate each action
+        for action in data["actions"]:
+            if not isinstance(action, dict):
+                return False
+            if "name" not in action or "parameters" not in action:
+                return False
+            if not isinstance(action["name"], str) or not isinstance(action["parameters"], dict):
+                return False
+
         return True
 
 # Default System Prompt
@@ -729,27 +711,39 @@ You have access to real-time server introspection through query actions. Use the
 - query_active_shifts: Get currently active staff shifts
 - query_recent_messages: Get recent messages from a channel (requires channel_id)
 
-When users ask questions like "who is online?", "what roles do we have?", "show me the leaderboard", 
+When users ask questions like "who is online?", "what roles do we have?", "show me the leaderboard",
 "tell me about @User", "any pending applications?", use these query actions FIRST to get live data,
 then use send_message or send_embed to present the results to the user.
 
-CONDITIONAL JSON FORMAT:
-You MUST ALWAYS respond with a VALID JSON object.
+STRICT JSON OUTPUT CONSTRAINTS:
+You MUST ALWAYS respond with a single valid JSON object containing exactly these keys:
+1. "reasoning": (string, max 500 characters) Your internal thoughts, validation checks, and confidence assessment.
+2. "summary": (string, max 200 characters) Your friendly response to the user. MANDATORY IN ALL CASES.
+3. "actions": (array, max 5 actions) A list of action objects. Use empty array [] if no actions needed.
+
+Each action object must have exactly:
+- "name": (string) The action name
+- "parameters": (object) The action parameters
+
+BATCH LIMIT: Never include more than 5 actions. If more are needed, execute the first 5 and note in summary "Continuing with additional actions..." 
+
+ROLE ASSIGNMENT SAFETY: For assign_role actions, bot automatically verifies:
+- Bot's highest role > target role
+- Target role is not managed by integration
+- Bot has MANAGE_ROLES permission
+If any check fails, action is silently skipped and noted in summary.
+
+JSON VALIDATION REQUIREMENTS:
+- No trailing commas, comments, or text outside the JSON object
+- Each line must be under 1500 characters
+- All strings properly escaped
+- Valid JSON syntax only
 
 WHEN USER REQUESTS AN ACTION, TASK, CODE CHANGE, OR SOMETHING REQUIRING EXECUTION:
-Include ALL these keys:
-1. "reasoning": (string) Your internal thoughts, validation checks, and confidence assessment. Explain why actions are safe and will work.
-2. "summary": (string) Your friendly response to the user. MANDATORY IN ALL CASES.
-3. "walkthrough": (string) Detailed step-by-step implementation plan with validation at each step.
-4. "actions": (list) A list of action objects. ALWAYS use a list, even for one action.
-5. Each action object: {"name": "action_name", "parameters": {...}}
+Use all three keys with actions array.
 
 WHEN USER ASKS A NORMAL QUESTION, INFO LOOKUP, OR STATUS CHECK:
-INCLUDE ONLY THE MANDATORY KEY:
-1. "summary": (string) Your clean direct answer to the user.
-
-DO NOT include reasoning, walkthrough, or actions fields when just answering normal questions.
-ALWAYS PRODUCE PERFECT VALID JSON: proper closing braces, correct quotes, no trailing commas, properly escaped quotation marks.
+Use "reasoning", "summary", and empty "actions" array.
 
 MULTI-STEP ACTIONS (CRITICAL - always use "actions" list, NOT singular "action"):
 "actions": [

@@ -586,7 +586,50 @@ class ActionHandler:
                     continue
             audited_actions.append(action)
         actions = audited_actions
-        
+
+        # Role Assignment Safety Protocol
+        safe_actions = []
+        for action in actions:
+            if action.get("name") == "assign_role":
+                # Perform pre-flight checks
+                role_name = action.get("parameters", {}).get("role_name") or action.get("parameters", {}).get("role")
+                if isinstance(role_name, str):
+                    role = discord.utils.get(interaction.guild.roles, name=role_name)
+                    if role:
+                        members = []
+                        # Normalize users
+                        params = action["parameters"]
+                        if "username" in params:
+                            member = discord.utils.get(interaction.guild.members, name=params["username"])
+                            if member:
+                                members.append(member)
+                        elif "usernames" in params:
+                            for uname in params["usernames"]:
+                                member = discord.utils.get(interaction.guild.members, name=uname)
+                                if member:
+                                    members.append(member)
+                        elif "user_id" in params:
+                            member = interaction.guild.get_member(params["user_id"])
+                            if member:
+                                members.append(member)
+                        elif "user_ids" in params:
+                            for uid in params["user_ids"]:
+                                member = interaction.guild.get_member(uid)
+                                if member:
+                                    members.append(member)
+
+                        validation = await SelfHealingFramework.validate_assign_role_pre_flight(interaction, role, members)
+                        if not validation["valid"]:
+                            logger.warning(f"Role assignment safety check failed for {role_name}: {validation['issues']}")
+                            # Silently skip the action as per protocol
+                            continue
+                else:
+                    logger.warning("Role assignment missing role_name parameter")
+                    continue
+            safe_actions.append(action)
+
+        actions = safe_actions
+
         if not actions and warnings:
             logger.info("All actions were filtered out during validation")
             return {
