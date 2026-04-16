@@ -255,16 +255,25 @@ class AIChatSystem:
             
             if len(response) > 2000:
                 response = response[:1997] + "..."
-            
-            return await message.channel.send(response, suppress_embeds=True)
-            
+
+            if self._is_system_message(response):
+                embed = discord.Embed(description=response, color=discord.Color.blue())
+                return await message.channel.send(embed=embed)
+            else:
+                return await message.channel.send(response, suppress_embeds=True)
+
         except Exception as e:
             logger.error(f"AI chat error: {e}")
-            return await message.channel.send("Sorry, I encountered an error. Please try again.", suppress_embeds=True)
+            error_msg = "Sorry, I encountered an error. Please try again."
+            if self._is_system_message(error_msg):
+                embed = discord.Embed(description=error_msg, color=discord.Color.red())
+                return await message.channel.send(embed=embed)
+            else:
+                return await message.channel.send(error_msg, suppress_embeds=True)
 
     async def _handle_translator_mode(self, message: discord.Message, chat_channel: AIChatChannel) -> Optional[discord.Message]:
         user_input = message.content
-        
+
         prompt = f"""Translate this message. Detect the source language and translate to all configured languages.
 
 AVAILABLE LANGUAGES: {', '.join(chat_channel.translate_languages)}
@@ -287,24 +296,29 @@ Respond with JSON only:
                 user_input=prompt,
                 system_prompt="You are a multilingual translator. Translate accurately and preserve meaning."
             )
-            
+
             translations = result.get("translations", {})
             detected = result.get("detected_language", "Unknown")
-            
+
             embed = discord.Embed(
                 title="🌐 Translation",
                 description=f"Detected: **{detected}**",
                 color=discord.Color.blue()
             )
-            
+
             for lang, text in translations.items():
                 embed.add_field(name=lang.title(), value=text, inline=False)
-            
+
             return await message.channel.send(embed=embed)
-            
+
         except Exception as e:
             logger.error(f"Translation error: {e}")
             return await message.channel.send("Sorry, translation failed. Please try again.", suppress_embeds=True)
+
+    def _is_system_message(self, response: str) -> bool:
+        """Check if the AI response is a system message that should keep embeds."""
+        system_indicators = ["Status:", "Notification:", "Update:", "Alert:"]
+        return any(response.startswith(indicator) for indicator in system_indicators)
 
     async def _get_rpg_context(self, guild_id: int) -> str:
         rpg_data = dm.get_guild_data(guild_id, "rpg_data", {})
