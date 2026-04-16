@@ -1508,10 +1508,12 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
         
         if not actions:
             # Edit the thinking message with the final AI response (plain text, no embed)
+            # Truncate if exceeds 2000 characters
+            response_content = summary if len(summary) <= 2000 else summary[:1997] + "..."
             if thinking_msg:
-                await thinking_msg.edit(content=summary, embed=None)
+                await thinking_msg.edit(content=response_content, embed=None)
             else:
-                await interaction.followup.send(content=summary, ephemeral=False)
+                await interaction.followup.send(content=response_content, ephemeral=False)
             await history_manager.add_exchange(guild_id, user_id, user_input, summary)
             # Store in vector memory for long-term recall
             await vector_memory.store_conversation(
@@ -1557,7 +1559,10 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
                 result = await handler.execute_sequence(it, actions)
                 summary_text = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in result["results"]])
                 if result["success"]:
-                    final_msg = f"**✅ Done!**\n{summary_text}"
+                    if result.get("filtered"):
+                        final_msg = summary or "Sorry, I couldn't perform any actions due to validation errors."
+                    else:
+                        final_msg = f"**✅ Done!**\n{summary_text}"
                 else:
                     rollback_text = ""
                     if result["rolled_back"]:
@@ -1567,7 +1572,10 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
             except Exception as exec_err:
                 import traceback
                 logger.error("confirm_callback crashed: %s", exec_err, exc_info=True)
-                final_msg = "Execution crashed: " + str(exec_err) + "\n\nSomething went wrong running the actions. Please try again or rephrase your request."
+                final_msg = "Execution crashed: " + str(exec_err) + "\n\nSomething went wrong running the actions. Please try again."
+            # Truncate message if it exceeds Discord's 2000 character limit
+            if len(final_msg) > 2000:
+                final_msg = final_msg[:1997] + "..."
             await it.channel.send(final_msg)
             await history_manager.add_exchange(guild_id, user_id, user_input, summary)
             await vector_memory.store_conversation(guild_id=guild_id, user_id=user_id, user_message=user_input, bot_response=summary, reasoning=reasoning, walkthrough=walkthrough)
