@@ -1557,7 +1557,11 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
                 result = await handler.execute_sequence(it, actions)
                 summary_text = "\n".join([f"{'✅' if s else '❌'} {n}" for n, s in result["results"]])
                 if result["success"]:
-                    final_msg = f"**✅ Done!**\n{summary_text}"
+                    if not result["results"] and result.get("filtered"):
+                        # All actions were filtered out, respond with AI summary instead of "Done"
+                        final_msg = summary
+                    else:
+                        final_msg = f"**✅ Done!**\n{summary_text}"
                 else:
                     rollback_text = ""
                     if result["rolled_back"]:
@@ -1568,6 +1572,9 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
                 import traceback
                 logger.error("confirm_callback crashed: %s", exec_err, exc_info=True)
                 final_msg = "Execution crashed: " + str(exec_err) + "\n\nSomething went wrong running the actions. Please try again or rephrase your request."
+            # Truncate message if exceeding Discord's 2000 character limit
+            if len(final_msg) > 2000:
+                final_msg = final_msg[:1997] + "..."
             await it.channel.send(final_msg)
             await history_manager.add_exchange(guild_id, user_id, user_input, summary)
             await vector_memory.store_conversation(guild_id=guild_id, user_id=user_id, user_message=user_input, bot_response=summary, reasoning=reasoning, walkthrough=walkthrough)
