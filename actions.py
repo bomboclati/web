@@ -987,11 +987,13 @@ class ActionHandler:
             logger.error("assign_role: could not resolve any users from params: %s", params)
             return False, {"error": "No valid users found", "params": params}
 
-        # Check role hierarchy - bot can't assign roles higher than itself
+        # PHASE 6: ROLE HIERARCHY VALIDATION
         bot_top_role = guild.me.top_role
-        if role.position > bot_top_role.position:
-            logger.error("assign_role: role %s is higher than bot's top role %s", role.name, bot_top_role.name)
-            return False, {"error": f"Role {role.name} is higher than bot's highest role", "role_position": role.position, "bot_position": bot_top_role.position}
+        if role.position >= bot_top_role.position:
+            message = f"I cannot assign the role `@{role.name}` because it is positioned higher than or equal to my own role in Server Settings > Roles. Please move my role ({bot_top_role.name}) above `@{role.name}` in the role list."
+            await interaction.followup.send(message, ephemeral=True)
+            logger.error("assign_role: role %s is higher than or equal to bot's top role %s", role.name, bot_top_role.name)
+            return False, {"error": f"Role {role.name} is higher than or equal to bot's highest role", "role_position": role.position, "bot_position": bot_top_role.position}
 
         # Check if user has permission to assign this role
         if not interaction.user.guild_permissions.manage_roles:
