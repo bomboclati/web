@@ -779,6 +779,8 @@ class ActionHandler:
 
     async def dispatch(self, interaction: discord.Interaction, name: str, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Routes action names to specific methods. Returns (success, undo_data)."""
+        if not name or not params:
+            return False, None
         # Handle query_* actions by routing to ServerQueryEngine
         if name.startswith("query_"):
             method_name = f"action_{name}"
@@ -788,7 +790,7 @@ class ActionHandler:
             else:
                 logger.warning("Unknown query action: %s", name)
                 return False, None
-        
+
         method_name = f"action_{name}"
         if hasattr(self, method_name):
             method = getattr(self, method_name)
