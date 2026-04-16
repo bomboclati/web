@@ -173,6 +173,25 @@ class ActionHandler:
         # New actions
         "send_notification", "create_task", "update_profile"
     }
+
+    SERVER_MODIFYING_ACTIONS = {
+        "add_role", "remove_role", "assign_role", "create_channel", "delete_channel", "create_role", "delete_role",
+        "edit_channel", "edit_role", "create_category", "slowmode", "lock_channel", "unlock_channel",
+        "edit_channel_name", "edit_role_name", "change_role_color", "move_channel", "clone_channel",
+        "create_thread", "pin_message", "unpin_message", "set_topic", "delete_messages", "remove_reaction",
+        "delete_message", "bulk_delete_messages", "create_role_with_permissions", "edit_channel_permissions",
+        "create_voice_channel", "create_text_channel", "create_category_channel", "edit_channel_bitrate",
+        "edit_channel_user_limit", "follow_announcement_channel", "create_scheduled_event",
+        "allow_channel_permission", "deny_channel_permission", "deny_all_channels_for_role",
+        "allow_all_channels_for_role", "deny_category_for_role", "make_channel_private", "make_category_private",
+        "kick_user", "ban_user", "timeout_user", "mute_user", "unmute_user", "deafen_user", "set_nickname",
+        "setup_welcome", "setup_logging", "setup_verification", "setup_economy", "setup_leveling",
+        "setup_tickets", "setup_applications", "setup_appeals", "setup_moderation", "setup_staff_system",
+        "create_verify_system", "create_tickets_system", "create_applications_system", "create_appeals_system",
+        "create_welcome_system", "create_staff_system", "create_leveling_system", "create_economy_system",
+        "create_prefix_command", "delete_prefix_command", "announce", "poll", "give_points", "remove_points",
+        "warn_user", "setup_trigger_role"
+    }
     
     def __init__(self, bot):
         self.bot = bot
@@ -243,6 +262,98 @@ class ActionHandler:
         
         return True, None
 
+    async def _perform_server_audit(self, interaction: discord.Interaction, action: Dict[str, Any]) -> Tuple[str, str, str, List[str]]:
+        """Perform Discord Server Architect AI audit phases. Returns (deep_analysis, selected_action_plan, risk_level, warnings)"""
+        name = action.get("name")
+        params = action.get("parameters", {})
+        warnings = []
+        risk_level = 'low'
+
+        # Phase 1: Anatomy of the Space
+        try:
+            _, server_data = await self.action_query_server_info(interaction, {})
+            _, channels_data = await self.action_query_channels(interaction, {})
+            _, roles_data = await self.action_query_roles(interaction, {})
+            _, members_data = await self.action_query_members(interaction, {"limit": 1000})
+        except Exception as e:
+            logger.error(f"Audit Phase 1 failed: {e}")
+            return "Failed to gather server anatomy", "Unable to plan action", "high", ["Audit failed: unable to analyze server structure"]
+
+        server_result = server_data.get("query_result", {})
+        channels_result = channels_data.get("query_result", {})
+        roles_result = roles_data.get("query_result", {})
+        members_result = members_data.get("query_result", {})
+
+        anatomy_summary = f"Server: {server_result.get('name', 'Unknown')} with {len(channels_result.get('channels', []))} channels, {len(roles_result.get('roles', []))} roles, {members_result.get('total_members', 0)} members"
+
+        # Phase 2: The Power Matrix
+        roles = roles_result.get('roles', [])
+        power_matrix = sorted(roles, key=lambda r: r.get('position', 0), reverse=True)
+        admin_roles = [r for r in power_matrix if r.get('permissions', {}).get('administrator', False)]
+        power_summary = f"Top roles: {[r['name'] for r in power_matrix[:5]]}, Admin roles: {[r['name'] for r in admin_roles]}"
+
+        # Phase 3: Functional Ripple Effect
+        ripple_effect = self._analyze_ripple_effect(name, params, channels_result, roles_result, members_result)
+
+        # Phase 4: Action Parsing & Safety Protocol
+        safety_issues = self._check_safety_protocol(name, params, power_matrix, channels_result)
+        if safety_issues:
+            warnings.extend(safety_issues)
+            risk_level = 'high' if any('critical' in issue.lower() for issue in safety_issues) else 'medium'
+
+        # Phase 5: Rate Limit & Batching Logic
+        recent_actions = dm.get_guild_data(interaction.guild.id, "action_logs", [])
+        recent_count = len([a for a in recent_actions if a.get('timestamp', 0) > time.time() - 3600])  # last hour
+        if recent_count > 50:
+            warnings.append("High action volume detected in the last hour. Consider batching or slowing down.")
+            if risk_level == 'low':
+                risk_level = 'medium'
+
+        deep_analysis = f"Anatomy: {anatomy_summary}. Power: {power_summary}. Ripple: {ripple_effect}"
+        selected_action_plan = f"Execute {name} with params {params} after safety checks."
+
+        return deep_analysis, selected_action_plan, risk_level, warnings
+
+    def _analyze_ripple_effect(self, action_name: str, params: Dict, channels_data: Dict, roles_data: Dict, members_data: Dict) -> str:
+        """Analyze the potential impact of the action."""
+        if action_name == 'assign_role':
+            role_name = params.get('role_name') or params.get('name')
+            users_count = len(self._normalize_users(params))
+            return f"Assigning role '{role_name}' to {users_count} users. Potential permission changes."
+        elif action_name in ['create_channel', 'create_voice_channel', 'create_text_channel']:
+            channel_name = params.get('name')
+            private = params.get('private', False)
+            return f"Creating {'private' if private else 'public'} channel '{channel_name}'. May affect access patterns."
+        elif action_name == 'delete_channel':
+            channel_name = params.get('name')
+            return f"Deleting channel '{channel_name}'. May disrupt communication."
+        elif action_name == 'create_role':
+            role_name = params.get('name')
+            return f"Creating role '{role_name}'. New permission layer added."
+        elif action_name == 'kick_user':
+            users_count = len(self._normalize_users(params))
+            return f"Kicking {users_count} users. Immediate access removal."
+        else:
+            return f"Action {action_name} may have unspecified ripple effects."
+
+    def _check_safety_protocol(self, action_name: str, params: Dict, power_matrix: List[Dict], channels_data: Dict) -> List[str]:
+        """Check for safety violations."""
+        issues = []
+        if action_name == 'assign_role':
+            role_name = params.get('role_name') or params.get('name')
+            role = next((r for r in power_matrix if r['name'].lower() == str(role_name).lower()), None)
+            if role and role.get('permissions', {}).get('administrator', False):
+                issues.append("Critical: Assigning administrator role. Requires explicit confirmation.")
+        if action_name == 'delete_channel':
+            channel_name = params.get('name')
+            channels = channels_data.get('channels', [])
+            important_channels = ['general', 'rules', 'announcements', 'welcome']
+            if any(imp in str(channel_name).lower() for imp in important_channels):
+                issues.append("Warning: Deleting potentially important channel.")
+        if action_name == 'ban_user':
+            issues.append("Warning: Banning users is permanent. Ensure justification.")
+        return issues
+
     async def execute_sequence(self, interaction: discord.Interaction, actions: List[Dict[str, Any]], auto_rollback: bool = True) -> Dict[str, Any]:
         """Executes a list of actions with automatic rollback on failure and crash recovery tracking."""
         import uuid
@@ -266,6 +377,21 @@ class ActionHandler:
         
         # Replace actions with only validated ones
         actions = validated_actions
+
+        # Discord Server Architect AI Audit Phase
+        audited_actions = []
+        for action in validated_actions:
+            name = action.get("name")
+            if name in self.SERVER_MODIFYING_ACTIONS:
+                deep_analysis, selected_action_plan, risk_level, action_warnings = await self._perform_server_audit(interaction, action)
+                logger.info(f"<deep_analysis>{deep_analysis}</deep_analysis>")
+                logger.info(f"<selected_action_plan>{selected_action_plan}</selected_action_plan>")
+                warnings.extend(action_warnings)
+                if risk_level == 'high':
+                    logger.warning(f"Skipping high-risk action '{name}' for safety.")
+                    continue
+            audited_actions.append(action)
+        actions = audited_actions
         
         if not actions and warnings:
             logger.info("All actions were filtered out during validation")
