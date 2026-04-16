@@ -236,13 +236,13 @@ class AIChatSystem:
             response = re.sub(r'\s*---\s*.*$', '', response, flags=re.DOTALL)
             response = re.sub(r'\s*\*\*Summary\*\*:.*$', '', response, flags=re.IGNORECASE|re.DOTALL)
             response = response.strip()
-            
+
             session["messages"].append({"role": "user", "content": user_input})
             session["messages"].append({"role": "assistant", "content": response})
-            
+
             if len(session["messages"]) > 50:
                 session["messages"] = session["messages"][-50:]
-            
+
             vector_memory.store_conversation(
                 guild_id=message.guild.id,
                 user_id=message.author.id,
@@ -252,19 +252,45 @@ class AIChatSystem:
                 walkthrough=result.get("walkthrough", ""),
                 importance_score=0.5
             )
-            
+
             if len(response) > 2000:
                 response = response[:1997] + "..."
-            
-            return await message.channel.send(response, suppress_embeds=True)
+
+            suppress_embeds = not self._is_system_message(response)
+
+            return await message.channel.send(response, suppress_embeds=suppress_embeds)
             
         except Exception as e:
             logger.error(f"AI chat error: {e}")
             return await message.channel.send("Sorry, I encountered an error. Please try again.", suppress_embeds=True)
 
+    def _is_system_message(self, response: str) -> bool:
+        """Check if the response appears to be a system message that should display embeds."""
+        system_indicators = [
+            "status", "alert", "notification", "update", "translation",
+            "system", "info", "information", "warning", "maintenance",
+            "server", "channel", "guild", "bot", "command"
+        ]
+
+        lower_response = response.lower().strip()
+
+        # Check for keywords
+        if any(indicator in lower_response for indicator in system_indicators):
+            return True
+
+        # Check for structured formats that might indicate system messages
+        if lower_response.startswith(("🔄", "⚠️", "ℹ️", "🚨", "📢", "🔔")):
+            return True
+
+        # If response looks like JSON or structured data
+        if lower_response.startswith("{") and lower_response.endswith("}"):
+            return True
+
+        return False
+
     async def _handle_translator_mode(self, message: discord.Message, chat_channel: AIChatChannel) -> Optional[discord.Message]:
         user_input = message.content
-        
+
         prompt = f"""Translate this message. Detect the source language and translate to all configured languages.
 
 AVAILABLE LANGUAGES: {', '.join(chat_channel.translate_languages)}
@@ -287,21 +313,21 @@ Respond with JSON only:
                 user_input=prompt,
                 system_prompt="You are a multilingual translator. Translate accurately and preserve meaning."
             )
-            
+
             translations = result.get("translations", {})
             detected = result.get("detected_language", "Unknown")
-            
+
             embed = discord.Embed(
                 title="🌐 Translation",
                 description=f"Detected: **{detected}**",
                 color=discord.Color.blue()
             )
-            
+
             for lang, text in translations.items():
                 embed.add_field(name=lang.title(), value=text, inline=False)
-            
+
             return await message.channel.send(embed=embed)
-            
+
         except Exception as e:
             logger.error(f"Translation error: {e}")
             return await message.channel.send("Sorry, translation failed. Please try again.", suppress_embeds=True)
