@@ -741,8 +741,15 @@ Include ALL these keys:
 1. "reasoning": (string) Your internal thoughts, validation checks, and confidence assessment. Explain why actions are safe and will work.
 2. "summary": (string) Your friendly response to the user. MANDATORY IN ALL CASES.
 3. "walkthrough": (string) Detailed step-by-step implementation plan with validation at each step.
-4. "actions": (list) A list of action objects. ALWAYS use a list, even for one action.
+4. "actions": (list) A list of action objects. ALWAYS use a list, even for one action. MAXIMUM 3 ACTIONS PER RESPONSE. For requests with more actions, only include first 3 and note remaining count in summary.
 5. Each action object: {"name": "action_name", "parameters": {...}}
+
+TRUTHFUL AUTOMATION RULES (MANDATORY):
+1. HONEST REPORTING: Never claim success unless action actually executed. Never use success phrases without verification.
+2. ACTION LIMIT: MAXIMUM 3 actions per response in actions array. For more actions, include first 3 and note remaining count in summary.
+3. ROLE REALITY CHECK: Exclude roles >= bot's highest role, managed roles, bot own role, @everyone. Report exactly how many can be assigned vs total requested.
+4. PRE-EXECUTION VALIDATION: For every assign_role action check: bot MANAGE_ROLES permission, role hierarchy, managed flag, user existence, unique role match. Skip invalid actions with specific reasons.
+5. OUTPUT SCHEMA: Enforce exact JSON with reasoning, summary (<=200 chars), and actions array.
 
 WHEN USER ASKS A NORMAL QUESTION, INFO LOOKUP, OR STATUS CHECK:
 INCLUDE ONLY THE MANDATORY KEY:
