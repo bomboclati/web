@@ -74,6 +74,163 @@ COMMAND_SCHEMA = {
     "required": ["command_type"]
 }
 
+class StrictOutputConstraints:
+    """Discord Automation AI with Strict Output Constraints Framework"""
+
+    OUTPUT_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "reasoning": {
+                "type": "string",
+                "maxLength": 500
+            },
+            "summary": {
+                "type": "string",
+                "maxLength": 200
+            },
+            "actions": {
+                "type": "array",
+                "maxItems": 5,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "parameters": {"type": "object"}
+                    },
+                    "required": ["name"]
+                }
+            }
+        },
+        "required": ["reasoning", "summary", "actions"],
+        "additionalProperties": False
+    }
+
+    @staticmethod
+    def validate_response(response: dict) -> tuple[bool, str]:
+        """
+        Validate that the AI response conforms to strict output constraints.
+        Returns (is_valid, error_message)
+        """
+        import jsonschema
+
+        try:
+            # Basic structure validation
+            if not isinstance(response, dict):
+                return False, "Response must be a JSON object"
+
+            # Check required keys
+            required_keys = ["reasoning", "summary", "actions"]
+            for key in required_keys:
+                if key not in response:
+                    return False, f"Missing required key: {key}"
+
+            # Validate reasoning (string, max 500 chars)
+            if not isinstance(response["reasoning"], str):
+                return False, "reasoning must be a string"
+            if len(response["reasoning"]) > 500:
+                return False, f"reasoning exceeds 500 characters (current: {len(response['reasoning'])})"
+
+            # Validate summary (string, max 200 chars)
+            if not isinstance(response["summary"], str):
+                return False, "summary must be a string"
+            if len(response["summary"]) > 200:
+                return False, f"summary exceeds 200 characters (current: {len(response['summary'])})"
+
+            # Validate actions (array, max 5 items)
+            if not isinstance(response["actions"], list):
+                return False, "actions must be an array"
+            if len(response["actions"]) > 5:
+                return False, f"actions exceeds maximum of 5 items (current: {len(response['actions'])})"
+
+            # Validate each action
+            for i, action in enumerate(response["actions"]):
+                if not isinstance(action, dict):
+                    return False, f"Action {i} must be an object"
+                if "name" not in action:
+                    return False, f"Action {i} missing required field: name"
+                if not isinstance(action["name"], str):
+                    return False, f"Action {i} name must be a string"
+
+                # Validate parameters if present
+                if "parameters" in action and not isinstance(action["parameters"], dict):
+                    return False, f"Action {i} parameters must be an object"
+
+            # JSON Schema validation
+            jsonschema.validate(instance=response, schema=StrictOutputConstraints.OUTPUT_SCHEMA)
+
+            return True, ""
+
+        except jsonschema.ValidationError as e:
+            return False, f"Schema validation error: {e.message}"
+        except Exception as e:
+            return False, f"Validation error: {str(e)}"
+
+    @staticmethod
+    def enforce_batch_limits(actions: list) -> list:
+        """Enforce batch limits by truncating actions to maximum of 5."""
+        if len(actions) > 5:
+            logger.warning(f"Enforcing batch limit: truncating {len(actions)} actions to 5")
+            return actions[:5]
+        return actions
+
+    @staticmethod
+    def validate_json_compliance(json_str: str) -> tuple[bool, str]:
+        """
+        Validate JSON compliance: no trailing commas, line length limits.
+        Returns (is_valid, error_message)
+        """
+        try:
+            # Parse to ensure it's valid JSON
+            parsed = json.loads(json_str)
+
+            # Check for trailing commas (this is a basic check)
+            lines = json_str.split('\n')
+            for line_num, line in enumerate(lines, 1):
+                stripped = line.strip()
+                # Check for trailing commas in objects/arrays
+                if stripped.endswith(',') and not (stripped.endswith('},') or stripped.endswith('],')):
+                    if line_num < len(lines):
+                        next_line = lines[line_num].strip()
+                        if not (next_line.startswith('}') or next_line.startswith(']')):
+                            return False, f"Trailing comma detected on line {line_num}"
+
+                # Check line length (prevent crashes from extremely long lines)
+                if len(line) > 10000:  # 10KB per line limit
+                    return False, f"Line {line_num} exceeds maximum length of 10000 characters"
+
+            return True, ""
+
+        except json.JSONDecodeError as e:
+            return False, f"Invalid JSON: {str(e)}"
+
+    @staticmethod
+    def sanitize_response(response: dict) -> dict:
+        """
+        Sanitize response to ensure compliance with constraints.
+        Truncates strings, limits actions, etc.
+        """
+        sanitized = {}
+
+        # Sanitize reasoning
+        if "reasoning" in response and isinstance(response["reasoning"], str):
+            sanitized["reasoning"] = response["reasoning"][:500]
+        else:
+            sanitized["reasoning"] = "Response sanitized for compliance"
+
+        # Sanitize summary
+        if "summary" in response and isinstance(response["summary"], str):
+            sanitized["summary"] = response["summary"][:200]
+        else:
+            sanitized["summary"] = "Response summary"
+
+        # Sanitize actions
+        if "actions" in response and isinstance(response["actions"], list):
+            sanitized["actions"] = StrictOutputConstraints.enforce_batch_limits(response["actions"])
+        else:
+            sanitized["actions"] = []
+
+        return sanitized
+
 class SelfHealingFramework:
     """Self-Healing Discord Automation AI Framework"""
 
@@ -170,6 +327,10 @@ class SelfHealingFramework:
 
     @staticmethod
     async def validate_assign_role_pre_flight(interaction: discord.Interaction, role: discord.Role, members: List[discord.Member]) -> Dict[str, Any]:
+        """
+        Enhanced pre-flight validation for assign_role action with strict constraints compliance.
+        Includes bot hierarchy, managed roles, permissions checks.
+        """
         """Comprehensive pre-flight validation for assign_role action with silent reasoning."""
         validation_results = {
             "valid": True,
@@ -420,12 +581,12 @@ class ActionHandler:
             logger.warning(f"Skipping high-failure action '{name}' (failed {failures[name]['count']} times)")
             return False, f"Action '{name}' has a high failure rate and was skipped"
         
-        # 3. Action specific validation
+        # 3. Action specific validation with enhanced assign_role checks
         validation_rules = {
             "create_channel": lambda p: "name" in p and len(p["name"]) > 0 and len(p["name"]) <= 100,
             "delete_channel": lambda p: "name" in p or "channel_id" in p,
             "create_role": lambda p: "name" in p and len(p["name"]) > 0,
-             "assign_role": lambda p: ("role_name" in p or "role_id" in p or "role" in p) and ("username" in p or "user_id" in p or "users" in p or "usernames" in p or "user_ids" in p),
+            "assign_role": lambda p: ("role_name" in p or "role_id" in p or "role" in p) and ("username" in p or "user_id" in p or "users" in p or "usernames" in p or "user_ids" in p),
             "send_message": lambda p: "content" in p and len(p["content"].strip()) > 0,
             "send_dm": lambda p: ("username" in p or "user_id" in p) and "content" in p,
             "kick_user": lambda p: "username" in p or "user_id" in p,
@@ -439,6 +600,12 @@ class ActionHandler:
             "query_roles": lambda p: True,
             "query_members": lambda p: True
         }
+
+        # Enhanced pre-flight check for assign_role
+        if name == "assign_role":
+            preflight_result = await SelfHealingFramework.validate_assign_role_pre_flight(interaction, None, [])  # We'll get role and members later
+            if not preflight_result["valid"]:
+                return False, f"Pre-flight validation failed for assign_role: {preflight_result['issues']}"
         
         if name in validation_rules:
             if not validation_rules[name](params):
@@ -549,13 +716,19 @@ class ActionHandler:
         return issues
 
     async def execute_sequence(self, interaction: discord.Interaction, actions: List[Dict[str, Any]], auto_rollback: bool = True) -> Dict[str, Any]:
-        """Executes a list of actions with automatic rollback on failure and crash recovery tracking."""
+        """Executes a list of actions with automatic rollback on failure and crash recovery tracking.
+        Enforces strict output constraints and batch limits."""
         import uuid
         setup_id = str(uuid.uuid4())
         results = []
         self._action_log = []
         guild_id = interaction.guild.id
         user_id = interaction.user.id
+
+        # ENFORCE BATCH LIMITS - Strict constraint: max 5 actions
+        if len(actions) > 5:
+            logger.warning(f"Batch limit exceeded: {len(actions)} actions requested, limiting to 5")
+            actions = StrictOutputConstraints.enforce_batch_limits(actions)
         
         # Pre-execution validation phase
         validated_actions = []
