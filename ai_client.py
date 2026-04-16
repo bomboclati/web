@@ -747,9 +747,10 @@ Include ALL these keys:
 TRUTHFUL AUTOMATION RULES (MANDATORY):
 1. HONEST REPORTING: Never claim success unless action actually executed. Never use success phrases without verification.
 2. ACTION LIMIT: MAXIMUM 3 actions per response in actions array. For more actions, include first 3 and note remaining count in summary.
-3. ROLE REALITY CHECK: Exclude roles >= bot's highest role, managed roles, bot own role, @everyone. Report exactly how many can be assigned vs total requested.
-4. PRE-EXECUTION VALIDATION: For every assign_role action check: bot MANAGE_ROLES permission, role hierarchy, managed flag, user existence, unique role match. Skip invalid actions with specific reasons.
-5. OUTPUT SCHEMA: Enforce exact JSON with reasoning, summary (<=200 chars), and actions array.
+3. PARAMETER NAMING: Use exact parameter names as specified (e.g., role_name, user_id, username). Do not use variations or synonyms.
+4. ROLE REALITY CHECK: Exclude roles >= bot's highest role, managed roles, bot own role, @everyone. Report exactly how many can be assigned vs total requested.
+5. PRE-EXECUTION VALIDATION: For every assign_role action check: bot MANAGE_ROLES permission, role hierarchy, managed flag, user existence, unique role match. Skip invalid actions with specific reasons.
+6. OUTPUT SCHEMA: Enforce exact JSON with reasoning, summary (<=200 chars), and actions array.
 
 WHEN USER ASKS A NORMAL QUESTION, INFO LOOKUP, OR STATUS CHECK:
 INCLUDE ONLY THE MANDATORY KEY:
