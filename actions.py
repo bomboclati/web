@@ -1061,15 +1061,26 @@ class ActionHandler:
 
         # Try role_name or name
         role_name = params.get("role_name") or params.get("name")
-        if isinstance(role_name, dict) and "name" in role_name:
-            role_name = role_name["name"]
-        if role_name:
+        if isinstance(role_name, dict):
+            if "id" in role_name:
+                try:
+                    role = guild.get_role(int(role_name["id"]))
+                    if role:
+                        return role
+                except (TypeError, ValueError):
+                    pass
+                role_name = None
+            elif "name" in role_name:
+                role_name = role_name["name"]
+            else:
+                role_name = None
+        if role_name and isinstance(role_name, str):
             # Exact match first
-            role = discord.utils.find(lambda r: r.name.lower() == str(role_name).lower(), guild.roles)
+            role = discord.utils.find(lambda r: r.name.lower() == role_name.lower(), guild.roles)
             if role:
                 return role
             # Partial match
-            role = discord.utils.find(lambda r: str(role_name).lower() in r.name.lower(), guild.roles)
+            role = discord.utils.find(lambda r: role_name.lower() in r.name.lower(), guild.roles)
             if role:
                 return role
 
@@ -2781,6 +2792,16 @@ class ActionHandler:
 
     def _resolve_role(self, guild, role_name: str):
         """Resolve a role by name, handling @everyone specially."""
+        if isinstance(role_name, dict):
+            if "id" in role_name:
+                try:
+                    return guild.get_role(int(role_name["id"]))
+                except (TypeError, ValueError):
+                    return None
+            elif "name" in role_name:
+                role_name = role_name["name"]
+            else:
+                return None
         if not role_name:
             return None
         if role_name == "@everyone":
