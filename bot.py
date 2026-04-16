@@ -1419,25 +1419,14 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
 
     res = await bot.ai.safe_chat(guild_id, user_id, enriched_input, SYSTEM_PROMPT + server_context + memory_context + mention_context)
 
-    
-    reasoning = res.get("reasoning", "Thinking...")
-    walkthrough = res.get("walkthrough", "Planning...")
-    # Flexible key check for AI response content
-    summary = res.get("summary") or res.get("message") or res.get("response") or res.get("question")
-    if not summary:
-        # Try to find any non-empty string value in the response
-        for key in ["text", "content", "output", "result", "answer", "reply"]:
-            val = res.get(key)
-            if val and isinstance(val, str) and val.strip():
-                summary = val.strip()
-                break
-    if not summary and reasoning and reasoning not in ("Thinking...", "Standard response"):
-        # Use reasoning as the response text (without the ugly prefix)
-        summary = reasoning
-    if not summary:
-        summary = "I'm ready to help! What would you like me to do?"
-    if not summary:
-        summary = "Ready to proceed."
+    # Validate strict JSON format for AI responses
+    if not bot.ai._validate_json_response(res):
+        logger.warning(f"AI response failed strict validation: {res}")
+        # Fallback to extract summary
+        summary = res.get("summary", "I need to process your request. Please try again.")
+    else:
+        reasoning = res.get("reasoning", "Thinking...")
+        summary = res.get("summary", "Ready to proceed.")
         
     needs_input = res.get("needs_input", False)  # Default to False so AI can act immediately unless it explicitly asks for input
     question = res.get("question", "")

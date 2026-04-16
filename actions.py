@@ -556,19 +556,43 @@ class ActionHandler:
         self._action_log = []
         guild_id = interaction.guild.id
         user_id = interaction.user.id
-        
+
+        # Batch limit: if more than 5 actions, execute first 5 only
+        if len(actions) > 5:
+            actions = actions[:5]
+            logger.warning(f"Batch limit exceeded. Executing first 5 of {len(actions)} actions only.")
+
         # Pre-execution validation phase
         validated_actions = []
         warnings = []
-        
+
         for action in actions:
+            action_name = action.get('name', '')
+
+            # Special pre-flight validation for assign_role
+            if action_name == 'assign_role':
+                params = action.get('parameters', {})
+                role = self._resolve_role(interaction.guild, params)
+                users = self._normalize_users(params)
+                members = []
+                for user_spec in users:
+                    member = await self._resolve_member(interaction.guild, user_spec)
+                    if member:
+                        members.append(member)
+                if role and members:
+                    validation_result = await SelfHealingFramework.validate_assign_role_pre_flight(interaction, role, members)
+                    if not validation_result['valid']:
+                        logger.warning(f"assign_role pre-flight failed: {validation_result['issues']}")
+                        warnings.append(f"assign_role skipped: {', '.join(validation_result['issues'])}")
+                        continue  # Skip this action
+
             valid, reason = await self._validate_action(interaction, action)
             if valid:
                 validated_actions.append(action)
             else:
-                logger.warning(f"Action validation failed: {action.get('name')} - {reason}")
+                logger.warning(f"Action validation failed: {action_name} - {reason}")
                 warnings.append(reason)
-        
+
         # Replace actions with only validated ones
         actions = validated_actions
 
