@@ -300,7 +300,7 @@ Respond with JSON only:
             for lang, text in translations.items():
                 embed.add_field(name=lang.title(), value=text, inline=False)
             
-            return await message.channel.send(embed=embed, suppress_embeds=True)
+            return await message.channel.send(embed=embed)
             
         except Exception as e:
             logger.error(f"Translation error: {e}")
