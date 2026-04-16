@@ -522,75 +522,33 @@ class AIClient:
 
         logger.debug(f"AI Handshake Successful | Provider: {provider} | Response Length: {len(ai_msg)}")
 
-        # Try to parse JSON from AI message
+        # Parse strict JSON response
         try:
             res_json = self._extract_json(ai_msg)
-            
-            # Handle Web Search requested by AI
-            if res_json.get("action") == "web_search":
-                query = res_json.get("parameters", {}).get("query")
-                if query:
-                    search_results = await self.get_search_results(query)
-                    messages.append({"role": "assistant", "content": ai_msg})
-                    messages.append({"role": "user", "content": f"Web Search Results for '{query}':\n{search_results}"})
-                    
-                    payload["messages"] = messages
-                    async with session.post(provider_url, json=payload, allow_redirects=False) as search_resp:
-                        if search_resp.status == 200:
-                            return await self._parse_and_handle_response(session, provider, provider_url, payload, messages, search_resp)
-                        else:
-                            search_text = await search_resp.text()
-                            logger.error(f"AI Search Retry Error ({search_resp.status}): {search_text}")
-                            raise Exception(f"AI Search API Error ({search_resp.status})")
-            
-            # Final validation and sanitization
-            if self._validate_json_response(res_json):
-                # Remove optional fields if empty/None
-                if res_json.get("reasoning") in [None, "", "Raw text response", "Standard response"]:
-                    del res_json["reasoning"]
-                if res_json.get("walkthrough") in [None, "", ""]:
-                    del res_json["walkthrough"]
-                if res_json.get("actions") in [None, [], []]:
-                    del res_json["actions"]
-                
-                # Double-serialize to ensure proper escaping
-                serialized = json.dumps(res_json, ensure_ascii=False)
-                return json.loads(serialized)
-            else:
-                # Always ensure summary is clean text - NEVER return raw JSON structure
-                summary_text = str(res_json.get("summary", ai_msg)).strip()
-            
-                # Final sanitization to remove any JSON artifacts
-                import re
-                summary_text = re.sub(r'^\s*[\{\[]+', '', summary_text)
-                summary_text = re.sub(r'[\}\]]+\s*$', '', summary_text)
-                # Strip summary/response prefixes and quotes
-                summary_text = re.sub(r'^\s*["\']*\s*(?:summary|Summary|response|Response|answer|Answer|result|Result)\s*:?\s*["\']*', '', summary_text, flags=re.IGNORECASE)
-                summary_text = re.sub(r'^\s*["\']+', '', summary_text)
-                summary_text = re.sub(r'["\']+\s*$', '', summary_text)
-                summary_text = summary_text.strip()
-            
-                # Process actions silently in background - don't return them to user
-                if "actions" in res_json and isinstance(res_json["actions"], list):
-                        # Actions are handled internally, not returned to end user
-                    pass
-            
-                return {"summary": summary_text}
+
+            # Validate strict format
+            if not self._validate_strict_json(res_json):
+                logger.error(f"AI response does not match strict JSON format: {res_json}")
+                return {"reasoning": "Response format invalid", "summary": "I encountered an error processing the response.", "actions": []}
+
+            # Enforce batch limit
+            actions = res_json.get("actions", [])
+            if len(actions) > 5:
+                actions = actions[:5]
+                res_json["summary"] += " (continuing with next batch)"
+                res_json["actions"] = actions
+
+            # Ensure constraints
+            if len(res_json.get("reasoning", "")) > 500:
+                res_json["reasoning"] = res_json["reasoning"][:497] + "..."
+            if len(res_json.get("summary", "")) > 200:
+                res_json["summary"] = res_json["summary"][:197] + "..."
+
+            return res_json
+
         except Exception as e:
-            logger.debug(f"Response was not pure JSON or parse failed: {e}")
-            # Sanitize even raw text responses
-            import re
-            logger.debug(f"AI raw message before sanitization: {ai_msg[:500]}")
-            clean_msg = re.sub(r'^\s*[\{\[]+', '', ai_msg.strip())
-            clean_msg = re.sub(r'[\}\]]+\s*$', '', clean_msg)
-            # Strip summary/response prefixes and quotes for simple tasks
-            clean_msg = re.sub(r'^\s*["\']*\s*(?:summary|Summary|response|Response|answer|Answer|result|Result)\s*:?\s*["\']*', '', clean_msg, flags=re.IGNORECASE)
-            clean_msg = re.sub(r'^\s*["\']+', '', clean_msg)
-            clean_msg = re.sub(r'["\']+\s*$', '', clean_msg)
-            # Remove any remaining JSON-like prefixes
-            clean_msg = re.sub(r'^\s*,\s*', '', clean_msg)
-            logger.debug(f"AI message after sanitization: {clean_msg[:500]}")
-            return {"summary": clean_msg.strip()}
+            logger.error(f"Failed to parse AI response as strict JSON: {e}")
+            return {"reasoning": "Parse error", "summary": "I encountered an error processing the response.", "actions": []}
 
 
     def _extract_json(self, text: str) -> Dict[str, Any]:
@@ -601,7 +559,7 @@ class AIClient:
         # Try direct parse first
         try:
             parsed = json.loads(text.strip())
-            if self._validate_json_response(parsed):
+            if self._validate_strict_json(parsed):
                 return parsed
         except json.JSONDecodeError:
             pass
@@ -615,7 +573,7 @@ class AIClient:
                 # Fix common JSON errors
                 content = self._repair_json(content)
                 parsed = json.loads(content)
-                if self._validate_json_response(parsed):
+                if self._validate_strict_json(parsed):
                     return parsed
             except json.JSONDecodeError:
                 pass
@@ -628,7 +586,7 @@ class AIClient:
                 content = match.group(1)
                 content = self._repair_json(content)
                 parsed = json.loads(content)
-                if self._validate_json_response(parsed):
+                if self._validate_strict_json(parsed):
                     return parsed
             except json.JSONDecodeError:
                 pass
@@ -641,7 +599,7 @@ class AIClient:
                 content = text[start:end+1]
                 content = self._repair_json(content)
                 parsed = json.loads(content)
-                if self._validate_json_response(parsed):
+                if self._validate_strict_json(parsed):
                     return parsed
         except Exception:
             pass
@@ -682,33 +640,29 @@ class AIClient:
             
         return content
         
-    def _validate_json_response(self, data: Any) -> bool:
-        """Validate that JSON response has correct structure and types."""
+    def _validate_strict_json(self, data: Any) -> bool:
+        """Validate strict JSON format with exactly reasoning, summary, actions."""
         if not isinstance(data, dict):
             return False
-            
-        # Summary is always required
-        if "summary" not in data or not isinstance(data["summary"], str):
+
+        required_keys = {"reasoning", "summary", "actions"}
+        if set(data.keys()) != required_keys:
             return False
-            
-        # Validate optional fields if present
-        if "reasoning" in data and not isinstance(data["reasoning"], str):
+
+        if not isinstance(data["reasoning"], str):
             return False
-            
-        if "walkthrough" in data and not isinstance(data["walkthrough"], str):
+        if not isinstance(data["summary"], str):
             return False
-            
-        if "actions" in data and not isinstance(data["actions"], list):
+        if not isinstance(data["actions"], list):
             return False
-            
-        # Validate each action if present
-        if "actions" in data:
-            for action in data["actions"]:
-                if not isinstance(action, dict):
-                    return False
-                if "name" not in action or "parameters" not in action:
-                    return False
-                    
+
+        # Validate each action
+        for action in data["actions"]:
+            if not isinstance(action, dict):
+                return False
+            if "name" not in action or "parameters" not in action:
+                return False
+
         return True
 
 # Default System Prompt
@@ -733,23 +687,16 @@ When users ask questions like "who is online?", "what roles do we have?", "show 
 "tell me about @User", "any pending applications?", use these query actions FIRST to get live data,
 then use send_message or send_embed to present the results to the user.
 
-CONDITIONAL JSON FORMAT:
-You MUST ALWAYS respond with a VALID JSON object.
+STRICT JSON OUTPUT CONSTRAINTS:
+You MUST ALWAYS respond with a single valid JSON object containing EXACTLY these keys:
+- "reasoning": string under 500 characters - your internal thoughts and validation
+- "summary": string under 200 characters - your friendly response to the user
+- "actions": array with max 5 actions - each action has "name" and "parameters"
 
-WHEN USER REQUESTS AN ACTION, TASK, CODE CHANGE, OR SOMETHING REQUIRING EXECUTION:
-Include ALL these keys:
-1. "reasoning": (string) Your internal thoughts, validation checks, and confidence assessment. Explain why actions are safe and will work.
-2. "summary": (string) Your friendly response to the user. MANDATORY IN ALL CASES.
-3. "walkthrough": (string) Detailed step-by-step implementation plan with validation at each step.
-4. "actions": (list) A list of action objects. ALWAYS use a list, even for one action.
-5. Each action object: {"name": "action_name", "parameters": {...}}
-
-WHEN USER ASKS A NORMAL QUESTION, INFO LOOKUP, OR STATUS CHECK:
-INCLUDE ONLY THE MANDATORY KEY:
-1. "summary": (string) Your clean direct answer to the user.
-
-DO NOT include reasoning, walkthrough, or actions fields when just answering normal questions.
-ALWAYS PRODUCE PERFECT VALID JSON: proper closing braces, correct quotes, no trailing commas, properly escaped quotation marks.
+ALWAYS include all three keys, even for simple questions (use empty array for actions).
+No trailing commas, comments, or text outside JSON.
+Keep all lines under 1500 characters.
+If more than 5 actions needed, include only first 5 and note continuation in summary.
 
 MULTI-STEP ACTIONS (CRITICAL - always use "actions" list, NOT singular "action"):
 "actions": [

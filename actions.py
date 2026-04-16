@@ -1376,15 +1376,10 @@ class ActionHandler:
         for reasoning in validation["reasoning_log"]:
             logger.info(f"[SELF-HEALING] {reasoning}")
 
-        # If validation failed, return healing response
+        # If validation failed, fail silently (return success but no action taken)
         if not validation["valid"]:
-            primary_issue = validation["issues"][0] if validation["issues"] else "unknown_error"
-            context = {
-                "role_name": role.name if role else "unknown",
-                "user_count": len(users),
-                "validation_details": validation
-            }
-            return False, SelfHealingFramework.generate_healing_response("assign_role", primary_issue, context)
+            logger.warning(f"Role assignment safety check failed for role {role.name if role else 'unknown'}: {validation['issues']}")
+            return True, None  # Silent failure
 
         # --- Perform assignments ---
         assigned_users = []
