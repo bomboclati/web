@@ -3,6 +3,7 @@ from discord.ext import commands
 import asyncio
 import json
 import time
+import re
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 from enum import Enum
@@ -255,8 +256,11 @@ class AIChatSystem:
             
             if len(response) > 2000:
                 response = response[:1997] + "..."
-            
-            return await message.channel.send(response, suppress_embeds=True)
+
+            # Suppress embeds for conversational responses, preserve for system messages
+            suppress_embeds = not self._is_system_message(response)
+
+            return await message.channel.send(response, suppress_embeds=suppress_embeds)
             
         except Exception as e:
             logger.error(f"AI chat error: {e}")
@@ -308,17 +312,54 @@ Respond with JSON only:
 
     async def _get_rpg_context(self, guild_id: int) -> str:
         rpg_data = dm.get_guild_data(guild_id, "rpg_data", {})
-        
+
         if not rpg_data:
             return "This is a new adventure. The world is waiting to be explored."
-        
+
         context = "RECENT ADVENTURE:\n"
-        
+
         for key, value in rpg_data.items():
             if key.startswith("story_"):
                 context += f"- {value[:200]}\n"
-        
+
         return context
+
+    def _is_system_message(self, response: str) -> bool:
+        """Check if the response appears to be a system message that should preserve embeds."""
+        response_lower = response.lower()
+
+        # Check for system keywords
+        system_keywords = [
+            "status", "alert", "notification", "update", "translated", "translation",
+            "error", "success", "failed", "completed", "processing", "system",
+            "info", "information", "announcement", "broadcast"
+        ]
+        if any(keyword in response_lower for keyword in system_keywords):
+            return True
+
+        # Check for emojis (basic Unicode emoji ranges)
+        if re.search(r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF]', response):
+            return True
+
+        # Check for structured formats like JSON
+        response_stripped = response.strip()
+        if (response_stripped.startswith('{') and response_stripped.endswith('}')) or \
+           (response_stripped.startswith('[') and response_stripped.endswith(']')):
+            try:
+                json.loads(response_stripped)
+                return True
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        # Check for code blocks (common in system outputs)
+        if '```' in response or '`' in response and len([line for line in response.split('\n') if line.strip().startswith('`')]) > 0:
+            return True
+
+        # Check for markdown links or formatting that might indicate rich content
+        if re.search(r'\[.*\]\(.*\)', response):  # Markdown links
+            return True
+
+        return False
     
     async def _chat_with_provider(self, guild_id: int, user_id: int, user_input: str, 
                                 system_prompt: str, provider: AIProvider) -> dict:
