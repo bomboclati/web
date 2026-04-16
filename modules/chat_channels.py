@@ -254,12 +254,14 @@ Ensure no trailing commas, comments, or text outside JSON. Lines under 1500 char
             if not isinstance(result, dict):
                 try:
                     result = json.loads(result)
-                except json.JSONDecodeError:
-                    return await message.channel.send("Invalid AI response format. Please try again.", suppress_embeds=True)
+                except json.JSONDecodeError as e:
+                    logger.error(f"AI JSON decode error: {e}, response: {result[:500]}")
+                    return await message.channel.send("Invalid AI response format. Please try again.")
 
             # Validate response structure
             if not self._validate_framework_response(result):
-                return await message.channel.send("AI response validation failed. Please try again.", suppress_embeds=True)
+                logger.error(f"AI framework validation failed for response: {result}")
+                return await message.channel.send("AI response validation failed. Please try again.")
 
             # Extract components
             reasoning = result.get("reasoning", "")
@@ -290,11 +292,11 @@ Ensure no trailing commas, comments, or text outside JSON. Lines under 1500 char
             if len(summary) > 2000:
                 summary = summary[:1997] + "..."
 
-            return await message.channel.send(summary, suppress_embeds=True)
+            return await message.channel.send(summary)
             
         except Exception as e:
             logger.error(f"AI chat error: {e}")
-            return await message.channel.send("Sorry, I encountered an error. Please try again.", suppress_embeds=True)
+            return await message.channel.send("Sorry, I encountered an error. Please try again.")
 
     async def _handle_translator_mode(self, message: discord.Message, chat_channel: AIChatChannel) -> Optional[discord.Message]:
         user_input = message.content
@@ -338,7 +340,7 @@ Respond with JSON only:
             
         except Exception as e:
             logger.error(f"Translation error: {e}")
-            return await message.channel.send("Sorry, translation failed. Please try again.", suppress_embeds=True)
+            return await message.channel.send("Sorry, translation failed. Please try again.")
 
     async def _get_rpg_context(self, guild_id: int) -> str:
         rpg_data = dm.get_guild_data(guild_id, "rpg_data", {})
@@ -364,17 +366,17 @@ Respond with JSON only:
         if not all(key in response for key in required_keys):
             return False
 
-        # Validate reasoning
+        # Validate reasoning (max 500 chars)
         reasoning = response.get("reasoning", "")
         if not isinstance(reasoning, str) or len(reasoning) > 500:
             return False
 
-        # Validate summary
+        # Validate summary (max 200 chars)
         summary = response.get("summary", "")
         if not isinstance(summary, str) or len(summary) > 200:
             return False
 
-        # Validate actions
+        # Validate actions (array)
         actions = response.get("actions", [])
         if not isinstance(actions, list) or len(actions) > 3:
             return False
