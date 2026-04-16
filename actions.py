@@ -975,6 +975,70 @@ class ActionHandler:
         logger.info("assign_role: input params=%s", params)
         logger.info("assign_role: available roles in guild=%s", [r.name for r in guild.roles])
 
+        # --- PHASE 6: ROLE HIERARCHY VALIDATION ---
+        # Before assigning the role, compare the bot's highest role position with the target role's position
+        # If the bot's position is less than or equal to the target position, abort the action
+
+        # First, resolve the target role to get its details
+        role = self._resolve_role(guild, params)
+        if not role:
+            logger.error("assign_role: could not resolve role from params: %s", params)
+            return False, {"error": "Role not found", "params": params}
+
+        # Get fresh role data using query_roles to ensure up-to-date positions
+        try:
+            from server_query import ServerQueryEngine
+            query_engine = ServerQueryEngine(self.bot)
+            roles_data = await query_engine.query_roles(guild.id)
+            # Find bot's roles and get the highest position
+            bot_member = guild.me
+            bot_roles = [r for r in bot_member.roles]
+            if not bot_roles:
+                logger.error("assign_role: Bot has no roles in guild")
+                return False, {"error": "Bot has no roles in this server"}
+
+            bot_highest_role = max(bot_roles, key=lambda r: r.position)
+            bot_position = bot_highest_role.position
+
+            # Get target role position from query data for accuracy
+            target_role_data = next((r for r in roles_data if r["id"] == role.id), None)
+            if target_role_data:
+                target_position = target_role_data["position"]
+            else:
+                target_position = role.position
+
+            # PHASE 6 validation: if bot's position <= target position, abort
+            if bot_position <= target_position:
+                # Send specific error response
+                error_message = f"I cannot assign the role <@&{role.id}> because it is positioned higher than or equal to my own role in Server Settings > Roles. Please move my role ({bot_highest_role.name}) above <@&{role.id}> in the role list."
+
+                # Try to send the error message to the interaction
+                try:
+                    await interaction.followup.send(error_message, ephemeral=True)
+                except Exception as e:
+                    logger.warning("Could not send error message to interaction: %s", e)
+
+                # Think deeply about available actions for users
+                # Query available roles that the bot can assign
+                available_roles = []
+                for r_data in roles_data:
+                    if r_data["position"] < bot_position:
+                        available_roles.append(f"<@&{r_data['id']}>")
+
+                if available_roles:
+                    suggestion_message = f"Available roles I can assign: {', '.join(available_roles[:5])}"
+                    try:
+                        await interaction.followup.send(suggestion_message, ephemeral=True)
+                    except Exception as e:
+                        logger.warning("Could not send suggestion message: %s", e)
+
+                logger.error("assign_role: PHASE 6 validation failed - bot position %d <= target position %d", bot_position, target_position)
+                return False, {"error": "Role hierarchy validation failed", "phase": 6, "bot_position": bot_position, "target_position": target_position, "available_roles": available_roles[:5]}
+
+        except Exception as e:
+            logger.error("assign_role: Error during PHASE 6 validation: %s", e)
+            # Continue with normal flow if query fails, but log the error
+
         # --- Normalize and resolve role ---
         role = self._resolve_role(guild, params)
         if not role:
@@ -982,10 +1046,43 @@ class ActionHandler:
             return False, {"error": "Role not found", "params": params}
 
         # --- Normalize and resolve users (support single user or batch) ---
+        # Use query_members to validate and get fresh user data
+        try:
+            # Get fresh member data using query_members
+            from server_query import ServerQueryEngine
+            query_engine = ServerQueryEngine(self.bot)
+            members_data = await query_engine.query_members(guild.id, limit=500)  # Get more members for validation
+        except Exception as e:
+            logger.warning("assign_role: Could not query members data: %s", e)
+            members_data = []
+
         users = self._normalize_users(params)
         if not users:
             logger.error("assign_role: could not resolve any users from params: %s", params)
             return False, {"error": "No valid users found", "params": params}
+
+        # Validate users against fresh member data
+        validated_users = []
+        for user_spec in users:
+            user_id = user_spec.get("user_id") or user_spec.get("id")
+            username = user_spec.get("username") or user_spec.get("name")
+
+            # Check if user exists in guild using query data
+            member_exists = False
+            if user_id:
+                member_exists = any(str(m["id"]) == str(user_id) for m in members_data)
+            elif username:
+                member_exists = any(m["name"].lower() == username.lower() or (m.get("nick") and m["nick"].lower() == username.lower()) for m in members_data)
+
+            if member_exists:
+                validated_users.append(user_spec)
+            else:
+                logger.warning("assign_role: User %s not found in guild members", user_spec)
+
+        if not validated_users:
+            return False, {"error": "No valid users found in server", "params": params}
+
+        users = validated_users
 
         # Check role hierarchy - bot can't assign roles higher than itself
         bot_top_role = guild.me.top_role
