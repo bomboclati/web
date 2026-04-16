@@ -204,6 +204,41 @@ class ActionHandler:
         """Set the guild context for help and other commands"""
         self._guild_context = guild
 
+    # --- Defensive Programming Utilities ---
+
+    def _safe_get(self, data: Any, key: str, default=None) -> Any:
+        """Safely get value from dict using .get() method. TYPE SAFETY FIRST."""
+        if isinstance(data, dict):
+            return data.get(key, default)
+        return default
+
+    def _handle_list_result(self, items: List[Any], item_type: str, context: str = "") -> Tuple[Any, Optional[str]]:
+        """
+        Handle list results according to defensive programming protocol.
+        Returns (item_or_none, error_message_or_none)
+        - If len > 1: Returns None, error message asking user to specify
+        - If len == 0: Returns None, "No matching items found."
+        - If len == 1: Returns items[0], None
+        """
+        if not isinstance(items, list):
+            return None, f"Expected list of {item_type}, got {type(items).__name__}"
+
+        if len(items) > 1:
+            names = [self._safe_get(item, 'name', str(item)) for item in items[:3]]
+            return None, f"Multiple {item_type} found: {', '.join(names)}{'...' if len(items) > 3 else ''}. Please specify which one you want{context}."
+        elif len(items) == 0:
+            return None, f"No matching {item_type} found."
+        else:
+            return items[0], None
+
+    def _verify_type_before_method(self, obj: Any, expected_type, method_name: str) -> bool:
+        """Verify object type before calling method. TYPE SAFETY FIRST."""
+        if not isinstance(obj, expected_type):
+            expected_name = getattr(expected_type, '__name__', str(expected_type))
+            logger.warning(f"Type safety violation: expected {expected_name}, got {type(obj).__name__} when calling {method_name}")
+            return False
+        return True
+
     async def _validate_action(self, interaction: discord.Interaction, action: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """
         Pre-execution action validation system:
@@ -279,18 +314,19 @@ class ActionHandler:
             logger.error(f"Audit Phase 1 failed: {e}")
             return "Failed to gather server anatomy", "Unable to plan action", "high", ["Audit failed: unable to analyze server structure"]
 
-        server_result = server_data.get("query_result", {})
-        channels_result = channels_data.get("query_result", {})
-        roles_result = roles_data.get("query_result", {})
-        members_result = members_data.get("query_result", {})
+        # DEFENSIVE: Use safe get for all query results
+        server_result = self._safe_get(server_data, "query_result", {})
+        channels_result = self._safe_get(channels_data, "query_result", {})
+        roles_result = self._safe_get(roles_data, "query_result", {})
+        members_result = self._safe_get(members_data, "query_result", {})
 
-        anatomy_summary = f"Server: {server_result.get('name', 'Unknown')} with {len(channels_result.get('channels', []))} channels, {len(roles_result.get('roles', []))} roles, {members_result.get('total_members', 0)} members"
+        anatomy_summary = f"Server: {self._safe_get(server_result, 'name', 'Unknown')} with {len(self._safe_get(channels_result, 'channels', []))} channels, {len(self._safe_get(roles_result, 'roles', []))} roles, {self._safe_get(members_result, 'total_members', 0)} members"
 
-        # Phase 2: The Power Matrix
-        roles = roles_result.get('roles', [])
-        power_matrix = sorted(roles, key=lambda r: r.get('position', 0), reverse=True)
-        admin_roles = [r for r in power_matrix if r.get('permissions', {}).get('administrator', False)]
-        power_summary = f"Top roles: {[r['name'] for r in power_matrix[:5]]}, Admin roles: {[r['name'] for r in admin_roles]}"
+        # Phase 2: The Power Matrix - DEFENSIVE
+        roles = self._safe_get(roles_result, 'roles', [])
+        power_matrix = sorted(roles, key=lambda r: self._safe_get(r, 'position', 0), reverse=True)
+        admin_roles = [r for r in power_matrix if self._safe_get(self._safe_get(r, 'permissions', {}), 'administrator', False)]
+        power_summary = f"Top roles: {[self._safe_get(r, 'name', 'Unknown') for r in power_matrix[:5]]}, Admin roles: {[self._safe_get(r, 'name', 'Unknown') for r in admin_roles]}"
 
         # Phase 3: Functional Ripple Effect
         ripple_effect = self._analyze_ripple_effect(name, params, channels_result, roles_result, members_result)
@@ -1094,8 +1130,13 @@ class ActionHandler:
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def action_assign_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Assign a role to one or more users. Supports batch operations and flexible parameter formats."""
+        """Assign a role to one or more users. Supports batch operations and flexible parameter formats. Uses defensive programming."""
         guild = interaction.guild
+
+        # TYPE SAFETY FIRST: Verify inputs
+        if not isinstance(params, dict):
+            logger.error("DEFENSIVE: assign_role expected dict params, got %s", type(params))
+            return False, {"error": "Invalid parameters format"}
 
         # Log all input parameters
         logger.info("assign_role: input params=%s", params)
@@ -1105,13 +1146,33 @@ class ActionHandler:
         role = self._resolve_role(guild, params)
         if not role:
             logger.error("assign_role: could not resolve role from params: %s", params)
-            return False, {"error": "Role not found", "params": params}
+            # DEFENSIVE: Check if role data came from query and has multiple results
+            role_data = self._safe_get(params, "role")
+            if isinstance(role_data, list):
+                resolved_role, error = self._handle_list_result(role_data, "roles", " by name or ID")
+                if error:
+                    await interaction.followup.send(error, ephemeral=True)
+                    return False, {"error": error}
+                if resolved_role:
+                    role = self._resolve_role(guild, {"role": resolved_role})
+            if not role:
+                return False, {"error": "Role not found", "params": params}
 
         # --- Normalize and resolve users (support single user or batch) ---
         users = self._normalize_users(params)
         if not users:
             logger.error("assign_role: could not resolve any users from params: %s", params)
-            return False, {"error": "No valid users found", "params": params}
+            # DEFENSIVE: Check if user data came from query and has multiple results
+            user_data = self._safe_get(params, "users")
+            if isinstance(user_data, list):
+                resolved_user, error = self._handle_list_result(user_data, "users", " by username or ID")
+                if error:
+                    await interaction.followup.send(error, ephemeral=True)
+                    return False, {"error": error}
+                if resolved_user:
+                    users = self._normalize_users({"users": [resolved_user]})
+            if not users:
+                return False, {"error": "No valid users found", "params": params}
 
         # PHASE 6: ROLE HIERARCHY VALIDATION
         bot_top_role = guild.me.top_role
@@ -1176,125 +1237,172 @@ class ActionHandler:
             return False, result
 
     def _resolve_role(self, guild: discord.Guild, params: Dict[str, Any]) -> Optional[discord.Role]:
-        """Resolve role from various parameter formats."""
-        # Try role_id first
-        role_id = params.get("role_id")
-        if role_id:
-            try:
-                role = guild.get_role(int(role_id))
-                if role:
-                    return role
-            except (TypeError, ValueError):
-                pass
+        """Resolve role from various parameter formats. Uses defensive programming."""
+        # TYPE SAFETY FIRST: Verify params is dict
+        if not isinstance(params, dict):
+            logger.warning(f"DEFENSIVE: _resolve_role expected dict, got {type(params)}")
+            return None
 
-        # Try role_name or name
-        role_name = params.get("role_name") or params.get("name")
-        if isinstance(role_name, dict):
-            if "id" in role_name:
+        # SECTION 1: THE .get() SAFETY PROTOCOL - Try role_id first
+        role_id = self._safe_get(params, "role_id")
+        if role_id:
+            if self._verify_type_before_method(role_id, (int, str), "int()"):
                 try:
-                    role = guild.get_role(int(role_name["id"]))
+                    role = guild.get_role(int(role_id))
                     if role:
                         return role
-                except (TypeError, ValueError):
-                    pass
-                role_name = None
-            elif "name" in role_name:
-                role_name = role_name["name"]
-            else:
-                role_name = None
-        if role_name and isinstance(role_name, str):
-            # Exact match first
-            role = discord.utils.find(lambda r: r.name.lower() == role_name.lower(), guild.roles)
-            if role:
-                return role
-            # Partial match
-            role = discord.utils.find(lambda r: role_name.lower() in r.name.lower(), guild.roles)
-            if role:
-                return role
+                except (TypeError, ValueError) as e:
+                    logger.warning(f"DEFENSIVE: Failed to convert role_id {role_id}: {e}")
 
-        # Try role object (from query_roles)
-        role_data = params.get("role")
-        if isinstance(role_data, dict) and "id" in role_data:
-            try:
-                role = guild.get_role(int(role_data["id"]))
+        # Try role_name or name - handle dict inputs defensively
+        role_name = self._safe_get(params, "role_name") or self._safe_get(params, "name")
+        if isinstance(role_name, dict):
+            # DEFENSIVE: Use .get() for dict access
+            role_id_from_dict = self._safe_get(role_name, "id")
+            if role_id_from_dict:
+                try:
+                    role = guild.get_role(int(role_id_from_dict))
+                    if role:
+                        return role
+                except (TypeError, ValueError) as e:
+                    logger.warning(f"DEFENSIVE: Failed to convert role id from dict: {e}")
+                role_name = None
+            else:
+                role_name = self._safe_get(role_name, "name")
+        if role_name and isinstance(role_name, str):
+            # Verify guild.roles is accessible
+            if self._verify_type_before_method(guild, discord.Guild, "roles"):
+                # Exact match first
+                role = discord.utils.find(lambda r: r.name.lower() == role_name.lower(), guild.roles)
                 if role:
                     return role
-            except (TypeError, ValueError):
-                pass
+                # Partial match
+                role = discord.utils.find(lambda r: role_name.lower() in r.name.lower(), guild.roles)
+                if role:
+                    return role
+
+        # Try role object (from query_roles) - DEFENSIVE dict handling
+        role_data = self._safe_get(params, "role")
+        if isinstance(role_data, dict):
+            role_id_from_data = self._safe_get(role_data, "id")
+            if role_id_from_data:
+                try:
+                    role = guild.get_role(int(role_id_from_data))
+                    if role:
+                        return role
+                except (TypeError, ValueError) as e:
+                    logger.warning(f"DEFENSIVE: Failed to convert role id from role_data: {e}")
 
         return None
 
     def _normalize_users(self, params: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Normalize user specifications into a list of user specs."""
+        """Normalize user specifications into a list of user specs. Uses defensive programming."""
         users = []
 
-        # Check for batch parameters
-        if "users" in params:
-            user_list = params["users"]
+        # TYPE SAFETY FIRST: Verify params is dict
+        if not isinstance(params, dict):
+            logger.warning(f"DEFENSIVE: _normalize_users expected dict, got {type(params)}")
+            return users
+
+        # SECTION 1: THE .get() SAFETY PROTOCOL - Check for batch parameters
+        user_list = self._safe_get(params, "users")
+        if user_list is not None:
             if isinstance(user_list, list):
-                users.extend(user_list)
+                # DEFENSIVE: Handle list of users from query_members
+                for user_item in user_list:
+                    if isinstance(user_item, dict):
+                        user_id = self._safe_get(user_item, "id")
+                        user_name = self._safe_get(user_item, "name")
+                        if user_id:
+                            users.append({"user_id": user_id, "username": user_name})
+                    else:
+                        users.append(user_item)
             else:
                 users.append(user_list)
-        elif "usernames" in params:
-            username_list = params["usernames"]
+
+        elif self._safe_get(params, "usernames"):
+            username_list = self._safe_get(params, "usernames")
             if isinstance(username_list, list):
                 for username in username_list:
                     users.append({"username": username})
             else:
                 users.append({"username": username_list})
-        elif "user_ids" in params:
-            user_id_list = params["user_ids"]
+
+        elif self._safe_get(params, "user_ids"):
+            user_id_list = self._safe_get(params, "user_ids")
             if isinstance(user_id_list, list):
                 for user_id in user_id_list:
                     users.append({"user_id": user_id})
             else:
                 users.append({"user_id": user_id_list})
-        # Check for single user parameters
-        elif any(k in params for k in ["username", "user_name", "user_id", "user"]):
+
+        # Check for single user parameters - DEFENSIVE
+        elif any(self._safe_get(params, k) for k in ["username", "user_name", "user_id", "user"]):
             users.append(params)
-        # Check if params is a member dict from query_members
-        elif isinstance(params, dict) and "name" in params and "id" in params:
-            users.append({"user_id": params["id"], "username": params["name"]})
-        # Check if params is a list of member dicts (direct from query_members result)
-        elif isinstance(params, list) and len(params) > 0 and isinstance(params[0], dict) and "name" in params[0]:
-            for member_data in params:
-                if "id" in member_data:
-                    users.append({"user_id": member_data["id"], "username": member_data.get("name", "")})
+
+        # Check if params is a member dict from query_members - DEFENSIVE
+        elif isinstance(params, dict) and self._safe_get(params, "name") and self._safe_get(params, "id"):
+            users.append({
+                "user_id": self._safe_get(params, "id"),
+                "username": self._safe_get(params, "name")
+            })
+
+        # Check if params is a list of member dicts (direct from query_members result) - DEFENSIVE
+        elif isinstance(params, list) and len(params) > 0:
+            first_item = params[0] if len(params) > 0 else None
+            if isinstance(first_item, dict) and self._safe_get(first_item, "name"):
+                for member_data in params:
+                    user_id = self._safe_get(member_data, "id")
+                    if user_id:
+                        users.append({
+                            "user_id": user_id,
+                            "username": self._safe_get(member_data, "name", "")
+                        })
 
         return users
 
     async def _resolve_member(self, guild: discord.Guild, user_spec: Dict[str, Any]) -> Optional[discord.Member]:
-        """Resolve a member from various specification formats."""
-        # Try user_id first
-        user_id = user_spec.get("user_id") or user_spec.get("user") or user_spec.get("id")
-        if isinstance(user_id, dict) and "id" in user_id:
-            user_id = user_id["id"]
+        """Resolve a member from various specification formats. Uses defensive programming."""
+        # TYPE SAFETY FIRST: Verify inputs
+        if not isinstance(user_spec, dict):
+            logger.warning(f"DEFENSIVE: _resolve_member expected dict, got {type(user_spec)}")
+            return None
+        if not self._verify_type_before_method(guild, discord.Guild, "get_member"):
+            return None
+
+        # SECTION 1: THE .get() SAFETY PROTOCOL - Try user_id first
+        user_id = self._safe_get(user_spec, "user_id") or self._safe_get(user_spec, "user") or self._safe_get(user_spec, "id")
+        if isinstance(user_id, dict):
+            user_id = self._safe_get(user_id, "id")
         if user_id:
             try:
-                uid = int(str(user_id).strip().lstrip("<@!").rstrip(">"))
-                member = guild.get_member(uid)
+                uid_str = str(user_id).strip().lstrip("<@!").rstrip(">")
+                if self._verify_type_before_method(uid_str, str, "int()"):
+                    uid = int(uid_str)
+                    member = guild.get_member(uid)
+                    if member:
+                        return member
+                    # Try to fetch if not cached
+                    try:
+                        return await guild.fetch_member(uid)
+                    except discord.NotFound:
+                        pass
+            except (TypeError, ValueError, discord.HTTPException) as e:
+                logger.warning(f"DEFENSIVE: Failed to resolve user_id {user_id}: {e}")
+
+        # Try username/display name - DEFENSIVE
+        username = self._safe_get(user_spec, "username") or self._safe_get(user_spec, "user_name") or self._safe_get(user_spec, "name")
+        if isinstance(username, dict):
+            username = self._safe_get(username, "name")
+        if username and isinstance(username, str):
+            search = username.lstrip("@").lower()
+            if self._verify_type_before_method(guild, discord.Guild, "members"):
+                member = discord.utils.find(
+                    lambda m: m.name.lower() == search or (m.nick and m.nick.lower() == search),
+                    guild.members
+                )
                 if member:
                     return member
-                # Try to fetch if not cached
-                try:
-                    return await guild.fetch_member(uid)
-                except discord.NotFound:
-                    pass
-            except (TypeError, ValueError, discord.HTTPException):
-                pass
-
-        # Try username/display name
-        username = user_spec.get("username") or user_spec.get("user_name") or user_spec.get("name")
-        if isinstance(username, dict) and "name" in username:
-            username = username["name"]
-        if username:
-            search = str(username).lstrip("@").lower()
-            member = discord.utils.find(
-                lambda m: m.name.lower() == search or (m.nick and m.nick.lower() == search),
-                guild.members
-            )
-            if member:
-                return member
 
         return None
 
@@ -3199,12 +3307,12 @@ class ActionHandler:
         return await self._make_single_channel_private(guild, channel_name, allowed_roles)
 
     async def _make_single_channel_private(self, guild, channel_name: Union[str, Dict[str, Any]], allowed_roles: List[str]) -> Tuple[bool, Optional[Dict]]:
-        """Helper method to make a single channel private."""
-        # Handle dict input from query_channels
+        """Helper method to make a single channel private. Uses defensive programming."""
+        # DEFENSIVE: Handle dict input from query_channels - SECTION 1: THE .get() SAFETY PROTOCOL
         if isinstance(channel_name, dict):
-            channel_name = channel_name.get('name') or str(channel_name.get('id', ''))
+            channel_name = self._safe_get(channel_name, 'name') or str(self._safe_get(channel_name, 'id', ''))
             if not channel_name:
-                logger.error(f"make_channel_private: Invalid channel dict provided: no 'name' or 'id' field")
+                logger.error(f"DEFENSIVE: make_channel_private: Invalid channel dict provided: no 'name' or 'id' field")
                 return False, None
 
         # First, try to lookup by ID if the input looks like an ID
