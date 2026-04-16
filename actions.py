@@ -74,6 +74,164 @@ COMMAND_SCHEMA = {
     "required": ["command_type"]
 }
 
+class SelfHealingFramework:
+    """Self-Healing Discord Automation AI Framework"""
+
+    FIX_ACTION_LIBRARY = {
+        "bot_missing_manage_roles": {
+            "root_cause": "Bot lacks manage_roles permission",
+            "fix_plan": [
+                "Go to Server Settings > Roles",
+                "Find the bot's role (usually at the top)",
+                "Enable 'Manage Roles' permission",
+                "Move bot role above roles it needs to assign"
+            ],
+            "alternatives": [
+                "Use a different bot with proper permissions",
+                "Manually assign the role through Discord UI",
+                "Contact server admin to fix bot permissions"
+            ]
+        },
+        "role_hierarchy_violation": {
+            "root_cause": "Bot's role is below target role in hierarchy",
+            "fix_plan": [
+                "Go to Server Settings > Roles",
+                "Drag bot's role above the target role",
+                "Ensure bot has manage_roles permission"
+            ],
+            "alternatives": [
+                "Choose a different role to assign",
+                "Contact server admin to adjust role hierarchy",
+                "Use a different bot with higher role position"
+            ]
+        },
+        "managed_role_cannot_modify": {
+            "root_cause": "Target role is managed by an integration",
+            "fix_plan": [
+                "Cannot modify managed roles (created by bots/apps)",
+                "Choose a different role that is not managed",
+                "Check if the integration allows role management"
+            ],
+            "alternatives": [
+                "Select a custom server role instead",
+                "Contact the integration owner for assistance",
+                "Use a different action that doesn't require role modification"
+            ]
+        },
+        "member_not_found": {
+            "root_cause": "User/member does not exist in server",
+            "fix_plan": [
+                "Verify the username or user ID is correct",
+                "Check if user is still a member of the server",
+                "Use /query_members to list current members"
+            ],
+            "alternatives": [
+                "Use a different username or user ID",
+                "Try the action again after user joins server",
+                "Use @mention instead of username for better accuracy"
+            ]
+        },
+        "user_lacks_manage_roles": {
+            "root_cause": "User executing command lacks manage_roles permission",
+            "fix_plan": [
+                "User needs 'Manage Roles' permission to assign roles",
+                "Contact server admin to grant permission",
+                "Use a different user account with proper permissions"
+            ],
+            "alternatives": [
+                "Ask a moderator/admin to perform the action",
+                "Use a different command that doesn't require role management",
+                "Set up automated role assignment if appropriate"
+            ]
+        }
+    }
+
+    @staticmethod
+    def generate_healing_response(action_name: str, error_key: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Generate a structured healing response for failed actions."""
+        fix_info = SelfHealingFramework.FIX_ACTION_LIBRARY.get(error_key, {
+            "root_cause": "Unknown error occurred",
+            "fix_plan": ["Contact server administrator", "Check bot permissions", "Review server settings"],
+            "alternatives": ["Try the action again", "Use a different approach", "Contact support"]
+        })
+
+        response = {
+            "healing_response": True,
+            "failed_action": action_name,
+            "root_cause": fix_info["root_cause"],
+            "fix_action_plan": fix_info["fix_plan"],
+            "alternatives": fix_info["alternatives"]
+        }
+
+        if context:
+            response["context"] = context
+
+        return response
+
+    @staticmethod
+    async def validate_assign_role_pre_flight(interaction: discord.Interaction, role: discord.Role, members: List[discord.Member]) -> Dict[str, Any]:
+        """Comprehensive pre-flight validation for assign_role action with silent reasoning."""
+        validation_results = {
+            "valid": True,
+            "issues": [],
+            "reasoning_log": []
+        }
+
+        # Silent internal reasoning logging
+        validation_results["reasoning_log"].append("Starting pre-flight validation for assign_role")
+
+        # 1. Bot permission check
+        bot_member = interaction.guild.me
+        if not bot_member.guild_permissions.manage_roles:
+            validation_results["valid"] = False
+            validation_results["issues"].append("bot_missing_manage_roles")
+            validation_results["reasoning_log"].append("Bot lacks manage_roles permission - critical failure")
+        else:
+            validation_results["reasoning_log"].append("Bot has manage_roles permission - passed")
+
+        # 2. Role hierarchy validation
+        bot_top_role = bot_member.top_role
+        if role.position >= bot_top_role.position:
+            validation_results["valid"] = False
+            validation_results["issues"].append("role_hierarchy_violation")
+            validation_results["reasoning_log"].append(f"Target role position ({role.position}) >= bot's top role ({bot_top_role.position}) - hierarchy violation")
+        else:
+            validation_results["reasoning_log"].append(f"Role hierarchy check passed: target({role.position}) < bot({bot_top_role.position})")
+
+        # 3. Managed role check
+        if role.managed:
+            validation_results["valid"] = False
+            validation_results["issues"].append("managed_role_cannot_modify")
+            validation_results["reasoning_log"].append("Target role is managed by integration - cannot modify")
+        else:
+            validation_results["reasoning_log"].append("Role is not managed - can be modified")
+
+        # 4. Member existence validation
+        invalid_members = []
+        for member in members:
+            if member is None:
+                invalid_members.append("unknown")
+            elif not isinstance(member, discord.Member):
+                invalid_members.append(str(member))
+            else:
+                validation_results["reasoning_log"].append(f"Member {member.display_name} exists and is valid")
+
+        if invalid_members:
+            validation_results["valid"] = False
+            validation_results["issues"].append("member_not_found")
+            validation_results["reasoning_log"].append(f"Invalid members found: {invalid_members}")
+
+        # 5. User permission check
+        if not interaction.user.guild_permissions.manage_roles:
+            validation_results["valid"] = False
+            validation_results["issues"].append("user_lacks_manage_roles")
+            validation_results["reasoning_log"].append("User lacks manage_roles permission")
+        else:
+            validation_results["reasoning_log"].append("User has manage_roles permission")
+
+        validation_results["reasoning_log"].append(f"Pre-flight validation complete. Valid: {validation_results['valid']}")
+        return validation_results
+
 def validate_command_json(data: dict) -> Tuple[bool, str]:
     """Validate custom command JSON against schema. Returns (valid, error_message)."""
     if not isinstance(data, dict):
@@ -462,13 +620,44 @@ class ActionHandler:
                 return {"results": results, "rolled_back": [], "failed_at": i, "failed_action": name, "error": f"Action not allowed: {name}", "success": False}
             
             try:
-                success, undo_data = await self.dispatch(interaction, name, params)
+                success, response_data = await self.dispatch(interaction, name, params)
                 results.append((name, success))
-                
-                if success and undo_data:
+
+                # Check if this is a healing response from Self-Healing framework
+                if not success and response_data and isinstance(response_data, dict) and response_data.get("healing_response"):
+                    logger.info("Self-Healing response detected for action %s", name)
+                    # Format healing response for user
+                    healing_info = response_data
+                    healing_message = f"🤖 **Self-Healing AI Response**\n\n"
+                    healing_message += f"**Failed Action:** {healing_info['failed_action']}\n"
+                    healing_message += f"**Root Cause:** {healing_info['root_cause']}\n\n"
+                    healing_message += "**Fix Action Plan:**\n"
+                    for step in healing_info['fix_action_plan']:
+                        healing_message += f"• {step}\n"
+                    healing_message += "\n**Alternatives:**\n"
+                    for alt in healing_info['alternatives']:
+                        healing_message += f"• {alt}\n"
+
+                    # Send healing response to user
+                    try:
+                        await interaction.followup.send(healing_message, ephemeral=True)
+                    except Exception as send_error:
+                        logger.warning("Could not send healing response: %s", send_error)
+
+                    # Return structured healing response
+                    return {
+                        "results": results,
+                        "rolled_back": [],
+                        "failed_at": i,
+                        "failed_action": name,
+                        "healing_response": healing_info,
+                        "success": False
+                    }
+
+                if success and response_data:
                     self._action_log.append({
                         "action": name,
-                        "undo_data": undo_data,
+                        "undo_data": response_data,
                         "guild_id": guild_id,
                         "user_id": user_id,
                         "timestamp": time.time()
@@ -479,9 +668,9 @@ class ActionHandler:
                 error_msg = str(e)
                 logger.error("Action Error (%s): %s", name, error_msg)
                 results.append((name, False))
-                
+
                 self._record_failure(guild_id, name, error_msg)
-                
+
                 if auto_rollback and self._action_log:
                     rollback_results = await self._rollback_sequence(interaction)
                     return {
@@ -1130,7 +1319,7 @@ class ActionHandler:
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def action_assign_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Assign a role to one or more users. Supports batch operations and flexible parameter formats. Uses defensive programming."""
+        """Assign a role to one or more users with Self-Healing Discord Automation AI pre-flight validations."""
         guild = interaction.guild
 
         # TYPE SAFETY FIRST: Verify inputs
@@ -1156,7 +1345,7 @@ class ActionHandler:
                 if resolved_role:
                     role = self._resolve_role(guild, {"role": resolved_role})
             if not role:
-                return False, {"error": "Role not found", "params": params}
+                return False, SelfHealingFramework.generate_healing_response("assign_role", "member_not_found", {"attempted_role": params.get("role_name")})
 
         # --- Normalize and resolve users (support single user or batch) ---
         users = self._normalize_users(params)
@@ -1172,27 +1361,37 @@ class ActionHandler:
                 if resolved_user:
                     users = self._normalize_users({"users": [resolved_user]})
             if not users:
-                return False, {"error": "No valid users found", "params": params}
+                return False, SelfHealingFramework.generate_healing_response("assign_role", "member_not_found", {"attempted_users": params.get("username") or params.get("user_id")})
 
-        # PHASE 6: ROLE HIERARCHY VALIDATION
-        bot_top_role = guild.me.top_role
-        if role.position >= bot_top_role.position:
-            message = f"I cannot assign the role `@{role.name}` because it is positioned higher than or equal to my own role in Server Settings > Roles. Please move my role ({bot_top_role.name}) above `@{role.name}` in the role list."
-            await interaction.followup.send(message, ephemeral=True)
-            logger.error("assign_role: role %s is higher than or equal to bot's top role %s", role.name, bot_top_role.name)
-            return False, {"error": f"Role {role.name} is higher than or equal to bot's highest role", "role_position": role.position, "bot_position": bot_top_role.position}
+        # Resolve member objects for validation
+        members = []
+        for user_spec in users:
+            member = await self._resolve_member(guild, user_spec)
+            members.append(member)
 
-        # Check if user has permission to assign this role
-        if not interaction.user.guild_permissions.manage_roles:
-            logger.error("assign_role: User lacks manage_roles permission")
-            return False, {"error": "User lacks manage_roles permission"}
+        # SELF-HEALING PRE-FLIGHT VALIDATION
+        validation = await SelfHealingFramework.validate_assign_role_pre_flight(interaction, role, members)
+
+        # Log silent internal reasoning
+        for reasoning in validation["reasoning_log"]:
+            logger.info(f"[SELF-HEALING] {reasoning}")
+
+        # If validation failed, return healing response
+        if not validation["valid"]:
+            primary_issue = validation["issues"][0] if validation["issues"] else "unknown_error"
+            context = {
+                "role_name": role.name if role else "unknown",
+                "user_count": len(users),
+                "validation_details": validation
+            }
+            return False, SelfHealingFramework.generate_healing_response("assign_role", primary_issue, context)
 
         # --- Perform assignments ---
         assigned_users = []
         failed_users = []
 
-        for user_spec in users:
-            member = await self._resolve_member(guild, user_spec)
+        for i, user_spec in enumerate(users):
+            member = members[i]
             if not member:
                 logger.warning("assign_role: could not resolve member from spec: %s", user_spec)
                 failed_users.append({"spec": user_spec, "error": "Member not found"})
@@ -1205,6 +1404,12 @@ class ActionHandler:
             except discord.Forbidden:
                 logger.error("assign_role: Forbidden - bot lacks permission to assign role %s to %s", role.name, member.display_name)
                 failed_users.append({"user_id": member.id, "username": member.display_name, "error": "Bot lacks permission"})
+                # Generate healing response for this specific failure
+                healing_response = SelfHealingFramework.generate_healing_response(
+                    "assign_role", "bot_missing_manage_roles",
+                    {"target_user": member.display_name, "role_name": role.name}
+                )
+                return False, healing_response
             except discord.HTTPException as e:
                 logger.error("assign_role: HTTP error assigning to %s: %s", member.display_name, str(e))
                 failed_users.append({"user_id": member.id, "username": member.display_name, "error": f"HTTP error: {str(e)}"})
