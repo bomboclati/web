@@ -545,19 +545,18 @@ class AIClient:
             
             # Final validation and sanitization
             if self._validate_json_response(res_json):
-                # Remove optional fields if empty/None
-                if res_json.get("reasoning") in [None, "", "Raw text response", "Standard response"]:
-                    del res_json["reasoning"]
-                if res_json.get("walkthrough") in [None, "", ""]:
-                    del res_json["walkthrough"]
-                if res_json.get("actions") in [None, [], []]:
-                    del res_json["actions"]
-                
+                # Enforce batch limit: max 5 actions
+                if "actions" in res_json and len(res_json["actions"]) > 5:
+                    res_json["actions"] = res_json["actions"][:5]
+                    # Note in summary that more actions were requested
+                    if "summary" in res_json:
+                        res_json["summary"] += " (Note: Limited to 5 actions, more were requested)"
+
                 # Double-serialize to ensure proper escaping
                 serialized = json.dumps(res_json, ensure_ascii=False)
                 return json.loads(serialized)
             else:
-                # Always ensure summary is clean text - NEVER return raw JSON structure
+                # Fallback to summary only if validation fails
                 summary_text = str(res_json.get("summary", ai_msg)).strip()
             
                 # Final sanitization to remove any JSON artifacts
@@ -683,32 +682,34 @@ class AIClient:
         return content
         
     def _validate_json_response(self, data: Any) -> bool:
-        """Validate that JSON response has correct structure and types."""
+        """Validate that JSON response has the strict required structure."""
         if not isinstance(data, dict):
             return False
-            
-        # Summary is always required
-        if "summary" not in data or not isinstance(data["summary"], str):
+
+        # All three keys must be present
+        required_keys = ["reasoning", "summary", "actions"]
+        if not all(key in data for key in required_keys):
             return False
-            
-        # Validate optional fields if present
-        if "reasoning" in data and not isinstance(data["reasoning"], str):
+
+        # Validate types and constraints
+        if not isinstance(data["reasoning"], str) or len(data["reasoning"]) > 500:
             return False
-            
-        if "walkthrough" in data and not isinstance(data["walkthrough"], str):
+
+        if not isinstance(data["summary"], str) or len(data["summary"]) > 200:
             return False
-            
-        if "actions" in data and not isinstance(data["actions"], list):
+
+        if not isinstance(data["actions"], list):
             return False
-            
-        # Validate each action if present
-        if "actions" in data:
-            for action in data["actions"]:
-                if not isinstance(action, dict):
-                    return False
-                if "name" not in action or "parameters" not in action:
-                    return False
-                    
+
+        # Validate each action
+        for action in data["actions"]:
+            if not isinstance(action, dict):
+                return False
+            if "name" not in action or "parameters" not in action:
+                return False
+            if not isinstance(action["parameters"], dict):
+                return False
+
         return True
 
 # Default System Prompt
@@ -733,23 +734,24 @@ When users ask questions like "who is online?", "what roles do we have?", "show 
 "tell me about @User", "any pending applications?", use these query actions FIRST to get live data,
 then use send_message or send_embed to present the results to the user.
 
-CONDITIONAL JSON FORMAT:
-You MUST ALWAYS respond with a VALID JSON object.
+STRICT OUTPUT CONSTRAINTS:
+You MUST ALWAYS respond with a VALID JSON object containing EXACTLY these keys:
 
-WHEN USER REQUESTS AN ACTION, TASK, CODE CHANGE, OR SOMETHING REQUIRING EXECUTION:
-Include ALL these keys:
-1. "reasoning": (string) Your internal thoughts, validation checks, and confidence assessment. Explain why actions are safe and will work.
-2. "summary": (string) Your friendly response to the user. MANDATORY IN ALL CASES.
-3. "walkthrough": (string) Detailed step-by-step implementation plan with validation at each step.
-4. "actions": (list) A list of action objects. ALWAYS use a list, even for one action.
-5. Each action object: {"name": "action_name", "parameters": {...}}
+1. "reasoning": (string, under 500 characters) Your internal thoughts, validation checks, and confidence assessment. Explain why actions are safe and will work.
 
-WHEN USER ASKS A NORMAL QUESTION, INFO LOOKUP, OR STATUS CHECK:
-INCLUDE ONLY THE MANDATORY KEY:
-1. "summary": (string) Your clean direct answer to the user.
+2. "summary": (string, under 200 characters) Your friendly response to the user. MANDATORY IN ALL CASES.
 
-DO NOT include reasoning, walkthrough, or actions fields when just answering normal questions.
-ALWAYS PRODUCE PERFECT VALID JSON: proper closing braces, correct quotes, no trailing commas, properly escaped quotation marks.
+3. "actions": (array, max 5 actions) A list of action objects to execute. Each action object MUST have exactly: {"name": "action_name", "parameters": {...}}
+
+BATCH LIMIT: Never more than 5 actions in the array. If more than 5 requested, execute only the first 5 and note in summary to continue.
+
+ROLE ASSIGNMENT SAFETY: For assign_role actions, pre-flight checks are required:
+- Bot's highest role position > target role position
+- Target role not managed (managed: false)
+- Bot has MANAGE_ROLES permission
+If any check fails, do not include the action and mention failure in summary.
+
+ALWAYS PRODUCE PERFECT VALID JSON: proper closing braces, correct quotes, no trailing commas, no comments, no text outside JSON. Keep all lines under 1500 characters to prevent crashes.
 
 MULTI-STEP ACTIONS (CRITICAL - always use "actions" list, NOT singular "action"):
 "actions": [
