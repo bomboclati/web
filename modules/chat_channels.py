@@ -3,7 +3,7 @@ from discord.ext import commands
 import asyncio
 import json
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
 
@@ -228,21 +228,33 @@ class AIChatSystem:
                     system_prompt=system_prompt
                 )
             
-            # Use actual raw response directly instead of summary field
-            response = result.get("summary", "I didn't quite catch that. Could you try again?")
-            # Strip any summary headers/footers
-            import re
-            response = re.sub(r'^(?:Summary|Response):\s*', '', response, flags=re.IGNORECASE)
-            response = re.sub(r'\s*---\s*.*$', '', response, flags=re.DOTALL)
-            response = re.sub(r'\s*\*\*Summary\*\*:.*$', '', response, flags=re.IGNORECASE|re.DOTALL)
-            response = response.strip()
-            
+            # Check if result is the strict JSON format
+            if isinstance(result, dict) and "reasoning" in result and "summary" in result and "actions" in result:
+                # Strict JSON format: execute actions and use summary as response
+                summary = result["summary"]
+                actions = result.get("actions", [])
+
+                # Execute actions with safety checks
+                if actions:
+                    await self._execute_actions_safely(message, actions)
+
+                response = summary
+            else:
+                # Fallback to old behavior
+                response = result.get("summary", "I didn't quite catch that. Could you try again?")
+                # Strip any summary headers/footers
+                import re
+                response = re.sub(r'^(?:Summary|Response):\s*', '', response, flags=re.IGNORECASE)
+                response = re.sub(r'\s*---\s*.*$', '', response, flags=re.DOTALL)
+                response = re.sub(r'\s*\*\*Summary\*\*:.*$', '', response, flags=re.IGNORECASE|re.DOTALL)
+                response = response.strip()
+
             session["messages"].append({"role": "user", "content": user_input})
             session["messages"].append({"role": "assistant", "content": response})
-            
+
             if len(session["messages"]) > 50:
                 session["messages"] = session["messages"][-50:]
-            
+
             vector_memory.store_conversation(
                 guild_id=message.guild.id,
                 user_id=message.author.id,
@@ -252,15 +264,78 @@ class AIChatSystem:
                 walkthrough=result.get("walkthrough", ""),
                 importance_score=0.5
             )
-            
+
             if len(response) > 2000:
                 response = response[:1997] + "..."
-            
+
             return await message.channel.send(response, suppress_embeds=True)
             
         except Exception as e:
             logger.error(f"AI chat error: {e}")
             return await message.channel.send("Sorry, I encountered an error. Please try again.", suppress_embeds=True)
+
+    async def _execute_actions_safely(self, message: discord.Message, actions: List[Dict[str, Any]]):
+        """Execute actions from AI response with safety checks."""
+        if not actions:
+            return
+
+        # Create a mock interaction for the action handler
+        class MockInteraction:
+            def __init__(self, message):
+                self.message = message
+                self.guild = message.guild
+                self.user = message.author
+                self.channel = message.channel
+
+            async def followup_send(self, content, ephemeral=False):
+                return await self.channel.send(content)
+
+            @property
+            def guild_permissions(self):
+                return self.user.guild_permissions
+
+        interaction = MockInteraction(message)
+
+        # Filter out invalid assign_role actions
+        filtered_actions = []
+        summary_notes = []
+
+        for action in actions:
+            if action.get("name") == "assign_role":
+                # Perform pre-flight checks
+                from actions import SelfHealingFramework
+                role_name = action.get("parameters", {}).get("role_name")
+                if role_name:
+                    # Get the role
+                    role = discord.utils.get(interaction.guild.roles, name=role_name)
+                    if role:
+                        # Get members (this is simplified, need to handle different parameter formats)
+                        members = []
+                        params = action.get("parameters", {})
+                        if "username" in params:
+                            member = discord.utils.get(interaction.guild.members, name=params["username"])
+                            if member:
+                                members = [member]
+                        elif "usernames" in params:
+                            members = [discord.utils.get(interaction.guild.members, name=name) for name in params["usernames"]]
+                            members = [m for m in members if m]
+
+                        validation = await SelfHealingFramework.validate_assign_role_pre_flight(interaction, role, members)
+                        if not validation["valid"]:
+                            summary_notes.append(f"assign_role for {role_name} failed safety checks")
+                            continue
+
+                filtered_actions.append(action)
+            else:
+                filtered_actions.append(action)
+
+        if filtered_actions:
+            from actions import ActionHandler
+            handler = ActionHandler(self.bot)
+            handler.set_guild_context(message.guild)
+            result = await handler.execute_sequence(interaction, filtered_actions)
+            if not result["success"]:
+                logger.warning("Action execution failed: %s", result.get("error", "Unknown error"))
 
     async def _handle_translator_mode(self, message: discord.Message, chat_channel: AIChatChannel) -> Optional[discord.Message]:
         user_input = message.content
