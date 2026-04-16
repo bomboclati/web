@@ -128,7 +128,29 @@ class AIChatSystem:
                 "You are a helpful AI assistant. Be friendly and engage in conversation."
             )
         }
-        return personas.get(mode, personas[ChannelMode.GENERAL])
+
+        persona_name, base_prompt = personas.get(mode, personas[ChannelMode.GENERAL])
+
+        # Add Discord Automation AI framework instructions
+        framework_instructions = """
+
+IMPORTANT: You are integrated with a Discord Automation AI framework. All your responses MUST be valid JSON objects with exactly these keys:
+- "reasoning": string under 500 characters explaining your thought process
+- "summary": string under 200 characters for user-visible response
+- "actions": array (max 5 actions) where each action is an object with "name" and "parameters"
+
+Available actions include: send_message, send_embed, add_role, remove_role, assign_role, create_channel, delete_channel, create_role, delete_role, kick_user, ban_user, timeout_user, mute_user, unmute_user, set_nickname, send_dm, etc.
+
+For assign_role: Perform pre-flight checks (bot's highest role > target role, not managed, has MANAGE_ROLES permission). If checks fail, fail silently and note in summary.
+
+If more than 5 actions needed, execute first 5 and note in summary to continue.
+
+Ensure no trailing commas, comments, or text outside JSON. Lines under 1500 characters to prevent crashes.
+"""
+
+        enhanced_prompt = base_prompt + framework_instructions
+
+        return persona_name, enhanced_prompt
 
     async def create_chat_channel(self, guild_id: int, channel_id: int, mode: ChannelMode,
                                 custom_persona: str = None, custom_prompt: str = None,
@@ -210,7 +232,7 @@ class AIChatSystem:
         try:
             # Check for AI provider override from channel settings
             provider = getattr(chat_channel, 'ai_provider', None)
-            
+
             if provider and provider != AIProvider.DEFAULT:
                 # Use different AI for this channel
                 result = await self._chat_with_provider(
@@ -227,36 +249,48 @@ class AIChatSystem:
                     user_input=user_input,
                     system_prompt=system_prompt
                 )
-            
-            # Use actual raw response directly instead of summary field
-            response = result.get("summary", "I didn't quite catch that. Could you try again?")
-            # Strip any summary headers/footers
-            import re
-            response = re.sub(r'^(?:Summary|Response):\s*', '', response, flags=re.IGNORECASE)
-            response = re.sub(r'\s*---\s*.*$', '', response, flags=re.DOTALL)
-            response = re.sub(r'\s*\*\*Summary\*\*:.*$', '', response, flags=re.IGNORECASE|re.DOTALL)
-            response = response.strip()
-            
+
+            # Parse JSON response with strict validation
+            if not isinstance(result, dict):
+                try:
+                    result = json.loads(result)
+                except json.JSONDecodeError:
+                    return await message.channel.send("Invalid AI response format. Please try again.", suppress_embeds=True)
+
+            # Validate response structure
+            if not self._validate_framework_response(result):
+                return await message.channel.send("AI response validation failed. Please try again.", suppress_embeds=True)
+
+            # Extract components
+            reasoning = result.get("reasoning", "")
+            summary = result.get("summary", "I didn't quite catch that. Could you try again?")
+            actions = result.get("actions", [])
+
+            # Execute actions if present
+            if actions:
+                await self._execute_actions(message, actions)
+
+            # Store conversation
             session["messages"].append({"role": "user", "content": user_input})
-            session["messages"].append({"role": "assistant", "content": response})
-            
+            session["messages"].append({"role": "assistant", "content": summary})
+
             if len(session["messages"]) > 50:
                 session["messages"] = session["messages"][-50:]
-            
+
             vector_memory.store_conversation(
                 guild_id=message.guild.id,
                 user_id=message.author.id,
                 user_message=user_input,
-                bot_response=response,
-                reasoning=result.get("reasoning", ""),
+                bot_response=summary,
+                reasoning=reasoning,
                 walkthrough=result.get("walkthrough", ""),
                 importance_score=0.5
             )
-            
-            if len(response) > 2000:
-                response = response[:1997] + "..."
-            
-            return await message.channel.send(response, suppress_embeds=True)
+
+            if len(summary) > 2000:
+                summary = summary[:1997] + "..."
+
+            return await message.channel.send(summary, suppress_embeds=True)
             
         except Exception as e:
             logger.error(f"AI chat error: {e}")
@@ -308,17 +342,89 @@ Respond with JSON only:
 
     async def _get_rpg_context(self, guild_id: int) -> str:
         rpg_data = dm.get_guild_data(guild_id, "rpg_data", {})
-        
+
         if not rpg_data:
             return "This is a new adventure. The world is waiting to be explored."
-        
+
         context = "RECENT ADVENTURE:\n"
-        
+
         for key, value in rpg_data.items():
             if key.startswith("story_"):
                 context += f"- {value[:200]}\n"
-        
+
         return context
+
+    def _validate_framework_response(self, response: dict) -> bool:
+        """Validate the AI response conforms to Discord Automation AI framework constraints."""
+        if not isinstance(response, dict):
+            return False
+
+        # Check required keys
+        required_keys = {"reasoning", "summary", "actions"}
+        if not all(key in response for key in required_keys):
+            return False
+
+        # Validate reasoning
+        reasoning = response.get("reasoning", "")
+        if not isinstance(reasoning, str) or len(reasoning) > 500:
+            return False
+
+        # Validate summary
+        summary = response.get("summary", "")
+        if not isinstance(summary, str) or len(summary) > 200:
+            return False
+
+        # Validate actions
+        actions = response.get("actions", [])
+        if not isinstance(actions, list) or len(actions) > 5:
+            return False
+
+        for action in actions:
+            if not isinstance(action, dict):
+                return False
+            if "name" not in action or "parameters" not in action:
+                return False
+            if not isinstance(action["name"], str) or not isinstance(action["parameters"], dict):
+                return False
+
+        return True
+
+    async def _execute_actions(self, message: discord.Message, actions: list):
+        """Execute actions from AI response using ActionHandler."""
+        from actions import ActionHandler
+
+        if not hasattr(self.bot, 'action_handler'):
+            # Create action handler if not exists
+            self.bot.action_handler = ActionHandler(self.bot)
+
+        # Limit to first 5 actions
+        actions_to_execute = actions[:5]
+
+        if len(actions) > 5:
+            # Note in summary that more actions were requested
+            logger.info(f"AI requested {len(actions)} actions, executing first 5")
+
+        # Execute actions
+        for action in actions_to_execute:
+            try:
+                # Create a mock interaction for the action handler
+                mock_interaction = type('MockInteraction', (), {
+                    'guild': message.guild,
+                    'user': message.author,
+                    'followup': type('MockFollowup', (), {'send': lambda *args, **kwargs: None})()
+                })()
+
+                success, _ = await self.bot.action_handler.dispatch(
+                    mock_interaction,
+                    action["name"],
+                    action["parameters"]
+                )
+
+                if not success:
+                    logger.warning(f"Action {action['name']} failed to execute")
+
+            except Exception as e:
+                logger.error(f"Error executing action {action['name']}: {e}")
     
     async def _chat_with_provider(self, guild_id: int, user_id: int, user_input: str, 
                                 system_prompt: str, provider: AIProvider) -> dict:
