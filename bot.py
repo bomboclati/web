@@ -1552,6 +1552,11 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
                     pass
             final_msg = "❌ Something went wrong during execution. Please try again."
             try:
+                if not actions:
+                    summary = res.get("summary", "No actions were executed.")
+                    await it.followup.send(summary)
+                    return
+
                 from actions import ActionHandler
                 handler = ActionHandler(bot)
                 result = await handler.execute_sequence(it, actions)
