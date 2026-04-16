@@ -376,7 +376,7 @@ Respond with JSON only:
 
         # Validate actions
         actions = response.get("actions", [])
-        if not isinstance(actions, list) or len(actions) > 5:
+        if not isinstance(actions, list) or len(actions) > 3:
             return False
 
         for action in actions:
@@ -397,12 +397,12 @@ Respond with JSON only:
             # Create action handler if not exists
             self.bot.action_handler = ActionHandler(self.bot)
 
-        # Limit to first 5 actions
-        actions_to_execute = actions[:5]
+        # Limit to first 3 actions (hard limit rule)
+        actions_to_execute = actions[:3]
 
-        if len(actions) > 5:
+        if len(actions) > 3:
             # Note in summary that more actions were requested
-            logger.info(f"AI requested {len(actions)} actions, executing first 5")
+            logger.info(f"AI requested {len(actions)} actions, executing first 3. {len(actions)-3} actions remaining.")
 
         # Execute actions
         for action in actions_to_execute:

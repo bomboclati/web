@@ -206,7 +206,19 @@ class SelfHealingFramework:
         else:
             validation_results["reasoning_log"].append("Role is not managed - can be modified")
 
-        # 4. Member existence validation
+        # 4. Exclude bot own role
+        if role == bot_member.top_role or role in bot_member.roles:
+            validation_results["valid"] = False
+            validation_results["issues"].append("bot_own_role_cannot_assign")
+            validation_results["reasoning_log"].append("Cannot assign bot's own role")
+
+        # 5. Exclude @everyone role
+        if role.is_default():
+            validation_results["valid"] = False
+            validation_results["issues"].append("everyone_role_cannot_assign")
+            validation_results["reasoning_log"].append("Cannot assign @everyone role")
+
+        # 6. Member existence validation
         invalid_members = []
         for member in members:
             if member is None:
@@ -221,7 +233,7 @@ class SelfHealingFramework:
             validation_results["issues"].append("member_not_found")
             validation_results["reasoning_log"].append(f"Invalid members found: {invalid_members}")
 
-        # 5. User permission check
+        # 7. User permission check
         if not interaction.user.guild_permissions.manage_roles:
             validation_results["valid"] = False
             validation_results["issues"].append("user_lacks_manage_roles")
@@ -571,6 +583,14 @@ class ActionHandler:
         
         # Replace actions with only validated ones
         actions = validated_actions
+
+        # Hard limit: MAXIMUM 3 actions per response
+        MAX_ACTIONS = 3
+        total_actions = len(actions)
+        if total_actions > MAX_ACTIONS:
+            remaining = total_actions - MAX_ACTIONS
+            warnings.append(f"Action limit reached: only first {MAX_ACTIONS} of {total_actions} actions will be executed. {remaining} actions remaining for next request.")
+            actions = actions[:MAX_ACTIONS]
 
         # Discord Server Architect AI Audit Phase
         audited_actions = []
