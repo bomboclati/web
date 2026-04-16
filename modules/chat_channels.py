@@ -228,35 +228,62 @@ class AIChatSystem:
                     system_prompt=system_prompt
                 )
             
-            # Use actual raw response directly instead of summary field
-            response = result.get("summary", "I didn't quite catch that. Could you try again?")
-            # Strip any summary headers/footers
-            import re
-            response = re.sub(r'^(?:Summary|Response):\s*', '', response, flags=re.IGNORECASE)
-            response = re.sub(r'\s*---\s*.*$', '', response, flags=re.DOTALL)
-            response = re.sub(r'\s*\*\*Summary\*\*:.*$', '', response, flags=re.IGNORECASE|re.DOTALL)
-            response = response.strip()
-            
+            # Parse strict JSON response
+            summary = result.get("summary", "I didn't quite catch that. Could you try again?")
+            actions = result.get("actions", [])
+
+            # Execute actions if present first
+            safety_notes = []
+            if actions:
+                class MockInteraction:
+                    def __init__(self, msg):
+                        self.guild = msg.guild
+                        self.user = msg.author
+                        self.channel = msg.channel
+                        self.message = msg
+                    async def followup(self, content=None, embed=None, ephemeral=False, **kwargs):
+                        if ephemeral:
+                            # For ephemeral, send DM or ignore
+                            pass
+                        else:
+                            return await self.channel.send(content=content, embed=embed, **kwargs)
+
+                mock_interaction = MockInteraction(message)
+                try:
+                    exec_result = await self.bot.action_handler.execute_sequence(mock_interaction, actions)
+                    # Check for safety notes or failures
+                    if not exec_result.get("success", True):
+                        safety_notes.append("Some actions could not be executed due to safety checks or errors.")
+                except Exception as e:
+                    logger.error(f"Failed to execute AI actions: {e}")
+                    safety_notes.append("There was an error executing the requested actions.")
+
+            # Append safety notes to summary
+            if safety_notes:
+                summary += " " + " ".join(safety_notes)
+
             session["messages"].append({"role": "user", "content": user_input})
-            session["messages"].append({"role": "assistant", "content": response})
-            
+            session["messages"].append({"role": "assistant", "content": summary})
+
             if len(session["messages"]) > 50:
                 session["messages"] = session["messages"][-50:]
-            
+
             vector_memory.store_conversation(
                 guild_id=message.guild.id,
                 user_id=message.author.id,
                 user_message=user_input,
-                bot_response=response,
+                bot_response=summary,
                 reasoning=result.get("reasoning", ""),
-                walkthrough=result.get("walkthrough", ""),
+                walkthrough="",  # No longer used
                 importance_score=0.5
             )
-            
-            if len(response) > 2000:
-                response = response[:1997] + "..."
-            
-            return await message.channel.send(response, suppress_embeds=True)
+
+            if len(summary) > 2000:
+                summary = summary[:1997] + "..."
+
+            await message.channel.send(summary, suppress_embeds=True)
+
+            return None
             
         except Exception as e:
             logger.error(f"AI chat error: {e}")
