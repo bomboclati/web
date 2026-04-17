@@ -1411,6 +1411,8 @@ class ActionHandler:
                 if resolved_role:
                     role = self._resolve_role(guild, {"role": resolved_role})
             if not role:
+                error_msg = f"Role not found: {params.get('role_name') or params.get('role_id') or 'unknown'}"
+                logger.error("assign_role: %s", error_msg)
                 return False, SelfHealingFramework.generate_healing_response("assign_role", "member_not_found", {"attempted_role": params.get("role_name")})
 
         # --- Normalize and resolve users (support single user or batch) ---
@@ -1427,6 +1429,8 @@ class ActionHandler:
                 if resolved_user:
                     users = self._normalize_users({"users": [resolved_user]})
             if not users:
+                error_msg = f"Member not found: {params.get('username') or params.get('user_id') or 'unknown'}"
+                logger.error("assign_role: %s", error_msg)
                 return False, SelfHealingFramework.generate_healing_response("assign_role", "member_not_found", {"attempted_users": params.get("username") or params.get("user_id")})
 
         # Resolve member objects for validation
@@ -1442,7 +1446,7 @@ class ActionHandler:
         for reasoning in validation["reasoning_log"]:
             logger.info(f"[SELF-HEALING] {reasoning}")
 
-        # If validation failed, return healing response
+        # If validation failed, return healing response with specific error reason
         if not validation["valid"]:
             primary_issue = validation["issues"][0] if validation["issues"] else "unknown_error"
             context = {
@@ -1450,6 +1454,20 @@ class ActionHandler:
                 "user_count": len(users),
                 "validation_details": validation
             }
+            
+            # Map validation issues to specific error messages
+            error_messages = {
+                "bot_missing_manage_roles": "Missing permissions: Bot lacks 'Manage Roles' permission",
+                "role_hierarchy_violation": f"Missing permissions: Bot's role is not higher than '{role.name}' in the role hierarchy",
+                "managed_role_cannot_modify": f"Discord API error: Cannot modify managed role '{role.name}' (controlled by an integration)",
+                "bot_own_role_cannot_assign": f"Discord API error: Cannot assign bot's own role '{role.name}'",
+                "everyone_role_cannot_assign": "Discord API error: Cannot assign @everyone role",
+                "member_not_found": "Member not found: One or more specified members do not exist in the server",
+                "user_lacks_manage_roles": "Missing permissions: You lack 'Manage Roles' permission to assign roles"
+            }
+            
+            specific_error = error_messages.get(primary_issue, f"Unknown error: {primary_issue}")
+            logger.error("assign_role: Pre-flight validation failed - %s", specific_error)
             return False, SelfHealingFramework.generate_healing_response("assign_role", primary_issue, context)
 
         # Ensure role exists before attempting assignment
@@ -1461,37 +1479,70 @@ class ActionHandler:
         valid_members = [(i, m) for i, m in enumerate(members) if m is not None]
         if not valid_members:
             logger.error("assign_role: No valid members found, cannot proceed with assignment")
-            return False, {"error": "No valid members found to assign role to"}
+            return False, {"error": "Member not found: No valid members found to assign role to"}
+
+        # Additional runtime permission check before attempting assignment
+        bot_member = interaction.guild.me
+        if not bot_member.guild_permissions.manage_roles:
+            error_msg = "Missing permissions: Bot lacks 'Manage Roles' permission (verified at runtime)"
+            logger.error("assign_role: %s", error_msg)
+            return False, SelfHealingFramework.generate_healing_response("assign_role", "bot_missing_manage_roles", 
+                {"role_name": role.name, "runtime_check": True})
+        
+        # Verify bot's role is higher than target role (runtime check)
+        if role.position >= bot_member.top_role.position:
+            error_msg = f"Missing permissions: Bot's highest role '{bot_member.top_role.name}' is not above '{role.name}' in hierarchy"
+            logger.error("assign_role: %s", error_msg)
+            return False, SelfHealingFramework.generate_healing_response("assign_role", "role_hierarchy_violation",
+                {"role_name": role.name, "bot_top_role": bot_member.top_role.name, "runtime_check": True})
 
         # --- Perform assignments ---
         assigned_users = []
         failed_users = []
+        errors_encountered = []
 
         try:
             for i, member in valid_members:
                 user_spec = users[i]
                 try:
                     await member.add_roles(role, reason=f"Assigned by {interaction.user.display_name}")
-                    logger.info("assign_role: Successfully assigned role %s to %s", role.name, member.display_name)
+                    logger.info("assign_role: Successfully assigned role %s to %s (ID: %s)", role.name, member.display_name, member.id)
                     assigned_users.append({"user_id": member.id, "username": member.display_name})
-                except discord.Forbidden:
-                    logger.error("assign_role: Forbidden - bot lacks permission to assign role %s to %s", role.name, member.display_name)
-                    failed_users.append({"user_id": member.id, "username": member.display_name, "error": "Bot lacks permission"})
+                except discord.Forbidden as e:
+                    error_detail = f"Missing permissions: Bot lacks permission to assign role '{role.name}' to '{member.display_name}'"
+                    logger.error("assign_role: %s | Exception: %s | Traceback: %s", error_detail, str(e), traceback.format_exc())
+                    failed_users.append({"user_id": member.id, "username": member.display_name, "error": error_detail})
+                    errors_encountered.append(error_detail)
                     # Generate healing response for this specific failure
                     healing_response = SelfHealingFramework.generate_healing_response(
                         "assign_role", "bot_missing_manage_roles",
-                        {"target_user": member.display_name, "role_name": role.name}
+                        {"target_user": member.display_name, "role_name": role.name, "exception": str(e)}
                     )
                     return False, healing_response
                 except discord.HTTPException as e:
-                    logger.error("assign_role: HTTP error assigning to %s: %s\n%s", member.display_name, str(e), traceback.format_exc())
-                    failed_users.append({"user_id": member.id, "username": member.display_name, "error": f"HTTP error: {str(e)}"})
+                    error_detail = f"Discord API error: Failed to assign role '{role.name}' to '{member.display_name}' - {str(e)}"
+                    logger.error("assign_role: %s | Exception type: %s | Traceback: %s", error_detail, type(e).__name__, traceback.format_exc())
+                    failed_users.append({"user_id": member.id, "username": member.display_name, "error": error_detail})
+                    errors_encountered.append(error_detail)
+                except discord.NotFound as e:
+                    error_detail = f"Member not found: Member '{member.display_name}' (ID: {member.id}) no longer exists"
+                    logger.error("assign_role: %s | Exception type: %s | Traceback: %s", error_detail, type(e).__name__, traceback.format_exc())
+                    failed_users.append({"user_id": member.id, "username": member.display_name, "error": error_detail})
+                    errors_encountered.append(error_detail)
+                except discord.InvalidArgument as e:
+                    error_detail = f"Discord API error: Invalid argument when assigning role to '{member.display_name}' - {str(e)}"
+                    logger.error("assign_role: %s | Exception type: %s | Traceback: %s", error_detail, type(e).__name__, traceback.format_exc())
+                    failed_users.append({"user_id": member.id, "username": member.display_name, "error": error_detail})
+                    errors_encountered.append(error_detail)
                 except Exception as e:
-                    logger.error("assign_role: Unexpected error assigning to %s: %s\n%s", member.display_name, str(e), traceback.format_exc())
-                    failed_users.append({"user_id": member.id, "username": member.display_name, "error": f"Unexpected error: {str(e)}"})
+                    error_detail = f"Unknown error: Unexpected exception assigning role to '{member.display_name}' - {type(e).__name__}: {str(e)}"
+                    logger.error("assign_role: %s | Exception type: %s | Traceback: %s", error_detail, type(e).__name__, traceback.format_exc())
+                    failed_users.append({"user_id": member.id, "username": member.display_name, "error": error_detail})
+                    errors_encountered.append(error_detail)
         except Exception as e:
-            logger.error("assign_role: Unexpected error during assignment process: %s\n%s", str(e), traceback.format_exc())
-            return False, {"error": f"Unexpected error during assignment: {str(e)}"}
+            error_detail = f"Unknown error: Critical exception during role assignment process - {type(e).__name__}: {str(e)}"
+            logger.error("assign_role: %s | Exception type: %s | Full Traceback: %s", error_detail, type(e).__name__, traceback.format_exc())
+            return False, {"error": error_detail}
 
         # Return results
         success = len(assigned_users) > 0
@@ -1515,7 +1566,7 @@ class ActionHandler:
                 return True, result
         else:
             logger.error("assign_role: Failed to assign role to any users")
-            failure_reasons = "; ".join([f["error"] for f in failed_users if "error" in f])
+            failure_reasons = "; ".join(errors_encountered) if errors_encountered else "No specific error details available"
             return False, {"error": f"Failed to assign role '{role.name}' to any users. Reasons: {failure_reasons}", "details": result}
 
     def _resolve_role(self, guild: discord.Guild, params: Dict[str, Any]) -> Optional[discord.Role]:
