@@ -3,6 +3,7 @@ import json
 import asyncio
 import time
 import re
+import traceback
 from datetime import datetime, timezone
 import datetime as dt
 from typing import List, Dict, Any, Tuple, Optional, Union
@@ -1451,36 +1452,46 @@ class ActionHandler:
             }
             return False, SelfHealingFramework.generate_healing_response("assign_role", primary_issue, context)
 
+        # Ensure role exists before attempting assignment
+        if not role:
+            logger.error("assign_role: Role not resolved, cannot proceed with assignment")
+            return False, {"error": "Role not found or could not be resolved"}
+
+        # Ensure at least one valid member exists
+        valid_members = [(i, m) for i, m in enumerate(members) if m is not None]
+        if not valid_members:
+            logger.error("assign_role: No valid members found, cannot proceed with assignment")
+            return False, {"error": "No valid members found to assign role to"}
+
         # --- Perform assignments ---
         assigned_users = []
         failed_users = []
 
-        for i, user_spec in enumerate(users):
-            member = members[i]
-            if not member:
-                logger.warning("assign_role: could not resolve member from spec: %s", user_spec)
-                failed_users.append({"spec": user_spec, "error": "Member not found"})
-                continue
-
-            try:
-                await member.add_roles(role, reason=f"Assigned by {interaction.user.display_name}")
-                logger.info("assign_role: Successfully assigned role %s to %s", role.name, member.display_name)
-                assigned_users.append({"user_id": member.id, "username": member.display_name})
-            except discord.Forbidden:
-                logger.error("assign_role: Forbidden - bot lacks permission to assign role %s to %s", role.name, member.display_name)
-                failed_users.append({"user_id": member.id, "username": member.display_name, "error": "Bot lacks permission"})
-                # Generate healing response for this specific failure
-                healing_response = SelfHealingFramework.generate_healing_response(
-                    "assign_role", "bot_missing_manage_roles",
-                    {"target_user": member.display_name, "role_name": role.name}
-                )
-                return False, healing_response
-            except discord.HTTPException as e:
-                logger.error("assign_role: HTTP error assigning to %s: %s", member.display_name, str(e))
-                failed_users.append({"user_id": member.id, "username": member.display_name, "error": f"HTTP error: {str(e)}"})
-            except Exception as e:
-                logger.error("assign_role: Unexpected error assigning to %s: %s", member.display_name, str(e))
-                failed_users.append({"user_id": member.id, "username": member.display_name, "error": f"Unexpected error: {str(e)}"})
+        try:
+            for i, member in valid_members:
+                user_spec = users[i]
+                try:
+                    await member.add_roles(role, reason=f"Assigned by {interaction.user.display_name}")
+                    logger.info("assign_role: Successfully assigned role %s to %s", role.name, member.display_name)
+                    assigned_users.append({"user_id": member.id, "username": member.display_name})
+                except discord.Forbidden:
+                    logger.error("assign_role: Forbidden - bot lacks permission to assign role %s to %s", role.name, member.display_name)
+                    failed_users.append({"user_id": member.id, "username": member.display_name, "error": "Bot lacks permission"})
+                    # Generate healing response for this specific failure
+                    healing_response = SelfHealingFramework.generate_healing_response(
+                        "assign_role", "bot_missing_manage_roles",
+                        {"target_user": member.display_name, "role_name": role.name}
+                    )
+                    return False, healing_response
+                except discord.HTTPException as e:
+                    logger.error("assign_role: HTTP error assigning to %s: %s\n%s", member.display_name, str(e), traceback.format_exc())
+                    failed_users.append({"user_id": member.id, "username": member.display_name, "error": f"HTTP error: {str(e)}"})
+                except Exception as e:
+                    logger.error("assign_role: Unexpected error assigning to %s: %s\n%s", member.display_name, str(e), traceback.format_exc())
+                    failed_users.append({"user_id": member.id, "username": member.display_name, "error": f"Unexpected error: {str(e)}"})
+        except Exception as e:
+            logger.error("assign_role: Unexpected error during assignment process: %s\n%s", str(e), traceback.format_exc())
+            return False, {"error": f"Unexpected error during assignment: {str(e)}"}
 
         # Return results
         success = len(assigned_users) > 0
@@ -1504,7 +1515,8 @@ class ActionHandler:
                 return True, result
         else:
             logger.error("assign_role: Failed to assign role to any users")
-            return False, result
+            failure_reasons = "; ".join([f["error"] for f in failed_users if "error" in f])
+            return False, {"error": f"Failed to assign role '{role.name}' to any users. Reasons: {failure_reasons}", "details": result}
 
     def _resolve_role(self, guild: discord.Guild, params: Dict[str, Any]) -> Optional[discord.Role]:
         """Resolve role from various parameter formats. Uses defensive programming."""
