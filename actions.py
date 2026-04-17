@@ -1535,13 +1535,43 @@ class ActionHandler:
                     failed_users.append({"user_id": member.id, "username": member.display_name, "error": error_detail})
                     errors_encountered.append(error_detail)
                 except Exception as e:
-                    error_detail = f"Unknown error: Unexpected exception assigning role to '{member.display_name}' - {type(e).__name__}: {str(e)}"
-                    logger.error("assign_role: %s | Exception type: %s | Traceback: %s", error_detail, type(e).__name__, traceback.format_exc())
+                    # Analyze exception to provide more specific error message
+                    error_type = type(e).__name__
+                    error_str = str(e)
+                    
+                    # Check for common patterns in Discord errors
+                    if "role" in error_str.lower() and "not found" in error_str.lower():
+                        error_detail = f"Role not found: {error_str}"
+                    elif "member" in error_str.lower() and ("not found" in error_str.lower() or "exist" in error_str.lower()):
+                        error_detail = f"Member not found: {error_str}"
+                    elif "permission" in error_str.lower() or "forbidden" in error_str.lower():
+                        error_detail = f"Missing permissions: {error_str}"
+                    elif "http" in error_str.lower() or "api" in error_str.lower() or "rate limit" in error_str.lower():
+                        error_detail = f"Discord API error: {error_str}"
+                    else:
+                        error_detail = f"Unexpected error ({error_type}): {error_str}"
+                    
+                    logger.error("assign_role: %s | Exception type: %s | Full Traceback: %s", error_detail, error_type, traceback.format_exc())
                     failed_users.append({"user_id": member.id, "username": member.display_name, "error": error_detail})
                     errors_encountered.append(error_detail)
         except Exception as e:
-            error_detail = f"Unknown error: Critical exception during role assignment process - {type(e).__name__}: {str(e)}"
-            logger.error("assign_role: %s | Exception type: %s | Full Traceback: %s", error_detail, type(e).__name__, traceback.format_exc())
+            # Analyze exception to provide more specific error message
+            error_type = type(e).__name__
+            error_str = str(e)
+            
+            # Check for common patterns in Discord errors
+            if "role" in error_str.lower() and "not found" in error_str.lower():
+                error_detail = f"Role not found: {error_str}"
+            elif "member" in error_str.lower() and ("not found" in error_str.lower() or "exist" in error_str.lower()):
+                error_detail = f"Member not found: {error_str}"
+            elif "permission" in error_str.lower() or "forbidden" in error_str.lower():
+                error_detail = f"Missing permissions: {error_str}"
+            elif "http" in error_str.lower() or "api" in error_str.lower() or "rate limit" in error_str.lower():
+                error_detail = f"Discord API error: {error_str}"
+            else:
+                error_detail = f"Unexpected error ({error_type}): {error_str}"
+            
+            logger.error("assign_role: %s | Exception type: %s | Full Traceback: %s", error_detail, error_type, traceback.format_exc())
             return False, {"error": error_detail}
 
         # Return results
