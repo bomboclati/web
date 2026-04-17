@@ -119,6 +119,20 @@ class SelfHealingFramework:
                 "Use a different action that doesn't require role modification"
             ]
         },
+        "role_not_found": {
+            "root_cause": "Role does not exist in server or bot cannot access it",
+            "fix_plan": [
+                "Verify the role name or ID is correct",
+                "Check if the role still exists in the server",
+                "Ensure the bot's role is higher than the target role",
+                "Use /query_roles to list available roles"
+            ],
+            "alternatives": [
+                "Use a different role name or ID",
+                "Create the role if it doesn't exist",
+                "Contact server admin to fix role hierarchy"
+            ]
+        },
         "member_not_found": {
             "root_cause": "User/member does not exist in server",
             "fix_plan": [
@@ -1413,7 +1427,7 @@ class ActionHandler:
             if not role:
                 error_msg = f"Role not found: {params.get('role_name') or params.get('role_id') or 'unknown'}"
                 logger.error("assign_role: %s", error_msg)
-                return False, SelfHealingFramework.generate_healing_response("assign_role", "member_not_found", {"attempted_role": params.get("role_name")})
+                return False, SelfHealingFramework.generate_healing_response("assign_role", "role_not_found", {"attempted_role": params.get("role_name") or params.get("role_id")})
 
         # --- Normalize and resolve users (support single user or batch) ---
         users = self._normalize_users(params)
