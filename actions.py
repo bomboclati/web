@@ -671,6 +671,7 @@ class ActionHandler:
                         "failed_at": i,
                         "failed_action": name,
                         "healing_response": healing_info,
+                        "error": f"Self-healing response: {healing_info['root_cause']}",
                         "success": False
                     }
 
