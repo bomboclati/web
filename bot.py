@@ -1551,9 +1551,9 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
                 except:
                     pass
             final_msg = "❌ Something went wrong during execution. Please try again."
+            summary = res.get("summary", "No actions were executed.")  # Define summary at the start to avoid UnboundLocalError
             try:
                 if not actions:
-                    summary = res.get("summary", "No actions were executed.")
                     await it.followup.send(summary)
                     return
 
