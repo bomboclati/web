@@ -348,12 +348,7 @@ class AutoSetup:
             logger.info(f"Sent welcome DM to {owner} for guild {guild.id}")
         except Exception as e:
             logger.error(f"Failed to send welcome DM: {e}")
-            try:
-                system_channel = guild.system_channel
-                if system_channel:
-                    await system_channel.send(embed=embed, view=view)
-            except:
-                pass
+            # Fall back silently without posting in the server
 
     async def _initialize_server_data(self, guild: discord.Guild):
         default_config = {
