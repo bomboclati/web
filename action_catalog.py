@@ -943,26 +943,37 @@ def resolve_user_request(user_request: str, context: Dict = None) -> List[Tuple[
         keywords = action_info.get("keywords", [])
         aliases = action_info.get("aliases", [])
         
-        primary_keyword = keywords[0] if keywords else action_name.replace('_', ' ')
-        
-        exact_match = False
+        # Boost based on exact keyword/alias matches in the request
         for kw in keywords + aliases:
             if kw in request_lower:
-                score += 1.0
+                # Stronger boost for longer keyword matches
+                score += 1.0 + (len(kw.split()) * 0.5)
                 if kw == request_lower.strip():
-                    exact_match = True
+                    score += 2.0 # Huge boost for exact match of the whole request
         
-        if exact_match:
-            score += 0.5
-        
+        # Word-level partial matches
         partial_matches = 0
         for word in request_words:
-            for kw in keywords + aliases:
-                if word in kw or kw in word:
-                    partial_matches += 0.1
+            if len(word) < 3: continue
+            for kw in keywords:
+                if word in kw:
+                    partial_matches += 0.2
+
+        score += min(partial_matches, 1.0)
         
-        score += min(partial_matches, 0.5)
+        # Intent-based boosting (applies even without explicit context)
+        if "channel" in request_lower:
+            if "channel" in action_name or action_info.get("category") == "Channel Management":
+                score += 0.5
         
+        if "role" in request_lower:
+            if "role" in action_name or action_info.get("category") == "Role Management":
+                score += 0.8 # Stronger boost for role intent
+
+        if "message" in request_lower or "say" in request_lower or "tell" in request_lower:
+            if action_info.get("category") == "Messaging":
+                score += 0.4
+
         if context:
             if "channel" in request_lower and action_name.startswith("create_"):
                 if "type" in action_info.get("parameters", {}):
