@@ -1568,11 +1568,26 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
                     else:
                         final_msg = f"**✅ Done!**\n{summary_text}"
                 else:
-                    rollback_text = ""
-                    if result["rolled_back"]:
-                        rb = "\n".join([f"{'↩️' if s else '⚠️'} {n}" for n, s in result["rolled_back"]])
-                        rollback_text = f"\n\n**Auto-Rollback ({len(result['rolled_back'])} actions):**\n{rb}"
-                    final_msg = f"**❌ Failed at step {result['failed_at'] + 1}: `{result['failed_action']}`**\nError: {result['error']}\n\n**Steps:**\n{summary_text}{rollback_text}"
+                    # Handle healing responses specially
+                    if "healing_response" in result:
+                        healing = result["healing_response"]
+                        healing_msg = f"🤖 **Self-Healing AI Response**\n\n"
+                        healing_msg += f"**Failed Action:** {healing['failed_action']}\n"
+                        healing_msg += f"**Root Cause:** {healing['root_cause']}\n\n"
+                        healing_msg += "**Fix Action Plan:**\n"
+                        for step in healing['fix_action_plan']:
+                            healing_msg += f"• {step}\n"
+                        healing_msg += "\n**Alternatives:**\n"
+                        for alt in healing['alternatives']:
+                            healing_msg += f"• {alt}\n"
+                        final_msg = healing_msg
+                    else:
+                        rollback_text = ""
+                        if result["rolled_back"]:
+                            rb = "\n".join([f"{'↩️' if s else '⚠️'} {n}" for n, s in result["rolled_back"]])
+                            rollback_text = f"\n\n**Auto-Rollback ({len(result['rolled_back'])} actions):**\n{rb}"
+                        error_msg = result.get('error', 'Unknown error')
+                        final_msg = f"**❌ Failed at step {result['failed_at'] + 1}: `{result['failed_action']}`**\nError: {error_msg}\n\n**Steps:**\n{summary_text}{rollback_text}"
             except Exception as exec_err:
                 import traceback
                 logger.error("confirm_callback crashed: %s", exec_err, exc_info=True)
