@@ -1617,8 +1617,25 @@ class ActionHandler:
                 except (TypeError, ValueError) as e:
                     logger.warning(f"DEFENSIVE: Failed to convert role_id {role_id}: {e}")
 
-        # Try role_name or name - handle dict inputs defensively
+        # SMART FALLBACK: If role_name looks like a numeric ID, try resolving it as ID first
         role_name = self._safe_get(params, "role_name") or self._safe_get(params, "name")
+        if role_name and isinstance(role_name, str):
+            # Check if role_name is actually a numeric ID (common user error)
+            if role_name.isdigit() or (role_name.startswith('<@&') and role_name.endswith('>')):
+                try:
+                    # Extract numeric ID from mention format <@&123456789>
+                    if role_name.startswith('<@&'):
+                        extracted_id = role_name.strip('<@&>')
+                    else:
+                        extracted_id = role_name
+                    role = guild.get_role(int(extracted_id))
+                    if role:
+                        logger.info("_resolve_role: Successfully resolved role from numeric 'role_name': %s (ID: %s)", role.name, role.id)
+                        return role
+                except (TypeError, ValueError) as e:
+                    logger.warning(f"DEFENSIVE: Failed to resolve role_name '{role_name}' as numeric ID: {e}")
+        
+        # Try role_name or name - handle dict inputs defensively
         if isinstance(role_name, dict):
             # DEFENSIVE: Use .get() for dict access
             role_id_from_dict = self._safe_get(role_name, "id")
