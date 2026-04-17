@@ -1572,7 +1572,8 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
                     if result["rolled_back"]:
                         rb = "\n".join([f"{'↩️' if s else '⚠️'} {n}" for n, s in result["rolled_back"]])
                         rollback_text = f"\n\n**Auto-Rollback ({len(result['rolled_back'])} actions):**\n{rb}"
-                    final_msg = f"**❌ Failed at step {result['failed_at'] + 1}: `{result['failed_action']}`**\nError: {result['error']}\n\n**Steps:**\n{summary_text}{rollback_text}"
+                    failed_step = f"step {result['failed_at'] + 1}" if result.get('failed_at') is not None else "an action"
+                    final_msg = f"**❌ Failed at {failed_step}: `{result.get('failed_action', 'unknown')}`**\nError: {result.get('error', 'Unknown error')}\n\n**Steps:**\n{summary_text}{rollback_text}"
             except Exception as exec_err:
                 import traceback
                 logger.error("confirm_callback crashed: %s", exec_err, exc_info=True)

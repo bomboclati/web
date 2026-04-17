@@ -649,13 +649,13 @@ class ActionHandler:
                     # Format healing response for user
                     healing_info = response_data
                     healing_message = f"🤖 **Self-Healing AI Response**\n\n"
-                    healing_message += f"**Failed Action:** {healing_info['failed_action']}\n"
-                    healing_message += f"**Root Cause:** {healing_info['root_cause']}\n\n"
+                    healing_message += f"**Failed Action:** {healing_info.get('failed_action', name)}\n"
+                    healing_message += f"**Root Cause:** {healing_info.get('root_cause', 'Unknown error')}\n\n"
                     healing_message += "**Fix Action Plan:**\n"
-                    for step in healing_info['fix_action_plan']:
+                    for step in healing_info.get('fix_action_plan', []):
                         healing_message += f"• {step}\n"
                     healing_message += "\n**Alternatives:**\n"
-                    for alt in healing_info['alternatives']:
+                    for alt in healing_info.get('alternatives', []):
                         healing_message += f"• {alt}\n"
 
                     # Send healing response to user
@@ -683,7 +683,36 @@ class ActionHandler:
                         "timestamp": time.time()
                     })
                 elif success is False:
-                    raise Exception(f"Action returned failure: {name}")
+                    # Action failed without healing response - stop processing and rollback
+                    error_msg = f"Action {name} returned failure status"
+                    if response_data and isinstance(response_data, dict):
+                        error_details = response_data.get('error', '')
+                        if error_details:
+                            error_msg += f": {error_details}"
+                    logger.error("Action failed (%s): %s", name, error_msg)
+                    results.append((name, False))
+
+                    self._record_failure(guild_id, name, error_msg)
+
+                    if auto_rollback and self._action_log:
+                        rollback_results = await self._rollback_sequence(interaction)
+                        return {
+                            "results": results,
+                            "rolled_back": rollback_results,
+                            "failed_at": i,
+                            "failed_action": name,
+                            "error": error_msg,
+                            "success": False
+                        }
+                    else:
+                        return {
+                            "results": results,
+                            "rolled_back": [],
+                            "failed_at": i,
+                            "failed_action": name,
+                            "error": error_msg,
+                            "success": False
+                        }
             except Exception as e:
                 error_msg = str(e)
                 logger.error("Action Error (%s): %s", name, error_msg)
@@ -735,9 +764,23 @@ class ActionHandler:
         for log_entry in reversed(self._action_log):
             undo_data = log_entry.get("undo_data", {})
             undo_action = undo_data.get("action")
-            success = await self._execute_undo(interaction, undo_action, undo_data)
-            rollback_results.append((log_entry.get("action", "unknown"), success))
-        
+            original_action = log_entry.get("action", "unknown")
+
+            # Guard clause: ensure undo_action exists
+            if not undo_action:
+                logger.warning("Cannot rollback action %s: no undo action specified", original_action)
+                rollback_results.append((original_action, False))
+                continue
+
+            try:
+                success = await self._execute_undo(interaction, undo_action, undo_data)
+                rollback_results.append((original_action, success))
+                if not success:
+                    logger.warning("Failed to rollback action: %s", original_action)
+            except Exception as e:
+                logger.error("Exception during rollback of action %s: %s", original_action, str(e))
+                rollback_results.append((original_action, False))
+
         self._action_log = []
         return rollback_results
 
