@@ -1399,7 +1399,8 @@ class ActionHandler:
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def action_assign_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Assign a role to one or more users with Self-Healing Discord Automation AI pre-flight validations."""
+        """Assign a role to one or more users with Self-Healing Discord Automation AI pre-flight validations.
+        Special case: if role_name is 'all' or 'all roles', assigns ALL roles in the server to the user(s)."""
         guild = interaction.guild
 
         # TYPE SAFETY FIRST: Verify inputs
@@ -1411,6 +1412,84 @@ class ActionHandler:
         logger.info("assign_role: input params=%s", params)
         logger.info("assign_role: available roles in guild=%s", [r.name for r in guild.roles])
 
+        # --- SPECIAL CASE: Assign ALL roles ---
+        role_name_param = params.get("role_name", "")
+        if isinstance(role_name_param, str) and role_name_param.lower() in ["all", "all roles"]:
+            logger.info("assign_role: 'all roles' requested - will assign all assignable roles")
+            # Get all roles except @everyone and managed roles
+            assignable_roles = [r for r in guild.roles if not r.is_default() and not r.managed]
+            # Sort by position (lowest first) to respect hierarchy when adding
+            assignable_roles.sort(key=lambda r: r.position)
+            
+            # Normalize users
+            users = self._normalize_users(params)
+            if not users:
+                logger.error("assign_role: could not resolve any users from params: %s", params)
+                error_msg = f"Member not found: {params.get('username') or params.get('user_id') or 'unknown'}"
+                logger.error("assign_role: %s", error_msg)
+                return False, SelfHealingFramework.generate_healing_response("assign_role", "member_not_found", 
+                    {"attempted_users": params.get("username") or params.get("user_id")})
+            
+            # Resolve members
+            members = []
+            for user_spec in users:
+                member = await self._resolve_member(guild, user_spec)
+                if member:
+                    members.append(member)
+            
+            if not members:
+                logger.error("assign_role: No valid members found")
+                return False, {"error": "Member not found: No valid members found"}
+            
+            # Pre-flight validation for each role
+            bot_member = guild.me
+            if not bot_member.guild_permissions.manage_roles:
+                error_msg = "Missing permissions: Bot lacks 'Manage Roles' permission"
+                logger.error("assign_role: %s", error_msg)
+                return False, SelfHealingFramework.generate_healing_response("assign_role", "bot_missing_manage_roles", {})
+            
+            # Filter roles that bot can actually assign (bot's role must be higher)
+            assignable_roles = [r for r in assignable_roles if r.position < bot_member.top_role.position]
+            
+            if not assignable_roles:
+                logger.error("assign_role: No roles can be assigned (bot's role is not high enough)")
+                return False, {"error": "Missing permissions: Bot's role is not higher than any roles in the hierarchy"}
+            
+            # Assign all roles to each member
+            assigned_count = 0
+            failed_count = 0
+            errors = []
+            
+            for member in members:
+                for role in assignable_roles:
+                    try:
+                        if role not in member.roles:
+                            await member.add_roles(role, reason=f"Assigned all roles by {interaction.user.display_name}")
+                            assigned_count += 1
+                            logger.info("assign_role: Assigned %s to %s", role.name, member.display_name)
+                    except discord.Forbidden as e:
+                        logger.error("assign_role: Forbidden assigning %s to %s: %s", role.name, member.display_name, e)
+                        failed_count += 1
+                        errors.append(f"Cannot assign {role.name} to {member.display_name}: Missing permissions")
+                    except Exception as e:
+                        logger.error("assign_role: Error assigning %s to %s: %s", role.name, member.display_name, e)
+                        failed_count += 1
+                        errors.append(f"Error assigning {role.name} to {member.display_name}: {str(e)}")
+            
+            if assigned_count > 0:
+                logger.info("assign_role: Successfully assigned %d roles (%d failures)", assigned_count, failed_count)
+                result = {
+                    "action": "assign_all_roles",
+                    "roles_assigned": assigned_count,
+                    "roles_failed": failed_count,
+                    "users": [m.display_name for m in members],
+                    "errors": errors if errors else None
+                }
+                return True, result
+            else:
+                return False, {"error": f"Failed to assign any roles. Errors: {'; '.join(errors)}"}
+        
+        # --- NORMAL CASE: Assign single role ---
         # --- Normalize and resolve role ---
         role = self._resolve_role(guild, params)
         if not role:
