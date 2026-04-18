@@ -981,6 +981,20 @@ ACTION_CATALOG = {
         "category": "System Setup",
         "parameters": {},
         "keywords": ["shop", "store", "economy shop", "setup shop"]
+    },
+    "create_item": {
+        "name": "create_item",
+        "description": "Adds an item to the economy shop",
+        "category": "Economy",
+        "parameters": {
+            "name": {"type": "string", "required": True, "description": "Name of the item"},
+            "price": {"type": "number", "required": False, "description": "Price of the item", "default": 100},
+            "type": {"type": "string", "required": False, "description": "Type of item (e.g. role, color, badge)", "default": "role"},
+            "currency": {"type": "string", "required": False, "description": "Currency (coins or gems)", "default": "coins"},
+            "stock": {"type": "number", "required": False, "description": "Stock amount (-1 for unlimited)", "default": -1}
+        },
+        "aliases": ["add_item", "new_item", "shop_item"],
+        "keywords": ["item", "shop item", "create item", "add to shop"]
     }
 }
 

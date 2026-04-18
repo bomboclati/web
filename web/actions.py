@@ -1433,6 +1433,31 @@ class ActionHandler:
         dm.update_guild_data(interaction.guild.id, "shop_enabled", True)
         return True, {"action": "setup_shop_system"}
 
+    async def action_create_item(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Adds an item to the economy shop."""
+        name = params.get("name")
+        price = params.get("price", 100)
+        item_type = params.get("type", "role")
+        currency = params.get("currency", "coins")
+        stock = params.get("stock", -1)
+        
+        if not name:
+            return False, {"error": "Missing item name"}
+            
+        try:
+            await self.bot.shop.add_item(
+                guild_id=interaction.guild.id,
+                name=name,
+                price=int(price),
+                item_type=item_type,
+                currency=currency,
+                stock=int(stock)
+            )
+            return True, {"action": "create_item", "name": name, "price": price}
+        except Exception as e:
+            logger.error(f"Error creating shop item: {e}")
+            return False, {"error": str(e)}
+
     async def action_add_command(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Alias for creating a prefix command."""
         return await self.action_create_prefix_command(interaction, params)
