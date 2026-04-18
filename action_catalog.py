@@ -247,18 +247,19 @@ ACTION_CATALOG = {
     },
     "assign_role": {
         "name": "assign_role",
-        "description": "Assigns a role to a user. Use 'all' or 'all roles' in role_name to assign every role in the server.",
+        "description": "Assigns one or more roles to one or more users.",
         "category": "Role Management",
         "parameters": {
             "role_id": {"type": "integer", "required": False, "description": "Role ID"},
-            "role_name": {"type": "string", "required": False, "description": "Role name. Use 'all' or 'all roles' to assign every role."},
-            "name": {"type": "string", "required": False, "description": "Role name"},
+            "role_ids": {"type": "array", "required": False, "description": "List of Role IDs"},
+            "role_name": {"type": "string", "required": False, "description": "Role name"},
+            "role_names": {"type": "array", "required": False, "description": "List of Role names"},
             "user_id": {"type": "integer", "required": False, "description": "User ID"},
-            "user": {"type": "integer", "required": False, "description": "User ID"},
+            "user_ids": {"type": "array", "required": False, "description": "List of User IDs"},
             "username": {"type": "string", "required": False, "description": "Username"},
-            "user_name": {"type": "string", "required": False, "description": "Username"}
+            "usernames": {"type": "array", "required": False, "description": "List of Usernames"}
         },
-        "keywords": ["assign", "give role", "add role to user", "promote", "give all roles", "assign all roles"]
+        "keywords": ["assign", "give role", "add role to user", "promote", "mass role", "role all"]
     },
     "remove_role": {
         "name": "remove_role",
@@ -816,6 +817,121 @@ ACTION_CATALOG = {
         "aliases": ["get_online_users", "list_online_members", "who_is_online"],
         "keywords": ["online", "online users", "who is online", "active members", "extract online", "list online"]
     },
+    "softban_user": {
+        "name": "softban_user",
+        "description": "Bans then immediately unbans a user to clear their messages.",
+        "category": "Moderation",
+        "parameters": {
+            "user_id": {"type": "integer", "required": False, "description": "User ID"},
+            "username": {"type": "string", "required": False, "description": "Username"},
+            "delete_messages_days": {"type": "integer", "required": False, "description": "Days of messages to delete", "default": 7}
+        },
+        "keywords": ["softban", "clear user messages"]
+    },
+    "clear_reactions": {
+        "name": "clear_reactions",
+        "description": "Clears all reactions from a message.",
+        "category": "Messaging",
+        "parameters": {
+            "message_id": {"type": "integer", "required": True, "description": "Message ID"},
+            "channel": {"type": "string", "required": False, "description": "Channel name"}
+        },
+        "keywords": ["clear reactions", "remove all reactions"]
+    },
+    "edit_guild": {
+        "name": "edit_guild",
+        "description": "Edits server settings like name and description.",
+        "category": "Server Management",
+        "parameters": {
+            "name": {"type": "string", "required": False, "description": "New server name"},
+            "description": {"type": "string", "required": False, "description": "New server description"}
+        },
+        "keywords": ["edit server", "change server name"]
+    },
+    "query_server_info": {
+        "name": "query_server_info",
+        "description": "Get detailed info about the server.",
+        "category": "Server Query",
+        "parameters": {},
+        "keywords": ["server info", "server stats"]
+    },
+    "query_channels": {
+        "name": "query_channels",
+        "description": "List all channels in the server.",
+        "category": "Server Query",
+        "parameters": {
+            "type": {"type": "string", "required": False, "description": "text, voice, or category"}
+        },
+        "keywords": ["list channels", "show channels"]
+    },
+    "query_roles": {
+        "name": "query_roles",
+        "description": "List all roles in the server.",
+        "category": "Server Query",
+        "parameters": {},
+        "keywords": ["list roles", "show roles"]
+    },
+    "query_members": {
+        "name": "query_members",
+        "description": "Search for members in the server.",
+        "category": "Server Query",
+        "parameters": {
+            "query": {"type": "string", "required": False, "description": "Search query"},
+            "limit": {"type": "integer", "required": False, "description": "Max results", "default": 20}
+        },
+        "keywords": ["search members", "list members"]
+    },
+    "query_member_details": {
+        "name": "query_member_details",
+        "description": "Get detailed info about a specific member.",
+        "category": "Server Query",
+        "parameters": {
+            "user_id": {"type": "integer", "required": True, "description": "User ID"}
+        },
+        "keywords": ["user info", "member details"]
+    },
+    "query_economy_leaderboard": {
+        "name": "query_economy_leaderboard",
+        "description": "Get the top users by coins.",
+        "category": "Server Query",
+        "parameters": {
+            "limit": {"type": "integer", "required": False, "description": "Max results", "default": 10}
+        },
+        "keywords": ["economy leaderboard", "top coins"]
+    },
+    "query_xp_leaderboard": {
+        "name": "query_xp_leaderboard",
+        "description": "Get the top users by XP.",
+        "category": "Server Query",
+        "parameters": {
+            "limit": {"type": "integer", "required": False, "description": "Max results", "default": 10}
+        },
+        "keywords": ["xp leaderboard", "top levels"]
+    },
+    "query_pending_applications": {
+        "name": "query_pending_applications",
+        "description": "List pending staff applications.",
+        "category": "Server Query",
+        "parameters": {},
+        "keywords": ["pending apps", "staff applications"]
+    },
+    "query_active_shifts": {
+        "name": "query_active_shifts",
+        "description": "List currently active staff shifts.",
+        "category": "Server Query",
+        "parameters": {},
+        "keywords": ["active shifts", "staff shifts"]
+    },
+    "query_recent_messages": {
+        "name": "query_recent_messages",
+        "description": "Fetch recent messages from a channel.",
+        "category": "Server Query",
+        "parameters": {
+            "channel_id": {"type": "integer", "required": True, "description": "Channel ID"},
+            "limit": {"type": "integer", "required": False, "description": "Max results", "default": 10}
+        },
+        "keywords": ["recent messages", "fetch history"]
+    },
     "send_notification": {
         "name": "send_notification",
         "description": "Send a notification message to a channel",
@@ -878,7 +994,7 @@ CATEGORY_GROUPS = {
                      "deny_all_channels_for_role", "deny_category_for_role", "edit_channel_permissions"],
     "Events": ["create_scheduled_event"],
     "Meta": ["analyze_server_state"],
-    "Server Query": ["extract_online_users", "query_server_info", "query_members", "query_channels", "query_roles"]
+    "Server Query": ["extract_online_users", "query_server_info", "query_channels", "query_roles", "query_members", "query_member_details", "query_economy_leaderboard", "query_xp_leaderboard", "query_pending_applications", "query_active_shifts", "query_recent_messages"]
 }
 
 

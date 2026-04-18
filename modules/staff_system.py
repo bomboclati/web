@@ -83,11 +83,11 @@ class StaffApplicationModal(ui.Modal):
         super().__init__(title='Staff Application')
         self.bot = bot
         
-    q1 = ui.TextInput(label='Why do you want to be staff?', style=discord.TextStyle.paragraph)
-    q2 = ui.TextInput(label='What experience do you have?', style=discord.TextStyle.paragraph)
-    q3 = ui.TextInput(label='Weekly Activity (hours)?', placeholder='e.g. 15-20 hours')
-    q4 = ui.TextInput(label='What skills do you bring?', style=discord.TextStyle.paragraph)
-    q5 = ui.TextInput(label='Anything else?', required=False, style=discord.TextStyle.paragraph)
+    q1 = ui.TextInput(label='Why do you want to be staff?', style=discord.TextStyle.paragraph, min_length=20, max_length=1000)
+    q2 = ui.TextInput(label='What experience do you have?', style=discord.TextStyle.paragraph, min_length=10, max_length=1000)
+    q3 = ui.TextInput(label='Weekly Activity (hours)?', placeholder='e.g. 15-20 hours', min_length=1, max_length=50)
+    q4 = ui.TextInput(label='What skills do you bring?', style=discord.TextStyle.paragraph, min_length=10, max_length=1000)
+    q5 = ui.TextInput(label='Anything else?', required=False, style=discord.TextStyle.paragraph, max_length=1000)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
