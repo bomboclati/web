@@ -1813,21 +1813,12 @@ class ActionHandler:
         user_id = params.get("user_id")
         username = params.get("username")
         reason = params.get("reason", "Warning issued")
+        guild_id = interaction.guild.id
 
         if not user_id and username:
-            member = discord.utils.get(interaction.guild.members, name=username)
-            if not member:
-                member = discord.utils.get(interaction.guild.members, nick=username)
-            if member:
-                user_id = member.id
-        """Removes server mute from a user."""
-        user_id = params.get("user_id")
-        username = params.get("username")
-
-        if not user_id and username:
-            member = discord.utils.get(interaction.guild.members, name=username)
-            if not member:
-                member = discord.utils.get(interaction.guild.members, nick=username)
+            member = discord.utils.get(interaction.guild.members, name=username) or \
+                     discord.utils.get(interaction.guild.members, nick=username) or \
+                     discord.utils.get(interaction.guild.members, display_name=username)
             if member:
                 user_id = member.id
 
@@ -1836,13 +1827,33 @@ class ActionHandler:
 
         member = interaction.guild.get_member(user_id)
         if not member:
-            return False, None
+            try:
+                member = await interaction.guild.fetch_member(user_id)
+            except discord.NotFound:
+                return False, None
 
         try:
-            await member.edit(mute=False)
-            return True, {"user_id": user_id, "action": "unmute"}
+            if hasattr(self.bot, 'moderation'):
+                history = self.bot.moderation.get_user_history(guild_id, user_id)
+                history.warnings += 1
+                history.violation_count += 1
+                history.last_violation = time.time()
+                self.bot.moderation.save_user_history(guild_id, user_id, history)
+
+            logger.info("Issued warning to %s in guild %d: %s", member.display_name, guild_id, reason)
+
+            try:
+                embed = discord.Embed(title="⚠️ Warning Issued", color=discord.Color.gold())
+                embed.add_field(name="Server", value=interaction.guild.name)
+                embed.add_field(name="Reason", value=reason)
+                embed.timestamp = dt.datetime.now(dt.timezone.utc)
+                await member.send(embed=embed)
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+
+            return True, {"user_id": user_id, "action": "warn", "reason": reason}
         except Exception as e:
-            logger.error(f"Error unmuting user: {e}")
+            logger.error(f"Error warning user: {e}")
             return False, None
 
     async def action_deafen_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
