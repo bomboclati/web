@@ -1428,6 +1428,15 @@ class ActionHandler:
         result = await system.setup(interaction, params)
         return bool(result) if result is not None else True, {"action": "undo_trigger_role", "guild_id": interaction.guild.id}
 
+    async def action_setup_shop_system(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Placeholder for setting up a shop system."""
+        dm.update_guild_data(interaction.guild.id, "shop_enabled", True)
+        return True, {"action": "setup_shop_system"}
+
+    async def action_add_command(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Alias for creating a prefix command."""
+        return await self.action_create_prefix_command(interaction, params)
+
     # --- Setup System Actions (Auto-Setup with Buttons) ---
 
     async def action_setup_verification(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:

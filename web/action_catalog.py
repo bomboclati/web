@@ -963,6 +963,24 @@ ACTION_CATALOG = {
             "value": {"type": "any", "required": True, "description": "New value for the field"}
         },
         "keywords": ["profile", "update", "user info", "settings"]
+    },
+    "add_command": {
+        "name": "add_command",
+        "description": "Creates a custom prefix command for the server",
+        "category": "Custom Commands",
+        "parameters": {
+            "name": {"type": "string", "required": True, "description": "Name of the command"},
+            "response": {"type": "string", "required": True, "description": "Text response for the command"}
+        },
+        "aliases": ["create_command", "new_command", "custom_command", "create_prefix_command"],
+        "keywords": ["command", "custom command", "add command", "prefix command"]
+    },
+    "setup_shop_system": {
+        "name": "setup_shop_system",
+        "description": "Sets up the economy shop system",
+        "category": "System Setup",
+        "parameters": {},
+        "keywords": ["shop", "store", "economy shop", "setup shop"]
     }
 }
 
