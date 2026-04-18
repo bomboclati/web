@@ -28,92 +28,86 @@ class ServerSetup:
     config: dict
 
 
-# Persistent View Classes for Auto-Setup Buttons
+# Persistent View Classes for Auto-Setup Buttons - Stateless & Robust
 class VerifyButton(discord.ui.View):
-    def __init__(self, guild_id: int, role_id: int):
+    def __init__(self, guild_id: int = 0, role_id: int = 0):
         super().__init__(timeout=None)
-        self.guild_id = guild_id
-        self.role_id = role_id
-    
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        return True
     
     @discord.ui.button(label="Verify Me", style=discord.ButtonStyle.success, custom_id="verify_button_persistent")
     async def verify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
-        if not guild:
-            await interaction.response.send_message("Error: Guild not found.", ephemeral=True)
-            return
+        if not guild: return
+
+        role_id = dm.get_guild_data(guild.id, "verify_role")
+        role = guild.get_role(role_id) if role_id else discord.utils.get(guild.roles, name="Verified")
         
-        role = guild.get_role(self.role_id)
         if not role:
-            role = discord.utils.get(guild.roles, name="Verified")
+            return await interaction.response.send_message("❌ Verification role not found. Please contact staff.", ephemeral=True)
         
-        if role:
+        if role in interaction.user.roles:
+            return await interaction.response.send_message("✅ You are already verified!", ephemeral=True)
+
+        try:
+            # Handle Unverified role removal if using the modules/verification system
+            unverified = discord.utils.get(guild.roles, name="Unverified")
+            if unverified and unverified in interaction.user.roles:
+                await interaction.user.remove_roles(unverified)
+
             await interaction.user.add_roles(role)
             await interaction.response.send_message("✅ You're verified! Enjoy the server!", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ Verification role not found. Please contact staff.", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ I lack permissions to assign the Verified role. Check my role position!", ephemeral=True)
 
 
 class AcceptRulesButton(discord.ui.View):
-    def __init__(self, guild_id: int, role_id: Optional[int] = None):
+    def __init__(self, guild_id: int = 0, role_id: Optional[int] = None):
         super().__init__(timeout=None)
-        self.guild_id = guild_id
-        self.role_id = role_id
-    
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        return True
     
     @discord.ui.button(label="I Accept the Rules", style=discord.ButtonStyle.primary, custom_id="accept_rules_persistent")
     async def accept_rules_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
-        if not guild:
-            await interaction.response.send_message("Error: Guild not found.", ephemeral=True)
-            return
+        if not guild: return
         
-        role = None
-        if self.role_id:
-            role = guild.get_role(self.role_id)
-        if not role:
-            role = discord.utils.get(guild.roles, name="Verified")
+        role_id = dm.get_guild_data(guild.id, "verify_role")
+        role = guild.get_role(role_id) if role_id else discord.utils.get(guild.roles, name="Verified")
         
-        if role:
-            await interaction.user.add_roles(role)
-            await interaction.response.send_message("✅ Thanks for accepting! You now have full access.", ephemeral=True)
+        if role and role not in interaction.user.roles:
+            try:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message("✅ Thanks for accepting! You now have full access.", ephemeral=True)
+            except discord.Forbidden:
+                await interaction.response.send_message("✅ Rules accepted (but I couldn't add your role).", ephemeral=True)
         else:
-            await interaction.response.send_message("✅ Thanks for accepting!", ephemeral=True)
+            await interaction.response.send_message("✅ Rules accepted!", ephemeral=True)
 
 
 class CreateTicketButton(discord.ui.View):
-    def __init__(self, guild_id: int, channel_id: int):
+    def __init__(self, guild_id: int = 0, channel_id: int = 0):
         super().__init__(timeout=None)
-        self.guild_id = guild_id
-        self.channel_id = channel_id
-    
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        return True
     
     @discord.ui.button(label="Create Ticket", style=discord.ButtonStyle.primary, custom_id="create_ticket_persistent")
     async def create_ticket_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
-        if not guild:
-            await interaction.response.send_message("Error: Guild not found.", ephemeral=True)
-            return
+        if not guild: return
         
-        channel = guild.get_channel(self.channel_id)
+        # Try finding channel ID from various possible keys
+        ch_id = dm.get_guild_data(guild.id, 'tickets_channel') or dm.get_guild_data(guild.id, 'ticket_queue_channel')
+        channel = guild.get_channel(ch_id) if ch_id else discord.utils.get(guild.text_channels, name="ticket-queue")
+        
         if not channel:
-            channel = discord.utils.get(guild.text_channels, name="ticket-queue")
-        
-        if channel and isinstance(channel, discord.TextChannel):
+            return await interaction.response.send_message("❌ Ticket channel not found. Please contact staff.", ephemeral=True)
+
+        try:
             thread = await channel.create_thread(
-                name=f"{interaction.user.name}-ticket",
+                name=f"ticket-{interaction.user.display_name}",
+                type=discord.ChannelType.private_thread if guild.premium_tier >= 2 else discord.ChannelType.public_thread,
                 inviter=interaction.user
             )
-            await thread.send(f"🎫 Ticket created by {interaction.user.mention}")
-            await interaction.response.send_message("✅ Ticket created!", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ Ticket channel not found. Please contact staff.", ephemeral=True)
+            await thread.send(f"🎫 **New Ticket**\n{interaction.user.mention} has opened a ticket. Staff will be with you shortly.")
+            await interaction.response.send_message(f"✅ Ticket created! Go to {thread.mention}", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Failed to create ticket: {e}")
+            await interaction.response.send_message("❌ Failed to create ticket thread.", ephemeral=True)
 
 
 class SuggestionButton(discord.ui.View):
@@ -469,52 +463,24 @@ class AutoSetup:
         return True
 
     async def _setup_verification_system(self, guild: discord.Guild) -> bool:
-        category = discord.utils.get(guild.categories, name="Welcome")
-        
-        verify_role = discord.utils.get(guild.roles, name="Verified")
-        if not verify_role:
-            verify_role = await guild.create_role(
-                name="Verified",
-                color=discord.Color.green(),
-                permissions=discord.Permissions(
-                    view_channel=True,
-                    send_messages=True,
-                    read_message_history=True,
-                    attach_files=True,
-                    embed_links=True,
-                    add_reactions=True,
-                    use_external_emojis=True,
-                    use_application_commands=True,
-                    connect=True,
-                    speak=True,
-                    use_voice_activation=True,
-                    create_instant_invite=True,
-                ),
-                hoist=True
-            )
-        
-        verify_channel = discord.utils.get(guild.text_channels, name="verify")
-        if not verify_channel:
-            verify_channel = await guild.create_text_channel("verify", category=category)
-        
-        embed = discord.Embed(
-            title="✅ Verification",
-            description="Click the button below to verify yourself and gain access to the server!",
-            color=discord.Color.green()
-        )
-        
-        # Use persistent view for reliable button functionality
-        view = VerifyButton(guild.id, verify_role.id)
-        
+        # Use the specialized verification module for consistency
         try:
-            await verify_channel.send(embed=embed, view=view)
+            from modules.verification import Verification
+            v_system = Verification(self.bot)
+            unverified_role, verified_role = await v_system.setup(guild)
+
+            dm.update_guild_data(guild.id, "verify_role", verified_role.id)
+            dm.update_guild_data(guild.id, "unverified_role", unverified_role.id)
+
+            # Find the #verify channel created by Verification.setup
+            verify_channel = discord.utils.get(guild.text_channels, name="verify")
+            if verify_channel:
+                dm.update_guild_data(guild.id, "verify_channel", verify_channel.id)
+
+            return True
         except Exception as e:
-            logger.error(f"Failed to send verification message: {e}")
-        
-        dm.update_guild_data(guild.id, "verify_channel", verify_channel.id)
-        dm.update_guild_data(guild.id, "verify_role", verify_role.id)
-        
-        return True
+            logger.error(f"Failed to setup verification via modules.verification: {e}")
+            return False
 
     async def _setup_rules_channel(self, guild: discord.Guild) -> bool:
         category = discord.utils.get(guild.categories, name="Rules")
@@ -960,29 +926,35 @@ class AutoSetup:
         success_count = sum(1 for _, success in results if success)
         
         embed = discord.Embed(
-            title="✅ Auto-Setup Complete!",
-            description=f"Successfully set up **{success_count}/{len(results)}** features for **{guild.name}**",
+            title="✅ Auto-Setup Results",
+            description=f"Auto-setup for **{guild.name}** finished with **{success_count}/{len(results)}** components successful.",
             color=discord.Color.green() if success_count == len(results) else discord.Color.orange()
         )
         
+        status_lines = []
         for name, success in results:
             status = "✅" if success else "❌"
-            embed.add_field(name=f"{status} {name}", value="Done" if success else "Failed", inline=True)
+            status_lines.append(f"{status} **{name}**")
+
+        embed.add_field(name="Summary", value="\n".join(status_lines), inline=False)
         
         embed.add_field(
             name="Next Steps",
-            value="• Use `/bot` to create more features\n• Check `/help` for all commands\n• Configure with `/config`",
+            value="• Use `/bot` to create custom features\n• Type `!help` to see available commands\n• Check `#verify` or `#rules` in your server!",
             inline=False
         )
         
-        embed.set_footer(text="Miro AI • Full Auto-Setup")
+        embed.set_footer(text="Miro AI • Infrastructure Buildout")
+        embed.timestamp = discord.utils.utcnow()
         
         try:
             await owner.send(embed=embed)
         except:
-            system_channel = guild.system_channel
-            if system_channel:
-                await system_channel.send(embed=embed)
+            # Fallback if DMs are closed
+            log_ch_id = dm.get_guild_data(guild.id, "log_channel")
+            log_ch = guild.get_channel(log_ch_id) if log_ch_id else guild.system_channel
+            if log_ch:
+                await log_ch.send(content=f"{owner.mention}", embed=embed)
 
     async def on_guild_remove(self, guild: discord.Guild):
         logger.info(f"Bot removed from guild: {guild.name} (ID: {guild.id})")
@@ -998,40 +970,7 @@ class AutoSetup:
     async def setup_verification(self, interaction: discord.Interaction, params: dict) -> bool:
         """Setup verification system with button embed for AI actions."""
         guild = interaction.guild
-        category_name = params.get("category", "Welcome")
-        channel_name = params.get("channel", "verify")
-        role_name = params.get("role", "Verified")
-        
-        # Create or get category
-        category = discord.utils.get(guild.categories, name=category_name)
-        if not category:
-            category = await guild.create_category(category_name)
-        
-        # Create or get role
-        role = discord.utils.get(guild.roles, name=role_name)
-        if not role:
-            role = await guild.create_role(name=role_name, color=discord.Color.green(), hoist=True)
-        
-        # Create channel
-        channel = discord.utils.get(guild.text_channels, name=channel_name)
-        if not channel:
-            channel = await guild.create_text_channel(channel_name, category=category)
-        
-        # Send embed with persistent button
-        embed = discord.Embed(
-            title="✅ Verification",
-            description="Click the button below to verify yourself and gain access to the server!",
-            color=discord.Color.green()
-        )
-        view = VerifyButton(guild.id, role.id)
-        await channel.send(embed=embed, view=view)
-        
-        # Store config
-        dm.update_guild_data(guild.id, "verify_channel", channel.id)
-        dm.update_guild_data(guild.id, "verify_role", role.id)
-        
-        logger.info(f"Setup verification system in {guild.name}")
-        return True
+        return await self._setup_verification_system(guild)
     
     async def setup_tickets(self, interaction: discord.Interaction, params: dict) -> bool:
         """Setup ticket system with button embed for AI actions."""

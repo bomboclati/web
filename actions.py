@@ -140,25 +140,29 @@ class ActionHandler:
     ALLOWED_ACTIONS = {
         "send_message", "send_embed", "add_role", "remove_role",
         "create_channel", "delete_channel", "create_role", "delete_role",
-        "create_category", "edit_channel", "edit_role", "assign_role", "remove_role",
+        "create_category", "edit_channel", "edit_role", "assign_role",
         "create_prefix_command", "delete_prefix_command",
         "setup_welcome", "setup_logging", "setup_verification", "setup_economy", "setup_leveling",
         "setup_tickets", "setup_applications", "setup_appeals", "setup_moderation", "setup_staff_system",
         "send_dm", "create_invite", "schedule_ai_action", "ping",
-        "kick_user", "ban_user", "timeout_user",
-        "delete_role", "delete_channel", "announce", "poll", "give_points", "remove_points", "warn_user",
+        "kick_user", "ban_user", "timeout_user", "softban_user",
+        "announce", "poll", "give_points", "remove_points", "warn_user",
         "create_verify_system", "create_tickets_system", "create_applications_system", "create_appeals_system",
         "create_welcome_system", "create_staff_system", "create_leveling_system", "create_economy_system",
         "mute_user", "unmute_user", "deafen_user", "set_nickname", "slowmode", "lock_channel", "unlock_channel",
-        "send_message", "reply_message", "add_reaction", "edit_channel_name", "edit_role_name",
+        "reply_message", "add_reaction", "edit_channel_name", "edit_role_name",
         "change_role_color", "move_channel", "clone_channel", "create_thread", "pin_message", "unpin_message",
         "set_topic", "delete_messages", "remove_reaction", "delete_message", "bulk_delete_messages",
         "create_role_with_permissions", "edit_channel_permissions", "create_voice_channel", "create_text_channel",
         "create_category_channel", "edit_channel_bitrate", "edit_channel_user_limit", "follow_announcement_channel",
         "create_scheduled_event", "allow_channel_permission", "deny_channel_permission",
         "deny_all_channels_for_role", "allow_all_channels_for_role", "deny_category_for_role",
-        "make_channel_private", "make_category_private",
-        "analyze_server_state",
+        "make_channel_private", "make_category_private", "clear_reactions", "edit_guild",
+        "analyze_server_state", "extract_online_users", "send_notification", "create_task", "update_profile",
+        # Server Query Actions
+        "query_server_info", "query_channels", "query_roles", "query_members", "query_member_details",
+        "query_economy_leaderboard", "query_xp_leaderboard", "query_pending_applications",
+        "query_active_shifts", "query_recent_messages",
         # Additional actions from action_catalog
         "post_documentation", "setup_trigger_role"
     }
@@ -723,84 +727,141 @@ class ActionHandler:
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    async def action_assign_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Assign a role to a user. Supports lookup by name OR id for both role and user."""
-        guild = interaction.guild
-
-        # Check permissions first
-        if not guild.me.guild_permissions.manage_roles:
-            logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
-            return False, None
-
-        # Log all input parameters
-        logger.info("assign_role: input params=%s", params)
-        logger.info("assign_role: available roles in guild=%s", [r.name for r in guild.roles])
-
-        # --- Resolve role (by id first, then by name) ---
-        role = None
-        role_id = params.get("role_id")
-        role_name = params.get("role_name") or params.get("name")
-        logger.info("assign_role: looking for role. role_id=%s role_name=%s", role_id, role_name)
+    async def _resolve_role(self, guild: discord.Guild, role_id: Any = None, role_name: Any = None) -> Optional[discord.Role]:
+        """Robustly resolve a role by ID or name."""
         if role_id:
             try:
-                role = guild.get_role(int(role_id))
-                logger.info("assign_role: role lookup by id result=%s", role)
-            except (TypeError, ValueError):
-                role = None
-        if not role and role_name:
-            role = discord.utils.find(lambda r: r.name.lower() == str(role_name).lower(), guild.roles)
-        if not role and role_name:
-            role = discord.utils.find(lambda r: str(role_name).lower() in r.name.lower(), guild.roles)
-        logger.info("assign_role: final role resolved=%s", role)
+                # Handle both int and string IDs, including mentions
+                rid = int(str(role_id).strip().lstrip("<@&").rstrip(">"))
+                role = guild.get_role(rid)
+                if role: return role
+            except (ValueError, TypeError):
+                pass
 
-        # --- Resolve member (by id first, then by name/mention) ---
-        member = None
-        user_id = params.get("user_id") or params.get("user")
-        username = params.get("username") or params.get("user_name")
-        logger.info("assign_role: looking for member. user_id=%s username=%s", user_id, username)
+        if role_name:
+            name = str(role_name).strip().lower()
+            # Try exact match first
+            role = discord.utils.find(lambda r: r.name.lower() == name, guild.roles)
+            if role: return role
+            # Try partial match
+            role = discord.utils.find(lambda r: name in r.name.lower(), guild.roles)
+            if role: return role
+
+        return None
+
+    async def _resolve_member(self, guild: discord.Guild, user_id: Any = None, username: Any = None) -> Optional[discord.Member]:
+        """Robustly resolve a member by ID or name."""
         if user_id:
             try:
                 uid = int(str(user_id).strip().lstrip("<@!").rstrip(">"))
-                member = guild.get_member(uid) or await guild.fetch_member(uid)
-                logger.info("assign_role: member lookup by id result=%s", member)
-            except (TypeError, ValueError, discord.NotFound, discord.HTTPException):
-                member = None
-        if not member and username:
-            search = str(username).lstrip("@").lower()
-            member = discord.utils.find(
-                lambda m: m.name.lower() == search or m.display_name.lower() == search,
-                guild.members
-            )
-            logger.info("assign_role: member lookup by name result=%s", member)
+                member = guild.get_member(uid)
+                if not member:
+                    try:
+                        member = await guild.fetch_member(uid)
+                    except (discord.NotFound, discord.HTTPException):
+                        pass
+                if member: return member
+            except (ValueError, TypeError):
+                pass
 
-        if not role:
-            logger.error("assign_role: could not find role. role_id=%s role_name=%s", role_id, role_name)
-            return False, None
-        if not member:
-            logger.error("assign_role: could not find member. user_id=%s username=%s", user_id, username)
-            return False, None
+        if username:
+            name = str(username).strip().lstrip("@").lower()
+            # Try exact match on name or display name
+            member = discord.utils.find(lambda m: m.name.lower() == name or m.display_name.lower() == name, guild.members)
+            if member: return member
 
-        # Check role hierarchy - bot can't assign roles higher than itself
-        bot_top_role = guild.me.top_role
-        if role.position >= bot_top_role.position:
-            logger.error("assign_role: role %s is higher than bot's top role %s", role.name, bot_top_role.name)
-            return False, None
+            # Try query members for those not in cache
+            try:
+                results = await guild.query_members(query=name, limit=5)
+                if results:
+                    return results[0]
+            except Exception:
+                pass
 
-        # Check if user has permission to assign this role
+        return None
+
+    async def action_assign_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Assign a role to one or more users. Supports multiple roles too."""
+        guild = interaction.guild
+
+        # Security check: Does the user have permission to manage roles?
         if not interaction.user.guild_permissions.manage_roles:
-            logger.error("User lacks manage_roles permission to assign roles")
-            return False, None
+            return False, {"error": "User lacks 'Manage Roles' permission."}
 
-        try:
-            await member.add_roles(role, reason=f"Assigned by {interaction.user.display_name}")
-            logger.info("Assigned role %s to %s", role.name, member.display_name)
-            return True, {"action": "remove_role", "user_id": member.id, "role_id": role.id}
-        except discord.Forbidden:
-            logger.error("assign_role: Forbidden - bot lacks permission to assign role %s to %s", role.name, member.display_name)
-            return False, None
-        except discord.HTTPException as e:
-            logger.error("assign_role: HTTP error - %s", str(e))
-            return False, None
+        if not guild.me.guild_permissions.manage_roles:
+            return False, {"error": "Bot lacks 'Manage Roles' permission."}
+
+        # --- Resolve Roles ---
+        roles = []
+        role_ids = params.get("role_ids", [])
+        if not isinstance(role_ids, list): role_ids = [role_ids]
+        if "role_id" in params: role_ids.append(params["role_id"])
+
+        role_names = params.get("role_names", [])
+        if not isinstance(role_names, list): role_names = [role_names]
+        if "role_name" in params: role_names.append(params["role_name"])
+        if "name" in params: role_names.append(params["name"])
+
+        for rid in role_ids:
+            r = await self._resolve_role(guild, role_id=rid)
+            if r and r not in roles: roles.append(r)
+        for rn in role_names:
+            r = await self._resolve_role(guild, role_name=rn)
+            if r and r not in roles: roles.append(r)
+
+        if not roles:
+            return False, {"error": f"Could not find any roles matching: ID={role_ids}, Name={role_names}"}
+
+        # --- Resolve Members ---
+        members = []
+        user_ids = params.get("user_ids", [])
+        if not isinstance(user_ids, list): user_ids = [user_ids]
+        if "user_id" in params: user_ids.append(params["user_id"])
+        if "user" in params: user_ids.append(params["user"])
+
+        usernames = params.get("usernames", [])
+        if not isinstance(usernames, list): usernames = [usernames]
+        if "username" in params: usernames.append(params["username"])
+        if "user_name" in params: usernames.append(params["user_name"])
+
+        for uid in user_ids:
+            m = await self._resolve_member(guild, user_id=uid)
+            if m and m not in members: members.append(m)
+        for un in usernames:
+            m = await self._resolve_member(guild, username=un)
+            if m and m not in members: members.append(m)
+
+        if not members:
+            return False, {"error": f"Could not find any members matching: ID={user_ids}, Name={usernames}"}
+
+        # --- Process Assignments ---
+        bot_top_role = guild.me.top_role
+        success_count = 0
+        undo_list = []
+        errors = []
+
+        for role in roles:
+            if role.position >= bot_top_role.position:
+                errors.append(f"Role '{role.name}' is higher than bot's role.")
+                continue
+
+            for member in members:
+                try:
+                    if role in member.roles:
+                        success_count += 1
+                        continue
+                    await member.add_roles(role, reason=f"Assigned by {interaction.user.display_name}")
+                    success_count += 1
+                    undo_list.append({"action": "remove_role", "user_id": member.id, "role_id": role.id})
+                except discord.Forbidden:
+                    errors.append(f"Forbidden: Could not give '{role.name}' to '{member.display_name}'.")
+                except Exception as e:
+                    errors.append(f"Error giving '{role.name}' to '{member.display_name}': {str(e)}")
+
+        if success_count == 0 and errors:
+            return False, {"error": "; ".join(errors)}
+
+        return True, {"action": "batch_undo", "undo_data": undo_list}
 
     async def action_add_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Adds a role to a user. Alias for action_assign_role."""
@@ -1808,6 +1869,140 @@ class ActionHandler:
         profiles[str(user_id)][field] = value
         dm.update_guild_data(interaction.guild.id, "user_profiles", profiles)
         return True, {"message": f"Updated {field} for user {user_id}"}
+
+    async def action_softban_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Bans then immediately unbans a user to clear their messages."""
+        user_id = params.get("user_id")
+        username = params.get("username")
+        days = params.get("delete_messages_days", 7)
+
+        member = await self._resolve_member(interaction.guild, user_id, username)
+        if not member:
+            return False, {"error": "User not found"}
+
+        try:
+            # discord.py 2.0+ uses delete_message_seconds
+            await member.ban(reason="Softban (clear messages)", delete_message_seconds=days * 86400)
+            await interaction.guild.unban(member, reason="Softban completion")
+            return True, None
+        except Exception as e:
+            return False, {"error": str(e)}
+
+    async def action_clear_reactions(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Clears all reactions from a message."""
+        message_id = params.get("message_id")
+        channel_name = params.get("channel")
+        channel = self._resolve_channel(channel_name) if channel_name else interaction.channel
+        if not channel: return False, {"error": "Channel not found"}
+
+        try:
+            msg = await channel.fetch_message(message_id)
+            await msg.clear_reactions()
+            return True, None
+        except Exception as e:
+            return False, {"error": str(e)}
+
+    async def action_edit_guild(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Edits server settings (name, description, etc.)."""
+        guild = interaction.guild
+        try:
+            edit_kwargs = {}
+            if "name" in params: edit_kwargs["name"] = params["name"]
+            if "description" in params: edit_kwargs["description"] = params["description"]
+
+            if edit_kwargs:
+                await guild.edit(**edit_kwargs)
+            return True, None
+        except Exception as e:
+            return False, {"error": str(e)}
+
+    # --- Server Query Implementation ---
+
+    async def _send_query_result(self, interaction: discord.Interaction, title: str, description: str, fields: List[Dict] = None):
+        embed = discord.Embed(title=title, description=description[:4000], color=discord.Color.blue())
+        if fields:
+            for f in fields[:25]:
+                embed.add_field(name=f["name"], value=f["value"], inline=f.get("inline", True))
+        await interaction.channel.send(embed=embed)
+
+    async def action_query_server_info(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        data = await self.bot.server_query.query_server_info(interaction.guild.id)
+        if "error" in data: return False, data
+
+        fields = [
+            {"name": "Members", "value": f"{data['member_count']} ({data['online_count']} online)"},
+            {"name": "Channels", "value": str(data['channel_count'])},
+            {"name": "Roles", "value": str(data['role_count'])},
+            {"name": "Owner", "value": data['owner']},
+            {"name": "Created", "value": data['created_at'][:10]}
+        ]
+        await self._send_query_result(interaction, f"Server Info: {data['name']}", data.get("description", ""), fields)
+        return True, None
+
+    async def action_query_channels(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        channels = await self.bot.server_query.query_channels(interaction.guild.id, params.get("type"))
+        text = "\n".join([f"• {c['name']} ({c['type']})" for c in channels[:30]])
+        await self._send_query_result(interaction, "Server Channels", text or "No channels found")
+        return True, None
+
+    async def action_query_roles(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        roles = await self.bot.server_query.query_roles(interaction.guild.id)
+        text = "\n".join([f"• {r['name']} (ID: {r['id']})" for r in roles if r['name'] != "@everyone"][:30])
+        await self._send_query_result(interaction, "Server Roles", text or "No roles found")
+        return True, None
+
+    async def action_query_members(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        members = await self.bot.server_query.query_members(interaction.guild.id, params.get("query"), params.get("limit", 20))
+        text = "\n".join([f"• {m['name']} ({m['status']})" for m in members])
+        await self._send_query_result(interaction, "Members Search", text or "No members found")
+        return True, None
+
+    async def action_query_member_details(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        uid = params.get("user_id")
+        if not uid: return False, {"error": "Missing user_id"}
+        details = await self.bot.server_query.query_member_details(interaction.guild.id, int(uid))
+        if not details: return False, {"error": "User not found"}
+
+        fields = [
+            {"name": "Status", "value": details["status"]},
+            {"name": "Top Role", "value": details["top_role"]},
+            {"name": "Joined", "value": details["joined_at"][:10] if details["joined_at"] else "N/A"},
+            {"name": "Roles", "value": ", ".join(details["roles"][:10])}
+        ]
+        await self._send_query_result(interaction, f"User Details: {details['name']}", "", fields)
+        return True, None
+
+    async def action_query_economy_leaderboard(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        lb = await self.bot.server_query.query_economy_leaderboard(interaction.guild.id, params.get("limit", 10))
+        text = "\n".join([f"**{i+1}.** {e['name']} - {e['coins']} coins" for i, e in enumerate(lb)])
+        await self._send_query_result(interaction, "Economy Leaderboard", text or "No data")
+        return True, None
+
+    async def action_query_xp_leaderboard(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        lb = await self.bot.server_query.query_xp_leaderboard(interaction.guild.id, params.get("limit", 10))
+        text = "\n".join([f"**{i+1}.** {e['name']} - Level {e['level']} ({e['xp']} XP)" for i, e in enumerate(lb)])
+        await self._send_query_result(interaction, "Leveling Leaderboard", text or "No data")
+        return True, None
+
+    async def action_query_pending_applications(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        apps = await self.bot.server_query.query_pending_applications(interaction.guild.id)
+        text = "\n".join([f"• {a['username']} (Applied: {a['applied_at']})" for a in apps])
+        await self._send_query_result(interaction, "Pending Staff Applications", text or "No pending applications")
+        return True, None
+
+    async def action_query_active_shifts(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        shifts = await self.bot.server_query.query_active_shifts(interaction.guild.id)
+        text = "\n".join([f"• {s['username']} (Started: {s['start_time']})" for s in shifts])
+        await self._send_query_result(interaction, "Active Staff Shifts", text or "No active shifts")
+        return True, None
+
+    async def action_query_recent_messages(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        cid = params.get("channel_id")
+        if not cid: return False, {"error": "Missing channel_id"}
+        msgs = await self.bot.server_query.query_recent_messages(int(cid), params.get("limit", 10))
+        text = "\n".join([f"**{m['author']}:** {m['content'][:100]}" for m in msgs])
+        await self._send_query_result(interaction, "Recent Messages", text or "No messages found")
+        return True, None
     async def action_warn_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Warns a user (moderation)."""
         user_id = params.get("user_id")
@@ -3344,6 +3539,13 @@ class ActionHandler:
                         return True
                     except discord.NotFound:
                         pass
+
+            elif undo_action == "batch_undo":
+                results = []
+                for sub_undo in undo_data.get("undo_data", []):
+                    res = await self._execute_undo(interaction, sub_undo.get("action"), sub_undo)
+                    results.append(res)
+                return all(results)
 
             elif undo_action in ("undo_staff_system", "undo_economy", "undo_trigger_role"):
                 return await self._undo_system_setup(guild, undo_action)

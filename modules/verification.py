@@ -9,12 +9,16 @@ from logger import logger
 
 
 class VerifyView(ui.View):
-    def __init__(self, verification_system):
+    def __init__(self, verification_system=None):
         super().__init__(timeout=None)
         self.verification = verification_system
 
     @ui.button(label="✅ Verify", style=discord.ButtonStyle.success, custom_id="verify_button")
     async def verify_button(self, interaction: discord.Interaction, button: ui.Button):
+        if not self.verification:
+            # Fallback for when view is recovered from persistence in bot.py
+            from modules.verification import Verification
+            self.verification = Verification(interaction.client)
         await self.verification.handle_verify(interaction)
 
 

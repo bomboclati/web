@@ -6,7 +6,13 @@ import json
 import time
 
 class AppealModal(ui.Modal, title='Moderation Appeal'):
-    reason = ui.TextInput(label='Why should your action be reversed?', style=discord.TextStyle.paragraph)
+    reason = ui.TextInput(
+        label='Why should your action be reversed?',
+        style=discord.TextStyle.paragraph,
+        min_length=20,
+        max_length=1000,
+        placeholder="Provide details on why we should reconsider..."
+    )
     
     def __init__(self, bot, guild_id, action_id, category: str = "ban"):
         super().__init__()
@@ -24,12 +30,17 @@ class AppealModal(ui.Modal, title='Moderation Appeal'):
         self.title = titles.get(category, "Moderation Appeal")
 
     async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
         guild = self.bot.get_guild(self.guild_id)
+        if not guild:
+            return await interaction.followup.send("❌ Error: Guild not found.", ephemeral=True)
+
         appeal_channel_id = dm.get_guild_data(self.guild_id, "appeal_channel_id")
         appeal_channel = guild.get_channel(appeal_channel_id)
         
         if not appeal_channel:
-            return await interaction.response.send_message("Appeal channel not found.", ephemeral=True)
+            return await interaction.followup.send("❌ Error: Appeal channel not found. Please contact staff.", ephemeral=True)
         
         embed = discord.Embed(title=f"New Appeal: {interaction.user.name}", color=discord.Color.orange())
         embed.add_field(name="User ID", value=interaction.user.id, inline=True)

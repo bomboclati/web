@@ -165,13 +165,13 @@ class MiroBot(commands.Bot):
         self.add_view(StaffApplicationPersistentView(self))
         self.add_view(StaffReviewPersistentView())
         self.add_view(TicketPersistentView())
-        self.add_view(VerifyView(self))
+        self.add_view(VerifyView(self.verification))
         
         # Register persistent views for auto-setup buttons (these work across restarts)
         # Each view uses a unique custom_id pattern that gets matched when buttons are clicked
-        self.add_view(VerifyButton(guild_id=0, role_id=0))  # guild_id and role_id will be overridden by Discord's interaction data
-        self.add_view(AcceptRulesButton(guild_id=0, role_id=0))
-        self.add_view(CreateTicketButton(guild_id=0, channel_id=0))
+        self.add_view(VerifyButton())
+        self.add_view(AcceptRulesButton())
+        self.add_view(CreateTicketButton())
         self.add_view(SuggestionButton(guild_id=0))
         self.add_view(ApplyStaffButton(guild_id=0))
         # Note: RoleSelectButton is a Button, not a View, so it doesn't need to be registered here
@@ -214,11 +214,13 @@ class MiroBot(commands.Bot):
 
     async def _check_new_guilds(self):
         """Check for any guilds the bot just joined"""
-        await asyncio.sleep(5)
+        await asyncio.sleep(10) # Give it a bit more time for cache to stabilize
         completed = set(dm.load_json("completed_setups", default={}).keys())
         for guild in self.guilds:
             if str(guild.id) not in completed:
-                await self.auto_setup.on_guild_join(guild)
+                # Instead of auto-triggering on_guild_join (which sends DMs),
+                # just initialize data if needed. DMs should only be sent on actual guild join event.
+                await self.auto_setup._initialize_server_data(guild)
 
     async def _cleanup_expired_sessions(self):
         """Remove expired AI conversation sessions."""
