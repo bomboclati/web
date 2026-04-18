@@ -341,8 +341,26 @@ class AutoSetup:
             await owner.send(embed=embed, view=view)
             logger.info(f"Sent welcome DM to {owner} for guild {guild.id}")
         except Exception as e:
-            logger.error(f"Failed to send welcome DM: {e}")
-            # Fall back silently without posting in the server
+            logger.warning(f"Failed to send welcome DM to {owner} (DMs likely closed): {e}. Falling back to server channel.")
+            # Fall back to system channel or first available text channel
+            fallback_channel = guild.system_channel
+            
+            if not fallback_channel or not fallback_channel.permissions_for(guild.me).send_messages:
+                # Find first text channel where bot can send messages
+                for channel in guild.text_channels:
+                    if channel.permissions_for(guild.me).send_messages and channel.permissions_for(guild.me).view_channel:
+                        fallback_channel = channel
+                        break
+            
+            if fallback_channel:
+                embed.description = f"I've been added to the server! (Sent here because the owner's DMs are closed.)\n\n<@{owner.id}>"
+                try:
+                    await fallback_channel.send(content=f"Hey <@{owner.id}>, your DMs were closed! Here is your setup menu:", embed=embed, view=view)
+                    logger.info(f"Sent welcome fallback to channel {fallback_channel.name} in guild {guild.id}")
+                except Exception as ex:
+                    logger.error(f"Failed to send fallback welcome to channel {fallback_channel.name}: {ex}")
+            else:
+                logger.error(f"Could not find any channel to send welcome message in guild {guild.id}")
 
     async def _initialize_server_data(self, guild: discord.Guild):
         default_config = {
