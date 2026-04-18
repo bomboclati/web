@@ -139,7 +139,7 @@ class EditCommandModal(discord.ui.Modal):
 class ActionHandler:
     ALLOWED_ACTIONS = {
         "send_message", "send_embed", "add_role", "remove_role",
-        "create_channel", "delete_channel", "create_role", "delete_role",
+        "create_channel", "create_shop_channel", "delete_channel", "create_role", "delete_role",
         "create_category", "edit_channel", "edit_role", "assign_role",
         "assign_role_by_name", "create_prefix_command", "delete_prefix_command",
         "setup_welcome", "setup_logging", "setup_verification", "setup_economy", "setup_leveling",
@@ -486,6 +486,75 @@ class ActionHandler:
         logger.info("Created channel: %s", channel.name)
         return True, {"action": "delete_channel", "channel_id": channel.id}
 
+    async def action_create_shop_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        params = self._normalize_params(params, {
+            "channel_name": ["name", "channel_name"],
+            "channel_type": ["type", "channel_type"],
+            "category_name": ["category", "category_name"],
+            "private": ["private"],
+            "allowed_roles": ["allowed_roles"],
+            "denied_roles": ["denied_roles"],
+        })
+        guild = interaction.guild
+        name = params["channel_name"] or "shop"
+        channel_type = params["channel_type"] or "text"
+        category_name = params["category_name"] or "shop"
+        private = params["private"]
+        allowed_roles = params["allowed_roles"]
+        denied_roles = params["denied_roles"]
+
+        # If private=true, always deny @everyone view_channel
+        if private and "@everyone" not in denied_roles:
+            denied_roles = list(denied_roles) + ["@everyone"]
+
+        if not guild.me.guild_permissions.manage_channels:
+            logger.error("Bot lacks manage_channels permission in guild %s", guild.id)
+            return False, None
+
+        # Check for duplicate channel creation using deduplicator
+        dedup_key = f"channel_{guild.id}_{name}"
+        if not deduplicator.should_send(dedup_key, interval=5):
+            logger.info("Channel '%s' creation skipped (duplicate request)", name)
+            return True, None
+
+        existing = discord.utils.get(guild.channels, name=name)
+        if existing:
+            logger.info("Channel '%s' already exists, skipping creation", name)
+            return True, None
+
+        category = None
+        if category_name:
+            category = discord.utils.get(guild.categories, name=category_name)
+            if not category:
+                # Also deduplicate category creation
+                cat_dedup_key = f"category_{guild.id}_{category_name}"
+                if deduplicator.should_send(cat_dedup_key, interval=5):
+                    category = await guild.create_category(category_name)
+
+        if channel_type == "text":
+            channel = await guild.create_text_channel(name, category=category)
+        elif channel_type == "voice":
+            channel = await guild.create_voice_channel(name, category=category)
+        else:
+            return False, None
+
+        # Auto-detect permissions if not specified
+        if not allowed_roles and not denied_roles:
+            auto_perms = self._detect_channel_permissions(name, guild)
+            allowed_roles = auto_perms.get("allowed", [])
+            denied_roles = auto_perms.get("denied", [])
+
+        # Set permissions if specified
+        if allowed_roles or denied_roles:
+            await self._set_channel_permissions(channel, guild, allowed_roles, denied_roles)
+
+        # Send help embed to explain the channel
+        await self._send_channel_guide(channel, name)
+
+        self._track_artifact("channel", channel.id, channel.name)
+        logger.info("Created shop channel: %s", channel.name)
+        return True, {"action": "delete_channel", "channel_id": channel.id}
+
     def _detect_channel_permissions(self, channel_name: str, guild) -> dict:
         """Automatically detect what permissions a channel should have based on its name"""
         name_lower = channel_name.lower()
@@ -521,6 +590,7 @@ class ActionHandler:
             ("rules", {"allowed": [], "denied": []}),
             ("welcome", {"allowed": [], "denied": []}),
             ("suggestions", {"allowed": [], "denied": []}),
+            ("shop", {"allowed": [], "denied": []}),
 
             # Support channels
             ("tickets", {"allowed": ["Moderator", "Support"], "denied": ["@everyone"]}),
@@ -604,6 +674,10 @@ class ActionHandler:
             "announcements": {
                 "description": "Server news and updates.",
                 "commands": ["Staff only: Post announcements"]
+            },
+            "shop": {
+                "description": "Buy and sell items in our server shop!",
+                "commands": ["!shop", "!buy <item>", "!sell <item>"]
             }
         }
 
