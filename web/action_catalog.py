@@ -995,6 +995,17 @@ ACTION_CATALOG = {
         },
         "aliases": ["add_item", "new_item", "shop_item"],
         "keywords": ["item", "shop item", "create item", "add to shop"]
+    },
+    "add_shop_items": {
+        "name": "add_shop_items",
+        "description": "Adds items to the economy shop",
+        "category": "Economy",
+        "parameters": {
+            "name": {"type": "string", "required": True, "description": "Name of the item"},
+            "price": {"type": "number", "required": False, "description": "Price of the item", "default": 100},
+            "type": {"type": "string", "required": False, "description": "Type of item", "default": "role"}
+        },
+        "keywords": ["shop items", "add to shop"]
     }
 }
 

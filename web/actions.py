@@ -137,35 +137,13 @@ class EditCommandModal(discord.ui.Modal):
         await interaction.response.edit_message(content=f"? Command `!{self.cmd_name}` updated!", view=None)
 
 class ActionHandler:
-    ALLOWED_ACTIONS = {
-        "send_message", "send_embed", "add_role", "remove_role",
-        "create_channel", "delete_channel", "create_role", "delete_role",
-        "create_category", "edit_channel", "edit_role", "assign_role",
-        "create_prefix_command", "delete_prefix_command",
-        "setup_welcome", "setup_logging", "setup_verification", "setup_economy", "setup_leveling",
-        "setup_tickets", "setup_applications", "setup_appeals", "setup_moderation", "setup_staff_system",
-        "send_dm", "create_invite", "schedule_ai_action", "ping",
-        "kick_user", "ban_user", "timeout_user", "softban_user",
-        "announce", "poll", "give_points", "remove_points", "warn_user",
-        "create_verify_system", "create_tickets_system", "create_applications_system", "create_appeals_system",
-        "create_welcome_system", "create_staff_system", "create_leveling_system", "create_economy_system",
-        "mute_user", "unmute_user", "deafen_user", "set_nickname", "slowmode", "lock_channel", "unlock_channel",
-        "reply_message", "add_reaction", "edit_channel_name", "edit_role_name",
-        "change_role_color", "move_channel", "clone_channel", "create_thread", "pin_message", "unpin_message",
-        "set_topic", "delete_messages", "remove_reaction", "delete_message", "bulk_delete_messages",
-        "create_role_with_permissions", "edit_channel_permissions", "create_voice_channel", "create_text_channel",
-        "create_category_channel", "edit_channel_bitrate", "edit_channel_user_limit", "follow_announcement_channel",
-        "create_scheduled_event", "allow_channel_permission", "deny_channel_permission",
-        "deny_all_channels_for_role", "allow_all_channels_for_role", "deny_category_for_role",
-        "make_channel_private", "make_category_private", "clear_reactions", "edit_guild",
-        "analyze_server_state", "extract_online_users", "send_notification", "create_task", "update_profile",
-        # Server Query Actions
-        "query_server_info", "query_channels", "query_roles", "query_members", "query_member_details",
-        "query_economy_leaderboard", "query_xp_leaderboard", "query_pending_applications",
-        "query_active_shifts", "query_recent_messages",
-        # Additional actions from action_catalog
-        "post_documentation", "setup_trigger_role"
-    }
+    @property
+    def ALLOWED_ACTIONS(self):
+        import action_catalog
+        # Combine dynamically loaded catalog actions with any internal execution-only actions
+        return set(action_catalog.ACTION_CATALOG.keys()) | {
+            "extract_online_users", "query_recent_messages", "analyze_server_state"
+        }
 
     def __init__(self, bot):
         self.bot = bot
@@ -1457,6 +1435,10 @@ class ActionHandler:
         except Exception as e:
             logger.error(f"Error creating shop item: {e}")
             return False, {"error": str(e)}
+
+    async def action_add_shop_items(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Alias for creating an item in the shop."""
+        return await self.action_create_item(interaction, params)
 
     async def action_add_command(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Alias for creating a prefix command."""
