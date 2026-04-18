@@ -359,8 +359,38 @@ class ActionHandler:
                 )
                 dm.save_json("pending_setups", pending_setups)
 
+    def _normalize_action_name(self, name: str) -> str:
+        import re
+        original_name = name
+        name = name.lower()
+        name = name.replace(' ', '_')
+        typo_map = {'creat': 'create', 'chanel': 'channel', 'assing': 'assign', 'remve': 'remove', 'delet': 'delete', 'membr': 'member', 'nmae': 'name', 'mesage': 'message', 'embded': 'embed', 'reson': 'reason', 'duraton': 'duration'}
+        for typo, correct in typo_map.items():
+            name = name.replace(typo, correct)
+        phrasing_map = {'send_embed': 'embed_send', 'embed_send': 'send_embed', 'dm_user': 'send_dm', 'send_dm': 'dm_user', 'ban_member': 'ban_user', 'ban_user': 'ban_member', 'kick_member': 'kick_user', 'kick_user': 'kick_member'}
+        if name in phrasing_map:
+            name = phrasing_map[name]
+        name = name.rstrip('.,!?;:')
+        name = re.sub(r'_+', '_', name)
+        name = name.strip('_')
+        if name in self.ALLOWED_ACTIONS:
+            return name
+        variations = []
+        if name.endswith('_user'):
+            variations.append(name[:-5])
+        elif name.endswith('_member'):
+            variations.append(name[:-7])
+        else:
+            variations.append(name + '_user')
+            variations.append(name + '_member')
+        for var in variations:
+            if var in self.ALLOWED_ACTIONS:
+                return var
+        return original_name
+
     async def dispatch(self, interaction: discord.Interaction, name: str, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Routes action names to specific methods. Returns (success, undo_data)."""
+        name = self._normalize_action_name(name)
         method_name = f"action_{name}"
         if hasattr(self, method_name):
             method = getattr(self, method_name)
