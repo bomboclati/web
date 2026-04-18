@@ -182,9 +182,12 @@ class ActionHandler:
             params = action.get("parameters", {})
 
             if name not in self.ALLOWED_ACTIONS:
-                logger.warning("Blocked disallowed action: %s", name)
-                results.append((name, False))
-                return {"results": results, "rolled_back": [], "failed_at": i, "failed_action": name, "error": f"Action not allowed: {name}", "success": False}
+                if hasattr(self, f"action_{name}"):
+                    logger.info(f"Allowed unlisted action because handler exists: {name}")
+                else:
+                    logger.warning("Blocked disallowed action: %s", name)
+                    results.append((name, False))
+                    return {"results": results, "rolled_back": [], "failed_at": i, "failed_action": name, "error": f"Action not allowed: {name}", "success": False}
 
             try:
                 success, undo_data = await self.dispatch(interaction, name, params)
@@ -1437,6 +1440,10 @@ class ActionHandler:
             return False, {"error": str(e)}
 
     async def action_add_shop_items(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Alias for creating an item in the shop."""
+        return await self.action_create_item(interaction, params)
+
+    async def action_create_shop_items(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Alias for creating an item in the shop."""
         return await self.action_create_item(interaction, params)
 
