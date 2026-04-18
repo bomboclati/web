@@ -141,7 +141,7 @@ class ActionHandler:
         "send_message", "send_embed", "add_role", "remove_role",
         "create_channel", "delete_channel", "create_role", "delete_role",
         "create_category", "edit_channel", "edit_role", "assign_role",
-        "create_prefix_command", "delete_prefix_command",
+        "assign_role_by_name", "create_prefix_command", "delete_prefix_command",
         "setup_welcome", "setup_logging", "setup_verification", "setup_economy", "setup_leveling",
         "setup_tickets", "setup_applications", "setup_appeals", "setup_moderation", "setup_staff_system",
         "send_dm", "create_invite", "schedule_ai_action", "ping",
@@ -952,6 +952,66 @@ class ActionHandler:
     async def action_add_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Adds a role to a user. Alias for action_assign_role."""
         return await self.action_assign_role(interaction, params)
+
+    async def action_assign_role_by_name(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Assigns a role to a user by role name and user identifier."""
+        params = self._normalize_params(params, {
+            "role_name": ["role_name", "name"],
+            "user_id": ["user_id", "user", "member_id", "target_id", "user_mention"],
+            "username": ["username", "user_name"],
+        })
+        guild = interaction.guild
+
+        # Security check
+        if not interaction.user.guild_permissions.manage_roles:
+            return False, {"error": "User lacks 'Manage Roles' permission."}
+        if not guild.me.guild_permissions.manage_roles:
+            return False, {"error": "Bot lacks 'Manage Roles' permission."}
+
+        role_name = params["role_name"]
+        user_id = params["user_id"]
+        username = params["username"]
+
+        # Resolve role
+        role = None
+        if role_name:
+            role = discord.utils.find(lambda r: r.name.lower() == str(role_name).lower(), guild.roles)
+            if not role:
+                role = discord.utils.find(lambda r: str(role_name).lower() in r.name.lower(), guild.roles)
+        if not role:
+            return False, {"error": f"Could not find role '{role_name}'"}
+
+        # Resolve member
+        member = None
+        if user_id:
+            try:
+                uid = int(str(user_id).strip().lstrip("<@!").rstrip(">"))
+                member = guild.get_member(uid) or await guild.fetch_member(uid)
+            except (TypeError, ValueError, discord.NotFound, discord.HTTPException):
+                member = None
+        if not member and username:
+            search = str(username).lstrip("@").lower()
+            member = discord.utils.find(
+                lambda m: m.name.lower() == search or m.display_name.lower() == search,
+                guild.members
+            )
+        if not member:
+            return False, {"error": f"Could not find member '{username or user_id}'"}
+
+        # Check bot's role position
+        if role.position >= guild.me.top_role.position:
+            return False, {"error": f"Role '{role.name}' is higher than bot's role."}
+
+        # Assign role
+        try:
+            if role in member.roles:
+                return True, None  # Already has the role
+            await member.add_roles(role, reason=f"Assigned by {interaction.user.display_name}")
+            return True, {"action": "remove_role", "user_id": member.id, "role_id": role.id, "role_name": role.name}
+        except discord.Forbidden:
+            return False, {"error": f"Forbidden: Could not assign '{role.name}' to '{member.display_name}'"}
+        except Exception as e:
+            return False, {"error": f"Error assigning role: {str(e)}"}
 
     async def action_remove_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Removes a role from a user."""
