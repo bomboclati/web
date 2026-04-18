@@ -423,7 +423,6 @@ class DataManager:
          
         import datetime
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = ""  # Initialize to avoid unbound variable
         
         if self.use_sqlite:
             # Backup SQLite database
@@ -432,11 +431,12 @@ class DataManager:
         else:
             # Backup JSON files
             base_name = os.path.join(backup_dir, f"backup_{timestamp}")
+            # shutil.make_archive returns the path to the created zip file
             backup_path = shutil.make_archive(base_name, 'zip', self.data_dir)
         
         # Verify backup
         if not os.path.exists(backup_path):
-            raise Exception("Backup verification failed")
+            raise Exception(f"Backup verification failed: {backup_path} not found")
 
     async def cleanup_old_data(self, days_to_keep: int = 30):
         """Remove data older than specified days"""

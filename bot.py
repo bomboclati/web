@@ -1,4 +1,5 @@
 import os
+import re
 from typing import Dict, List
 import io
 import discord
@@ -72,6 +73,7 @@ class MiroBot(commands.Bot):
         )
         
         self.ai = AIClient(
+            bot=self,
             api_key=os.getenv("AI_API_KEY"),
             provider=os.getenv("AI_PROVIDER", "openrouter"),
             model=os.getenv("AI_MODEL")
@@ -1200,6 +1202,96 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         if notified_guilds:
             logger.info("Notified %d guilds about !%s improvement", len(notified_guilds), cmd_name)
 
+    async def _handle_mention_ai(self, message):
+        """
+        Handle when bot is mentioned in any channel - provides conversational AI response.
+        Strips the mention and uses last 15 messages for context.
+        """
+        # Don't respond to bot's own messages or other bots
+        if message.author.bot:
+            return
+
+        # Strip the mention from the message content
+        user_input = message.content
+        if self.user:
+            # Remove all variations of the mention
+            user_input = user_input.replace(f"<@{self.user.id}>", "")
+            user_input = user_input.replace(f"<@!{self.user.id}>", "")
+
+        user_input = user_input.strip()
+
+        # If no actual query after mention, send a friendly greeting
+        if not user_input:
+            greetings = [
+                "Hey there! ?? How can I help you today?",
+                "Hello! What can I do for you?",
+                "Hi! Need assistance with something?"
+            ]
+            await message.channel.send(random.choice(greetings), suppress_embeds=True)
+            return
+
+        guild_id = message.guild.id if message.guild else None
+        user_id = message.author.id
+
+        # Get last 15 messages for context (if in guild channel)
+        context_messages = []
+        if message.guild and hasattr(message.channel, 'history'):
+            try:
+                async for msg in message.channel.history(limit=16, before=message):
+                    if not msg.author.bot:  # Skip bot messages
+                        context_messages.append(f"{msg.author.name}: {msg.content}")
+                # Reverse to get chronological order
+                context_messages.reverse()
+            except Exception as e:
+                logger.debug(f"Could not fetch message history: {e}")
+
+        # Build enhanced system prompt for mention responses
+        context_text = '\n'.join(context_messages) if context_messages else ''
+        mention_system_prompt = f"""You are Miro Bot, a helpful Discord assistant.
+    A user has mentioned you in a channel and expects a conversational response.
+
+    {'RECENT CHANNEL CONTEXT (last 15 messages):\n' + context_text if context_messages else ''}
+
+    Respond naturally and conversationally. You don't need to use actions unless specifically requested.
+    Be friendly, concise, and helpful. If the user asks about server stats, activity, or forecasts,
+    you can use the fetch_server_health tool to get real data."""
+
+        try:
+            # Use the existing AI client to process the query
+            result = await self.ai.chat(
+                guild_id=guild_id or 0,
+                user_id=user_id,
+                user_input=user_input,
+                system_prompt=mention_system_prompt
+            )
+
+            # Extract the response - NEVER send raw JSON to users, only summary field
+            if isinstance(result, dict) and "summary" in result:
+                response_text = str(result["summary"])
+            else:
+                response_text = "I'm having trouble formulating a response right now. Please try again."
+
+            # Sanitize to remove any remaining JSON brackets or structure
+            response_text = re.sub(r'^\s*[\{\[]+', '', response_text)
+            response_text = re.sub(r'[\}\]]+\s*$', '', response_text)
+            response_text = response_text.strip()
+
+            # Save the exchange to history
+            if guild_id:
+                await history_manager.add_exchange(
+                    guild_id=guild_id,
+                    user_id=user_id,
+                    user_msg=user_input,
+                    bot_response=response_text
+                )
+
+            # Send response
+            await message.channel.send(response_text, suppress_embeds=True)
+
+        except Exception as e:
+            logger.error(f"Error in mention AI handler: {e}")
+            await message.channel.send("[WARNING] Sorry, I'm having trouble processing that right now. Please try again!", suppress_embeds=True)
+
 # Initialize Bot
 bot = MiroBot()
 
@@ -1207,13 +1299,12 @@ class AIReplyModal(ui.Modal, title='Reply to AI'):
     """Modal for users to answer AI clarifying questions."""
     def __init__(self, question: str):
         super().__init__()
-        self.add_item(ui.TextInput(
+        self.answer = ui.TextInput(
             label=question,
             style=discord.TextStyle.paragraph,
             placeholder="Type your answer here..."
-        ))
-    
-    answer: ui.TextInput
+        )
+        self.add_item(self.answer)
 
 class ModmailReplyModal(ui.Modal, title='Reply to User'):
     """Modal for staff to reply to modmail."""
@@ -1639,7 +1730,7 @@ async def status_cmd(interaction: discord.Interaction):
             provider_status.append(f"{p.capitalize()} {status}")
 
     embed.add_field(name="⚙️ AI Configuration", value="\n".join(provider_status), inline=False)
-    embed.add_field(name="🤖 AI Model", value=f"`{self.ai.model}`", inline=True)
+    embed.add_field(name="🤖 AI Model", value=f"`{interaction.client.ai.model}`", inline=True)
     embed.add_field(name="💾 Memory", value=f"{os.getenv('MEMORY_DEPTH', '20')} msgs", inline=True)
     embed.add_field(name="Bot", value="🟢 Online", inline=True)
     embed.add_field(name="Guild", value=f"?? {guild.name}", inline=True)
@@ -1821,7 +1912,7 @@ Based on ALL of the above, provide a comprehensive server analysis covering:
 Be specific — reference the actual names you see above. Do NOT give generic advice."""
 
     try:
-        result = await self.ai.chat(
+        result = await interaction.client.ai.chat(
             guild_id=guild_id,
             user_id=interaction.user.id,
             user_input=analysis_prompt,
@@ -2142,106 +2233,6 @@ async def on_member_remove(member):
         logger.warning("Exit interview error: %s", e)
 
 
-async def _handle_mention_ai(self, message):
-    """
-    Handle when bot is mentioned in any channel - provides conversational AI response.
-    Strips the mention and uses last 15 messages for context.
-    """
-    # Don't respond to bot's own messages or other bots
-    if message.author.bot:
-        return
-    
-    # Strip the mention from the message content
-    user_input = message.content
-    if self.user:
-        # Remove all variations of the mention
-        user_input = user_input.replace(f"<@{self.user.id}>", "")
-        user_input = user_input.replace(f"<@!{self.user.id}>", "")
-    
-    user_input = user_input.strip()
-    
-    # If no actual query after mention, send a friendly greeting
-    if not user_input:
-        greetings = [
-            "Hey there! ?? How can I help you today?",
-            "Hello! What can I do for you?",
-            "Hi! Need assistance with something?"
-        ]
-        await message.channel.send(random.choice(greetings), suppress_embeds=True)
-        return
-    
-    guild_id = message.guild.id if message.guild else None
-    user_id = message.author.id
-    
-    # Get last 15 messages for context (if in guild channel)
-    context_messages = []
-    if message.guild and hasattr(message.channel, 'history'):
-        try:
-            async for msg in message.channel.history(limit=16, before=message):
-                if not msg.author.bot:  # Skip bot messages
-                    context_messages.append(f"{msg.author.name}: {msg.content}")
-            # Reverse to get chronological order
-            context_messages.reverse()
-        except Exception as e:
-            logger.debug(f"Could not fetch message history: {e}")
-    
-    # Build enhanced system prompt for mention responses
-    context_text = '\\n'.join(context_messages) if context_messages else ''
-    mention_system_prompt = f"""You are Miro Bot, a helpful Discord assistant.
-A user has mentioned you in a channel and expects a conversational response.
-
-{'RECENT CHANNEL CONTEXT (last 15 messages):\\n' + context_text if context_messages else ''}
-
-Respond naturally and conversationally. You don't need to use actions unless specifically requested.
-Be friendly, concise, and helpful. If the user asks about server stats, activity, or forecasts, 
-you can use the fetch_server_health tool to get real data."""
-    
-    try:
-        # Use the existing AI client to process the query
-        result = await self.ai.chat(
-            guild_id=guild_id or 0,
-            user_id=user_id,
-            user_input=user_input,
-            system_prompt=mention_system_prompt
-        )
-        
-        # Extract the response - NEVER send raw JSON to users, only summary field
-        if isinstance(result, dict) and "summary" in result:
-            response_text = str(result["summary"])
-        else:
-            response_text = "I'm having trouble formulating a response right now. Please try again."
-        
-        # Sanitize to remove any remaining JSON brackets or structure
-        import re
-        response_text = re.sub(r'^\s*[\{\[]+', '', response_text)
-        response_text = re.sub(r'[\}\]]+\s*$', '', response_text)
-        response_text = response_text.strip()
-        
-        # Save the exchange to history
-        if guild_id:
-            await history_manager.add_exchange(
-                guild_id=guild_id,
-                user_id=user_id,
-                role="user",
-                content=user_input,
-                reasoning="User mentioned bot",
-                walkthrough="Mention-based AI interaction"
-            )
-            await history_manager.add_exchange(
-                guild_id=guild_id,
-                user_id=user_id,
-                role="assistant",
-                content=response_text,
-                reasoning="Bot response to mention",
-                walkthrough="Provided conversational response"
-            )
-        
-        # Send response
-        await message.channel.send(response_text, suppress_embeds=True)
-        
-    except Exception as e:
-        logger.error(f"Error in mention AI handler: {e}")
-        await message.channel.send("[WARNING] Sorry, I'm having trouble processing that right now. Please try again!", suppress_embeds=True)
 
 
 @bot.event

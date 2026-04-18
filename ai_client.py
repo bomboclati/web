@@ -38,7 +38,8 @@ class AIClient:
     Ensures the bot thinks before acting and provides a walkthrough.
     Supports per-guild API keys.
     """
-    def __init__(self, api_key: str, provider: str = None, model: Optional[str] = None):
+    def __init__(self, bot, api_key: str, provider: str = None, model: Optional[str] = None):
+        self.bot = bot
         self.default_api_key = api_key
         self.default_provider = provider or os.getenv("AI_PROVIDER", "openrouter")
         # Default model logic

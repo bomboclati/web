@@ -1,1 +1,8 @@
-(action_catalog.py and actions.py are source code files, and there are no build artifacts, dependencies, or temporary files in the changes)
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+data/*.json
+data/*.db
+backups/
+logs/*.log

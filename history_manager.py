@@ -214,8 +214,8 @@ class HistoryManager:
                 db.row_factory = aiosqlite.Row
                 query_sql = """SELECT role, content, timestamp, importance_score 
                                FROM exchanges WHERE guild_id=? AND user_id=?
-                               AND (content LIKE ? OR content LIKE ?)"""
-                params = [guild_id, user_id, f"%{query}%", f"%{query}%"]
+                               AND content LIKE ?"""
+                params = [guild_id, user_id, f"%{query}%"]
                 if start_time is not None:
                     query_sql += " AND timestamp >= ?"
                     params.append(start_time)
