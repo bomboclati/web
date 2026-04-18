@@ -178,6 +178,50 @@ class ActionHandler:
         """Set the guild context for help and other commands"""
         self._guild_context = guild
 
+    def _normalize_params(self, params, mappings):
+        """Normalize parameters using aliases and defaults."""
+        normalized = {}
+        for expected, aliases in mappings.items():
+            value = None
+            for alias in aliases:
+                if alias in params:
+                    value = params[alias]
+                    break
+            # Apply defaults if missing
+            if value is None:
+                if expected == "channel_name":
+                    value = "new-channel"
+                elif expected == "role_name":
+                    value = "new-role"
+                elif expected == "duration":
+                    value = 60
+                elif expected == "reason":
+                    value = "No reason provided"
+                elif expected == "content":
+                    value = ""
+                elif expected == "color":
+                    value = "#3498db"
+            # Special handling
+            if expected == "user_id":
+                if isinstance(value, str):
+                    import re
+                    # Extract from mention
+                    match = re.match(r'<@!?(\d+)>', value)
+                    if match:
+                        value = int(match.group(1))
+                    elif value.isdigit():
+                        value = int(value)
+            elif expected == "duration":
+                if params.get("minutes") and not params.get("duration"):
+                    value = params["minutes"] * 60
+            elif expected == "color":
+                if params.get("colour"):
+                    value = params["colour"]
+                elif params.get("hex_color"):
+                    value = params["hex_color"]
+            normalized[expected] = value
+        return normalized
+
     async def execute_sequence(self, interaction: discord.Interaction, actions: List[Dict[str, Any]], auto_rollback: bool = True) -> Dict[str, Any]:
         """Executes a list of actions with automatic rollback on failure and crash recovery tracking."""
         import uuid
@@ -344,13 +388,21 @@ class ActionHandler:
     # --- Basic Actions ---
 
     async def action_create_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        params = self._normalize_params(params, {
+            "channel_name": ["name", "channel_name"],
+            "channel_type": ["type", "channel_type"],
+            "category_name": ["category", "category_name"],
+            "private": ["private"],
+            "allowed_roles": ["allowed_roles"],
+            "denied_roles": ["denied_roles"],
+        })
         guild = interaction.guild
-        name = params.get("name", "new-channel")
-        channel_type = params.get("type", "text")
-        category_name = params.get("category")
-        private = params.get("private", False)
-        allowed_roles = params.get("allowed_roles", [])
-        denied_roles = params.get("denied_roles", [])
+        name = params["channel_name"]
+        channel_type = params["channel_type"]
+        category_name = params["category_name"]
+        private = params["private"]
+        allowed_roles = params["allowed_roles"]
+        denied_roles = params["denied_roles"]
 
         # If private=true, always deny @everyone view_channel
         if private and "@everyone" not in denied_roles:
@@ -547,8 +599,12 @@ class ActionHandler:
         await channel.send(embed=embed)
 
     async def action_create_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        params = self._normalize_params(params, {
+            "role_name": ["name", "role_name"],
+            "color": ["color", "colour", "hex_color"],
+        })
         guild = interaction.guild
-        name = params.get("name")
+        name = params["role_name"]
 
         if not guild.me.guild_permissions.manage_roles:
             logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
@@ -565,7 +621,7 @@ class ActionHandler:
             logger.info("Role '%s' already exists, skipping creation", name)
             return True, None
 
-        color_hex = params.get("color", "#99AAB5").replace("#", "")
+        color_hex = params["color"].replace("#", "")
         color = discord.Color(int(color_hex, 16))
 
         # Auto-detect role permissions
@@ -869,11 +925,17 @@ class ActionHandler:
 
     async def action_remove_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Removes a role from a user."""
+        params = self._normalize_params(params, {
+            "role_id": ["role_id", "role"],
+            "role_name": ["role_name", "name"],
+            "user_id": ["user_id", "user", "member_id", "target_id", "user_mention"],
+            "username": ["username", "user_name"],
+        })
         guild = interaction.guild
 
         role = None
-        role_id = params.get("role_id")
-        role_name = params.get("role_name")
+        role_id = params["role_id"]
+        role_name = params["role_name"]
         if role_id:
             try:
                 role = guild.get_role(int(role_id))
@@ -885,8 +947,8 @@ class ActionHandler:
             role = discord.utils.find(lambda r: str(role_name).lower() in r.name.lower(), guild.roles)
 
         member = None
-        user_id = params.get("user_id")
-        username = params.get("username")
+        user_id = params["user_id"]
+        username = params["username"]
         if user_id:
             try:
                 uid = int(str(user_id).strip().lstrip("<@!").rstrip(">"))
@@ -974,12 +1036,20 @@ class ActionHandler:
         return True, {"action": "delete_prefix_command", "cmd_name": cmd_name, "previous_code": existing}
 
     async def action_send_embed(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        channel_name = params.get("channel")
-        title = params.get("title")
-        description = params.get("description")
-        color = parse_color(params.get("color", 0x3498db))
-        buttons = params.get("buttons", [])  # List of {"label": ..., "type": ..., "style": ...}
-        fields = params.get("fields", [])
+        params = self._normalize_params(params, {
+            "channel_name": ["channel", "channel_name"],
+            "title": ["title"],
+            "description": ["description", "content", "message", "text"],
+            "color": ["color", "colour", "hex_color"],
+            "buttons": ["buttons"],
+            "fields": ["fields"],
+        })
+        channel_name = params["channel_name"]
+        title = params["title"]
+        description = params["description"]
+        color = parse_color(params["color"])
+        buttons = params["buttons"]  # List of {"label": ..., "type": ..., "style": ...}
+        fields = params["fields"]
 
         channel = discord.utils.get(interaction.guild.channels, name=channel_name) or interaction.channel
         embed = discord.Embed(title=title, description=description, color=color)
@@ -1035,10 +1105,16 @@ class ActionHandler:
 
     async def action_send_dm(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Sends a DM to a user. Returns True even when DMs are disabled (soft failure) so the action sequence keeps going."""
-        user_id = params.get("user_id")
-        username = params.get("username")
-        content = params.get("content")
-        embed_data = params.get("embed")
+        params = self._normalize_params(params, {
+            "user_id": ["user_id", "user", "member_id", "target_id", "user_mention"],
+            "username": ["username", "user_name"],
+            "content": ["content", "message", "text"],
+            "embed_data": ["embed"],
+        })
+        user_id = params["user_id"]
+        username = params["username"]
+        content = params["content"]
+        embed_data = params["embed_data"]
         guild = interaction.guild
 
         # ── 0. Parse user_id from Discord mention format (e.g. <@!123456789> or <@123456789>) ─────
@@ -1218,8 +1294,12 @@ class ActionHandler:
 
     async def action_ping(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Pings a user and shows their latency/online status. Resolves by username with cache + API fallback."""
-        user_id = params.get("user_id")
-        username = params.get("username")
+        params = self._normalize_params(params, {
+            "user_id": ["user_id", "user", "member_id", "target_id", "user_mention"],
+            "username": ["username", "user_name"],
+        })
+        user_id = params["user_id"]
+        username = params["username"]
         guild = interaction.guild
 
         # ── Resolve member from username ──────────────────────────────────────
@@ -1539,9 +1619,14 @@ class ActionHandler:
 
     async def action_kick_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Kicks a user from the server."""
-        user_id = params.get("user_id")
-        username = params.get("username")
-        reason = params.get("reason", "Kicked via bot command")
+        params = self._normalize_params(params, {
+            "user_id": ["user_id", "user", "member_id", "target_id", "user_mention"],
+            "username": ["username", "user_name"],
+            "reason": ["reason", "cause", "note"],
+        })
+        user_id = params["user_id"]
+        username = params["username"]
+        reason = params["reason"]
 
         if not user_id and username:
             member = discord.utils.get(interaction.guild.members, name=username)
@@ -1593,10 +1678,16 @@ class ActionHandler:
 
     async def action_ban_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Bans a user from the server."""
-        user_id = params.get("user_id")
-        username = params.get("username")
-        reason = params.get("reason", "Banned via bot command")
-        delete_days = params.get("delete_messages_days", 0)
+        params = self._normalize_params(params, {
+            "user_id": ["user_id", "user", "member_id", "target_id", "user_mention"],
+            "username": ["username", "user_name"],
+            "reason": ["reason", "cause", "note"],
+            "delete_days": ["delete_messages_days", "delete_days"],
+        })
+        user_id = params["user_id"]
+        username = params["username"]
+        reason = params["reason"]
+        delete_days = params["delete_days"]
 
         if not user_id and username:
             member = discord.utils.get(interaction.guild.members, name=username)
@@ -1631,10 +1722,16 @@ class ActionHandler:
 
     async def action_timeout_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Times out a user (modifies their communication timeout)."""
-        user_id = params.get("user_id")
-        username = params.get("username")
-        duration = params.get("duration", 600)  # seconds, default 10 minutes
-        reason = params.get("reason", "Timed out via bot command")
+        params = self._normalize_params(params, {
+            "user_id": ["user_id", "user", "member_id", "target_id", "user_mention"],
+            "username": ["username", "user_name"],
+            "duration": ["duration", "seconds", "time", "minutes"],
+            "reason": ["reason", "cause", "note"],
+        })
+        user_id = params["user_id"]
+        username = params["username"]
+        duration = params["duration"]
+        reason = params["reason"]
 
         if not user_id and username:
             member = discord.utils.get(interaction.guild.members, name=username)
@@ -1705,10 +1802,16 @@ class ActionHandler:
 
     async def action_announce(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Makes an announcement in a channel."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        title = params.get("title", "Announcement")
-        content = params.get("content", "")
-        color = params.get("color", "#3498db")
+        params = self._normalize_params(params, {
+            "channel_name": ["channel", "channel_name"],
+            "title": ["title"],
+            "content": ["content", "message", "text"],
+            "color": ["color", "colour", "hex_color"],
+        })
+        channel_name = params["channel_name"]
+        title = params["title"]
+        content = params["content"]
+        color = params["color"]
 
         target_channel = None
         if channel_name:
@@ -2005,9 +2108,14 @@ class ActionHandler:
         return True, None
     async def action_warn_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Warns a user (moderation)."""
-        user_id = params.get("user_id")
-        username = params.get("username")
-        reason = params.get("reason", "Warning issued")
+        params = self._normalize_params(params, {
+            "user_id": ["user_id", "user", "member_id", "target_id", "user_mention"],
+            "username": ["username", "user_name"],
+            "reason": ["reason", "cause", "note"],
+        })
+        user_id = params["user_id"]
+        username = params["username"]
+        reason = params["reason"]
         guild_id = interaction.guild.id
 
         if not user_id and username:
@@ -2165,8 +2273,12 @@ class ActionHandler:
 
     async def action_send_message(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Sends a simple text message to a channel."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        content = params.get("content", "")
+        params = self._normalize_params(params, {
+            "channel_name": ["channel", "channel_name"],
+            "content": ["content", "message", "text"],
+        })
+        channel_name = params["channel_name"]
+        content = params["content"]
 
         if not content:
             return False, None
