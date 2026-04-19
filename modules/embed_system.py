@@ -314,6 +314,31 @@ class EmbedCreateTicketButton(ui.Button):
             await interaction.response.send_message("❌ An error occurred creating the ticket.", ephemeral=True)
 
 
+# View Classes for Persistent Buttons
+class EmbedVerifyView(ui.View):
+    """Persistent view containing the verify button"""
+
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=None)  # Persistent view
+        self.add_item(EmbedVerifyButton(guild_id))
+
+
+class EmbedApplyStaffView(ui.View):
+    """Persistent view containing the apply staff button"""
+
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=None)  # Persistent view
+        self.add_item(EmbedApplyStaffButton(guild_id))
+
+
+class EmbedCreateTicketView(ui.View):
+    """Persistent view containing the create ticket button"""
+
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=None)  # Persistent view
+        self.add_item(EmbedCreateTicketButton(guild_id))
+
+
 class EmbedCustomButton(ui.Button):
     """Custom button for extensibility"""
 
