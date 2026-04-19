@@ -487,21 +487,13 @@ class ActionHandler:
     # --- Basic Actions ---
 
     async def action_create_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        params = self._normalize_params(params, {
-            "channel_name": ["name", "channel_name"],
-            "channel_type": ["type", "channel_type"],
-            "category_name": ["category", "category_name"],
-            "private": ["private"],
-            "allowed_roles": ["allowed_roles"],
-            "denied_roles": ["denied_roles"],
-        })
         guild = interaction.guild
-        name = params["channel_name"]
-        channel_type = params["channel_type"]
-        category_name = params["category_name"]
-        private = params["private"]
-        allowed_roles = params["allowed_roles"]
-        denied_roles = params["denied_roles"]
+        name = self._get_param(params, "channel_name", "name", "channel", default="new-channel")
+        channel_type = self._get_param(params, "channel_type", "type", default="text")
+        category_name = self._get_param(params, "category_name", "category")
+        private = self._get_param(params, "private", default=False)
+        allowed_roles = self._get_param(params, "allowed_roles", default=[])
+        denied_roles = self._get_param(params, "denied_roles", default=[])
 
         # If private=true, always deny @everyone view_channel
         if private and "@everyone" not in denied_roles:
@@ -1009,6 +1001,13 @@ class ActionHandler:
 
         return None
 
+    def _get_param(self, params: dict, *keys, default=None):
+        """Returns the first value found for any key in keys."""
+        for key in keys:
+            if key in params:
+                return params[key]
+        return default
+
     async def action_assign_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Assign a role to one or more users. Supports multiple roles too."""
         guild = interaction.guild
@@ -1022,14 +1021,17 @@ class ActionHandler:
 
         # --- Resolve Roles ---
         roles = []
-        role_ids = params.get("role_ids", [])
+        role_ids = self._get_param(params, "role_ids", "roles", "role_list", default=[])
         if not isinstance(role_ids, list): role_ids = [role_ids]
-        if "role_id" in params: role_ids.append(params["role_id"])
+        single_role_id = self._get_param(params, "role_id", "role", "name", "role_name")
+        if single_role_id is not None:
+            role_ids.append(single_role_id)
 
-        role_names = params.get("role_names", [])
+        role_names = self._get_param(params, "role_names", "names", "role_names_list", default=[])
         if not isinstance(role_names, list): role_names = [role_names]
-        if "role_name" in params: role_names.append(params["role_name"])
-        if "name" in params: role_names.append(params["name"])
+        single_role_name = self._get_param(params, "role_name", "name", "role")
+        if single_role_name is not None:
+            role_names.append(single_role_name)
 
         for rid in role_ids:
             r = await self._resolve_role(guild, role_id=rid)
@@ -1043,15 +1045,17 @@ class ActionHandler:
 
         # --- Resolve Members ---
         members = []
-        user_ids = params.get("user_ids", [])
+        user_ids = self._get_param(params, "user_ids", "users", "members", "targets", "uids", default=[])
         if not isinstance(user_ids, list): user_ids = [user_ids]
-        if "user_id" in params: user_ids.append(params["user_id"])
-        if "user" in params: user_ids.append(params["user"])
+        single_user_id = self._get_param(params, "user_id", "user", "member_id", "target_id", "uid")
+        if single_user_id is not None:
+            user_ids.append(single_user_id)
 
-        usernames = params.get("usernames", [])
+        usernames = self._get_param(params, "usernames", "names", "user_names", default=[])
         if not isinstance(usernames, list): usernames = [usernames]
-        if "username" in params: usernames.append(params["username"])
-        if "user_name" in params: usernames.append(params["user_name"])
+        single_username = self._get_param(params, "username", "user_name", "name")
+        if single_username is not None:
+            usernames.append(single_username)
 
         for uid in user_ids:
             m = await self._resolve_member(guild, user_id=uid)
@@ -1158,42 +1162,15 @@ class ActionHandler:
 
     async def action_remove_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Removes a role from a user."""
-        params = self._normalize_params(params, {
-            "role_id": ["role_id", "role"],
-            "role_name": ["role_name", "name"],
-            "user_id": ["user_id", "user", "member_id", "target_id", "user_mention"],
-            "username": ["username", "user_name"],
-        })
         guild = interaction.guild
 
-        role = None
-        role_id = params["role_id"]
-        role_name = params["role_name"]
-        if role_id:
-            try:
-                role = guild.get_role(int(role_id))
-            except (TypeError, ValueError):
-                role = None
-        if not role and role_name:
-            role = discord.utils.find(lambda r: r.name.lower() == str(role_name).lower(), guild.roles)
-        if not role and role_name:
-            role = discord.utils.find(lambda r: str(role_name).lower() in r.name.lower(), guild.roles)
+        role_id = self._get_param(params, "role_id", "role", "name", "role_name")
+        role_name = self._get_param(params, "role_name", "name", "role")
+        role = await self._resolve_role(guild, role_id, role_name)
 
-        member = None
-        user_id = params["user_id"]
-        username = params["username"]
-        if user_id:
-            try:
-                uid = int(str(user_id).strip().lstrip("<@!").rstrip(">"))
-                member = guild.get_member(uid) or await guild.fetch_member(uid)
-            except (TypeError, ValueError, discord.NotFound, discord.HTTPException):
-                member = None
-        if not member and username:
-            search = str(username).lstrip("@").lower()
-            member = discord.utils.find(
-                lambda m: m.name.lower() == search or m.display_name.lower() == search,
-                guild.members
-            )
+        user_id = self._get_param(params, "user_id", "user", "member_id", "target_id", "uid")
+        username = self._get_param(params, "username", "user_name", "name")
+        member = await self._resolve_member(guild, user_id, username)
 
         if not role:
             logger.error("remove_role: could not find role. role_id=%s role_name=%s", role_id, role_name)
@@ -1269,20 +1246,12 @@ class ActionHandler:
         return True, {"action": "delete_prefix_command", "cmd_name": cmd_name, "previous_code": existing}
 
     async def action_send_embed(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        params = self._normalize_params(params, {
-            "channel_name": ["channel", "channel_name"],
-            "title": ["title"],
-            "description": ["description", "content", "message", "text"],
-            "color": ["color", "colour", "hex_color"],
-            "buttons": ["buttons"],
-            "fields": ["fields"],
-        })
-        channel_name = params["channel_name"]
-        title = params["title"]
-        description = params["description"]
-        color = parse_color(params["color"])
-        buttons = params["buttons"]  # List of {"label": ..., "type": ..., "style": ...}
-        fields = params["fields"]
+        channel_name = self._get_param(params, "channel_name", "channel")
+        title = self._get_param(params, "title")
+        description = self._get_param(params, "description", "content", "message", "text")
+        color = parse_color(self._get_param(params, "color", "colour", "hex_color", default="#3498db"))
+        buttons = self._get_param(params, "buttons", default=[])
+        fields = self._get_param(params, "fields", default=[])
 
         channel = discord.utils.get(interaction.guild.channels, name=channel_name) or interaction.channel
         embed = discord.Embed(title=title, description=description, color=color)
@@ -1873,14 +1842,9 @@ class ActionHandler:
 
     async def action_kick_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Kicks a user from the server."""
-        params = self._normalize_params(params, {
-            "user_id": ["user_id", "user", "member_id", "target_id", "user_mention"],
-            "username": ["username", "user_name"],
-            "reason": ["reason", "cause", "note"],
-        })
-        user_id = params["user_id"]
-        username = params["username"]
-        reason = params["reason"]
+        user_id = self._get_param(params, "user_id", "user", "member_id", "target_id", "uid")
+        username = self._get_param(params, "username", "user_name")
+        reason = self._get_param(params, "reason", "cause", "note", default="No reason provided")
 
         if not user_id and username:
             member = discord.utils.get(interaction.guild.members, name=username)
@@ -1908,8 +1872,8 @@ class ActionHandler:
             return False, None
 
     async def action_mute_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        user_id = params.get("user_id")
-        reason = params.get("reason", "No reason provided")
+        user_id = self._get_param(params, "user_id", "user", "member_id", "target_id", "uid")
+        reason = self._get_param(params, "reason", "cause", "note", default="No reason provided")
         member = interaction.guild.get_member(user_id) if user_id else None
         if not member:
             return False, {"error": "User not found"}
@@ -1920,7 +1884,7 @@ class ActionHandler:
             return False, {"error": str(e)}
 
     async def action_unmute_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        user_id = params.get("user_id")
+        user_id = self._get_param(params, "user_id", "user", "member_id", "target_id", "uid")
         member = interaction.guild.get_member(user_id) if user_id else None
         if not member:
             return False, {"error": "User not found"}
@@ -1932,16 +1896,10 @@ class ActionHandler:
 
     async def action_ban_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Bans a user from the server."""
-        params = self._normalize_params(params, {
-            "user_id": ["user_id", "user", "member_id", "target_id", "user_mention"],
-            "username": ["username", "user_name"],
-            "reason": ["reason", "cause", "note"],
-            "delete_days": ["delete_messages_days", "delete_days"],
-        })
-        user_id = params["user_id"]
-        username = params["username"]
-        reason = params["reason"]
-        delete_days = params["delete_days"]
+        user_id = self._get_param(params, "user_id", "user", "member_id", "target_id", "uid")
+        username = self._get_param(params, "username", "user_name")
+        reason = self._get_param(params, "reason", "cause", "note", default="No reason provided")
+        delete_days = self._get_param(params, "delete_days", "delete_messages_days", default=0)
 
         if not user_id and username:
             member = discord.utils.get(interaction.guild.members, name=username)
@@ -1976,16 +1934,10 @@ class ActionHandler:
 
     async def action_timeout_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Times out a user (modifies their communication timeout)."""
-        params = self._normalize_params(params, {
-            "user_id": ["user_id", "user", "member_id", "target_id", "user_mention"],
-            "username": ["username", "user_name"],
-            "duration": ["duration", "seconds", "time", "minutes"],
-            "reason": ["reason", "cause", "note"],
-        })
-        user_id = params["user_id"]
-        username = params["username"]
-        duration = params["duration"]
-        reason = params["reason"]
+        user_id = self._get_param(params, "user_id", "user", "member_id", "target_id", "uid")
+        username = self._get_param(params, "username", "user_name")
+        duration = self._get_param(params, "duration", "seconds", "time", "minutes", default=60)
+        reason = self._get_param(params, "reason", "cause", "note", default="No reason provided")
 
         if not user_id and username:
             member = discord.utils.get(interaction.guild.members, name=username)
@@ -2056,16 +2008,10 @@ class ActionHandler:
 
     async def action_announce(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Makes an announcement in a channel."""
-        params = self._normalize_params(params, {
-            "channel_name": ["channel", "channel_name"],
-            "title": ["title"],
-            "content": ["content", "message", "text"],
-            "color": ["color", "colour", "hex_color"],
-        })
-        channel_name = params["channel_name"]
-        title = params["title"]
-        content = params["content"]
-        color = params["color"]
+        channel_name = self._get_param(params, "channel_name", "channel")
+        title = self._get_param(params, "title")
+        content = self._get_param(params, "content", "message", "text")
+        color = self._get_param(params, "color", "colour", "hex_color", default="#3498db")
 
         target_channel = None
         if channel_name:
@@ -2121,9 +2067,9 @@ class ActionHandler:
 
     async def action_give_points(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Gives economy points to a user."""
-        user_id = params.get("user_id")
-        username = params.get("username")
-        points = params.get("points", 100)
+        user_id = self._get_param(params, "user_id", "user", "member_id", "target_id", "uid")
+        username = self._get_param(params, "username", "user_name")
+        points = self._get_param(params, "points", default=100)
 
         if not user_id and username:
             member = discord.utils.get(interaction.guild.members, name=username)
@@ -2146,9 +2092,9 @@ class ActionHandler:
 
     async def action_remove_points(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Removes economy points from a user."""
-        user_id = params.get("user_id")
-        username = params.get("username")
-        points = params.get("points", 100)
+        user_id = self._get_param(params, "user_id", "user", "member_id", "target_id", "uid")
+        username = self._get_param(params, "username", "user_name")
+        points = self._get_param(params, "points", default=100)
 
         if not user_id and username:
             member = discord.utils.get(interaction.guild.members, name=username)
