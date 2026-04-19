@@ -56,6 +56,7 @@ from modules.promotion_service import PromotionService
 from modules.guardian import GuardianSystem
 from modules.server_analytics import setup_analytics, get_analytics
 from modules.verification import Verification
+from modules.embed_system import EmbedSystem
 
 load_dotenv()
 
@@ -126,6 +127,7 @@ class MiroBot(commands.Bot):
         self.guardian = GuardianSystem(self)
         self.analytics = setup_analytics(self)
         self.verification = Verification(self)
+        self.embed_system = EmbedSystem(self)
 
     async def get_dynamic_prefix(self, bot, message):
         if not message.guild:
@@ -159,6 +161,7 @@ class MiroBot(commands.Bot):
         from modules.tickets import TicketPersistentView
         from modules.auto_setup import VerifyButton, AcceptRulesButton, CreateTicketButton, SuggestionButton, ApplyStaffButton, RoleSelectButton
         from modules.verification import VerifyView
+        from modules.embed_system import EmbedVerifyButton, EmbedApplyStaffButton, EmbedCreateTicketButton
         
         # Note: We don't register auto-setup views here with dummy IDs since they need real guild/role/channel IDs
         # Instead, each setup function sends its own view with proper IDs when called
@@ -176,6 +179,11 @@ class MiroBot(commands.Bot):
         self.add_view(ApplyStaffButton(guild_id=0))
         # Note: RoleSelectButton is a Button, not a View, so it doesn't need to be registered here
         # It gets added dynamically to View instances when role selection embeds are created
+
+        # Register persistent views for embed system buttons
+        self.add_view(EmbedVerifyButton(guild_id=0))  # Guild ID will be determined from interaction
+        self.add_view(EmbedApplyStaffButton(guild_id=0))
+        self.add_view(EmbedCreateTicketButton(guild_id=0))
         
         # Support for Manual Sync (Prefix command !sync)
         @self.command(name="sync")
@@ -183,6 +191,26 @@ class MiroBot(commands.Bot):
         async def manual_sync(ctx):
             await self.tree.sync()
             await ctx.send("[SUCCESS] Slash commands synced.")
+
+        # Embed System Example Command
+        @self.tree.command(name="create_example_embed", description="Create an example embed with buttons")
+        @app_commands.checks.has_permissions(administrator=True)
+        async def create_example_embed(interaction: discord.Interaction):
+            """Create an example embed with Verify, Apply Staff, and Create Ticket buttons"""
+            try:
+                if not interaction.guild:
+                    await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+                    return
+
+                await interaction.response.defer(ephemeral=True)
+
+                message = await self.embed_system.create_example_embed(interaction.channel, interaction.guild.id)
+
+                await interaction.followup.send("✅ Example embed created!", ephemeral=True)
+
+            except Exception as e:
+                logger.error(f"Error creating example embed: {e}")
+                await interaction.followup.send("❌ Failed to create embed.", ephemeral=True)
 
         # Final sync after all commands and cogs are loaded
         if os.getenv("SYNC_COMMANDS", "false").lower() == "true":
