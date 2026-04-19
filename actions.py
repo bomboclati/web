@@ -948,8 +948,21 @@ class ActionHandler:
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    async def _resolve_role(self, guild: discord.Guild, role_id: Any = None, role_name: Any = None) -> Optional[discord.Role]:
-        """Robustly resolve a role by ID or name."""
+    async def _resolve_role(self, guild: discord.Guild, **kwargs) -> Optional[discord.Role]:
+        """Robustly resolve a role by ID or name from kwargs.
+
+        Changes:
+        - Updated to use **kwargs for flexibility in parameter names.
+        - Extracts role_id from 'role_id', 'id', or 'role' (as int).
+        - Extracts role_name from 'role_name' or 'name'.
+        - Logs a warning if neither role_id nor role_name is provided.
+        - Supports various input formats for role identification.
+        """
+        # Extract role_id from possible keys, prioritizing role_id, then id, then role
+        role_id = kwargs.get('role_id') or kwargs.get('id') or kwargs.get('role')
+        # Extract role_name from possible keys, prioritizing role_name, then name
+        role_name = kwargs.get('role_name') or kwargs.get('name')
+
         if role_id:
             try:
                 # Handle both int and string IDs, including mentions
@@ -967,6 +980,10 @@ class ActionHandler:
             # Try partial match
             role = discord.utils.find(lambda r: name in r.name.lower(), guild.roles)
             if role: return role
+
+        # Log warning if neither role_id nor role_name was provided
+        if not role_id and not role_name:
+            logger.warning("_resolve_role: no role_id or role_name provided in kwargs")
 
         return None
 
@@ -1164,16 +1181,14 @@ class ActionHandler:
         """Removes a role from a user."""
         guild = interaction.guild
 
-        role_id = self._get_param(params, "role_id", "role", "name", "role_name")
-        role_name = self._get_param(params, "role_name", "name", "role")
-        role = await self._resolve_role(guild, role_id, role_name)
+        role = await self._resolve_role(guild, **params)
 
         user_id = self._get_param(params, "user_id", "user", "member_id", "target_id", "uid")
         username = self._get_param(params, "username", "user_name", "name")
         member = await self._resolve_member(guild, user_id, username)
 
         if not role:
-            logger.error("remove_role: could not find role. role_id=%s role_name=%s", role_id, role_name)
+            logger.error("remove_role: could not find role with params: %s", params)
             return False, None
         if not member:
             logger.error("remove_role: could not find member. user_id=%s username=%s", user_id, username)
