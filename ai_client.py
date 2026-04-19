@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception, retry_if_not_exception_type
 from history_manager import history_manager
 from vector_memory import vector_memory
+from actions import ActionHandler
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +147,18 @@ class AIClient:
         from server_query import ServerQueryEngine
         
         base_prompt = system_prompt
-        
+
+        # Add available actions list to prevent "Action not allowed" failures
+        allowed_actions_section = f"""
+
+AVAILABLE ACTIONS:
+Only suggest actions from this list. Do not invent new actions:
+
+{chr(10).join(sorted(ActionHandler.ALLOWED_ACTIONS))}
+
+"""
+        base_prompt += allowed_actions_section
+
         # Add LIVE SERVER CONTEXT - automatically inject server state for every request
         if guild_id and guild_id > 0:
             try:
