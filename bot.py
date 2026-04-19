@@ -466,6 +466,13 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             matched_data = None
             
             for cmd_name in list(guild_cmds.keys()):
+                if cmd_name is None or not isinstance(cmd_name, str):
+                    logger.warning("Found None or non-string key in custom_commands for guild %s", message.guild.id)
+                    # Cleanup: remove invalid keys
+                    if cmd_name in guild_cmds:
+                        del guild_cmds[cmd_name]
+                        dm.update_guild_data(message.guild.id, "custom_commands", guild_cmds)
+                    continue
                 if cmd_content == cmd_name or cmd_content.startswith(cmd_name + " "):
                     matched_cmd = cmd_name
                     matched_data = guild_cmds[cmd_name]
