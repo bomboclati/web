@@ -107,7 +107,7 @@ class EditCommandModal(discord.ui.Modal):
 
         self.code_input = discord.ui.TextInput(
             label="Command Code (JSON)",
-            style=discord.TextStyle.multiline,
+            style=discord.TextStyle.paragraph,
             placeholder='{"command_type": "..."}',
             required=True
         )
@@ -177,6 +177,75 @@ class ActionHandler:
     def set_guild_context(self, guild):
         """Set the guild context for help and other commands"""
         self._guild_context = guild
+
+    async def _auto_document_system(self, guild_id, system_type):
+        """Auto-document a system by creating missing ! commands with fallback responses."""
+        try:
+            # Load system commands mapping
+            import os
+            mapping_file = os.path.join(os.path.dirname(__file__), "system_commands.json")
+            if not os.path.exists(mapping_file):
+                logger.warning(f"system_commands.json not found at {mapping_file}")
+                return
+
+            with open(mapping_file, "r") as f:
+                system_commands = json.load(f)
+
+            if system_type not in system_commands:
+                logger.info(f"No commands defined for system_type: {system_type}")
+                return
+
+            commands = system_commands[system_type]
+            custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
+
+            # Create missing commands
+            created_commands = []
+            for cmd_name, cmd_data in commands.items():
+                if cmd_name not in custom_cmds:
+                    # Create command with fallback response
+                    custom_cmds[cmd_name] = cmd_data
+                    created_commands.append(cmd_name)
+                    logger.info(f"Created missing command: !{cmd_name} for system: {system_type}")
+
+            # Create help command for the system
+            help_cmd_name = f"help {system_type}"
+            if help_cmd_name not in custom_cmds:
+                custom_cmds[help_cmd_name] = {
+                    "command_type": "simple",
+                    "content": f"Help for {system_type} system. Use !help {system_type} for more info."
+                }
+                created_commands.append(help_cmd_name)
+                logger.info(f"Created help command: !{help_cmd_name}")
+
+            if created_commands:
+                dm.update_guild_data(guild_id, "custom_commands", custom_cmds)
+
+                # Send help embed in dedicated channel
+                guild = self.bot.get_guild(guild_id)
+                if guild:
+                    # Find or create help channel
+                    help_channel = None
+                    for channel in guild.text_channels:
+                        if channel.name in ["help", "commands", "bot-help"]:
+                            help_channel = channel
+                            break
+                    if not help_channel:
+                        # Try to create one
+                        try:
+                            help_channel = await guild.create_text_channel("help")
+                        except discord.Forbidden:
+                            logger.warning("Cannot create help channel due to permissions")
+                            return
+
+                    if help_channel:
+                        embed = discord.Embed(
+                            title=f"{system_type.capitalize()} System Setup Complete",
+                            description=f"Created the following commands: {', '.join(f'!{c}' for c in created_commands)}\n\nUse `!help {system_type}` for more info.",
+                            color=0x00ff00
+                        )
+                        await help_channel.send(embed=embed)
+        except Exception as e:
+            logger.error(f"Error in _auto_document_system: {e}")
 
     def _normalize_params(self, params, mappings):
         """Normalize parameters using aliases and defaults."""
@@ -1634,13 +1703,19 @@ class ActionHandler:
         from modules.staff_system import StaffSystem
         system = StaffSystem(self.bot)
         result = await system.setup(interaction, params)
-        return bool(result) if result is not None else True, {"action": "undo_staff_system", "guild_id": interaction.guild.id}
+        success = bool(result) if result is not None else True
+        if success:
+            await self._auto_document_system(interaction.guild.id, "staff_system")
+        return success, {"action": "undo_staff_system", "guild_id": interaction.guild.id}
 
     async def action_setup_economy(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         from modules.economy import Economy
         system = Economy(self.bot)
         result = await system.setup(interaction, params)
-        return bool(result) if result is not None else True, {"action": "undo_economy", "guild_id": interaction.guild.id}
+        success = bool(result) if result is not None else True
+        if success:
+            await self._auto_document_system(interaction.guild.id, "economy")
+        return success, {"action": "undo_economy", "guild_id": interaction.guild.id}
 
     async def action_setup_trigger_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         from modules.trigger_roles import TriggerRoles
@@ -1655,6 +1730,8 @@ class ActionHandler:
         from modules.auto_setup import AutoSetup
         setup = AutoSetup(self.bot)
         result = await setup.setup_verification(interaction, params)
+        if result:
+            await self._auto_document_system(interaction.guild.id, "verification")
         return result, {"action": "undo_verification", "guild_id": interaction.guild.id}
 
     async def action_setup_tickets(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
@@ -1662,6 +1739,8 @@ class ActionHandler:
         from modules.auto_setup import AutoSetup
         setup = AutoSetup(self.bot)
         result = await setup.setup_tickets(interaction, params)
+        if result:
+            await self._auto_document_system(interaction.guild.id, "tickets")
         return result, {"action": "undo_tickets", "guild_id": interaction.guild.id}
 
     async def action_setup_applications(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
@@ -1669,6 +1748,8 @@ class ActionHandler:
         from modules.auto_setup import AutoSetup
         setup = AutoSetup(self.bot)
         result = await setup.setup_applications(interaction, params)
+        if result:
+            await self._auto_document_system(interaction.guild.id, "applications")
         return result, {"action": "undo_applications", "guild_id": interaction.guild.id}
 
     async def action_setup_appeals(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
@@ -1676,6 +1757,8 @@ class ActionHandler:
         from modules.auto_setup import AutoSetup
         setup = AutoSetup(self.bot)
         result = await setup.setup_appeals(interaction, params)
+        if result:
+            await self._auto_document_system(interaction.guild.id, "appeals")
         return result, {"action": "undo_appeals", "guild_id": interaction.guild.id}
 
     async def action_setup_moderation(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
@@ -1683,6 +1766,8 @@ class ActionHandler:
         from modules.auto_setup import AutoSetup
         setup = AutoSetup(self.bot)
         result = await setup.setup_moderation(interaction, params)
+        if result:
+            await self._auto_document_system(interaction.guild.id, "moderation")
         return result, {"action": "undo_moderation", "guild_id": interaction.guild.id}
 
     async def action_setup_logging(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
@@ -1697,6 +1782,8 @@ class ActionHandler:
         from modules.gamification import Gamification
         system = Gamification(self.bot)
         result = await system.setup(interaction, params)
+        if result:
+            await self._auto_document_system(interaction.guild.id, "leveling")
         return result, {"action": "undo_leveling", "guild_id": interaction.guild.id}
 
     async def action_setup_welcome(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
@@ -1704,7 +1791,10 @@ class ActionHandler:
         from modules.welcome_leave import WelcomeLeaveSystem
         system = WelcomeLeaveSystem(self.bot)
         result = await system.setup(interaction, params)
-        return (bool(result) if result is not None else True), {"action": "undo_welcome", "guild_id": interaction.guild.id}
+        success = bool(result) if result is not None else True
+        if success:
+            await self._auto_document_system(interaction.guild.id, "welcome")
+        return success, {"action": "undo_welcome", "guild_id": interaction.guild.id}
 
     # --- Aliases: create_*_system → setup_* (AI may use either name) ---
 
@@ -3913,6 +4003,35 @@ class ActionHandler:
 
         view = CommandsListView(non_help_commands, command_groups, message.author.id)
         await message.channel.send(embed=embed, view=view)
+        return True
+
+    async def handle_help_system(self, message: discord.Message, system: str) -> bool:
+        """Handle !help <system> command - shows help for a specific system."""
+        guild_id = message.guild.id
+        custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
+
+        system_commands = {k: v for k, v in custom_cmds.items() if k.startswith(system)}
+        if not system_commands:
+            await message.channel.send(f"No commands found for system '{system}'. Try !help for all commands.")
+            return True
+
+        embed = discord.Embed(
+            title=f"📋 {system.capitalize()} System Commands",
+            description=f"Commands for the {system} system:",
+            color=discord.Color.green()
+        )
+
+        cmd_list = []
+        for cmd_name in sorted(system_commands.keys()):
+            cmd_list.append(f"**!{cmd_name}**")
+
+        embed.add_field(
+            name="Commands",
+            value="\n".join(cmd_list),
+            inline=False
+        )
+
+        await message.channel.send(embed=embed)
         return True
 
 

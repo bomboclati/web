@@ -535,78 +535,79 @@ Only suggest actions from this list. Do not invent new actions:
 
         logger.debug(f"AI Handshake Successful | Provider: {provider} | Response Length: {len(ai_msg)}")
 
-        # Try to parse JSON from AI message
-        try:
-            res_json = self._extract_json(ai_msg)
-            
-            # Handle Web Search requested by AI
-            if res_json.get("action") == "web_search":
-                query = res_json.get("parameters", {}).get("query")
-                if query:
-                    search_results = await self.get_search_results(query)
-                    messages.append({"role": "assistant", "content": ai_msg})
-                    messages.append({"role": "user", "content": f"Web Search Results for '{query}':\n{search_results}"})
-                    
-                    payload["messages"] = messages
-                    async with session.post(provider_url, json=payload, allow_redirects=False) as search_resp:
-                        if search_resp.status == 200:
-                            return await self._parse_and_handle_response(session, provider, provider_url, payload, messages, search_resp)
-                        else:
-                            search_text = await search_resp.text()
-                            logger.error(f"AI Search Retry Error ({search_resp.status}): {search_text}")
-                            raise Exception(f"AI Search API Error ({search_resp.status})")
-            
-            # Final validation and sanitization
-            if self._validate_json_response(res_json):
-                # Remove optional fields if empty/None
-                if res_json.get("reasoning") in [None, "", "Raw text response", "Standard response"]:
-                    del res_json["reasoning"]
-                if res_json.get("walkthrough") in [None, "", ""]:
-                    del res_json["walkthrough"]
-                if res_json.get("actions") in [None, [], []]:
-                    del res_json["actions"]
-                
-                # Double-serialize to ensure proper escaping
-                serialized = json.dumps(res_json, ensure_ascii=False)
-                return json.loads(serialized)
-            else:
-                # Always ensure summary is clean text - NEVER return raw JSON structure
-                summary_text = str(res_json.get("summary", ai_msg)).strip()
-            
-                # Final sanitization to remove any JSON artifacts
-                import re
-                summary_text = re.sub(r'^\s*[\{\[]+', '', summary_text)
-                summary_text = re.sub(r'[\}\]]+\s*$', '', summary_text)
-                # Strip summary/response prefixes and quotes
-                summary_text = re.sub(r'^\s*["\']*\s*(?:summary|Summary|response|Response|answer|Answer|result|Result)\s*:?\s*["\']*', '', summary_text, flags=re.IGNORECASE)
-                summary_text = re.sub(r'^\s*["\']+', '', summary_text)
-                summary_text = re.sub(r'["\']+\s*$', '', summary_text)
-                summary_text = summary_text.strip()
-            
-                # Process actions silently in background - don't return them to user
-                if "actions" in res_json and isinstance(res_json["actions"], list):
-                        # Actions are handled internally, not returned to end user
-                    pass
-            
-                return {"summary": summary_text}
-        except Exception as e:
-            logger.debug(f"Response was not pure JSON or parse failed: {e}")
-            # Sanitize even raw text responses
+        # Try to parse JSON from AI message with retry
+        res_json = self.extract_json(ai_msg)
+
+        # If invalid JSON and not already a retry, attempt one retry
+        if not self._validate_json_response(res_json) and not payload.get("_retry_attempt", False):
+            logger.warning("Invalid JSON from AI, attempting retry with JSON format prompt")
+            # Add prompt for JSON format
+            messages.append({"role": "assistant", "content": ai_msg})
+            messages.append({"role": "user", "content": "Please respond with a valid JSON object containing at least a 'summary' field."})
+            payload["messages"] = messages
+            payload["_retry_attempt"] = True
+            async with session.post(provider_url, json=payload, allow_redirects=False) as retry_resp:
+                if retry_resp.status == 200:
+                    return await self._parse_and_handle_response(session, provider, provider_url, payload, messages, retry_resp)
+                else:
+                    logger.error(f"AI Retry Error ({retry_resp.status})")
+                    # Fall back to text
+
+        # Handle Web Search requested by AI
+        if res_json.get("action") == "web_search":
+            query = res_json.get("parameters", {}).get("query")
+            if query:
+                search_results = await self.get_search_results(query)
+                messages.append({"role": "assistant", "content": ai_msg})
+                messages.append({"role": "user", "content": f"Web Search Results for '{query}':\n{search_results}"})
+
+                payload["messages"] = messages
+                async with session.post(provider_url, json=payload, allow_redirects=False) as search_resp:
+                    if search_resp.status == 200:
+                        return await self._parse_and_handle_response(session, provider, provider_url, payload, messages, search_resp)
+                    else:
+                        search_text = await search_resp.text()
+                        logger.error(f"AI Search Retry Error ({search_resp.status}): {search_text}")
+                        raise Exception(f"AI Search API Error ({search_resp.status})")
+
+        # Final validation and sanitization
+        if self._validate_json_response(res_json):
+            # Remove optional fields if empty/None
+            if res_json.get("reasoning") in [None, "", "Raw text response", "Standard response"]:
+                del res_json["reasoning"]
+            if res_json.get("walkthrough") in [None, "", ""]:
+                del res_json["walkthrough"]
+            if res_json.get("actions") in [None, [], []]:
+                del res_json["actions"]
+
+            # Double-serialize to ensure proper escaping
+            serialized = json.dumps(res_json, ensure_ascii=False)
+            return json.loads(serialized)
+        else:
+            # Log error and treat as plain text
+            logger.error("Failed to parse valid JSON from AI response, treating as plain text")
+            # Always ensure summary is clean text - NEVER return raw JSON structure
+            summary_text = str(res_json.get("summary", ai_msg)).strip()
+
+            # Final sanitization to remove any JSON artifacts
             import re
-            logger.debug(f"AI raw message before sanitization: {ai_msg[:500]}")
-            clean_msg = re.sub(r'^\s*[\{\[]+', '', ai_msg.strip())
-            clean_msg = re.sub(r'[\}\]]+\s*$', '', clean_msg)
-            # Strip summary/response prefixes and quotes for simple tasks
-            clean_msg = re.sub(r'^\s*["\']*\s*(?:summary|Summary|response|Response|answer|Answer|result|Result)\s*:?\s*["\']*', '', clean_msg, flags=re.IGNORECASE)
-            clean_msg = re.sub(r'^\s*["\']+', '', clean_msg)
-            clean_msg = re.sub(r'["\']+\s*$', '', clean_msg)
-            # Remove any remaining JSON-like prefixes
-            clean_msg = re.sub(r'^\s*,\s*', '', clean_msg)
-            logger.debug(f"AI message after sanitization: {clean_msg[:500]}")
-            return {"summary": clean_msg.strip()}
+            summary_text = re.sub(r'^\s*[\{\[]+', '', summary_text)
+            summary_text = re.sub(r'[\}\]]+\s*$', '', summary_text)
+            # Strip summary/response prefixes and quotes
+            summary_text = re.sub(r'^\s*["\']*\s*(?:summary|Summary|response|Response|answer|Answer|result|Result)\s*:?\s*["\']*', '', summary_text, flags=re.IGNORECASE)
+            summary_text = re.sub(r'^\s*["\']+', '', summary_text)
+            summary_text = re.sub(r'["\']+\s*$', '', summary_text)
+            summary_text = summary_text.strip()
+
+            # Process actions silently in background - don't return them to user
+            if "actions" in res_json and isinstance(res_json["actions"], list):
+                    # Actions are handled internally, not returned to end user
+                pass
+
+            return {"summary": summary_text}
 
 
-    def _extract_json(self, text: str) -> Dict[str, Any]:
+    def extract_json(self, text: str) -> Dict[str, Any]:
         """Robustly extract JSON from AI response, handling Markdown and conversational filler."""
         if not text:
             return {"summary": ""}

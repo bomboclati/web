@@ -454,7 +454,15 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 handler.set_guild_context(message.guild)
                 await handler.handle_help_all(message)
                 return
-            
+
+            if cmd_content.startswith("help "):
+                system = cmd_content[5:].strip()
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                handler.set_guild_context(message.guild)
+                await handler.handle_help_system(message, system)
+                return
+
             # Handle staff commands
             if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "trainingtasks", "appeal"]) or cmd_content.startswith("shift"):
                 await self._handle_staff_command(message, cmd_content)
