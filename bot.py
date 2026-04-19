@@ -161,7 +161,7 @@ class MiroBot(commands.Bot):
         from modules.tickets import TicketPersistentView
         from modules.auto_setup import VerifyButton, AcceptRulesButton, CreateTicketButton, SuggestionButton, ApplyStaffButton, RoleSelectButton, AppealButton
         from modules.verification import VerifyView
-        from modules.embed_system import EmbedVerifyButton, EmbedApplyStaffButton, EmbedCreateTicketButton
+        from modules.embed_system import EmbedVerifyView, EmbedApplyStaffView, EmbedCreateTicketView
         
         # Note: We don't register auto-setup views here with dummy IDs since they need real guild/role/channel IDs
         # Instead, each setup function sends its own view with proper IDs when called
@@ -182,9 +182,9 @@ class MiroBot(commands.Bot):
         # It gets added dynamically to View instances when role selection embeds are created
 
         # Register persistent views for embed system buttons
-        self.add_view(EmbedVerifyButton(guild_id=0))  # Guild ID will be determined from interaction
-        self.add_view(EmbedApplyStaffButton(guild_id=0))
-        self.add_view(EmbedCreateTicketButton(guild_id=0))
+        self.add_view(EmbedVerifyView(guild_id=0))  # Guild ID will be determined from interaction
+        self.add_view(EmbedApplyStaffView(guild_id=0))
+        self.add_view(EmbedCreateTicketView(guild_id=0))
         
         # Support for Manual Sync (Prefix command !sync)
         @self.command(name="sync")
