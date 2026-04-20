@@ -3,6 +3,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import logging
+import json
 from data_manager import dm
 
 logger = logging.getLogger(__name__)
@@ -95,12 +96,36 @@ class CoreCommands(commands.Cog):
         dm.update_guild_data(interaction.guild.id, "prefix", prefix)
         await interaction.response.send_message(f"? Server prefix set to **{prefix}**.", ephemeral=True)
 
+    @config.command(name="cooldown", description="Set cooldown for custom ! commands")
+    @app_commands.describe(command="Command name (without !)", seconds="Cooldown in seconds")
+    async def config_cooldown(self, interaction: discord.Interaction, command: str, seconds: int):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("Only Administrators can configure cooldowns.", ephemeral=True)
+            return
+
+        if seconds < 0 or seconds > 86400:
+            await interaction.response.send_message("Cooldown must be between 0 and 86400 seconds.", ephemeral=True)
+            return
+
+        custom_cmds = dm.get_guild_data(interaction.guild.id, "custom_commands", {})
+        if command not in custom_cmds:
+            await interaction.response.send_message(f"Command '!{command}' not found.", ephemeral=True)
+            return
+
+        # Update the command with cooldown
+        cmd_data = json.loads(custom_cmds[command])
+        cmd_data["cooldown"] = seconds
+        custom_cmds[command] = json.dumps(cmd_data)
+        dm.update_guild_data(interaction.guild.id, "custom_commands", custom_cmds)
+
+        await interaction.response.send_message(f"? Cooldown for '!{command}' set to {seconds} seconds.", ephemeral=True)
+
     @config.command(name="sync", description="Force sync slash commands (Admin only)")
     async def config_sync(self, interaction: discord.Interaction):
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("Only Administrators can sync commands.", ephemeral=True)
             return
-            
+
         await interaction.response.defer(ephemeral=True)
         try:
             await self.bot.tree.sync()
