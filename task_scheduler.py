@@ -47,7 +47,7 @@ class TaskScheduler:
         for name, task_data in tasks.items():
             self._tasks[name] = None
 
-    def add_task(self, name: str, cron_expr: str, handler, guild_id: int = None, params: dict = None):
+    def add_task(self, name: str, cron_expr: str, handler=None, guild_id: int = None, params: dict = None):
         """Register a new scheduled task."""
         tasks = dm.load_json("scheduled_tasks", default={})
         tasks[name] = {
@@ -58,7 +58,7 @@ class TaskScheduler:
             "last_run": None
         }
         dm.save_json("scheduled_tasks", tasks)
-        self._tasks[name] = None
+        self._tasks[name] = handler
         logger.info("Scheduled task added: %s (cron: %s)", name, cron_expr)
 
     def remove_task(self, name: str):
@@ -139,6 +139,18 @@ class TaskScheduler:
             guild_id = task_data.get("guild_id")
             params = task_data.get("params", {})
             
+            # Use registered handler if available
+            handler = self._tasks.get(name)
+            if handler:
+                try:
+                    if asyncio.iscoroutinefunction(handler):
+                        await handler(name, params)
+                    else:
+                        handler(name, params)
+                    return
+                except Exception as e:
+                    logger.error(f"Error in task handler for {name}: {e}")
+
             if name == "daily_backup":
                 dm.backup_data()
                 logger.info("Daily backup completed via scheduler")
