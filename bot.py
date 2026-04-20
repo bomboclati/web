@@ -1438,7 +1438,11 @@ def handle_asyncio_exception(loop, context):
         logger.error(f"Asyncio error: {context}")
 
 # Set the exception handler
-loop = asyncio.get_event_loop()
+try:
+    loop = asyncio.get_running_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 loop.set_exception_handler(handle_asyncio_exception)
 
 # Initialize Bot
@@ -1491,19 +1495,6 @@ class ModmailReplyModal(ui.Modal, title='Reply to User'):
             logger.warning("Failed to send modmail reply DM: %s", e)
             await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=False)
 
-    def _reload_scheduled_tasks(self):
-        """Reload scheduled tasks from JSON."""
-        tasks = dm.load_json("ai_scheduled_tasks", default={})
-        for task_name, task_data in tasks.items():
-            # Recreate the task if enabled
-            if task_data.get("enabled", True):
-                cron = task_data.get("cron", "")
-                action_type = task_data.get("action_type", "")
-                guild_id = task_data.get("guild_id")
-                params = task_data.get("params", {})
-                if cron and action_type:
-                    self.scheduler.add_task(task_name, cron, self._execute_scheduled_action, guild_id, {"action_type": action_type, "params": params})
-
     def _reload_event_listeners(self):
         """Reload event listeners from JSON."""
         listeners = dm.load_json("event_listeners", default={})
@@ -1524,6 +1515,19 @@ class ModmailReplyModal(ui.Modal, title='Reply to User'):
         # Vector memory should handle its own loading
         # Conversation history is loaded by vector_memory
         pass
+
+    def _reload_scheduled_tasks(self):
+        """Reload scheduled tasks from JSON."""
+        tasks = dm.load_json("ai_scheduled_tasks", default={})
+        for task_name, task_data in tasks.items():
+            # Recreate the task if enabled
+            if task_data.get("enabled", True):
+                cron = task_data.get("cron", "")
+                action_type = task_data.get("action_type", "")
+                guild_id = task_data.get("guild_id")
+                params = task_data.get("params", {})
+                if cron and action_type:
+                    self.scheduler.add_task(task_name, cron, self._execute_scheduled_action, guild_id, {"action_type": action_type, "params": params})
 
     async def _execute_scheduled_action(self, task_name: str, params: dict):
         """Execute a scheduled action."""
