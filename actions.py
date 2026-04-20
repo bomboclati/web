@@ -1045,6 +1045,100 @@ class ActionHandler:
 
         return None
 
+    async def _find_existing_resources(self, guild: discord.Guild, system_type: str) -> dict:
+        """Scan existing channels, roles, and categories for partial matches based on system_type keywords.
+
+        Returns dict with 'channel', 'role', 'category' (or None), and 'reasoning'.
+        """
+        # Keywords for each system type
+        keywords = {
+            "verification": {
+                "channels": ["verify", "verification", "welcome", "rules"],
+                "roles": ["verified", "member", "guest"]
+            },
+            "tickets": {
+                "channels": ["ticket", "support", "help"],
+                "roles": ["support", "helper", "staff"]
+            },
+            "appeals": {
+                "channels": ["appeal", "ban-appeal", "modmail"],
+                "roles": ["appeal", "moderator"]
+            },
+            "applications": {
+                "channels": ["apply", "application", "staff-app"],
+                "roles": ["applicant", "staff"]
+            },
+            "economy": {
+                "channels": ["shop", "economy", "market"],
+                "roles": ["economy", "shopkeeper"]
+            },
+            "leveling": {
+                "channels": ["level", "xp", "rank", "leaderboard"],
+                "roles": ["level", "veteran", "rank"]
+            },
+            "welcome": {
+                "channels": ["welcome", "introductions", "greeting"],
+                "roles": ["welcome", "new"]
+            }
+        }
+
+        if system_type not in keywords:
+            return {"channel": None, "role": None, "category": None, "reasoning": f"Unknown system_type: {system_type}"}
+
+        sys_keywords = keywords[system_type]
+        found_channel = None
+        found_role = None
+        found_category = None
+        reasoning_parts = []
+
+        # Helper function to find best match
+        def find_best_match(items, keyword_list):
+            """Find best match: exact > partial, shorter name > longer, higher position > lower."""
+            matches = []
+            for item in items:
+                item_name_lower = item.name.lower()
+                for keyword in keyword_list:
+                    keyword_lower = keyword.lower()
+                    # Check exact match
+                    if item_name_lower == keyword_lower:
+                        matches.append((item, 3, len(item.name), -getattr(item, 'position', 0)))
+                    # Check partial match
+                    elif keyword_lower in item_name_lower:
+                        matches.append((item, 2, len(item.name), -getattr(item, 'position', 0)))
+
+            if matches:
+                # Sort by priority (exact > partial), then shorter name, then higher position
+                matches.sort(key=lambda x: (-x[1], x[2], x[3]))
+                return matches[0][0]
+            return None
+
+        # Find channel
+        if sys_keywords.get("channels"):
+            found_channel = find_best_match(guild.channels, sys_keywords["channels"])
+            if found_channel:
+                reasoning_parts.append(f"Found channel '{found_channel.name}'")
+
+        # Find role
+        if sys_keywords.get("roles"):
+            found_role = find_best_match(guild.roles, sys_keywords["roles"])
+            if found_role:
+                reasoning_parts.append(f"Found role '{found_role.name}'")
+
+        # Find category (use same keywords as channels or common category names)
+        category_keywords = sys_keywords.get("channels", []) + ["community", "general", "main"]
+        found_category = find_best_match(guild.categories, category_keywords)
+        if found_category:
+            reasoning_parts.append(f"Found category '{found_category.name}'")
+
+        reasoning = "; ".join(reasoning_parts) if reasoning_parts else "No existing resources found"
+
+        return {
+            "channel": found_channel,
+            "role": found_role,
+            "category": found_category,
+            "reasoning": reasoning
+        }
+
     def _get_param(self, params: dict, *keys, default=None):
         """Returns the first value found for any key in keys."""
         for key in keys:
@@ -1715,13 +1809,35 @@ class ActionHandler:
         return success, {"action": "undo_staff_system", "guild_id": interaction.guild.id}
 
     async def action_setup_economy(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        guild = interaction.guild
+        existing = await self._find_existing_resources(guild, "economy")
+
+        if existing["channel"]:
+            # Reuse existing resources
+            logger.info(f"Reusing existing economy resources: channel '{existing['channel'].name}' - {existing['reasoning']}")
+            # Enable economy system
+            economy_config = {
+                "enabled": True,
+                "daily_reward": 100,
+                "work_min": 50,
+                "work_max": 200,
+                "beg_min": 10,
+                "beg_max": 50,
+                "currency_name": "coins",
+                "currency_symbol": "💰"
+            }
+            dm.update_guild_data(guild.id, "economy_config", economy_config)
+            await self._auto_document_system(guild.id, "economy")
+            return True, {"action": "undo_economy", "guild_id": guild.id}
+
+        # No existing resources found, create new ones
         from modules.economy import Economy
         system = Economy(self.bot)
         result = await system.setup(interaction, params)
         success = bool(result) if result is not None else True
         if success:
-            await self._auto_document_system(interaction.guild.id, "economy")
-        return success, {"action": "undo_economy", "guild_id": interaction.guild.id}
+            await self._auto_document_system(guild.id, "economy")
+        return success, {"action": "undo_economy", "guild_id": guild.id}
 
     async def action_setup_trigger_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         from modules.trigger_roles import TriggerRoles
@@ -1733,39 +1849,92 @@ class ActionHandler:
 
     async def action_setup_verification(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Setup verification system with button embed."""
+        guild = interaction.guild
+        existing = await self._find_existing_resources(guild, "verification")
+
+        if existing["channel"] and existing["role"]:
+            # Reuse existing resources
+            logger.info(f"Reusing existing verification resources: channel '{existing['channel'].name}', role '{existing['role'].name}' - {existing['reasoning']}")
+            dm.update_guild_data(guild.id, "verify_channel", existing["channel"].id)
+            dm.update_guild_data(guild.id, "verify_role", existing["role"].id)
+            await self._auto_document_system(guild.id, "verification")
+            return True, {"action": "undo_verification", "guild_id": guild.id}
+
+        # No existing resources found, create new ones
         from modules.auto_setup import AutoSetup
         setup = AutoSetup(self.bot)
         result = await setup.setup_verification(interaction, params)
         if result:
-            await self._auto_document_system(interaction.guild.id, "verification")
-        return result, {"action": "undo_verification", "guild_id": interaction.guild.id}
+            await self._auto_document_system(guild.id, "verification")
+        return result, {"action": "undo_verification", "guild_id": guild.id}
 
     async def action_setup_tickets(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Setup ticket system with button embed."""
+        guild = interaction.guild
+        existing = await self._find_existing_resources(guild, "tickets")
+
+        if existing["channel"] and existing["role"]:
+            # Reuse existing resources
+            logger.info(f"Reusing existing ticket resources: channel '{existing['channel'].name}', role '{existing['role'].name}' - {existing['reasoning']}")
+            dm.update_guild_data(guild.id, "tickets_channel", existing["channel"].id)
+            # Store ticket config
+            tickets_config = {
+                "enabled": True,
+                "categories": ["General", "Support", "Billing", "Other"],
+                "support_role": existing["role"].id,
+                "category": existing.get("category").id if existing.get("category") else None
+            }
+            dm.update_guild_data(guild.id, "tickets_config", tickets_config)
+            await self._auto_document_system(guild.id, "tickets")
+            return True, {"action": "undo_tickets", "guild_id": guild.id}
+
+        # No existing resources found, create new ones
         from modules.auto_setup import AutoSetup
         setup = AutoSetup(self.bot)
         result = await setup.setup_tickets(interaction, params)
         if result:
-            await self._auto_document_system(interaction.guild.id, "tickets")
-        return result, {"action": "undo_tickets", "guild_id": interaction.guild.id}
+            await self._auto_document_system(guild.id, "tickets")
+        return result, {"action": "undo_tickets", "guild_id": guild.id}
 
     async def action_setup_applications(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Setup applications system with button embed."""
+        guild = interaction.guild
+        existing = await self._find_existing_resources(guild, "applications")
+
+        if existing["channel"] and existing["role"]:
+            # Reuse existing resources
+            logger.info(f"Reusing existing application resources: channel '{existing['channel'].name}', role '{existing['role'].name}' - {existing['reasoning']}")
+            dm.update_guild_data(guild.id, "applications_channel", existing["channel"].id)
+            await self._auto_document_system(guild.id, "applications")
+            return True, {"action": "undo_applications", "guild_id": guild.id}
+
+        # No existing resources found, create new ones
         from modules.auto_setup import AutoSetup
         setup = AutoSetup(self.bot)
         result = await setup.setup_applications(interaction, params)
         if result:
-            await self._auto_document_system(interaction.guild.id, "applications")
-        return result, {"action": "undo_applications", "guild_id": interaction.guild.id}
+            await self._auto_document_system(guild.id, "applications")
+        return result, {"action": "undo_applications", "guild_id": guild.id}
 
     async def action_setup_appeals(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Setup appeals system with button embed."""
+        guild = interaction.guild
+        existing = await self._find_existing_resources(guild, "appeals")
+
+        if existing["channel"] and existing["role"]:
+            # Reuse existing resources
+            logger.info(f"Reusing existing appeal resources: channel '{existing['channel'].name}', role '{existing['role'].name}' - {existing['reasoning']}")
+            dm.update_guild_data(guild.id, "appeals_channel", existing["channel"].id)
+            await self._auto_document_system(guild.id, "appeals")
+            return True, {"action": "undo_appeals", "guild_id": guild.id}
+
+        # No existing resources found, create new ones
         from modules.auto_setup import AutoSetup
         setup = AutoSetup(self.bot)
         result = await setup.setup_appeals(interaction, params)
         if result:
-            await self._auto_document_system(interaction.guild.id, "appeals")
-        return result, {"action": "undo_appeals", "guild_id": interaction.guild.id}
+            await self._auto_document_system(guild.id, "appeals")
+        return result, {"action": "undo_appeals", "guild_id": guild.id}
 
     async def action_setup_moderation(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Setup moderation logging system."""
@@ -1785,22 +1954,71 @@ class ActionHandler:
 
     async def action_setup_leveling(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Setup leveling/XP system."""
+        guild = interaction.guild
+        existing = await self._find_existing_resources(guild, "leveling")
+
+        if existing["channel"]:
+            # Reuse existing resources
+            logger.info(f"Reusing existing leveling resources: channel '{existing['channel'].name}' - {existing['reasoning']}")
+            # Enable leveling system with roles
+            leveling_config = {
+                "enabled": True,
+                "xp_per_message": 1,
+                "xp_per_voice_minute": 0.5,
+                "level_roles": {
+                    "5": "Newcomer",
+                    "10": "Regular",
+                    "25": "Veteran",
+                    "50": "Elite",
+                    "100": "Legend"
+                }
+            }
+
+            # Create level roles if they don't exist
+            for level, role_name in leveling_config["level_roles"].items():
+                if not guild.roles or not discord.utils.get(guild.roles, name=role_name):
+                    try:
+                        await guild.create_role(
+                            name=role_name,
+                            color=discord.Color.blue(),
+                            hoist=True,
+                            reason="Leveling system setup"
+                        )
+                    except discord.Forbidden:
+                        logger.warning(f"Could not create {role_name} role")
+
+            dm.update_guild_data(guild.id, "leveling_config", leveling_config)
+            await self._auto_document_system(guild.id, "leveling")
+            return True, {"action": "undo_leveling", "guild_id": guild.id}
+
+        # No existing resources found, create new ones
         from modules.gamification import Gamification
         system = Gamification(self.bot)
         result = await system.setup(interaction, params)
         if result:
-            await self._auto_document_system(interaction.guild.id, "leveling")
-        return result, {"action": "undo_leveling", "guild_id": interaction.guild.id}
+            await self._auto_document_system(guild.id, "leveling")
+        return result, {"action": "undo_leveling", "guild_id": guild.id}
 
     async def action_setup_welcome(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Setup welcome/leave message system."""
+        guild = interaction.guild
+        existing = await self._find_existing_resources(guild, "welcome")
+
+        if existing["channel"]:
+            # Reuse existing resources
+            logger.info(f"Reusing existing welcome resources: channel '{existing['channel'].name}' - {existing['reasoning']}")
+            dm.update_guild_data(guild.id, "welcome_channel", existing["channel"].id)
+            await self._auto_document_system(guild.id, "welcome")
+            return True, {"action": "undo_welcome", "guild_id": guild.id}
+
+        # No existing resources found, create new ones
         from modules.welcome_leave import WelcomeLeaveSystem
         system = WelcomeLeaveSystem(self.bot)
         result = await system.setup(interaction, params)
         success = bool(result) if result is not None else True
         if success:
-            await self._auto_document_system(interaction.guild.id, "welcome")
-        return success, {"action": "undo_welcome", "guild_id": interaction.guild.id}
+            await self._auto_document_system(guild.id, "welcome")
+        return success, {"action": "undo_welcome", "guild_id": guild.id}
 
     # --- Aliases: create_*_system → setup_* (AI may use either name) ---
 
