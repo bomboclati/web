@@ -1447,6 +1447,255 @@ async def slash_bot(interaction: discord.Interaction, text: str):
             pass
         return
 
+async def validate_actions_against_snapshot(actions: list, server_snapshot: dict, guild: discord.Guild) -> list:
+    """Validate AI-generated actions against the server snapshot to ensure IDs exist."""
+    errors = []
+
+    for i, action in enumerate(actions):
+        action_name = action.get("name", "")
+        params = action.get("parameters", {})
+
+        # Validate assign_role actions
+        if action_name == "assign_role":
+            role_id = params.get("role_id") or params.get("role")
+            if role_id:
+                if isinstance(role_id, str) and role_id.isdigit():
+                    role_id = int(role_id)
+                if isinstance(role_id, int):
+                    if str(role_id) not in server_snapshot.get("roles", {}):
+                        errors.append(f"Action {i+1} ({action_name}): role_id {role_id} does not exist in server")
+                elif isinstance(role_id, str):
+                    # Check if it's a role name that exists
+                    role_found = False
+                    for r_id, r_data in server_snapshot.get("roles", {}).items():
+                        if r_data.get("name") == role_id:
+                            role_found = True
+                            break
+                    if not role_found:
+                        errors.append(f"Action {i+1} ({action_name}): role '{role_id}' does not exist in server")
+
+            # Validate user existence
+            user_id = params.get("user_id") or params.get("user")
+            username = params.get("username")
+            if user_id:
+                if isinstance(user_id, str) and user_id.isdigit():
+                    user_id = int(user_id)
+                if isinstance(user_id, int):
+                    if str(user_id) not in server_snapshot.get("members", {}):
+                        # Try to fetch the member to see if they exist
+                        try:
+                            member = guild.get_member(user_id)
+                            if not member:
+                                member = await guild.fetch_member(user_id)
+                            if not member:
+                                errors.append(f"Action {i+1} ({action_name}): user_id {user_id} does not exist in server")
+                        except:
+                            errors.append(f"Action {i+1} ({action_name}): user_id {user_id} does not exist in server")
+            elif username:
+                # For username, we can't easily validate without querying all members
+                # But we can check if it's in the relevant members snapshot
+                user_found = False
+                for m_id, m_data in server_snapshot.get("members", {}).items():
+                    if m_data.get("display_name") == username or m_data.get("username") == username:
+                        user_found = True
+                        break
+                if not user_found:
+                    # This is a warning, not an error, since username validation is harder
+                    logger.warning(f"Action {i+1} ({action_name}): username '{username}' not found in relevant members")
+
+        # Validate channel-related actions
+        elif action_name in ["send_message", "create_channel", "make_channel_private"]:
+            channel_id = params.get("channel_id") or params.get("channel")
+            if channel_id:
+                if isinstance(channel_id, str) and channel_id.isdigit():
+                    channel_id = int(channel_id)
+                if isinstance(channel_id, int):
+                    if str(channel_id) not in server_snapshot.get("channels", {}):
+                        errors.append(f"Action {i+1} ({action_name}): channel_id {channel_id} does not exist in server")
+                elif isinstance(channel_id, str):
+                    # Check if it's a channel name that exists
+                    channel_found = False
+                    for c_id, c_data in server_snapshot.get("channels", {}).items():
+                        if c_data.get("name") == channel_id:
+                            channel_found = True
+                            break
+                    if not channel_found:
+                        errors.append(f"Action {i+1} ({action_name}): channel '{channel_id}' does not exist in server")
+
+        # Validate send_dm and ping actions
+        elif action_name in ["send_dm", "ping"]:
+            user_id = params.get("user_id") or params.get("user")
+            username = params.get("username")
+            if user_id:
+                if isinstance(user_id, str) and user_id.isdigit():
+                    user_id = int(user_id)
+                if isinstance(user_id, int):
+                    if str(user_id) not in server_snapshot.get("members", {}):
+                        errors.append(f"Action {i+1} ({action_name}): user_id {user_id} does not exist in server")
+            elif username:
+                # Similar to assign_role, check relevant members
+                user_found = False
+                for m_id, m_data in server_snapshot.get("members", {}).items():
+                    if m_data.get("display_name") == username or m_data.get("username") == username:
+                        user_found = True
+                        break
+                if not user_found:
+                    errors.append(f"Action {i+1} ({action_name}): username '{username}' not found in relevant members")
+
+    return errors
+
+async def gather_server_snapshot(bot, interaction: discord.Interaction, mentioned_users: set):
+    """Gather comprehensive server snapshot for AI context."""
+    guild = interaction.guild
+    guild_id = guild.id
+
+    snapshot = {
+        "server": {},
+        "members": {},
+        "roles": {},
+        "channels": {},
+        "active_automations": {},
+        "bot_permissions": {}
+    }
+
+    # Server info
+    snapshot["server"] = {
+        "id": guild.id,
+        "name": guild.name,
+        "member_count": guild.member_count,
+        "online_count": sum(1 for m in guild.members if m.status != discord.Status.offline),
+        "owner_id": guild.owner_id,
+        "created_at": guild.created_at.isoformat()
+    }
+
+    # Relevant members (author + mentioned)
+    relevant_user_ids = mentioned_users.copy()
+    relevant_user_ids.add(interaction.user.id)
+
+    for user_id in relevant_user_ids:
+        member = guild.get_member(user_id)
+        if member:
+            snapshot["members"][str(user_id)] = {
+                "id": member.id,
+                "display_name": member.display_name,
+                "username": member.name,
+                "discriminator": member.discriminator,
+                "bot": member.bot,
+                "joined_at": member.joined_at.isoformat() if member.joined_at else None,
+                "roles": [role.id for role in member.roles],
+                "status": str(member.status),
+                "top_role_id": member.top_role.id if member.top_role else None
+            }
+
+    # Roles (from server_query)
+    try:
+        roles = await bot.server_query.query_roles(guild_id)
+        for role in roles:
+            if role.get("name") != "@everyone":
+                snapshot["roles"][str(role["id"])] = {
+                    "id": role["id"],
+                    "name": role["name"],
+                    "color": role.get("color"),
+                    "position": role.get("position"),
+                    "permissions": role.get("permissions", []),
+                    "managed": role.get("managed", False),
+                    "mentionable": role.get("mentionable", False)
+                }
+    except Exception as e:
+        logger.error(f"Failed to query roles: {e}")
+
+    # Channels (from server_query)
+    try:
+        channels = await bot.server_query.query_channels(guild_id)
+        for channel in channels:
+            snapshot["channels"][str(channel["id"])] = {
+                "id": channel["id"],
+                "name": channel["name"],
+                "type": channel["type"],
+                "category": channel.get("category"),
+                "position": channel.get("position"),
+                "private": channel.get("private", False),
+                "permissions": channel.get("permissions", {})
+            }
+    except Exception as e:
+        logger.error(f"Failed to query channels: {e}")
+
+    # Active automations
+    # Check various automation systems
+    automations = {}
+
+    # Scheduled tasks
+    scheduled_tasks = dm.load_json("ai_scheduled_tasks", default={})
+    guild_scheduled = {k: v for k, v in scheduled_tasks.items() if v.get("guild_id") == guild_id}
+    if guild_scheduled:
+        automations["scheduled_tasks"] = list(guild_scheduled.keys())
+
+    # Active tasks from bot instance
+    bot_active_tasks = bot.active_tasks.get(guild_id, {})
+    if bot_active_tasks:
+        automations["active_tasks"] = list(bot_active_tasks.keys())
+
+    # Check enabled modules/features
+    # Verification
+    verify_role = dm.get_guild_data(guild_id, "verify_role")
+    if verify_role:
+        automations["verification"] = True
+
+    # Tickets
+    ticket_channel = dm.get_guild_data(guild_id, "ticket_channel") or dm.get_guild_data(guild_id, "tickets_channel")
+    if ticket_channel:
+        automations["tickets"] = True
+
+    # Leveling
+    leveling_enabled = dm.get_guild_data(guild_id, "leveling_enabled", False)
+    if leveling_enabled:
+        automations["leveling"] = True
+
+    # Economy
+    economy_enabled = dm.get_guild_data(guild_id, "economy_enabled", False)
+    if economy_enabled:
+        automations["economy"] = True
+
+    # Welcome system
+    welcome_enabled = dm.get_guild_data(guild_id, "welcome_enabled", False)
+    if welcome_enabled:
+        automations["welcome"] = True
+
+    # Auto announcer
+    auto_announce_enabled = dm.get_guild_data(guild_id, "auto_announce_enabled", False)
+    if auto_announce_enabled:
+        automations["auto_announcer"] = True
+
+    # Events
+    events_enabled = dm.get_guild_data(guild_id, "events_enabled", False)
+    if events_enabled:
+        automations["events"] = True
+
+    snapshot["active_automations"] = automations
+
+    # Bot permissions
+    bot_member = guild.me
+    permissions = bot_member.guild_permissions
+    snapshot["bot_permissions"] = {
+        "administrator": permissions.administrator,
+        "manage_roles": permissions.manage_roles,
+        "manage_channels": permissions.manage_channels,
+        "manage_messages": permissions.manage_messages,
+        "kick_members": permissions.kick_members,
+        "ban_members": permissions.ban_members,
+        "send_messages": permissions.send_messages,
+        "read_messages": permissions.read_messages,
+        "view_channel": permissions.view_channel,
+        "use_slash_commands": permissions.use_slash_commands,
+        "embed_links": permissions.embed_links,
+        "attach_files": permissions.attach_files,
+        "mention_everyone": permissions.mention_everyone,
+        "add_reactions": permissions.add_reactions,
+        "bot_highest_role_position": bot_member.top_role.position if bot_member.top_role else 0
+    }
+
+    return snapshot
+
 async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: str, thinking_msg=None):
     """Process a single turn of the AI conversation."""
     guild_id = interaction.guild.id
@@ -1477,51 +1726,6 @@ async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: st
         for i, mem in enumerate(relevant_memories, 1):
             memory_context += f"\n{i}. Similar conversation (similarity: {mem['similarity']:.2f}):\n{mem['document'][:500]}...\n"
 
-    # ── Build live server context ──
-    server_context = ""
-    try:
-        sq = bot.server_query
-        server_info = await sq.query_server_info(guild_id)
-        channels = await sq.query_channels(guild_id)
-        roles = await sq.query_roles(guild_id)
-
-        if server_info:
-            # Format channels grouped by category
-            chan_lines = []
-            for c in sorted(channels, key=lambda x: (x.get("category") or "", x.get("position", 0))):
-                ctype = c.get("type", "text")
-                cat = c.get("category") or "No Category"
-                prefix = "#" if ctype == "text" else "🔊" if ctype == "voice" else "📁"
-                chan_lines.append(f"  {prefix}{c['name']} [{cat}]")
-            channels_text = "\n".join(chan_lines) if chan_lines else "  (none)"
-
-            # Format roles (skip @everyone)
-            role_lines = [
-                f"  @{r['name']} (id:{r['id']})"
-                for r in sorted(roles, key=lambda x: -x.get("position", 0))
-                if r.get("name") != "@everyone"
-            ]
-            roles_text = "\n".join(role_lines) if role_lines else "  (none)"
-
-            server_context = f"""
-
-CURRENT SERVER STATE (LIVE DATA — use this to understand what already exists):
-Server: {server_info.get('name', 'Unknown')} (id:{server_info.get('id')})
-Members: {server_info.get('member_count', 0)} total, {server_info.get('online_count', 0)} online
-Owner: {server_info.get('owner', 'Unknown')}
-
-EXISTING CHANNELS ({len(channels)}):
-{channels_text}
-
-EXISTING ROLES ({len(roles) - 1}):
-{roles_text}
-
-IMPORTANT: Do NOT create channels or roles that already exist above. Reference existing ones by name.
-"""
-    except Exception as e:
-        logger.error(f"Failed to build server context: {e}")
-        server_context = "\n\nCURRENT SERVER STATE: Unable to retrieve live server data.\n"
-
     # ── Resolve Discord <@ID> mentions in the user's text before sending to AI ──
     # When a user types /bot and uses Discord's mention autocomplete, the text arrives
     # as "<@123456789>" — resolve these to display names and inject explicit user_id
@@ -1542,6 +1746,26 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
                     enriched_input = enriched_input.replace(_m.group(0), f"@{_mem.display_name}")
             except Exception:
                 pass
+
+    # ── Gather comprehensive server snapshot ──
+    mentioned_user_ids = set(mention_map.keys())
+    server_snapshot = await gather_server_snapshot(bot, interaction, mentioned_user_ids)
+
+    # Format server snapshot as JSON for AI context
+    server_context = f"""
+
+COMPREHENSIVE SERVER SNAPSHOT (MANDATORY: Use this data exclusively for all operations):
+{json.dumps(server_snapshot, indent=2)}
+
+CRITICAL INSTRUCTIONS:
+- Use EXACT role_id and channel_id values from the snapshot above for all actions
+- For assign_role: use role_id from snapshot["roles"], not role names
+- For send_message/channel actions: use channel_id from snapshot["channels"]
+- For user actions: use user_id from snapshot["members"] or mention context
+- Reference existing automations from snapshot["active_automations"]
+- Check bot permissions from snapshot["bot_permissions"] before suggesting actions
+"""
+
     if mention_map:
         mention_context = "\n\nMENTION CONTEXT — MANDATORY:\n"
         for _mid, _mname in mention_map.items():
@@ -1635,13 +1859,28 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
     else:
         # Handle both old format (single action) and new format (actions list)
         actions = res.get("actions", [])
-        
+
         # Backward compatibility: convert single action to list format
         if not actions:
             single_action = res.get("action")
             if single_action:
                 parameters = res.get("parameters", {})
                 actions = [{"name": single_action, "parameters": parameters}]
+
+        # Log AI usage of context data
+        if actions:
+            context_usage = {
+                "guild_id": guild_id,
+                "user_id": user_id,
+                "user_input": user_input,
+                "actions_count": len(actions),
+                "snapshot_members": len(server_snapshot.get("members", {})),
+                "snapshot_roles": len(server_snapshot.get("roles", {})),
+                "snapshot_channels": len(server_snapshot.get("channels", {})),
+                "snapshot_automations": server_snapshot.get("active_automations", {}),
+                "mentioned_users": len(mentioned_user_ids)
+            }
+            logger.info(f"AI context usage - Guild {guild_id}: {len(actions)} actions, {len(server_snapshot.get('members', {}))} members, {len(server_snapshot.get('roles', {}))} roles, {len(server_snapshot.get('channels', {}))} channels")
         
         if not actions:
             # Edit the thinking message with the final AI response (plain text, no embed)
@@ -1692,6 +1931,14 @@ IMPORTANT: Do NOT create channels or roles that already exist above. Reference e
             try:
                 if not actions:
                     await it.followup.send(summary)
+                    return
+
+                # Dry-run validation of actions against server snapshot
+                validation_errors = await validate_actions_against_snapshot(actions, server_snapshot, interaction.guild)
+                if validation_errors:
+                    error_msg = "**❌ Dry-run validation failed:**\n" + "\n".join(validation_errors)
+                    final_msg = f"{error_msg}\n\nPlease check your request and try again."
+                    await it.channel.send(final_msg)
                     return
 
                 from actions import ActionHandler
