@@ -157,7 +157,7 @@ class MiroBot(commands.Bot):
             logger.error(f"Error starting background monitors: {e}")
 
         # Reload persistent data
-        self._reload_event_listeners()
+        # Removed _reload_event_listeners() call as method was not implemented
         self._reload_custom_commands()
         self._reload_conversation_history()
         logger.info("Immortal state restored – resuming all automations.")
