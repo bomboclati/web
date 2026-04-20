@@ -43,13 +43,13 @@ class TaskScheduler:
 
     def _load_scheduled_tasks(self):
         """Load scheduled tasks from data store."""
-        tasks = dm.load_json("scheduled_tasks", default={})
+        tasks = dm.load_json("ai_scheduled_tasks", default={})
         for name, task_data in tasks.items():
             self._tasks[name] = None
 
     def add_task(self, name: str, cron_expr: str, handler, guild_id: int = None, params: dict = None):
         """Register a new scheduled task."""
-        tasks = dm.load_json("scheduled_tasks", default={})
+        tasks = dm.load_json("ai_scheduled_tasks", default={})
         tasks[name] = {
             "cron": cron_expr,
             "guild_id": guild_id,
@@ -57,16 +57,16 @@ class TaskScheduler:
             "enabled": True,
             "last_run": None
         }
-        dm.save_json("scheduled_tasks", tasks)
+        dm.save_json("ai_scheduled_tasks", tasks)
         self._tasks[name] = None
         logger.info("Scheduled task added: %s (cron: %s)", name, cron_expr)
 
     def remove_task(self, name: str):
         """Remove a scheduled task."""
-        tasks = dm.load_json("scheduled_tasks", default={})
+        tasks = dm.load_json("ai_scheduled_tasks", default={})
         if name in tasks:
             del tasks[name]
-            dm.save_json("scheduled_tasks", tasks)
+            dm.save_json("ai_scheduled_tasks", tasks)
             if name in self._tasks:
                 self._tasks.pop(name, None)
             logger.info("Scheduled task removed: %s", name)
