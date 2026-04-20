@@ -92,6 +92,7 @@ class MiroBot(commands.Bot):
         self._cmd_cooldowns = {}  # (guild_id, user_id, cmd) -> timestamp
         self._cmd_cooldown_seconds = 3
         self.ai_sessions = {}     # user_id -> {messages: [...], last_interaction: interaction, original_request: str}
+        self._listeners = {}      # event_type -> [listener_data, ...]
         
         # Internal Systems
         self.economy = Economy(self)
@@ -157,7 +158,8 @@ class MiroBot(commands.Bot):
             logger.error(f"Error starting background monitors: {e}")
 
         # Reload persistent data
-        # Removed _reload_event_listeners() call as method was not implemented
+        await self._reload_scheduled_tasks()
+        await self._reload_event_listeners()
         self._reload_custom_commands()
         self._reload_conversation_history()
         logger.info("Immortal state restored – resuming all automations.")
@@ -514,6 +516,9 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         if isinstance(message.channel, discord.DMChannel):
             await self._handle_modmail(message)
             return
+
+        # 0. Custom Event Listeners
+        await self._safe_call(self._process_event_listeners("on_message", message), "event_listeners")
 
         # 1. Passive Systems (XP & Triggers) - wrapped to prevent cascade failures
         await self._safe_call(self.leveling.handle_message(message), "leveling")
@@ -1494,56 +1499,162 @@ class ModmailReplyModal(ui.Modal, title='Reply to User'):
             logger.warning("Failed to send modmail reply DM: %s", e)
             await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=False)
 
-    def _reload_event_listeners(self):
-        """Reload event listeners from JSON."""
-        listeners = dm.load_json("event_listeners", default={})
-        # Re-register listeners - assuming some registration method
-        for listener_id, listener_data in listeners.items():
-            # Implement re-registration logic
-            pass
+    async def _reload_event_listeners(self):
+        """Reload event listeners from data/event_listeners.json"""
+        try:
+            listeners_data = dm.load_json("event_listeners", default=[])
+            if not isinstance(listeners_data, list):
+                # If it's a dict, convert it to a list of its values or handle accordingly
+                if isinstance(listeners_data, dict):
+                    listeners_data = list(listeners_data.values())
+                else:
+                    listeners_data = []
+
+            self._listeners = {}
+            for listener in listeners_data:
+                event = listener.get("event")
+                if event:
+                    if event not in self._listeners:
+                        self._listeners[event] = []
+                    self._listeners[event].append(listener)
+
+            count = sum(len(l) for l in self._listeners.values())
+            logger.info(f"Restored {count} event listeners.")
+        except Exception as e:
+            logger.error(f"Error reloading event listeners: {e}")
 
     def _reload_custom_commands(self):
-        """Reload custom commands into memory."""
-        # Custom commands are loaded per guild, but we can preload all
-        for guild in self.guilds:
-            guild_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
-            self.custom_commands[guild.id] = guild_cmds
+        """Reload custom commands into memory cache."""
+        try:
+            count = 0
+            data_dir = "data"
+            if os.path.exists(data_dir):
+                for filename in os.listdir(data_dir):
+                    if filename.startswith("guild_") and filename.endswith(".json"):
+                        try:
+                            # Extract guild_id from guild_<id>.json
+                            gid_str = filename[6:-5]
+                            if gid_str.isdigit():
+                                guild_id = int(gid_str)
+                                guild_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
+                                self.custom_commands[guild_id] = guild_cmds
+                                count += len(guild_cmds)
+                        except Exception:
+                            continue
+            logger.info(f"Custom commands pre-loaded from disk. ({count} total)")
+        except Exception as e:
+            logger.error(f"Error reloading custom commands: {e}")
 
     def _reload_conversation_history(self):
         """Reload conversation history and vector memory."""
         # Vector memory should handle its own loading
-        # Conversation history is loaded by vector_memory
         pass
 
-    def _reload_scheduled_tasks(self):
-        """Reload scheduled tasks from JSON."""
-        tasks = dm.load_json("ai_scheduled_tasks", default={})
-        for task_name, task_data in tasks.items():
-            # Recreate the task if enabled
-            if task_data.get("enabled", True):
-                cron = task_data.get("cron", "")
-                action_type = task_data.get("action_type", "")
-                guild_id = task_data.get("guild_id")
-                params = task_data.get("params", {})
-                if cron and action_type:
-                    self.scheduler.add_task(task_name, cron, self._execute_scheduled_action, guild_id, {"action_type": action_type, "params": params})
+    async def _reload_scheduled_tasks(self):
+        """Reload scheduled tasks from data/scheduled_tasks.json and ai_scheduled_tasks.json"""
+        try:
+            count = 0
+            # Load from both possible sources
+            for source in ["scheduled_tasks", "ai_scheduled_tasks"]:
+                tasks_data = dm.load_json(source, default={})
+
+                # Handle both dict and list formats
+                if isinstance(tasks_data, list):
+                    iterator = tasks_data
+                elif isinstance(tasks_data, dict):
+                    # Convert dict to list and ensure 'name' is present
+                    iterator = []
+                    for name, data in tasks_data.items():
+                        if isinstance(data, dict):
+                            data['name'] = name
+                            iterator.append(data)
+                else:
+                    iterator = []
+
+                for task in iterator:
+                    if task.get("enabled", True):
+                        name = task.get("name")
+                        cron = task.get("cron")
+                        guild_id = task.get("guild_id")
+                        if name and cron:
+                            self.scheduler.add_task(name, cron, self._execute_scheduled_action, guild_id, task)
+                            count += 1
+            logger.info(f"Restored {count} scheduled tasks from all sources.")
+        except Exception as e:
+            logger.error(f"Error reloading scheduled tasks: {e}")
+
+    async def _process_event_listeners(self, event_type, *args, **kwargs):
+        """Process custom event listeners."""
+        if event_type not in self._listeners:
+            return
+
+        from actions import ActionHandler
+        handler = ActionHandler(self)
+
+        for listener in self._listeners[event_type]:
+            try:
+                # Basic condition check
+                condition = listener.get("condition")
+                if condition:
+                    # Simple keyword check for on_message
+                    if event_type == "on_message":
+                        message = args[0]
+                        if condition not in message.content:
+                            continue
+
+                action = listener.get("action")
+                params = listener.get("parameters", {})
+
+                if action:
+                    # Mock interaction based on event
+                    if event_type == "on_message":
+                        message = args[0]
+                        class MockInteraction:
+                            def __init__(self, bot, msg):
+                                self.bot = bot
+                                self.guild = msg.guild
+                                self.channel = msg.channel
+                                self.user = msg.author
+                                self.followup = self
+                                self.response = self
+                            async def send_message(self, *args, **kwargs): pass
+                            async def edit_message(self, *args, **kwargs): pass
+                            async def defer(self, *args, **kwargs): pass
+
+                        interaction = MockInteraction(self, message)
+                        await handler.execute_sequence(interaction, [{"name": action, "parameters": params}])
+            except Exception as e:
+                logger.error(f"Error processing listener for {event_type}: {e}")
 
     async def _execute_scheduled_action(self, task_name: str, params: dict):
         """Execute a scheduled action."""
-        action_type = params.get("action_type")
-        action_params = params.get("params", {})
-        # Execute via ActionHandler or directly
-        from actions import ActionHandler
-        handler = ActionHandler(self)
-        # Mock interaction
-        class MockInteraction:
-            def __init__(self, bot, guild_id):
-                self.bot = bot
-                self.guild = bot.get_guild(guild_id)
-                self.channel = self.guild.text_channels[0] if self.guild and self.guild.text_channels else None
-                self.user = bot.user
-        interaction = MockInteraction(self, params.get("guild_id"))
-        await handler.execute_sequence(interaction, [{"name": action_type, "parameters": action_params}])
+        try:
+            action_type = params.get("action_type")
+            action_params = params.get("action_params", params.get("params", {}))
+            guild_id = params.get("guild_id")
+
+            # Execute via ActionHandler
+            from actions import ActionHandler
+            handler = ActionHandler(self)
+
+            # Mock interaction
+            class MockInteraction:
+                def __init__(self, bot, guild_id):
+                    self.bot = bot
+                    self.guild = bot.get_guild(guild_id)
+                    self.channel = self.guild.text_channels[0] if self.guild and self.guild.text_channels else None
+                    self.user = bot.user
+                    self.followup = self
+                    self.response = self
+                async def send_message(self, *args, **kwargs): pass
+                async def edit_message(self, *args, **kwargs): pass
+                async def defer(self, *args, **kwargs): pass
+
+            interaction = MockInteraction(self, guild_id)
+            await handler.execute_sequence(interaction, [{"name": action_type, "parameters": action_params}])
+            logger.info(f"Executed scheduled task: {task_name}")
+        except Exception as e:
+            logger.error(f"Error executing scheduled action {task_name}: {e}")
 
 # --- Slash Commands ---
 
