@@ -241,12 +241,12 @@ class MiroBot(commands.Bot):
             ticket_ch = dm.get_guild_data(guild.id, 'tickets_channel') or dm.get_guild_data(guild.id, 'ticket_queue_channel')
             if ticket_ch:
                 self.add_view(CreateTicketButton(guild_id=guild.id, channel_id=ticket_ch))
-        self.loop.create_task(self._auto_backup_loop())
-        self.loop.create_task(self._cleanup_expired_sessions())
-        self.loop.create_task(self._command_refinement_loop())
+        asyncio.create_task(self._auto_backup_loop())
+        asyncio.create_task(self._cleanup_expired_sessions())
+        asyncio.create_task(self._command_refinement_loop())
         await self._setup_crash_recovery()
         self._setup_signal_handlers()
-        self.loop.create_task(self._check_new_guilds())
+        asyncio.create_task(self._check_new_guilds())
 
     async def _check_new_guilds(self):
         """Check for any guilds the bot just joined"""
@@ -1860,7 +1860,7 @@ async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: st
     user_id = interaction.user.id
     
     # Retrieve relevant memories for context (Run in executor with timeout to avoid hangs)
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     relevant_memories = []
     try:
         relevant_memories = await asyncio.wait_for(
