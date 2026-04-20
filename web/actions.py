@@ -202,7 +202,9 @@ class ActionHandler:
                         "timestamp": time.time()
                     })
                 elif success is False:
-                    error_msg = undo_data.get("error", f"Action returned failure: {name}")
+                    error_data = undo_data
+                    error_msg = error_data.get("error", "Unknown error") if isinstance(error_data, dict) else str(error_data)
+                    logger.error(f"Action {name} failed: {error_msg}")
                     raise Exception(error_msg)
             except Exception as e:
                 error_msg = str(e)
