@@ -382,11 +382,11 @@ class MiroBot(commands.Bot):
     def _setup_signal_handlers(self):
         """Set up graceful shutdown on SIGINT/SIGTERM."""
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             for sig in (signal.SIGINT, signal.SIGTERM):
                 loop.add_signal_handler(sig, lambda: asyncio.create_task(self._graceful_shutdown()))
             logger.info("Signal handlers registered for graceful shutdown")
-        except (NotImplementedError, ValueError):
+        except (NotImplementedError, ValueError, RuntimeError):
             logger.warning("Signal handlers not supported on this platform")
 
     async def _graceful_shutdown(self):
