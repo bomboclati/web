@@ -434,9 +434,8 @@ class AutoSetup:
 
     async def on_guild_remove(self, guild: discord.Guild):
         logger.info(f"Bot removed from guild: {guild.name} (ID: {guild.id})")
-        # Clean up guild-specific data if needed
-        # Note: Most data is kept for potential re-join
-        pass
+        # Clean up guild-specific data
+        await self._remove_server_data(guild)
 
     async def _initialize_server_data(self, guild: discord.Guild):
         default_config = {
@@ -492,6 +491,21 @@ class AutoSetup:
             dm.update_guild_data(guild.id, key, value)
 
         logger.info(f"Initialized default data for guild {guild.id}")
+
+    async def _remove_server_data(self, guild: discord.Guild):
+        """Remove server data when the bot leaves a guild."""
+        try:
+            import os
+            # Remove guild-specific data file
+            filename = f"guild_{guild.id}.json"
+            path = os.path.join("data", filename)
+            if os.path.exists(path):
+                os.remove(path)
+                logger.info(f"Removed data file for guild {guild.id} ({guild.name})")
+            else:
+                logger.info(f"No data file found for guild {guild.id} ({guild.name})")
+        except Exception as e:
+            logger.error(f"Failed to remove data for guild {guild.id}: {e}")
 
     async def _send_welcome_dm(self, guild: discord.Guild):
         """Send welcome DM to server owner with auto-setup option."""
