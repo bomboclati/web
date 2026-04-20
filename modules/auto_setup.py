@@ -432,6 +432,67 @@ class AutoSetup:
         await self._send_welcome_dm(guild)
         await self._initialize_server_data(guild)
 
+    async def on_guild_remove(self, guild: discord.Guild):
+        logger.info(f"Bot removed from guild: {guild.name} (ID: {guild.id})")
+        # Clean up guild-specific data if needed
+        # Note: Most data is kept for potential re-join
+        pass
+
+    async def _initialize_server_data(self, guild: discord.Guild):
+        default_config = {
+            "prefix": "!",
+            "log_channel": None,
+            "report_channel": None,
+            "welcome_channel": None,
+            "welcome_message": "Welcome {user} to {server}!",
+            "leave_message": "{user} left {server}",
+            "verify_channel": None,
+            "rules_channel": None,
+            "announcements_channel": None,
+            "modmail_channel": None,
+            "tickets_channel": None,
+            "applications_channel": None,
+            "moderation_config": {
+                "enabled": False,
+                "sensitivity": "medium"
+            },
+            "conflict_resolution_config": {
+                "enabled": True,
+                "sensitivity": "medium",
+                "auto_intervene": True,
+                "notify_mods": True
+            },
+            "community_health_config": {
+                "enabled": True,
+                "analysis_interval_hours": 24,
+                "health_reports_enabled": True
+            },
+            "leveling_config": {
+                "enabled": False,
+                "xp_per_message": 1,
+                "xp_per_voice_minute": 0.5
+            },
+            "economy_config": {
+                "enabled": False,
+                "daily_reward": 100
+            },
+            "modmail_config": {
+                "enabled": False,
+                "auto_close_days": 7,
+                "notify_channel": None
+            },
+            "tickets_config": {
+                "enabled": False,
+                "categories": ["General", "Support", "Billing", "Other"]
+            },
+            "reaction_roles": []
+        }
+
+        for key, value in default_config.items():
+            dm.update_guild_data(guild.id, key, value)
+
+        logger.info(f"Initialized default data for guild {guild.id}")
+
     async def _send_welcome_dm(self, guild: discord.Guild):
         """Send welcome DM to server owner with auto-setup option."""
         owner = guild.owner or await guild.fetch_member(guild.owner_id)
@@ -663,61 +724,6 @@ class SystemSelectionView(discord.ui.View):
 
         await interaction.response.send_message("✅ Setup cancelled. You can start over anytime!", ephemeral=True)
         self.stop()
-
-    async def _initialize_server_data(self, guild: discord.Guild):
-        default_config = {
-            "prefix": "!",
-            "log_channel": None,
-            "report_channel": None,
-            "welcome_channel": None,
-            "welcome_message": "Welcome {user} to {server}!",
-            "leave_message": "{user} left {server}",
-            "verify_channel": None,
-            "rules_channel": None,
-            "announcements_channel": None,
-            "modmail_channel": None,
-            "tickets_channel": None,
-            "applications_channel": None,
-            "moderation_config": {
-                "enabled": False,
-                "sensitivity": "medium"
-            },
-            "conflict_resolution_config": {
-                "enabled": True,
-                "sensitivity": "medium",
-                "auto_intervene": True,
-                "notify_mods": True
-            },
-            "community_health_config": {
-                "enabled": True,
-                "analysis_interval_hours": 24,
-                "health_reports_enabled": True
-            },
-            "leveling_config": {
-                "enabled": False,
-                "xp_per_message": 1,
-                "xp_per_voice_minute": 0.5
-            },
-            "economy_config": {
-                "enabled": False,
-                "daily_reward": 100
-            },
-            "modmail_config": {
-                "enabled": False,
-                "auto_close_days": 7,
-                "notify_channel": None
-            },
-            "tickets_config": {
-                "enabled": False,
-                "categories": ["General", "Support", "Billing", "Other"]
-            },
-            "reaction_roles": []
-        }
-        
-        for key, value in default_config.items():
-            dm.update_guild_data(guild.id, key, value)
-        
-        logger.info(f"Initialized default data for guild {guild.id}")
 
     async def _run_selected_setup(self, guild: discord.Guild, owner: discord.Member, selected_systems: List[str]):
         """Run setup for selected systems only."""
