@@ -548,21 +548,13 @@ class ActionHandler:
         return True, {"action": "delete_channel", "channel_id": channel.id}
 
     async def action_create_shop_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        params = self._normalize_params(params, {
-            "channel_name": ["name", "channel_name"],
-            "channel_type": ["type", "channel_type"],
-            "category_name": ["category", "category_name"],
-            "private": ["private"],
-            "allowed_roles": ["allowed_roles"],
-            "denied_roles": ["denied_roles"],
-        })
         guild = interaction.guild
-        name = params["channel_name"] or "shop"
-        channel_type = params["channel_type"] or "text"
-        category_name = params["category_name"] or "shop"
-        private = params["private"]
-        allowed_roles = params["allowed_roles"]
-        denied_roles = params["denied_roles"]
+        name = self._get_param(params, "channel_name", "name", default="shop")
+        channel_type = self._get_param(params, "channel_type", "type", default="text")
+        category_name = self._get_param(params, "category_name", "category", default="shop")
+        private = self._get_param(params, "private", default=False)
+        allowed_roles = self._get_param(params, "allowed_roles", default=[])
+        denied_roles = self._get_param(params, "denied_roles", default=[])
 
         # If private=true, always deny @everyone view_channel
         if private and "@everyone" not in denied_roles:
@@ -764,12 +756,8 @@ class ActionHandler:
         await channel.send(embed=embed)
 
     async def action_create_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        params = self._normalize_params(params, {
-            "role_name": ["name", "role_name"],
-            "color": ["color", "colour", "hex_color"],
-        })
         guild = interaction.guild
-        name = params["role_name"]
+        name = self._get_param(params, "role_name", "name")
 
         if not guild.me.guild_permissions.manage_roles:
             logger.error("Bot lacks manage_roles permission in guild %s", guild.id)
@@ -786,7 +774,8 @@ class ActionHandler:
             logger.info("Role '%s' already exists, skipping creation", name)
             return True, None
 
-        color_hex = params["color"].replace("#", "")
+        color = self._get_param(params, "color", "colour", "hex_color", default="#3498db")
+        color_hex = color.replace("#", "")
         color = discord.Color(int(color_hex, 16))
 
         # Auto-detect role permissions
@@ -973,12 +962,15 @@ class ActionHandler:
                 pass
 
         if role_name:
-            name = str(role_name).strip().lower()
+            name = str(role_name).strip()
+            if name == "@everyone":
+                return guild.default_role
+            name_lower = name.lower()
             # Try exact match first
-            role = discord.utils.find(lambda r: r.name.lower() == name, guild.roles)
+            role = discord.utils.find(lambda r: r.name.lower() == name_lower, guild.roles)
             if role: return role
             # Try partial match
-            role = discord.utils.find(lambda r: name in r.name.lower(), guild.roles)
+            role = discord.utils.find(lambda r: name_lower in r.name.lower(), guild.roles)
             if role: return role
 
         # Log warning if neither role_id nor role_name was provided
@@ -987,8 +979,11 @@ class ActionHandler:
 
         return None
 
-    async def _resolve_member(self, guild: discord.Guild, user_id: Any = None, username: Any = None) -> Optional[discord.Member]:
-        """Robustly resolve a member by ID or name."""
+    async def _resolve_member(self, guild: discord.Guild, **kwargs) -> Optional[discord.Member]:
+        """Robustly resolve a member by ID or name from kwargs."""
+        user_id = kwargs.get('user_id')
+        username = kwargs.get('username')
+
         if user_id:
             try:
                 uid = int(str(user_id).strip().lstrip("<@!").rstrip(">"))
@@ -1119,11 +1114,6 @@ class ActionHandler:
 
     async def action_assign_role_by_name(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Assigns a role to a user by role name and user identifier."""
-        params = self._normalize_params(params, {
-            "role_name": ["role_name", "name"],
-            "user_id": ["user_id", "user", "member_id", "target_id", "user_mention"],
-            "username": ["username", "user_name"],
-        })
         guild = interaction.guild
 
         # Security check
@@ -1132,9 +1122,9 @@ class ActionHandler:
         if not guild.me.guild_permissions.manage_roles:
             return False, {"error": "Bot lacks 'Manage Roles' permission."}
 
-        role_name = params["role_name"]
-        user_id = params["user_id"]
-        username = params["username"]
+        role_name = self._get_param(params, "role_name", "name")
+        user_id = self._get_param(params, "user_id", "user", "member_id", "target_id", "user_mention")
+        username = self._get_param(params, "username", "user_name")
 
         # Resolve role
         role = None
@@ -1185,7 +1175,7 @@ class ActionHandler:
 
         user_id = self._get_param(params, "user_id", "user", "member_id", "target_id", "uid")
         username = self._get_param(params, "username", "user_name", "name")
-        member = await self._resolve_member(guild, user_id, username)
+        member = await self._resolve_member(guild, user_id=user_id, username=username)
 
         if not role:
             logger.error("remove_role: could not find role with params: %s", params)
@@ -2194,7 +2184,7 @@ class ActionHandler:
         username = params.get("username")
         days = params.get("delete_messages_days", 7)
 
-        member = await self._resolve_member(interaction.guild, user_id, username)
+        member = await self._resolve_member(interaction.guild, user_id=user_id, username=username)
         if not member:
             return False, {"error": "User not found"}
 
@@ -2876,16 +2866,7 @@ class ActionHandler:
             logger.error(f"Error creating event: {e}")
             return False, None
 
-    def _resolve_role(self, guild, role_name: str):
-        """Resolve a role by name, handling @everyone specially."""
-        if not role_name:
-            return None
-        if role_name == "@everyone":
-            return guild.default_role
-        role = discord.utils.get(guild.roles, name=role_name)
-        if not role:
-            role = discord.utils.find(lambda r: r.name.lower() == role_name.lower(), guild.roles)
-        return role
+
 
     async def _merge_channel_permission(self, channel, role, **kwargs):
         """Merge permission changes into existing overwrites instead of replacing them."""
@@ -2904,7 +2885,7 @@ class ActionHandler:
             return False, None
 
         channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        role = self._resolve_role(interaction.guild, role_name)
+        role = await self._resolve_role(interaction.guild, role_name=role_name)
 
         if not channel or not role:
             logger.error(f"allow_channel_permission: channel='{channel_name}' found={channel is not None}, role='{role_name}' found={role is not None}")
@@ -2952,7 +2933,7 @@ class ActionHandler:
             return False, None
 
         channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        role = self._resolve_role(interaction.guild, role_name)
+        role = await self._resolve_role(interaction.guild, role_name=role_name)
 
         if not channel or not role:
             logger.error(f"deny_channel_permission: channel='{channel_name}' found={channel is not None}, role='{role_name}' found={role is not None}")
@@ -2991,7 +2972,7 @@ class ActionHandler:
         if not role_name:
             return False, None
 
-        role = self._resolve_role(interaction.guild, role_name)
+        role = await self._resolve_role(interaction.guild, role_name=role_name)
         if not role:
             return False, None
 
@@ -3018,7 +2999,7 @@ class ActionHandler:
         if not role_name:
             return False, None
 
-        role = self._resolve_role(interaction.guild, role_name)
+        role = await self._resolve_role(interaction.guild, role_name=role_name)
         if not role:
             return False, None
 
@@ -3047,7 +3028,7 @@ class ActionHandler:
             return False, None
 
         category = discord.utils.get(interaction.guild.categories, name=category_name)
-        role = self._resolve_role(interaction.guild, role_name)
+        role = await self._resolve_role(interaction.guild, role_name=role_name)
 
         if not category or not role:
             return False, None
@@ -3104,7 +3085,7 @@ class ActionHandler:
 
             # Allow each specified role
             for role_name in allowed_roles:
-                role = self._resolve_role(guild, role_name)
+                role = await self._resolve_role(guild, role_name=role_name)
                 if role:
                     await self._merge_channel_permission(channel, role, view_channel=True, send_messages=True, read_message_history=True)
 
@@ -3167,7 +3148,7 @@ class ActionHandler:
 
             # Allow each specified role on the category
             for role_name in allowed_roles:
-                role = self._resolve_role(guild, role_name)
+                role = await self._resolve_role(guild, role_name=role_name)
                 if role:
                     await self._merge_channel_permission(category, role, view_channel=True, send_messages=True, read_message_history=True)
 
@@ -3177,7 +3158,7 @@ class ActionHandler:
                     await self._merge_channel_permission(child, guild.default_role, view_channel=False, send_messages=False)
                     channels_updated += 1
                     for role_name in allowed_roles:
-                        role = self._resolve_role(guild, role_name)
+                        role = await self._resolve_role(guild, role_name=role_name)
                         if role:
                             await self._merge_channel_permission(child, role, view_channel=True, send_messages=True, read_message_history=True)
                 except Exception:
@@ -3278,7 +3259,7 @@ class ActionHandler:
             return False, None
 
         channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        role = self._resolve_role(interaction.guild, role_name)
+        role = await self._resolve_role(interaction.guild, role_name=role_name)
 
         if not channel or not role:
             return False, None
