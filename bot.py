@@ -312,6 +312,66 @@ class MiroBot(commands.Bot):
                 cleanup_success = False
         return cleanup_success
 
+    async def _apply_system_connections(self, source_system: str, event_type: str, data: dict = None):
+        """Apply system connections when an event occurs in a source system."""
+        if data is None:
+            data = {}
+            
+        guild_id = data.get("guild_id") if isinstance(data, dict) else None
+        if not guild_id:
+            # Try to get guild_id from context if data is not a dict
+            return
+            
+        # Load system connections
+        connections = dm.load_json("system_connections", default={})
+        guild_connections = connections.get(str(guild_id), [])
+        
+        # Find matching connections
+        for connection in guild_connections:
+            if (connection.get("source_system") == source_system and 
+                connection.get("trigger_event") == event_type):
+                
+                # Execute the action
+                try:
+                    target_system = connection.get("target_system")
+                    action = connection.get("action")
+                    parameters = connection.get("parameters", {})
+                    
+                    # Add guild_id to parameters if not present
+                    if "guild_id" not in parameters:
+                        parameters["guild_id"] = guild_id
+                    
+                    # Execute the action through the action handler
+                    from actions import ActionHandler
+                    handler = ActionHandler(self)
+                    
+                    # Create a mock interaction for the action handler
+                    # We'll need to get the guild object
+                    guild = self.get_guild(guild_id)
+                    if guild:
+                        # Create a minimal interaction-like object
+                        class MockInteraction:
+                            def __init__(self, guild):
+                                self.guild = guild
+                                self.channel = guild.text_channels[0] if guild.text_channels else None
+                                self.user = guild.me  # Bot itself as user
+                                
+                            async def followup(self):
+                                pass
+                                
+                            async def response(self):
+                                pass
+                        
+                        interaction = MockInteraction(guild)
+                        await handler.execute_sequence(interaction, [{
+                            "name": action,
+                            "parameters": parameters
+                        }])
+                        
+                        logger.info(f"Applied system connection: {source_system}.{event_type} -> {target_system}.{action}")
+                except Exception as e:
+                    logger.error(f"Failed to apply system connection: {e}")
+
     def _setup_signal_handlers(self):
         """Set up graceful shutdown on SIGINT/SIGTERM."""
         try:
@@ -445,6 +505,17 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         await self._safe_call(self.intelligence.track_message(message), "intelligence")
         await self._safe_call(self.conflict_resolution.analyze_message(message), "conflict_resolution")
         await self._safe_call(self.community_health.analyze_interaction(message), "community_health")
+        
+        # Apply system connections for leveling events
+        if hasattr(self.leveling, 'last_level_up') and self.leveling.last_level_up:
+            user_id, guild_id = self.leveling.last_level_up
+            if user_id == message.author.id and guild_id == message.guild.id:
+                await self._apply_system_connections("leveling", "level_up", {
+                    "user_id": user_id,
+                    "guild_id": guild_id
+                })
+                # Reset after processing
+                self.leveling.last_level_up = None
         
         # 2. AI Chat Channels (if message is in an AI chat channel)
         await self._safe_call(self.chat_channels.handle_message(message), "chat_channels")
@@ -1338,6 +1409,20 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             logger.error(f"Error in mention AI handler: {e}")
             await message.channel.send("[WARNING] Sorry, I'm having trouble processing that right now. Please try again!", suppress_embeds=True)
 
+# Global exception handler for asyncio tasks
+def handle_asyncio_exception(loop, context):
+    """Handle exceptions in asyncio tasks to prevent bot crashes."""
+    exception = context.get('exception')
+    if exception:
+        logger.error(f"Unhandled exception in asyncio task: {type(exception).__name__}: {exception}")
+        logger.debug(f"Asyncio context: {context}")
+    else:
+        logger.error(f"Asyncio error: {context}")
+
+# Set the exception handler
+loop = asyncio.get_event_loop()
+loop.set_exception_handler(handle_asyncio_exception)
+
 # Initialize Bot
 bot = MiroBot()
 
@@ -1725,6 +1810,60 @@ async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: st
         memory_context = "\n\nRELEVANT PAST CONVERSATIONS:\n"
         for i, mem in enumerate(relevant_memories, 1):
             memory_context += f"\n{i}. Similar conversation (similarity: {mem['similarity']:.2f}):\n{mem['document'][:500]}...\n"
+    
+    # Pre-process AI response to fix corrupted responses
+    def preprocess_ai_response(text: str) -> Dict[str, Any]:
+        """Pre-process AI response to handle corrupted JSON and extract valid JSON."""
+        if not text:
+            return {"summary": "I had trouble understanding. Please rephrase."}
+        
+        # Remove stray ?, ??, ? characters at start/end
+        text = text.strip()
+        while text.startswith(('?', '??', '？')):
+            text = text[1:].strip()
+        while text.endswith(('?', '??', '？')):
+            text = text[:-1].strip()
+        
+        # Extract JSON using regex r'(\{.*\}|\[.*\])' with re.DOTALL
+        import re
+        json_match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+            try:
+                # Try to parse JSON directly
+                parsed = json.loads(json_str)
+                # Validate it has the required structure
+                if isinstance(parsed, dict) and "summary" in parsed:
+                    return parsed
+            except json.JSONDecodeError:
+                # Attempt to repair JSON using json_repair if available, else manual fixes
+                try:
+                    # Try to use json_repair if installed
+                    try:
+                        from json_repair import repair_json
+                        repaired = repair_json(json_str)
+                        parsed = json.loads(repaired)
+                        if isinstance(parsed, dict) and "summary" in parsed:
+                            return parsed
+                    except ImportError:
+                        # Manual JSON repair
+                        # Fix common issues like missing quotes, trailing commas
+                        repaired = json_str
+                        # Fix trailing commas before closing braces/brackets
+                        repaired = re.sub(r',\s*([\]}])(?=\s*[}\]])', r'\1', repaired)
+                        # Fix missing quotes around keys
+                        repaired = re.sub(r'([{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1 "\2":', repaired)
+                        # Fix single quotes to double quotes
+                        repaired = repaired.replace("'", '"')
+                        # Try parsing again
+                        parsed = json.loads(repaired)
+                        if isinstance(parsed, dict) and "summary" in parsed:
+                            return parsed
+                except Exception:
+                    pass
+        
+        # Return safe fallback on failure
+        return {"summary": "I had trouble understanding. Please rephrase."}
 
     # ── Resolve Discord <@ID> mentions in the user's text before sending to AI ──
     # When a user types /bot and uses Discord's mention autocomplete, the text arrives
@@ -1779,6 +1918,22 @@ CRITICAL INSTRUCTIONS:
         )
 
     res = await bot.ai.safe_chat(guild_id, user_id, enriched_input, SYSTEM_PROMPT + server_context + memory_context + mention_context)
+    
+    # Pre-process AI response to fix corrupted responses
+    if isinstance(res, dict) and ("summary" in res or "message" in res or "response" in res or "question" in res):
+        # Extract the text content to preprocess
+        text_content = res.get("summary") or res.get("message") or res.get("response") or res.get("question") or ""
+        if text_content:
+            processed = preprocess_ai_response(text_content)
+            # Update the response with processed content
+            res["summary"] = processed.get("summary", text_content)
+            # If we had other fields, preserve them or set defaults
+            if "reasoning" not in res:
+                res["reasoning"] = processed.get("reasoning", "Thinking...")
+            if "walkthrough" not in res:
+                res["walkthrough"] = processed.get("walkthrough", "Planning...")
+            if "actions" not in res:
+                res["actions"] = processed.get("actions", [])
 
     
     reasoning = res.get("reasoning", "Thinking...")
@@ -2426,19 +2581,77 @@ COMMON_MODELS = [
 ]
 
 @config_group.command(name="model", description="Set the default AI model for this server")
-@app_commands.describe(model="AI Model to use (Pick from list or type any OpenRouter model name)")
+@app_commands.describe(model="AI Model to use (Pick from list)")
 async def config_model(it: discord.Interaction, model: str):
     if not it.user.guild_permissions.administrator:
         return await it.response.send_message("[ERROR] Admin only.", ephemeral=True)
+    
+    # Get current active provider
+    ai_config = dm.get_guild_api_key(it.guild.id)
+    active_provider = ai_config.get("provider", "openrouter") if ai_config else "openrouter"
+    
+    # Define model mappings for each provider
+    provider_models = {
+        "openrouter": ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash"],
+        "openai": ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
+        "gemini": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+        "groq": ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
+        "mistral": ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"],
+        "deepseek": ["deepseek-chat", "deepseek-coder"],
+        "anthropic": ["claude-3-5-sonnet-20240620", "claude-3-opus-20240229"],
+        "dashscope": ["qwen-turbo", "qwen-plus", "qwen-max"]
+    }
+    
+    # Get allowed models for current provider
+    allowed_models = provider_models.get(active_provider, provider_models["openrouter"])
+    
+    # Validate that the model is allowed for the current provider
+    if model not in allowed_models:
+        await it.response.send_message(
+            f"[ERROR] Model '{model}' is not supported for provider '{active_provider}'. "
+            f"Allowed models: {', '.join(allowed_models)}", 
+            ephemeral=True
+        )
+        return
+    
     dm.update_guild_data(it.guild.id, "custom_model", model)
     await it.response.send_message(f"[SUCCESS] AI model set to **{model}**.", ephemeral=True)
 
 @config_model.autocomplete('model')
 async def model_autocomplete(interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
-    return [
-        app_commands.Choice(name=m, value=m)
-        for m in COMMON_MODELS if current.lower() in m.lower()
-    ][:25]
+    # Get current active provider for this guild
+    guild_id = interaction.guild.id if interaction.guild else None
+    if guild_id:
+        from data_manager import dm
+        ai_config = dm.get_guild_api_key(guild_id)
+        active_provider = ai_config.get("provider", "openrouter") if ai_config else "openrouter"
+        
+        # Define model mappings for each provider
+        provider_models = {
+            "openrouter": ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash"],
+            "openai": ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
+            "gemini": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+            "groq": ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
+            "mistral": ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"],
+            "deepseek": ["deepseek-chat", "deepseek-coder"],
+            "anthropic": ["claude-3-5-sonnet-20240620", "claude-3-opus-20240229"],
+            "dashscope": ["qwen-turbo", "qwen-plus", "qwen-max"]
+        }
+        
+        # Get allowed models for current provider
+        allowed_models = provider_models.get(active_provider, provider_models["openrouter"])
+        
+        # Filter by current input
+        return [
+            app_commands.Choice(name=m, value=m)
+            for m in allowed_models if current.lower() in m.lower()
+        ][:25]
+    else:
+        # Fallback to common models if no guild
+        return [
+            app_commands.Choice(name=m, value=m)
+            for m in COMMON_MODELS if current.lower() in m.lower()
+        ][:25]
 
 @config_group.command(name="provider", description="Set the active AI provider")
 @app_commands.choices(provider=[
@@ -2455,7 +2668,9 @@ async def config_provider(it: discord.Interaction, provider: str):
     if not it.user.guild_permissions.administrator:
         return await it.response.send_message("[ERROR] Admin only.", ephemeral=True)
     dm.update_guild_data(it.guild.id, "active_provider", provider)
-    await it.response.send_message(f"[SUCCESS] AI provider switched to **{provider}**.", ephemeral=True)
+    # Reset custom_model to provider's default when provider changes
+    dm.update_guild_data(it.guild.id, "custom_model", None)
+    await it.response.send_message(f"[SUCCESS] AI provider switched to **{provider}**. Model reset to default.", ephemeral=True)
 
 @config_group.command(name="key", description="Set your own API key for a specific provider")
 @app_commands.choices(provider=[
@@ -2588,6 +2803,12 @@ async def on_command_error(ctx, error):
     if isinstance(error, discord.HTTPException) and error.status == 429:
         retry_after = int(error.response.headers.get('Retry-After', 5))
         await ctx.send(f"⚠️  Rate limited. Try again in {retry_after}s.", suppress_embeds=True)
+        return
+    
+    # Handle AI-related errors
+    if "AI" in str(type(error)) or "ai" in str(type(error)).lower():
+        logger.error(f"AI error in command: {type(error).__name__}: {error}")
+        await ctx.send("❌ AI service error. Please try again or check your AI configuration.", suppress_embeds=True)
         return
     
     logger.error(f"Unhandled command error: {type(error).__name__}: {error}")
