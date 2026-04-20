@@ -157,7 +157,6 @@ class MiroBot(commands.Bot):
             logger.error(f"Error starting background monitors: {e}")
 
         # Reload persistent data
-        self._reload_scheduled_tasks()
         self._reload_event_listeners()
         self._reload_custom_commands()
         self._reload_conversation_history()
@@ -1860,7 +1859,7 @@ async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: st
     user_id = interaction.user.id
     
     # Retrieve relevant memories for context (Run in executor with timeout to avoid hangs)
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     relevant_memories = []
     try:
         relevant_memories = await asyncio.wait_for(
