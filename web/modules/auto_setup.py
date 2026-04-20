@@ -209,19 +209,19 @@ class RoleSelectButton(discord.ui.Button):
         self.guild_id = guild_id
         self.role_name = role_name
         self.role_id = role_id
-    
+
     async def callback(self, interaction: discord.Interaction):
         guild = interaction.guild
         if not guild:
             await interaction.response.send_message("Error: Guild not found.", ephemeral=True)
             return
-        
+
         role = None
         if self.role_id:
             role = guild.get_role(self.role_id)
         if not role:
             role = discord.utils.get(guild.roles, name=self.role_name)
-        
+
         if role:
             if role in interaction.user.roles:
                 await interaction.user.remove_roles(role)
@@ -231,6 +231,59 @@ class RoleSelectButton(discord.ui.Button):
                 await interaction.response.send_message(f"Added {self.role_name} role!", ephemeral=True)
         else:
             await interaction.response.send_message(f"❌ Role '{self.role_name}' not found.", ephemeral=True)
+
+
+class AutoSetupView(discord.ui.View):
+    """Persistent view for auto-setup buttons in DMs"""
+    def __init__(self, bot, guild_id: int):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.guild_id = guild_id
+
+        # Set dynamic custom_ids for persistent functionality
+        self.children[0].custom_id = f"auto_setup_run_{guild_id}"
+        self.children[1].custom_id = f"auto_setup_skip_{guild_id}"
+
+    @discord.ui.button(label="Run Full Auto-Setup", style=discord.ButtonStyle.success)
+    async def run_setup_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Extract guild_id from custom_id
+        custom_id_parts = interaction.data['custom_id'].split('_')
+        guild_id = int(custom_id_parts[-1])
+
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            await interaction.response.send_message("❌ Guild not found.", ephemeral=True)
+            return
+
+        if interaction.user.id != guild.owner.id:
+            await interaction.response.send_message("❌ Only the server owner can run setup.", ephemeral=True)
+            return
+
+        await interaction.response.send_message("🚀 Running full auto-setup...", ephemeral=True)
+
+        try:
+            await self.bot.auto_setup._run_full_auto_setup(guild, interaction.user)
+        except Exception as e:
+            logger.error(f"Failed to run auto-setup: {e}")
+            await interaction.followup.send("❌ An error occurred during setup. Please try again or contact support.", ephemeral=True)
+
+    @discord.ui.button(label="Skip / Use Defaults", style=discord.ButtonStyle.secondary)
+    async def skip_setup_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Extract guild_id from custom_id
+        custom_id_parts = interaction.data['custom_id'].split('_')
+        guild_id = int(custom_id_parts[-1])
+
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            await interaction.response.send_message("❌ Guild not found.", ephemeral=True)
+            return
+
+        if interaction.user.id != guild.owner.id:
+            await interaction.response.send_message("❌ Only the server owner can skip setup.", ephemeral=True)
+            return
+
+        self.bot.auto_setup._pending_setups[guild.id].state = SetupState.SKIPPED
+        await interaction.response.send_message("✅ Setup skipped. Use `/bot` anytime to create features!", ephemeral=True)
 
 
 class AutoSetup:
@@ -285,57 +338,8 @@ class AutoSetup:
             value="Would you like me to automatically set up 12 features for your server?",
             inline=False
         )
-        
-        view = discord.ui.View()
-        
-        setup_btn = discord.ui.Button(
-            label="Run Full Auto-Setup",
-            style=discord.ButtonStyle.success,
-            custom_id="auto_setup_run"
-        )
-        
-        skip_btn = discord.ui.Button(
-            label="Skip",
-            style=discord.ButtonStyle.secondary,
-            custom_id="auto_setup_skip"
-        )
-        
-        async def setup_callback(interaction: discord.Interaction):
-            if interaction.user.id != owner.id:
-                try:
-                    await interaction.response.send_message("Only the server owner can run setup.", ephemeral=True)
-                except discord.errors.NotFound:
-                    pass
-                return
-            
-            try:
-                await interaction.response.send_message("🚀 Running full auto-setup...", ephemeral=True)
-            except discord.errors.NotFound:
-                return
-            try:
-                await self._run_full_auto_setup(guild, interaction.user)
-            except discord.errors.NotFound:
-                pass
-        
-        async def skip_callback(interaction: discord.Interaction):
-            if interaction.user.id != owner.id:
-                try:
-                    await interaction.response.send_message("Only the server owner can skip.", ephemeral=True)
-                except discord.errors.NotFound:
-                    pass
-                return
-            
-            self._pending_setups[guild.id].state = SetupState.SKIPPED
-            try:
-                await interaction.response.send_message("✅ Setup skipped. Use `/bot` anytime to create features!", ephemeral=True)
-            except discord.errors.NotFound:
-                pass
-        
-        setup_btn.callback = setup_callback
-        skip_btn.callback = skip_callback
-        
-        view.add_item(setup_btn)
-        view.add_item(skip_btn)
+
+        view = AutoSetupView(self.bot, guild.id)
         
         try:
             await owner.send(embed=embed, view=view)
