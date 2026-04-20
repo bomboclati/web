@@ -709,8 +709,21 @@ class ActionHandler:
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    async def _resolve_role(self, guild: discord.Guild, role_id: Any = None, role_name: Any = None) -> Optional[discord.Role]:
-        """Robustly resolve a role by ID or name."""
+    async def _resolve_role(self, guild: discord.Guild, **kwargs) -> Optional[discord.Role]:
+        """Robustly resolve a role by ID or name from kwargs.
+
+        Changes:
+        - Updated to use **kwargs for flexibility in parameter names.
+        - Extracts role_id from 'role_id', 'id', or 'role' (as int).
+        - Extracts role_name from 'role_name' or 'name'.
+        - Logs a warning if neither role_id nor role_name is provided.
+        - Supports various input formats for role identification.
+        """
+        # Extract role_id from possible keys, prioritizing role_id, then id, then role
+        role_id = kwargs.get('role_id') or kwargs.get('id') or kwargs.get('role')
+        # Extract role_name from possible keys, prioritizing role_name, then name
+        role_name = kwargs.get('role_name') or kwargs.get('name')
+
         if role_id:
             try:
                 # Handle both int and string IDs, including mentions
@@ -721,18 +734,28 @@ class ActionHandler:
                 pass
 
         if role_name:
-            name = str(role_name).strip().lower()
+            name = str(role_name).strip()
+            if name == "@everyone":
+                return guild.default_role
+            name_lower = name.lower()
             # Try exact match first
-            role = discord.utils.find(lambda r: r.name.lower() == name, guild.roles)
+            role = discord.utils.find(lambda r: r.name.lower() == name_lower, guild.roles)
             if role: return role
             # Try partial match
             role = discord.utils.find(lambda r: name in r.name.lower(), guild.roles)
             if role: return role
 
+        # Log warning if neither role_id nor role_name was provided
+        if not role_id and not role_name:
+            logger.warning("_resolve_role: no role_id or role_name provided in kwargs")
+
         return None
 
-    async def _resolve_member(self, guild: discord.Guild, user_id: Any = None, username: Any = None) -> Optional[discord.Member]:
-        """Robustly resolve a member by ID or name."""
+    async def _resolve_member(self, guild: discord.Guild, **kwargs) -> Optional[discord.Member]:
+        """Robustly resolve a member by ID or name from kwargs."""
+        user_id = kwargs.get('user_id')
+        username = kwargs.get('username')
+
         if user_id:
             try:
                 uid = int(str(user_id).strip().lstrip("<@!").rstrip(">"))
@@ -1717,1025 +1740,7 @@ class ActionHandler:
         if not role_name:
             return False, None
 
-        role = discord.utils.get(interaction.guild.roles, name=role_name)
-        if not role:
-            return False, None
-
-        try:
-            await role.delete()
-            return True, {"role_name": role_name}
-        except discord.Forbidden:
-            return False, {"error": "Missing permission to delete role"}
-        except Exception as e:
-            logger.error(f"Error deleting role: {e}")
-            return False, None
-
-    async def action_delete_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Deletes a channel from the server."""
-        channel_name = params.get("channel_name") or params.get("name")
-
-        if not channel_name:
-            return False, None
-
-        channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        if not channel:
-            return False, None
-
-        try:
-            await channel.delete()
-            return True, {"channel_name": channel_name}
-        except discord.Forbidden:
-            return False, {"error": "Missing permission to delete channel"}
-        except Exception as e:
-            logger.error(f"Error deleting channel: {e}")
-            return False, None
-
-    async def action_announce(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Makes an announcement in a channel."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        title = params.get("title", "Announcement")
-        content = params.get("content", "")
-        color = params.get("color", "#3498db")
-
-        target_channel = None
-        if channel_name:
-            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        if not target_channel:
-            target_channel = interaction.channel
-
-        embed = discord.Embed(
-            title=title,
-            description=content,
-            color=parse_color(color)
-        )
-
-        try:
-            await target_channel.send(embed=embed)
-            return True, {"channel_id": target_channel.id}
-        except Exception as e:
-            logger.error(f"Error sending announcement: {e}")
-            return False, None
-
-    async def action_poll(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Creates a poll with options."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        question = params.get("question", "Poll")
-        options = params.get("options", [])  # list of option strings
-        duration = params.get("duration", 300)  # seconds
-
-        target_channel = None
-        if channel_name:
-            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        if not target_channel:
-            target_channel = interaction.channel
-
-        if not options:
-            options = ["Yes", "No"]
-
-        options_text = "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(options)])
-        embed = discord.Embed(
-            title=f"? {question}",
-            description=options_text,
-            color=discord.Color.blurple()
-        )
-        embed.set_footer(text=f"Poll ends in {duration//60} minutes")
-
-        try:
-            msg = await target_channel.send(embed=embed)
-            for i in range(len(options)):
-                await msg.add_reaction(f"{i+1}\u20e3")
-            return True, {"message_id": msg.id, "options": options}
-        except Exception as e:
-            logger.error(f"Error creating poll: {e}")
-            return False, None
-
-    async def action_give_points(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Gives economy points to a user."""
-        user_id = params.get("user_id")
-        username = params.get("username")
-        points = params.get("points", 100)
-
-        if not user_id and username:
-            member = discord.utils.get(interaction.guild.members, name=username)
-            if not member:
-                member = discord.utils.get(interaction.guild.members, nick=username)
-            if member:
-                user_id = member.id
-
-        if not user_id:
-            return False, None
-
-        try:
-            economy_sys = getattr(self.bot, 'economy', None)
-            if economy_sys and hasattr(economy_sys, 'add_balance'):
-                economy_sys.add_balance(interaction.guild.id, user_id, points)
-            else:
-                # Fallback: update data manager directly
-                bal = dm.get_guild_data(interaction.guild.id, f"economy_{user_id}", {"coins": 0})
-                bal["coins"] = bal.get("coins", 0) + points
-                dm.update_guild_data(interaction.guild.id, f"economy_{user_id}", bal)
-            return True, {"user_id": user_id, "points": points, "action": "give_points"}
-        except Exception as e:
-            logger.error(f"Error giving points: {e}")
-            return False, None
-
-    async def action_remove_points(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Removes economy points from a user."""
-        user_id = params.get("user_id")
-        username = params.get("username")
-        points = params.get("points", 100)
-
-        if not user_id and username:
-            member = discord.utils.get(interaction.guild.members, name=username)
-            if not member:
-                member = discord.utils.get(interaction.guild.members, nick=username)
-            if member:
-                user_id = member.id
-
-        if not user_id:
-            return False, None
-
-        try:
-            economy_sys = getattr(self.bot, 'economy', None)
-            if economy_sys and hasattr(economy_sys, 'add_balance'):
-                economy_sys.add_balance(interaction.guild.id, user_id, -points)
-            else:
-                bal = dm.get_guild_data(interaction.guild.id, f"economy_{user_id}", {"coins": 0})
-                bal["coins"] = max(0, bal.get("coins", 0) - points)
-                dm.update_guild_data(interaction.guild.id, f"economy_{user_id}", bal)
-            return True, {"user_id": user_id, "points": points, "action": "remove_points"}
-        except Exception as e:
-            logger.error(f"Error removing points: {e}")
-            return False, None
-
-    async def action_delete_prefix_command(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        cmd_name = params.get("cmd_name")
-        if not cmd_name:
-            return False, {"error": "Missing cmd_name"}
-        guild_id = interaction.guild.id
-        commands = dm.get_guild_data(guild_id, "custom_commands", {})
-        if cmd_name in commands:
-            del commands[cmd_name]
-            dm.update_guild_data(guild_id, "custom_commands", commands)
-            return True, {"message": f"Deleted command !{cmd_name}"}
-        return False, {"error": f"Command !{cmd_name} not found"}
-
-    async def action_unpin_message(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        message_id = params.get("message_id")
-        channel_name = params.get("channel_name") or params.get("channel")
-        channel = self._resolve_channel(channel_name, interaction.guild) if channel_name else interaction.channel
-        if not channel:
-            return False, {"error": "Channel not found"}
-        try:
-            msg = await channel.fetch_message(message_id)
-            await msg.unpin()
-            return True, {"message": "Message unpinned"}
-        except Exception as e:
-            return False, {"error": str(e)}
-
-    async def action_extract_online_users(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        status_filter = params.get("status", "online")
-        online_members = [m.display_name for m in interaction.guild.members if str(m.status) == status_filter and not m.bot]
-        return True, {"members": online_members, "count": len(online_members)}
-
-    async def action_send_notification(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        channel_ref = params.get("channel")
-        message = params.get("message", "")
-        channel = self._resolve_channel(channel_ref, interaction.guild) if channel_ref else interaction.channel
-        if not channel:
-            return False, {"error": "Channel not found"}
-        await channel.send(f"🔔 **Notification:** {message}")
-        return True, {"message": "Notification sent"}
-
-    async def action_create_task(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        name = params.get("name")
-        cron = params.get("cron")
-        handler = params.get("handler")
-        self.bot.scheduler.add_ai_task(name, interaction.guild.id, cron, handler, {})
-        return True, {"message": f"Task {name} scheduled"}
-
-    async def action_update_profile(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        user_id = params.get("user_id")
-        field = params.get("field")
-        value = params.get("value")
-        # Simplified profile update for demonstration
-        profiles = dm.get_guild_data(interaction.guild.id, "user_profiles", {})
-        if str(user_id) not in profiles:
-            profiles[str(user_id)] = {}
-        profiles[str(user_id)][field] = value
-        dm.update_guild_data(interaction.guild.id, "user_profiles", profiles)
-        return True, {"message": f"Updated {field} for user {user_id}"}
-
-    async def action_softban_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Bans then immediately unbans a user to clear their messages."""
-        user_id = params.get("user_id")
-        username = params.get("username")
-        days = params.get("delete_messages_days", 7)
-
-        member = await self._resolve_member(interaction.guild, user_id, username)
-        if not member:
-            return False, {"error": "User not found"}
-
-        try:
-            # discord.py 2.0+ uses delete_message_seconds
-            await member.ban(reason="Softban (clear messages)", delete_message_seconds=days * 86400)
-            await interaction.guild.unban(member, reason="Softban completion")
-            return True, None
-        except Exception as e:
-            return False, {"error": str(e)}
-
-    async def action_clear_reactions(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Clears all reactions from a message."""
-        message_id = params.get("message_id")
-        channel_name = params.get("channel")
-        channel = self._resolve_channel(channel_name, interaction.guild) if channel_name else interaction.channel
-        if not channel: return False, {"error": "Channel not found"}
-
-        try:
-            msg = await channel.fetch_message(message_id)
-            await msg.clear_reactions()
-            return True, None
-        except Exception as e:
-            return False, {"error": str(e)}
-
-    async def action_edit_guild(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Edits server settings (name, description, etc.)."""
-        guild = interaction.guild
-        try:
-            edit_kwargs = {}
-            if "name" in params: edit_kwargs["name"] = params["name"]
-            if "description" in params: edit_kwargs["description"] = params["description"]
-
-            if edit_kwargs:
-                await guild.edit(**edit_kwargs)
-            return True, None
-        except Exception as e:
-            return False, {"error": str(e)}
-
-    # --- Server Query Implementation ---
-
-    async def _send_query_result(self, interaction: discord.Interaction, title: str, description: str, fields: List[Dict] = None):
-        embed = discord.Embed(title=title, description=description[:4000], color=discord.Color.blue())
-        if fields:
-            for f in fields[:25]:
-                embed.add_field(name=f["name"], value=f["value"], inline=f.get("inline", True))
-        await interaction.channel.send(embed=embed)
-
-    async def action_query_server_info(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        data = await self.bot.server_query.query_server_info(interaction.guild.id)
-        if "error" in data: return False, data
-
-        fields = [
-            {"name": "Members", "value": f"{data['member_count']} ({data['online_count']} online)"},
-            {"name": "Channels", "value": str(data['channel_count'])},
-            {"name": "Roles", "value": str(data['role_count'])},
-            {"name": "Owner", "value": data['owner']},
-            {"name": "Created", "value": data['created_at'][:10]}
-        ]
-        await self._send_query_result(interaction, f"Server Info: {data['name']}", data.get("description", ""), fields)
-        return True, None
-
-    async def action_query_channels(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        channels = await self.bot.server_query.query_channels(interaction.guild.id, params.get("type"))
-        text = "\n".join([f"• {c['name']} ({c['type']})" for c in channels[:30]])
-        await self._send_query_result(interaction, "Server Channels", text or "No channels found")
-        return True, None
-
-    async def action_query_roles(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        roles = await self.bot.server_query.query_roles(interaction.guild.id)
-        text = "\n".join([f"• {r['name']} (ID: {r['id']})" for r in roles if r['name'] != "@everyone"][:30])
-        await self._send_query_result(interaction, "Server Roles", text or "No roles found")
-        return True, None
-
-    async def action_query_members(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        members = await self.bot.server_query.query_members(interaction.guild.id, params.get("query"), params.get("limit", 20))
-        text = "\n".join([f"• {m['name']} ({m['status']})" for m in members])
-        await self._send_query_result(interaction, "Members Search", text or "No members found")
-        return True, None
-
-    async def action_query_member_details(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        uid = params.get("user_id")
-        if not uid: return False, {"error": "Missing user_id"}
-        details = await self.bot.server_query.query_member_details(interaction.guild.id, int(uid))
-        if not details: return False, {"error": "User not found"}
-
-        fields = [
-            {"name": "Status", "value": details["status"]},
-            {"name": "Top Role", "value": details["top_role"]},
-            {"name": "Joined", "value": details["joined_at"][:10] if details["joined_at"] else "N/A"},
-            {"name": "Roles", "value": ", ".join(details["roles"][:10])}
-        ]
-        await self._send_query_result(interaction, f"User Details: {details['name']}", "", fields)
-        return True, None
-
-    async def action_query_economy_leaderboard(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        lb = await self.bot.server_query.query_economy_leaderboard(interaction.guild.id, params.get("limit", 10))
-        text = "\n".join([f"**{i+1}.** {e['name']} - {e['coins']} coins" for i, e in enumerate(lb)])
-        await self._send_query_result(interaction, "Economy Leaderboard", text or "No data")
-        return True, None
-
-    async def action_query_xp_leaderboard(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        lb = await self.bot.server_query.query_xp_leaderboard(interaction.guild.id, params.get("limit", 10))
-        text = "\n".join([f"**{i+1}.** {e['name']} - Level {e['level']} ({e['xp']} XP)" for i, e in enumerate(lb)])
-        await self._send_query_result(interaction, "Leveling Leaderboard", text or "No data")
-        return True, None
-
-    async def action_query_pending_applications(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        apps = await self.bot.server_query.query_pending_applications(interaction.guild.id)
-        text = "\n".join([f"• {a['username']} (Applied: {a['applied_at']})" for a in apps])
-        await self._send_query_result(interaction, "Pending Staff Applications", text or "No pending applications")
-        return True, None
-
-    async def action_query_active_shifts(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        shifts = await self.bot.server_query.query_active_shifts(interaction.guild.id)
-        text = "\n".join([f"• {s['username']} (Started: {s['start_time']})" for s in shifts])
-        await self._send_query_result(interaction, "Active Staff Shifts", text or "No active shifts")
-        return True, None
-
-    async def action_query_recent_messages(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        cid = params.get("channel_id")
-        if not cid: return False, {"error": "Missing channel_id"}
-        msgs = await self.bot.server_query.query_recent_messages(int(cid), params.get("limit", 10))
-        text = "\n".join([f"**{m['author']}:** {m['content'][:100]}" for m in msgs])
-        await self._send_query_result(interaction, "Recent Messages", text or "No messages found")
-        return True, None
-    async def action_warn_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Warns a user (moderation)."""
-        user_id = params.get("user_id")
-        username = params.get("username")
-        reason = params.get("reason", "Warning issued")
-        guild_id = interaction.guild.id
-
-        if not user_id and username:
-            member = discord.utils.get(interaction.guild.members, name=username) or \
-                     discord.utils.get(interaction.guild.members, nick=username) or \
-                     discord.utils.get(interaction.guild.members, display_name=username)
-            if member:
-                user_id = member.id
-
-        if not user_id:
-            return False, None
-
-        member = interaction.guild.get_member(user_id)
-        if not member:
-            try:
-                member = await interaction.guild.fetch_member(user_id)
-            except discord.NotFound:
-                return False, None
-
-        try:
-            if hasattr(self.bot, 'moderation'):
-                history = self.bot.moderation.get_user_history(guild_id, user_id)
-                history.warnings += 1
-                history.violation_count += 1
-                history.last_violation = time.time()
-                self.bot.moderation.save_user_history(guild_id, user_id, history)
-
-            logger.info("Issued warning to %s in guild %d: %s", member.display_name, guild_id, reason)
-
-            try:
-                embed = discord.Embed(title="⚠️ Warning Issued", color=discord.Color.gold())
-                embed.add_field(name="Server", value=interaction.guild.name)
-                embed.add_field(name="Reason", value=reason)
-                embed.timestamp = dt.datetime.now(dt.timezone.utc)
-                await member.send(embed=embed)
-            except (discord.Forbidden, discord.HTTPException):
-                pass
-
-            return True, {"user_id": user_id, "action": "warn", "reason": reason}
-        except Exception as e:
-            logger.error(f"Error warning user: {e}")
-            return False, None
-
-    async def action_deafen_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Voice deafens a user."""
-        user_id = params.get("user_id")
-        username = params.get("username")
-        reason = params.get("reason", "Deafened via bot")
-
-        if not user_id and username:
-            member = discord.utils.get(interaction.guild.members, name=username)
-            if not member:
-                member = discord.utils.get(interaction.guild.members, nick=username)
-            if member:
-                user_id = member.id
-
-        if not user_id:
-            return False, None
-
-        member = interaction.guild.get_member(user_id)
-        if not member:
-            return False, None
-
-        try:
-            await member.edit(deafen=True, reason=reason)
-            return True, {"user_id": user_id, "action": "deafen"}
-        except Exception as e:
-            logger.error(f"Error deafening user: {e}")
-            return False, None
-
-    async def action_set_nickname(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Sets a user's server nickname."""
-        user_id = params.get("user_id")
-        username = params.get("username")
-        nickname = params.get("nickname", "")
-
-        if not user_id and username:
-            member = discord.utils.get(interaction.guild.members, name=username)
-            if not member:
-                member = discord.utils.get(interaction.guild.members, nick=username)
-            if member:
-                user_id = member.id
-
-        if not user_id:
-            return False, None
-
-        member = interaction.guild.get_member(user_id)
-        if not member:
-            return False, None
-
-        try:
-            await member.edit(nick=nickname)
-            return True, {"user_id": user_id, "nickname": nickname}
-        except Exception as e:
-            logger.error(f"Error setting nickname: {e}")
-            return False, None
-
-    async def action_slowmode(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Sets slowmode for a channel."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        delay = params.get("delay", 5)  # seconds
-
-        target_channel = None
-        if channel_name:
-            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        if not target_channel:
-            target_channel = interaction.channel
-
-        try:
-            await target_channel.edit(slowmode_delay=delay)
-            return True, {"channel_id": target_channel.id, "delay": delay}
-        except Exception as e:
-            logger.error(f"Error setting slowmode: {e}")
-            return False, None
-
-    async def action_lock_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Locks a channel (removes @everyone permission to send."""
-        channel_name = params.get("channel") or params.get("channel_name")
-
-        target_channel = None
-        if channel_name:
-            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        if not target_channel:
-            target_channel = interaction.channel
-
-        everyone_role = interaction.guild.default_role
-
-        try:
-            overwrite = discord.PermissionOverwrite(send_messages=False)
-            await target_channel.set_permissions(everyone_role, overwrite=overwrite)
-            return True, {"channel_id": target_channel.id, "action": "lock"}
-        except Exception as e:
-            logger.error(f"Error locking channel: {e}")
-            return False, None
-
-    async def action_unlock_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Unlocks a channel (restores @everyone permission to send."""
-        channel_name = params.get("channel") or params.get("channel_name")
-
-        target_channel = None
-        if channel_name:
-            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        if not target_channel:
-            target_channel = interaction.channel
-
-        everyone_role = interaction.guild.default_role
-
-        try:
-            overwrite = discord.PermissionOverwrite(send_messages=None)
-            await target_channel.set_permissions(everyone_role, overwrite=overwrite)
-            return True, {"channel_id": target_channel.id, "action": "unlock"}
-        except Exception as e:
-            logger.error(f"Error unlocking channel: {e}")
-            return False, None
-
-    async def action_send_message(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Sends a simple text message to a channel."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        content = params.get("content", "")
-
-        if not content:
-            return False, None
-
-        target_channel = None
-        if channel_name:
-            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        if not target_channel:
-            target_channel = interaction.channel
-
-        try:
-            await target_channel.send(content)
-            return True, {"channel_id": target_channel.id}
-        except Exception as e:
-            logger.error(f"Error sending message: {e}")
-            return False, None
-
-    async def action_reply_message(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Replies to a message."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        message_id = params.get("message_id")
-        content = params.get("content", "")
-
-        if not content:
-            return False, None
-
-        target_channel = None
-        if channel_name:
-            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        if not target_channel:
-            target_channel = interaction.channel
-
-        try:
-            msg = await target_channel.fetch_message(message_id) if message_id else None
-            if msg:
-                await msg.reply(content)
-            else:
-                await target_channel.send(content)
-            return True, {"message_id": message_id}
-        except Exception as e:
-            logger.error(f"Error replying: {e}")
-            return False, None
-
-    async def action_add_reaction(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Adds emoji reaction to a message."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        message_id = params.get("message_id")
-        emoji = params.get("emoji", "")
-
-        if not emoji:
-            return False, None
-
-        target_channel = None
-        if channel_name:
-            target_channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        if not target_channel:
-            target_channel = interaction.channel
-
-        try:
-            msg = await target_channel.fetch_message(message_id) if message_id else None
-            if msg:
-                await msg.add_reaction(emoji)
-            return True, {"emoji": emoji}
-        except Exception as e:
-            logger.error(f"Error adding reaction: {e}")
-            return False, None
-
-    async def action_edit_channel_name(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Renames a channel."""
-        channel_name = params.get("channel_name")
-        new_name = params.get("new_name") or params.get("name")
-
-        if not new_name:
-            return False, None
-
-        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
-        if not channel:
-            return False, None
-
-        try:
-            await channel.edit(name=new_name)
-            return True, {"new_name": new_name}
-        except Exception as e:
-            logger.error(f"Error editing channel: {e}")
-            return False, None
-
-    async def action_edit_role_name(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Renames a role."""
-        role_name = params.get("role_name")
-        new_name = params.get("new_name") or params.get("name")
-
-        if not new_name:
-            return False, None
-
-        role = discord.utils.get(interaction.guild.roles, name=role_name) if role_name else None
-        if not role:
-            return False, None
-
-        try:
-            await role.edit(name=new_name)
-            return True, {"new_name": new_name}
-        except Exception as e:
-            logger.error(f"Error editing role: {e}")
-            return False, None
-
-    async def action_change_role_color(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Changes role color."""
-        role_name = params.get("role_name")
-        color = params.get("color", "#99AAB5")
-
-        if not role_name:
-            return False, None
-
-        role = discord.utils.get(interaction.guild.roles, name=role_name)
-        if not role:
-            return False, None
-
-        try:
-            await role.edit(color=parse_color(color))
-            return True, {"role_name": role_name, "color": color}
-        except Exception as e:
-            logger.error(f"Error changing role color: {e}")
-            return False, None
-
-    async def action_move_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Moves channel to a category."""
-        channel_name = params.get("channel_name")
-        category_name = params.get("category")
-
-        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
-        if not channel:
-            return False, None
-
-        category = discord.utils.get(interaction.guild.categories, name=category_name) if category_name else None
-
-        try:
-            await channel.edit(category=category)
-            return True, {"channel": channel.name}
-        except Exception as e:
-            logger.error(f"Error moving channel: {e}")
-            return False, None
-
-    async def action_clone_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Duplicates a channel."""
-        channel_name = params.get("channel_name")
-
-        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
-        if not channel:
-            return False, None
-
-        try:
-            new_channel = await channel.clone(name=f"{channel.name}-copy")
-            await new_channel.edit(position=channel.position + 1)
-            return True, {"new_channel": new_channel.name}
-        except Exception as e:
-            logger.error(f"Error cloning channel: {e}")
-            return False, None
-
-    async def action_create_thread(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Creates a thread in a channel."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        name = params.get("name", "new-thread")
-        message = params.get("message", "Thread created")
-
-        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
-        if not channel:
-            return False, None
-
-        try:
-            msg = await channel.send(content=message)
-            thread = await msg.create_thread(name=name)
-            return True, {"thread": thread.name}
-        except Exception as e:
-            logger.error(f"Error creating thread: {e}")
-            return False, None
-
-    async def action_pin_message(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Pins a message."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        message_id = params.get("message_id")
-
-        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
-        if not channel:
-            return False, None
-
-        try:
-            msg = await channel.fetch_message(message_id) if message_id else None
-            if msg:
-                await msg.pin()
-            return True, {"message_id": message_id}
-        except Exception as e:
-            logger.error(f"Error pinning message: {e}")
-            return False, None
-
-    async def action_set_topic(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Sets channel topic/description."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        topic = params.get("topic", "")
-
-        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
-        if not channel:
-            return False, None
-
-        try:
-            await channel.edit(topic=topic)
-            return True, {"topic": topic}
-        except Exception as e:
-            logger.error(f"Error setting topic: {e}")
-            return False, None
-
-    async def action_remove_reaction(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Removes emoji reaction from a message."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        message_id = params.get("message_id")
-        emoji = params.get("emoji", "")
-
-        if not emoji:
-            return False, None
-
-        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
-        if not channel:
-            return False, None
-
-        try:
-            msg = await channel.fetch_message(message_id) if message_id else None
-            if msg:
-                await msg.remove_reaction(emoji)
-            return True, {"emoji": emoji}
-        except Exception as e:
-            logger.error(f"Error removing reaction: {e}")
-            return False, None
-
-    async def action_delete_message(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Deletes a specific message."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        message_id = params.get("message_id")
-
-        channel = discord.utils.get(interaction.guild.channels, name=channel_name) if channel_name else interaction.channel
-        if not channel:
-            return False, None
-
-        try:
-            msg = await channel.fetch_message(message_id) if message_id else None
-            if msg:
-                await msg.delete()
-            return True, {"message_id": message_id}
-        except Exception as e:
-            logger.error(f"Error deleting message: {e}")
-            return False, None
-
-    async def action_create_voice_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Creates a voice channel."""
-        name = params.get("name", "Voice Channel")
-        category = params.get("category")
-
-        category_obj = discord.utils.get(interaction.guild.categories, name=category) if category else None
-
-        try:
-            channel = await interaction.guild.create_voice_channel(name, category=category_obj)
-            return True, {"channel": channel.name}
-        except Exception as e:
-            logger.error(f"Error creating voice channel: {e}")
-            return False, None
-
-    async def action_create_text_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Creates a text channel."""
-        name = params.get("name", "text-channel")
-        category = params.get("category")
-
-        category_obj = discord.utils.get(interaction.guild.categories, name=category) if category else None
-
-        try:
-            channel = await interaction.guild.create_text_channel(name, category=category_obj)
-            return True, {"channel": channel.name}
-        except Exception as e:
-            logger.error(f"Error creating text channel: {e}")
-            return False, None
-
-    async def action_create_category_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Creates a category with optional privacy settings."""
-        guild = interaction.guild
-        name = params.get("name", "New Category")
-        private = params.get("private", False)
-        allowed_roles = params.get("allowed_roles", [])
-        denied_roles = params.get("denied_roles", [])
-
-        if private and "@everyone" not in denied_roles:
-            denied_roles = list(denied_roles) + ["@everyone"]
-
-        try:
-            category = await guild.create_category(name)
-
-            if denied_roles or allowed_roles:
-                await self._set_channel_permissions(category, guild, allowed_roles, denied_roles)
-                for child in category.channels:
-                    await self._set_channel_permissions(child, guild, allowed_roles, denied_roles)
-
-            self._track_artifact("category", category.id, category.name)
-            return True, {"category": category.name}
-        except Exception as e:
-            logger.error(f"Error creating category: {e}")
-            return False, None
-
-    async def action_create_category(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Alias for create_category_channel — supports name, private, allowed_roles, denied_roles."""
-        return await self.action_create_category_channel(interaction, params)
-
-    async def action_edit_channel_bitrate(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Sets voice channel bitrate."""
-        channel_name = params.get("channel_name")
-        bitrate = params.get("bitrate", 128000)
-
-        channel = discord.utils.get(interaction.guild.voice_channels, name=channel_name) if channel_name else None
-        if not channel:
-            return False, None
-
-        try:
-            await channel.edit(bitrate=bitrate)
-            return True, {"bitrate": bitrate}
-        except Exception as e:
-            logger.error(f"Error editing bitrate: {e}")
-            return False, None
-
-    async def action_edit_channel_user_limit(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Sets voice channel user limit."""
-        channel_name = params.get("channel_name")
-        user_limit = params.get("user_limit", 0)
-
-        channel = discord.utils.get(interaction.guild.voice_channels, name=channel_name) if channel_name else None
-        if not channel:
-            return False, None
-
-        try:
-            await channel.edit(user_limit=user_limit)
-            return True, {"user_limit": user_limit}
-        except Exception as e:
-            logger.error(f"Error editing user limit: {e}")
-            return False, None
-
-    async def action_follow_announcement_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Follows an announcement channel."""
-        source = params.get("source_channel")
-        target = params.get("target_channel")
-
-        source_channel = discord.utils.get(interaction.guild.channels, name=source) if source else None
-        target_channel = discord.utils.get(interaction.guild.channels, name=target) if target else None
-
-        if not source_channel or not target_channel:
-            return False, None
-
-        try:
-            await source_channel.follow(destination=target_channel)
-            return True, {"source": source, "target": target}
-        except Exception as e:
-            logger.error(f"Error following channel: {e}")
-            return False, None
-
-    async def action_create_scheduled_event(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Creates a scheduled event."""
-        name = params.get("name", "Event")
-        description = params.get("description", "")
-        start_time = params.get("start_time")  # ISO format
-        end_time = params.get("end_time")
-        location = params.get("location", "Voice Channel")
-
-        import datetime
-        try:
-            start = datetime.datetime.fromisoformat(start_time) if start_time else datetime.datetime.utcnow() + datetime.timedelta(hours=1)
-            end = datetime.datetime.fromisoformat(end_time) if end_time else start + datetime.timedelta(hours=1)
-
-            event = await interaction.guild.create_scheduled_event(
-                name=name,
-                description=description,
-                start_time=start,
-                end_time=end,
-                location=location
-            )
-            return True, {"event": event.name}
-        except Exception as e:
-            logger.error(f"Error creating event: {e}")
-            return False, None
-
-    def _resolve_role(self, guild, role_name: str):
-        """Resolve a role by name, handling @everyone specially."""
-        if not role_name:
-            return None
-        if role_name == "@everyone":
-            return guild.default_role
-        role = discord.utils.get(guild.roles, name=role_name)
-        if not role:
-            role = discord.utils.find(lambda r: r.name.lower() == role_name.lower(), guild.roles)
-        return role
-
-    def _resolve_channel(self, channel_ref, guild=None):
-        """Resolve a channel by name or ID from the current guild context."""
-        if not channel_ref:
-            return None
-        g = guild or self._guild_context
-        if not g:
-            return None
-        if isinstance(channel_ref, int):
-            return g.get_channel(channel_ref)
-        try:
-            return g.get_channel(int(channel_ref))
-        except (ValueError, TypeError):
-            pass
-        return discord.utils.get(g.channels, name=str(channel_ref))
-
-    async def _merge_channel_permission(self, channel, role, **kwargs):
-        """Merge permission changes into existing overwrites instead of replacing them."""
-        existing = channel.overwrites_for(role)
-        for perm_name, perm_value in kwargs.items():
-            setattr(existing, perm_name, perm_value)
-        await channel.set_permissions(role, overwrite=existing)
-
-    async def action_allow_channel_permission(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Allows a permission for a role in a channel (merges with existing overwrites)."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        role_name = params.get("role_name")
-        permission = params.get("permission", "send_messages")
-
-        if not channel_name or not role_name:
-            return False, None
-
-        channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        role = self._resolve_role(interaction.guild, role_name)
-
-        if not channel or not role:
-            logger.error(f"allow_channel_permission: channel='{channel_name}' found={channel is not None}, role='{role_name}' found={role is not None}")
-            return False, None
-
-        try:
-            perm_names = {
-                "send_messages": "send_messages",
-                "read_messages": "read_messages",
-                "view_channel": "view_channel",
-                "connect": "connect",
-                "speak": "speak",
-                "mute_members": "mute_members",
-                "deafen_members": "deafen_members",
-                "move_members": "move_members",
-                "manage_messages": "manage_messages",
-                "manage_channels": "manage_channels",
-                "attach_files": "attach_files",
-                "embed_links": "embed_links",
-                "add_reactions": "add_reactions",
-                "use_external_emojis": "use_external_emojis",
-                "manage_permissions": "manage_permissions",
-                "create_instant_invite": "create_instant_invite",
-                "mention_everyone": "mention_everyone",
-                "manage_webhooks": "manage_webhooks",
-                "read_message_history": "read_message_history",
-                "use_application_commands": "use_application_commands",
-                "stream": "stream",
-                "use_voice_activation": "use_voice_activation",
-            }
-            perm_attr = perm_names.get(permission, permission)
-            await self._merge_channel_permission(channel, role, **{perm_attr: True})
-            return True, {"role": role_name, "permission": permission}
-        except Exception as e:
-            logger.error(f"Error allowing permission: {e}")
-            return False, None
-
-    async def action_deny_channel_permission(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Denies a permission for a role in a channel (merges with existing overwrites)."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        role_name = params.get("role_name")
-        permission = params.get("permission", "send_messages")
-
-        if not channel_name or not role_name:
-            return False, None
-
-        channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        role = self._resolve_role(interaction.guild, role_name)
-
-        if not channel or not role:
-            logger.error(f"deny_channel_permission: channel='{channel_name}' found={channel is not None}, role='{role_name}' found={role is not None}")
-            return False, None
-
-        try:
-            perm_names = {
-                "send_messages": "send_messages",
-                "read_messages": "read_messages",
-                "view_channel": "view_channel",
-                "connect": "connect",
-                "speak": "speak",
-                "mute_members": "mute_members",
-                "deafen_members": "deafen_members",
-                "move_members": "move_members",
-                "manage_messages": "manage_messages",
-                "manage_channels": "manage_channels",
-                "attach_files": "attach_files",
-                "embed_links": "embed_links",
-                "add_reactions": "add_reactions",
-                "use_external_emojis": "use_external_emojis",
-                "manage_permissions": "manage_permissions",
-                "read_message_history": "read_message_history",
-            }
-            perm_attr = perm_names.get(permission, permission)
-            await self._merge_channel_permission(channel, role, **{perm_attr: False})
-            return True, {"role": role_name, "permission": permission}
-        except Exception as e:
-            logger.error(f"Error denying permission: {e}")
-            return False, None
-
-    async def action_deny_all_channels_for_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Denies a role from viewing ALL channels (text, voice, and categories) in the server."""
-        role_name = params.get("role_name")
-
-        if not role_name:
-            return False, None
-
-        role = self._resolve_role(interaction.guild, role_name)
+        role = self._resolve_role(interaction.guild, role_name=role_name)
         if not role:
             return False, None
 
@@ -2762,7 +1767,7 @@ class ActionHandler:
         if not role_name:
             return False, None
 
-        role = self._resolve_role(interaction.guild, role_name)
+        role = self._resolve_role(interaction.guild, role_name=role_name)
         if not role:
             return False, None
 
@@ -2791,7 +1796,7 @@ class ActionHandler:
             return False, None
 
         category = discord.utils.get(interaction.guild.categories, name=category_name)
-        role = self._resolve_role(interaction.guild, role_name)
+        role = self._resolve_role(interaction.guild, role_name=role_name)
 
         if not category or not role:
             return False, None
@@ -2848,7 +1853,7 @@ class ActionHandler:
 
             # Allow each specified role
             for role_name in allowed_roles:
-                role = self._resolve_role(guild, role_name)
+                role = self._resolve_role(guild, role_name=role_name)
                 if role:
                     await self._merge_channel_permission(channel, role, view_channel=True, send_messages=True, read_message_history=True)
 
@@ -2911,7 +1916,7 @@ class ActionHandler:
 
             # Allow each specified role on the category
             for role_name in allowed_roles:
-                role = self._resolve_role(guild, role_name)
+                role = self._resolve_role(guild, role_name=role_name)
                 if role:
                     await self._merge_channel_permission(category, role, view_channel=True, send_messages=True, read_message_history=True)
 
@@ -2921,7 +1926,7 @@ class ActionHandler:
                     await self._merge_channel_permission(child, guild.default_role, view_channel=False, send_messages=False)
                     channels_updated += 1
                     for role_name in allowed_roles:
-                        role = self._resolve_role(guild, role_name)
+                        role = self._resolve_role(guild, role_name=role_name)
                         if role:
                             await self._merge_channel_permission(child, role, view_channel=True, send_messages=True, read_message_history=True)
                 except Exception:
@@ -3022,7 +2027,7 @@ class ActionHandler:
             return False, None
 
         channel = discord.utils.get(interaction.guild.channels, name=channel_name)
-        role = self._resolve_role(interaction.guild, role_name)
+        role = self._resolve_role(interaction.guild, role_name=role_name)
 
         if not channel or not role:
             return False, None
@@ -3320,7 +2325,7 @@ class ActionHandler:
         user_id = params.get("user_id")
         username = params.get("username")
         channel_name = params.get("channel") or params.get("channel_name")
-        member = await self._resolve_member(interaction.guild, user_id, username)
+        member = await self._resolve_member(interaction.guild, user_id=user_id, username=username)
         if not member:
             return False, {"error": "Member not found"}
         channel = discord.utils.get(interaction.guild.voice_channels, name=channel_name) if channel_name else None
@@ -3338,7 +2343,7 @@ class ActionHandler:
         """Disconnects a member from voice."""
         user_id = params.get("user_id")
         username = params.get("username")
-        member = await self._resolve_member(interaction.guild, user_id, username)
+        member = await self._resolve_member(interaction.guild, user_id=user_id, username=username)
         if not member:
             return False, {"error": "Member not found"}
         try:
@@ -3494,7 +2499,7 @@ class ActionHandler:
         user_id = params.get("user_id")
         username = params.get("username")
         message = params.get("message", "Staff wants to speak with you.")
-        member = await self._resolve_member(interaction.guild, user_id, username)
+        member = await self._resolve_member(interaction.guild, user_id=user_id, username=username)
         if not member:
             return False, {"error": "Member not found"}
         modmail_ch_id = dm.get_guild_data(interaction.guild.id, "modmail_channel")
