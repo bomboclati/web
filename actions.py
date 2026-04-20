@@ -3239,6 +3239,9 @@ class ActionHandler:
         mentionable = params.get("mentionable", False)
 
         perm_params = params.get("permissions", {})
+        # Compatibility mapping
+        if "use_slash_commands" in perm_params:
+            perm_params["use_application_commands"] = perm_params.pop("use_slash_commands")
         permissions = discord.Permissions(
             view_channel=perm_params.get("view_channel", True),
             send_messages=perm_params.get("send_messages", True),

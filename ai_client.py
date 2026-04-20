@@ -819,6 +819,9 @@ BE SPECIFIC IN WALKTHROUGH:
 - Name exact category: "Main", "Voice Channels"
 - List each step number: "Step 1: Check #general exists"
 
+PERMISSIONS NAMING:
+When specifying permissions for roles or channels, always use "use_application_commands" instead of "use_slash_commands".
+
 HOW TO MAKE A CHANNEL OR CATEGORY PRIVATE (CRITICAL):
 "Private" means hidden from @everyone - only specific roles can see it.
 The key permission is "view_channel" - denying it hides the channel completely.
