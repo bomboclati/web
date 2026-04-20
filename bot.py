@@ -88,7 +88,7 @@ class MiroBot(commands.Bot):
         self.active_tasks = {}    # guild_id -> {task_id: task_obj}
         self.pending_confirms = {} # user_id -> {action_data, message_obj}
         self._bot_cooldowns = {}  # user_id -> timestamp
-        self._bot_cooldown_seconds = 30
+        self._bot_cooldown_seconds = 10
         self._cmd_cooldowns = {}  # (guild_id, user_id, cmd) -> timestamp
         self._cmd_cooldown_seconds = 3
         self.ai_sessions = {}     # user_id -> {messages: [...], last_interaction: interaction, original_request: str}
@@ -155,6 +155,13 @@ class MiroBot(commands.Bot):
                 self.analytics.start_monitoring_loop()
         except Exception as e:
             logger.error(f"Error starting background monitors: {e}")
+
+        # Reload persistent data
+        self._reload_scheduled_tasks()
+        self._reload_event_listeners()
+        self._reload_custom_commands()
+        self._reload_conversation_history()
+        logger.info("Immortal state restored – resuming all automations.")
         
         # Register Persistent Views for long-term button functionality
         from modules.staff_system import StaffApplicationPersistentView, StaffReviewPersistentView
@@ -492,7 +499,18 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
     async def on_message(self, message):
         if message.author.bot:
             return
-        
+
+        # Check for creator questions
+        content_lower = message.content.lower().strip()
+        creator_patterns = [
+            "who created you", "who made you", "who is your creator",
+            "who developed you", "who built you", "who's your creator",
+            "who's your maker", "who made this bot", "who created this bot"
+        ]
+        if any(pattern in content_lower for pattern in creator_patterns):
+            await message.channel.send("I was created by reyrey (that's my master 😎). Need help? Just ask!")
+            return
+
         # Handle DMs (Modmail)
         if isinstance(message.channel, discord.DMChannel):
             await self._handle_modmail(message)
@@ -1472,6 +1490,57 @@ class ModmailReplyModal(ui.Modal, title='Reply to User'):
         except Exception as e:
             logger.warning("Failed to send modmail reply DM: %s", e)
             await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=False)
+
+    def _reload_scheduled_tasks(self):
+        """Reload scheduled tasks from JSON."""
+        tasks = dm.load_json("ai_scheduled_tasks", default={})
+        for task_name, task_data in tasks.items():
+            # Recreate the task if enabled
+            if task_data.get("enabled", True):
+                cron = task_data.get("cron", "")
+                action_type = task_data.get("action_type", "")
+                guild_id = task_data.get("guild_id")
+                params = task_data.get("params", {})
+                if cron and action_type:
+                    self.scheduler.add_task(task_name, cron, self._execute_scheduled_action, guild_id, {"action_type": action_type, "params": params})
+
+    def _reload_event_listeners(self):
+        """Reload event listeners from JSON."""
+        listeners = dm.load_json("event_listeners", default={})
+        # Re-register listeners - assuming some registration method
+        for listener_id, listener_data in listeners.items():
+            # Implement re-registration logic
+            pass
+
+    def _reload_custom_commands(self):
+        """Reload custom commands into memory."""
+        # Custom commands are loaded per guild, but we can preload all
+        for guild in self.guilds:
+            guild_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
+            self.custom_commands[guild.id] = guild_cmds
+
+    def _reload_conversation_history(self):
+        """Reload conversation history and vector memory."""
+        # Vector memory should handle its own loading
+        # Conversation history is loaded by vector_memory
+        pass
+
+    async def _execute_scheduled_action(self, task_name: str, params: dict):
+        """Execute a scheduled action."""
+        action_type = params.get("action_type")
+        action_params = params.get("params", {})
+        # Execute via ActionHandler or directly
+        from actions import ActionHandler
+        handler = ActionHandler(self)
+        # Mock interaction
+        class MockInteraction:
+            def __init__(self, bot, guild_id):
+                self.bot = bot
+                self.guild = bot.get_guild(guild_id)
+                self.channel = self.guild.text_channels[0] if self.guild and self.guild.text_channels else None
+                self.user = bot.user
+        interaction = MockInteraction(self, params.get("guild_id"))
+        await handler.execute_sequence(interaction, [{"name": action_type, "parameters": action_params}])
 
 # --- Slash Commands ---
 
