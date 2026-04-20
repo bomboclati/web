@@ -1686,7 +1686,7 @@ async def gather_server_snapshot(bot, interaction: discord.Interaction, mentione
         "send_messages": permissions.send_messages,
         "read_messages": permissions.read_messages,
         "view_channel": permissions.view_channel,
-        "use_slash_commands": permissions.use_slash_commands,
+        "use_application_commands": permissions.use_application_commands,
         "embed_links": permissions.embed_links,
         "attach_files": permissions.attach_files,
         "mention_everyone": permissions.mention_everyone,
