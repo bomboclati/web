@@ -348,6 +348,8 @@ class ActionHandler:
 
                     self._record_failure(guild_id, name, error_msg)
 
+                    await interaction.followup.send(error_msg, ephemeral=True)
+
                     if auto_rollback and self._action_log:
                         rollback_results = await self._rollback_sequence(interaction)
                         return {
@@ -373,6 +375,8 @@ class ActionHandler:
                 results.append((name, False))
 
                 self._record_failure(guild_id, name, error_msg)
+
+                await interaction.followup.send(error_msg, ephemeral=True)
 
                 if auto_rollback and self._action_log:
                     rollback_results = await self._rollback_sequence(interaction)
@@ -2243,23 +2247,48 @@ class ActionHandler:
 
     async def action_delete_channel(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Deletes a channel from the server."""
-        channel_name = params.get("channel_name") or params.get("name")
+        guild = interaction.guild
 
-        if not channel_name:
-            return False, None
+        if not guild.me.guild_permissions.manage_channels:
+            return False, {"error": "Bot lacks manage_channels permission"}
 
-        channel = discord.utils.get(interaction.guild.channels, name=channel_name)
+        # Get parameters, accepting alternatives
+        channel_name = self._get_param(params, "channel_name", "channel_mention", "name", "channel")
+        channel_id = self._get_param(params, "channel_id", "id")
+
+        channel = None
+
+        # Resolve by ID if provided
+        if channel_id:
+            try:
+                cid = int(str(channel_id).strip().lstrip("<#").rstrip(">"))
+                channel = guild.get_channel(cid)
+            except (ValueError, TypeError):
+                pass
+
+        # If not resolved by ID, try by name
+        if not channel and channel_name:
+            name = str(channel_name).strip().lstrip("#")  # Strip leading #
+
+            # Exact match first
+            channel = discord.utils.get(guild.channels, name=name)
+            if not channel:
+                # Fuzzy match: case-insensitive partial
+                name_lower = name.lower()
+                channel = discord.utils.find(lambda c: name_lower in c.name.lower(), guild.channels)
+
         if not channel:
-            return False, None
+            error_name = channel_name or channel_id or "unknown"
+            return False, {"error": f"Channel '{error_name}' not found"}
 
         try:
             await channel.delete()
-            return True, {"channel_name": channel_name}
+            return True, {"channel_id": channel.id, "channel_name": channel.name}
         except discord.Forbidden:
             return False, {"error": "Missing permission to delete channel"}
         except Exception as e:
             logger.error(f"Error deleting channel: {e}")
-            return False, None
+            return False, {"error": f"Failed to delete channel: {e}"}
 
     async def action_announce(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Makes an announcement in a channel."""
