@@ -318,23 +318,55 @@ class ActionHandler:
 
             if name not in self.ALLOWED_ACTIONS:
                 logger.warning("Blocked disallowed action: %s", name)
+                error_msg = f"Action not allowed: {name}"
                 results.append((name, False))
-                return {"results": results, "rolled_back": [], "failed_at": i, "failed_action": name, "error": f"Action not allowed: {name}", "success": False}
+                self._record_failure(guild_id, name, error_msg)
+                return {"results": results, "rolled_back": [], "failed_at": i, "failed_action": name, "error": error_msg, "success": False}
 
             try:
                 success, undo_data = await self.dispatch(interaction, name, params)
-                results.append((name, success))
 
-                if success and undo_data:
-                    self._action_log.append({
-                        "action": name,
-                        "undo_data": undo_data,
-                        "guild_id": guild_id,
-                        "user_id": user_id,
-                        "timestamp": time.time()
-                    })
-                elif success is False:
-                    raise Exception(f"Action returned failure: {name}")
+                if success:
+                    results.append((name, success))
+
+                    if undo_data:
+                        self._action_log.append({
+                            "action": name,
+                            "undo_data": undo_data,
+                            "guild_id": guild_id,
+                            "user_id": user_id,
+                            "timestamp": time.time()
+                        })
+                else:
+                    # Failure
+                    if undo_data and isinstance(undo_data, dict) and "error" in undo_data:
+                        error_msg = undo_data["error"]
+                    else:
+                        error_msg = f"Action returned failure: {name}"
+                    logger.error("Action Error (%s): %s", name, error_msg)
+                    results.append((name, False))
+
+                    self._record_failure(guild_id, name, error_msg)
+
+                    if auto_rollback and self._action_log:
+                        rollback_results = await self._rollback_sequence(interaction)
+                        return {
+                            "results": results,
+                            "rolled_back": rollback_results,
+                            "failed_at": i,
+                            "failed_action": name,
+                            "error": error_msg,
+                            "success": False
+                        }
+                    else:
+                        return {
+                            "results": results,
+                            "rolled_back": [],
+                            "failed_at": i,
+                            "failed_action": name,
+                            "error": error_msg,
+                            "success": False
+                        }
             except Exception as e:
                 error_msg = str(e)
                 logger.error("Action Error (%s): %s", name, error_msg)
