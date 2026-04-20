@@ -339,10 +339,33 @@ class AutoSetup:
             inline=False
         )
 
+        # Configuration Guide Embed
+        config_embed = discord.Embed(
+            title=":gear: Configuration Guide",
+            description="Use these commands to configure me for your server:",
+            color=discord.Color.green()
+        )
+        config_embed.add_field(
+            name="/config provider <name>",
+            value="Switch AI provider (e.g., openrouter, openai)",
+            inline=False
+        )
+        config_embed.add_field(
+            name="/config model <model>",
+            value="Set model (depends on provider, e.g., gpt-4)",
+            inline=False
+        )
+        config_embed.add_field(
+            name="/config key <provider> <api_key>",
+            value="Set API key for the provider",
+            inline=False
+        )
+        config_embed.set_footer(text="Example: /config provider openrouter")
+
         view = AutoSetupView(self.bot, guild.id)
-        
+
         try:
-            await owner.send(embed=embed, view=view)
+            await owner.send(embeds=[embed, config_embed], view=view)
             logger.info(f"Sent welcome DM to {owner} for guild {guild.id}")
         except Exception as e:
             logger.warning(f"Failed to send welcome DM to {owner} (DMs likely closed): {e}. Falling back to server channel.")

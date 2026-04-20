@@ -1003,6 +1003,32 @@ class ActionHandler:
         dm.update_guild_data(guild_id, "custom_commands", cmds)
         return True, {"action": "delete_prefix_command", "cmd_name": cmd_name, "previous_code": existing}
 
+    async def action_edit_prefix_command(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Edits a custom '!' command."""
+        guild_id = interaction.guild.id
+        cmd_name = params.get("name")
+        new_code = params.get("code")
+
+        cmds = dm.get_guild_data(guild_id, "custom_commands", {})
+        if cmd_name not in cmds:
+            return False, {"error": f"Command '{cmd_name}' not found"}
+        existing = cmds[cmd_name]
+        cmds[cmd_name] = new_code
+        dm.update_guild_data(guild_id, "custom_commands", cmds)
+        return True, {"action": "edit_prefix_command", "cmd_name": cmd_name, "previous_code": existing, "new_code": new_code}
+
+    async def action_delete_prefix_command(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Deletes a custom '!' command."""
+        guild_id = interaction.guild.id
+        cmd_name = params.get("name")
+
+        cmds = dm.get_guild_data(guild_id, "custom_commands", {})
+        if cmd_name not in cmds:
+            return False, {"error": f"Command '{cmd_name}' not found"}
+        existing = cmds.pop(cmd_name)
+        dm.update_guild_data(guild_id, "custom_commands", cmds)
+        return True, {"action": "create_prefix_command", "cmd_name": cmd_name, "code": existing}
+
     async def action_send_embed(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         channel_name = params.get("channel")
         title = params.get("title")
@@ -1426,6 +1452,27 @@ class ActionHandler:
         from modules.economy import Economy
         system = Economy(self.bot)
         result = await system.setup(interaction, params)
+
+        # Send help embed after setup
+        guild = interaction.guild
+        economy_channel = discord.utils.get(guild.text_channels, name="economy")
+        if economy_channel:
+            embed = discord.Embed(
+                title="💰 Economy System Activated!",
+                description="Your economy system is now active! Here are the available commands:",
+                color=discord.Color.gold()
+            )
+            embed.add_field(name="!balance", value="Check your coin balance", inline=True)
+            embed.add_field(name="!daily", value="Claim daily coins", inline=True)
+            embed.add_field(name="!shop", value="Browse the shop", inline=True)
+            embed.add_field(name="!buy <item>", value="Purchase items", inline=True)
+            embed.add_field(name="!help economy", value="Get detailed help", inline=True)
+            embed.set_footer(text="Use !help for all commands")
+            try:
+                await economy_channel.send(embed=embed)
+            except Exception as e:
+                logger.error(f"Failed to send economy help embed: {e}")
+
         return bool(result) if result is not None else True, {"action": "undo_economy", "guild_id": interaction.guild.id}
 
     async def action_setup_trigger_role(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:

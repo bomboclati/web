@@ -240,13 +240,15 @@ class Economy:
         custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
         
         custom_cmds["daily"] = json.dumps({
-            "command_type": "economy_daily"
+            "command_type": "economy_daily",
+            "type": "system"
         })
-        
+
         custom_cmds["balance"] = json.dumps({
-            "command_type": "economy_balance"
+            "command_type": "economy_balance",
+            "type": "system"
         })
-        
+
         custom_cmds["help economy"] = json.dumps({
             "command_type": "help_embed",
             "title": "Economy System Help",
@@ -258,25 +260,28 @@ class Economy:
                 {"name": "!help economy", "value": "Show this help message.", "inline": False},
                 {"name": "!challenge", "value": "View today's daily challenge.", "inline": False},
                 {"name": "!achievements", "value": "View your economy achievements.", "inline": False}
-            ]
+            ],
+            "type": "system"
         })
-        
+
         custom_cmds["challenge"] = json.dumps({
             "command_type": "help_embed",
             "title": "Daily Challenge",
             "description": "Complete daily challenges to earn bonus coins!",
             "fields": [
                 {"name": "!challenge", "value": "View today's challenge progress.", "inline": False}
-            ]
+            ],
+            "type": "system"
         })
-        
+
         custom_cmds["achievements"] = json.dumps({
             "command_type": "help_embed",
             "title": "Economy Achievements",
             "description": "Earn achievements for economy activities!",
             "fields": [
                 {"name": "!achievements", "value": "View your achievements.", "inline": False}
-            ]
+            ],
+            "type": "system"
         })
         
         custom_cmds["help"] = json.dumps({

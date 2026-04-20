@@ -127,6 +127,26 @@ class MiroBot(commands.Bot):
         self.analytics = setup_analytics(self)
         self.verification = Verification(self)
 
+    async def log_slash_command(self, interaction: discord.Interaction, command_name: str, parameters: dict, success: bool, error_msg: str = ""):
+        """Log slash command usage to bot-logs channel and file."""
+        guild = interaction.guild
+        user = interaction.user
+        log_msg = f"[{interaction.created_at.strftime('%Y-%m-%d %H:%M:%S')}] {user} ({user.id}) in {guild.name if guild else 'DM'} used /{command_name} with params: {parameters} - {'SUCCESS' if success else f'FAILED: {error_msg}'}"
+
+        # Log to file
+        logger.info(log_msg)
+
+        # Log to bot-logs channel if exists
+        if guild:
+            log_ch_id = dm.get_guild_data(guild.id, "log_channel")
+            if log_ch_id:
+                log_ch = guild.get_channel(log_ch_id)
+                if log_ch and log_ch.permissions_for(guild.me).send_messages:
+                    try:
+                        await log_ch.send(f"🔧 {log_msg}")
+                    except Exception as e:
+                        logger.error(f"Failed to send log to channel: {e}")
+
     async def get_dynamic_prefix(self, bot, message):
         if not message.guild:
             return "!"
@@ -1309,6 +1329,29 @@ class AIReplyModal(ui.Modal, title='Reply to AI'):
         )
         self.add_item(self.answer)
 
+class ConfirmationView(discord.ui.View):
+    def __init__(self, user_id: int, callback_yes, callback_no=None, timeout=30.0):
+        super().__init__(timeout=timeout)
+        self.user_id = user_id
+        self.callback_yes = callback_yes
+        self.callback_no = callback_no
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id == self.user_id
+
+    @discord.ui.button(label="Yes", style=discord.ButtonStyle.danger, emoji="?")
+    async def yes_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.callback_yes(interaction)
+        self.stop()
+
+    @discord.ui.button(label="No", style=discord.ButtonStyle.secondary, emoji="?")
+    async def no_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.callback_no:
+            await self.callback_no(interaction)
+        else:
+            await interaction.response.send_message("Cancelled.", ephemeral=True)
+        self.stop()
+
 class ModmailReplyModal(ui.Modal, title='Reply to User'):
     """Modal for staff to reply to modmail."""
     def __init__(self, bot, user, guild_id):
@@ -1353,9 +1396,32 @@ async def slash_bot(interaction: discord.Interaction, text: str):
     """The main AI portal with multi-step conversation support."""
     if not interaction.user.guild_permissions.administrator:
         try:
-            await interaction.response.send_message("Only Administrators can use AI commands.", ephemeral=False)
+            await interaction.response.send_message("Only Administrators can use AI commands.", ephemeral=True)
         except discord.errors.NotFound:
             pass
+        await bot.log_slash_command(interaction, "bot", {"text": text}, False, "Permission denied")
+        return
+
+    now = dt.datetime.now().timestamp()
+    last_use = bot._bot_cooldowns.get(interaction.user.id, 0)
+    remaining = bot._bot_cooldown_seconds - (now - last_use)
+    if remaining > 0:
+        try:
+            await interaction.response.send_message(
+                f"Please wait {int(remaining)}s before using /bot again.",
+                ephemeral=True
+            )
+        except discord.errors.NotFound:
+            pass
+        await bot.log_slash_command(interaction, "bot", {"text": text}, False, "Cooldown active")
+        return
+    bot._bot_cooldowns[interaction.user.id] = now
+
+    try:
+        # Defer publicly so everyone can see the bot is thinking
+        await interaction.response.defer(ephemeral=False)
+    except discord.errors.NotFound:
+        await bot.log_slash_command(interaction, "bot", {"text": text}, False, "Defer failed")
         return
 
     now = dt.datetime.now().timestamp()
@@ -1386,7 +1452,9 @@ async def slash_bot(interaction: discord.Interaction, text: str):
     
     try:
         await _process_ai_turn(bot, interaction, text, thinking_msg)
+        await bot.log_slash_command(interaction, "bot", {"text": text}, True)
     except discord.errors.NotFound:
+        await bot.log_slash_command(interaction, "bot", {"text": text}, False, "NotFound")
         pass
     except Exception as e:
         logger.error(f"Error in /bot command for user {interaction.user.id}: {e}", exc_info=True)
@@ -1402,6 +1470,7 @@ async def slash_bot(interaction: discord.Interaction, text: str):
             await thinking_msg.edit(content=f"❌ **AI Error:** {err_text}\n*Tip: Use /config key to set your API key, or /config provider to switch provider.*")
         except discord.errors.NotFound:
             pass
+        await bot.log_slash_command(interaction, "bot", {"text": text}, False, err_text)
         return
 
 async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: str, thinking_msg=None):
@@ -1410,7 +1479,10 @@ async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: st
     user_id = interaction.user.id
     
     # Retrieve relevant memories for context (Run in executor with timeout to avoid hangs)
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.get_event_loop()
     relevant_memories = []
     try:
         relevant_memories = await asyncio.wait_for(
@@ -2039,9 +2111,40 @@ async def list_cmd(interaction: discord.Interaction):
 async def undo_cmd(interaction: discord.Interaction, count: int = 1):
     if not interaction.user.guild_permissions.administrator:
         try:
-            await interaction.response.send_message("Admin only.", ephemeral=False)
+            await interaction.response.send_message("Admin only.", ephemeral=True)
         except discord.errors.NotFound:
             pass
+        await bot.log_slash_command(interaction, "undo", {"count": count}, False, "Permission denied")
+        return
+
+    if count < 1 or count > 10:
+        try:
+            await interaction.response.send_message("Count must be between 1 and 10.", ephemeral=True)
+        except discord.errors.NotFound:
+            pass
+        await bot.log_slash_command(interaction, "undo", {"count": count}, False, "Invalid count")
+        return
+
+    # Confirmation for destructive action
+    async def do_undo(interaction_confirm):
+        try:
+            await interaction_confirm.response.defer(ephemeral=False)
+        except discord.errors.NotFound:
+            return
+
+        from actions import ActionHandler
+        handler = ActionHandler(bot)
+        results = await handler.undo_last_actions(interaction_confirm, count)
+
+        summary = "\n".join([f"{'?' if s else '?'} {n}" for n, s in results])
+        try:
+            await interaction_confirm.followup.send(f"**Undo Summary:**\n{summary}", ephemeral=False)
+            await bot.log_slash_command(interaction, "undo", {"count": count}, True)
+        except discord.errors.NotFound:
+            pass
+
+    view = ConfirmationView(interaction.user.id, do_undo)
+    await interaction.response.send_message(f"Are you sure you want to undo the last {count} action(s)? This cannot be undone.", view=view, ephemeral=True)
         return
     
     if count < 1 or count > 10:
