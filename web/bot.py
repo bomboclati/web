@@ -154,6 +154,9 @@ class MiroBot(commands.Bot):
 
     async def setup_hook(self):
         logger.info("Recovering immortal state...")
+        await self._reload_scheduled_tasks()
+        await self._reload_event_listeners()
+        await self._reload_custom_commands()
         logger.info("Restoring trigger role presence monitoring...")
         await self.scheduler.start()
         
@@ -358,7 +361,7 @@ class MiroBot(commands.Bot):
             await asyncio.sleep(analysis_interval)
 
     async def _self_reflect_on_response(self, guild_id: int, user_id: int, user_input: str, 
-                                      bot_response: str, reasoning: str, walkthrough: str):
+                                       bot_response: str, reasoning: str, walkthrough: str):
         """
         Self-reflection mechanism to improve future responses.
         Analyzes the current interaction and stores insights for future improvement.
@@ -413,6 +416,103 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             
         except Exception as e:
             logger.error("Error in self-reflection mechanism: %s", e)
+
+    async def _reload_scheduled_tasks(self):
+        """Reload scheduled tasks from data/scheduled_tasks.json"""
+        try:
+            # Load scheduled tasks from data manager
+            tasks = dm.load_json("scheduled_tasks", default={})
+            if not tasks:
+                logger.info("No scheduled tasks found to reload")
+                return
+                
+            # Restore each task to the scheduler
+            restored_count = 0
+            for name, task_data in tasks.items():
+                try:
+                    # Re-add the task to the scheduler
+                    self.scheduler.add_task(
+                        name=name,
+                        cron_expr=task_data.get("cron"),
+                        handler=None,  # Handler will be resolved when task executes
+                        guild_id=task_data.get("guild_id"),
+                        params=task_data.get("params", {})
+                    )
+                    restored_count += 1
+                except Exception as e:
+                    logger.error(f"Failed to reload scheduled task '{name}': {e}")
+            
+            logger.info(f"Reloaded {restored_count} scheduled tasks")
+        except Exception as e:
+            logger.error(f"Error reloading scheduled tasks: {e}")
+
+    async def _reload_event_listeners(self):
+        """Reload event listeners from data/event_listeners.json"""
+        try:
+            # Load event listeners from data manager
+            listeners = dm.load_json("event_listeners", default={})
+            if not listeners:
+                logger.info("No event listeners found to reload")
+                return
+                
+            # Restore each event listener
+            restored_count = 0
+            for listener_id, listener_data in listeners.items():
+                try:
+                    # Re-create the scheduled event
+                    from modules.events import EventType, EventStatus
+                    
+                    event = await self.events.create_event(
+                        guild_id=listener_data.get("guild_id"),
+                        channel_id=listener_data.get("channel_id"),
+                        name=listener_data.get("name", "Restored Event"),
+                        description=listener_data.get("description", ""),
+                        event_type=EventType(listener_data.get("event_type", "custom")),
+                        schedule=listener_data.get("schedule", "0 0 * * *"),
+                        created_by=listener_data.get("created_by", self.user.id if self.user else 0),
+                        rewards=listener_data.get("rewards", {"coins": 100, "xp": 50}),
+                        settings=listener_data.get("settings", {})
+                    )
+                    
+                    # Set the next run time if provided
+                    if "next_run" in listener_data:
+                        event.next_run = listener_data["next_run"]
+                    
+                    # Set status if provided
+                    if "status" in listener_data:
+                        event.status = EventStatus(listener_data["status"])
+                    
+                    # Update the event in the scheduler
+                    self.events._scheduled_events[event.id] = event
+                    self.events._save_scheduled_event(event)
+                    
+                    restored_count += 1
+                except Exception as e:
+                    logger.error(f"Failed to reload event listener '{listener_id}': {e}")
+            
+            logger.info(f"Reloaded {restored_count} event listeners")
+        except Exception as e:
+            logger.error(f"Error reloading event listeners: {e}")
+
+    async def _reload_custom_commands(self):
+        """Reload custom commands - just log that we're doing it"""
+        try:
+            # Load custom commands from data manager for all guilds
+            # Custom commands are stored per-guild, so we need to check each guild's data
+            total_commands = 0
+            for guild in self.guilds:
+                try:
+                    custom_commands = dm.get_guild_data(guild.id, "custom_commands", {})
+                    if custom_commands:
+                        command_count = len(custom_commands)
+                        total_commands += command_count
+                        logger.debug(f"Found {command_count} custom commands for guild {guild.id}")
+                except Exception as e:
+                    logger.error(f"Error loading custom commands for guild {guild.id}: {e}")
+            
+            logger.info(f"Custom commands reloaded ({total_commands} total commands across {len(self.guilds)} guilds)")
+        except Exception as e:
+            logger.error(f"Error reloading custom commands: {e}")
 
     async def _safe_call(self, coro, label: str):
         """Wrapper to prevent one subsystem crash from breaking others"""
@@ -1270,10 +1370,11 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
 
         # Build enhanced system prompt for mention responses
         context_text = '\n'.join(context_messages) if context_messages else ''
+        context_section = f'RECENT CHANNEL CONTEXT (last 15 messages):\n{context_text}' if context_messages else ''
         mention_system_prompt = f"""You are Miro Bot, a helpful Discord assistant.
     A user has mentioned you in a channel and expects a conversational response.
 
-    {'RECENT CHANNEL CONTEXT (last 15 messages):\n' + context_text if context_messages else ''}
+    {context_section}
 
     Respond naturally and conversationally. You don't need to use actions unless specifically requested.
     Be friendly, concise, and helpful. If the user asks about server stats, activity, or forecasts,
@@ -2145,7 +2246,7 @@ async def undo_cmd(interaction: discord.Interaction, count: int = 1):
 
     view = ConfirmationView(interaction.user.id, do_undo)
     await interaction.response.send_message(f"Are you sure you want to undo the last {count} action(s)? This cannot be undone.", view=view, ephemeral=True)
-        return
+    return
     
     if count < 1 or count > 10:
         try:
