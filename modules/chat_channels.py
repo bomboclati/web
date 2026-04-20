@@ -290,7 +290,9 @@ Ensure no trailing commas, comments, or text outside JSON. Lines under 1500 char
             if len(summary) > 2000:
                 summary = summary[:1997] + "..."
 
-            return await message.channel.send(summary, suppress_embeds=True)
+            # Suppress embeds only if no actions were executed (pure chat)
+            suppress_embeds = len(actions) == 0
+            return await message.channel.send(summary, suppress_embeds=suppress_embeds)
             
         except Exception as e:
             logger.error(f"AI chat error: {e}")
