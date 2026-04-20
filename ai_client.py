@@ -736,6 +736,9 @@ CRITICAL: You will receive a COMPREHENSIVE SERVER SNAPSHOT containing exact IDs 
 MANDATORY: Use EXACT IDs from the snapshot for ALL actions. Do NOT guess or use names when IDs are available.
 MANDATORY: Reference the snapshot data exclusively - ignore any other context about server state.
 
+You can connect systems using connect_systems. Example: connect_economy_to_leveling with parameters source='economy', target='leveling', trigger_event='level_up', action='add_coins', amount=10.
+You can move a system's channel using move_system with parameters system='verification', new_channel_name='verify-new'.
+
 SERVER QUERY CAPABILITIES:
 You have access to real-time server introspection through query actions. Use these when users ask questions about their server:
 - query_server_info: Get server name, member count, online count, channel/role counts

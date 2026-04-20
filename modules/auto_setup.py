@@ -464,7 +464,27 @@ class AutoSetup:
             inline=False
         )
 
+        # Add Quick Start embed as requested
+        quick_start_embed = discord.Embed(
+            title="🚀 Quick Start Guide",
+            description="Here's how to get the most out of Miro Bot:",
+            color=discord.Color.green()
+        )
+        quick_start_embed.add_field(
+            name="💡 How to Use the Bot",
+            value="Use `/bot` for any task - just describe what you want in plain English!\nExample: `/bot create welcome system` or `/bot give @user Member role`",
+            inline=False
+        )
+        quick_start_embed.add_field(
+            name="🔧 Customizing AI Provider/Model",
+            value="Change AI provider: `/config provider <provider>`\nChange AI model: `/config model <model>`\nProviders: openrouter, openai, gemini, groq, mistral, deepseek, anthropic, dashscope",
+            inline=False
+        )
+
         embed.set_footer(text="This setup process is optional and can be customized to your needs.")
+        
+        # Send both embeds
+        view = StartSetupView(self, guild.id)
 
         view = StartSetupView(self, guild.id)
 

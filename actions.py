@@ -163,6 +163,10 @@ class ActionHandler:
         "query_server_info", "query_channels", "query_roles", "query_members", "query_member_details",
         "query_economy_leaderboard", "query_xp_leaderboard", "query_pending_applications",
         "query_active_shifts", "query_recent_messages",
+        # System connection actions
+        "connect_systems",
+        # System move actions
+        "move_system",
         # Additional actions from action_catalog
         "post_documentation", "setup_trigger_role"
     }
@@ -2070,6 +2074,81 @@ class ActionHandler:
         else:
             logger.error("Scheduler not available")
             return False, None
+
+    async def action_connect_systems(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Connect two systems so that when trigger_event happens in source_system, action is performed on target_system."""
+        guild_id = interaction.guild.id
+        
+        source_system = params.get("source_system")
+        trigger_event = params.get("trigger_event")
+        target_system = params.get("target_system")
+        action = params.get("action")
+        parameters = params.get("parameters", {})
+        
+        if not all([source_system, trigger_event, target_system, action]):
+            return False, {"error": "Missing required parameters: source_system, trigger_event, target_system, action"}
+        
+        # Load existing connections
+        connections = dm.load_json("system_connections", default={})
+        guild_connections = connections.get(str(guild_id), [])
+        
+        # Create connection object
+        connection = {
+            "source_system": source_system,
+            "trigger_event": trigger_event,
+            "target_system": target_system,
+            "action": action,
+            "parameters": parameters
+        }
+        
+        # Add to connections
+        guild_connections.append(connection)
+        connections[str(guild_id)] = guild_connections
+        dm.save_json("system_connections", connections)
+        
+        return True, {"connection": connection}
+
+    async def action_move_system(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Move a system to a different channel."""
+        guild = interaction.guild
+        guild_id = guild.id
+        
+        system = params.get("system")
+        new_channel_name = params.get("new_channel_name")
+        
+        if not system or not new_channel_name:
+            return False, {"error": "Missing required parameters: system, new_channel_name"}
+        
+        # Get current system configuration
+        system_config_key = f"{system}_channel"
+        current_channel_id = dm.get_guild_data(guild_id, system_config_key)
+        
+        if not current_channel_id:
+            return False, {"error": f"No {system} channel found to move"}
+        
+        # Find the new channel
+        new_channel = discord.utils.get(guild.text_channels, name=new_channel_name.lstrip('#'))
+        if not new_channel:
+            # Try to create it if it doesn't exist
+            try:
+                new_channel = await guild.create_text_channel(new_channel_name.lstrip('#'))
+            except Exception as e:
+                return False, {"error": f"Could not find or create channel '{new_channel_name}': {str(e)}"}
+        
+        # Update the system configuration
+        dm.update_guild_data(guild_id, system_config_key, new_channel.id)
+        
+        # Also update any related configuration (like verification_role for verification system)
+        if system == "verification":
+            # For verification, we might also want to update the verification message location
+            pass
+        
+        return True, {
+            "system": system,
+            "old_channel_id": current_channel_id,
+            "new_channel_id": new_channel.id,
+            "new_channel_name": new_channel.name
+        }
 
     async def action_create_invite(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Creates an invite link for a channel or the server."""
