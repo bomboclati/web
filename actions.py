@@ -3505,6 +3505,9 @@ class ActionHandler:
                 pass
             return False, None
 
+        # Refresh guild cache to get latest categories
+        await guild.fetch()
+        
         # Case-insensitive category lookup
         category = discord.utils.get(guild.categories, name=category_name)
         if not category:
@@ -3518,6 +3521,9 @@ class ActionHandler:
                     f"⚠️ Could not find category **{category_name}**. "
                     f"Available categories: {available}", delete_after=15
                 )
+            except Exception:
+                pass
+            return False, None
             except Exception:
                 pass
             return False, None
