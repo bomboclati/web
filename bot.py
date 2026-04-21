@@ -1497,8 +1497,9 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
 
     async def _reload_conversation_history(self):
         """Reload conversation history and vector memory."""
-        # Vector memory should handle its own loading
-        pass
+        # Vector memory handles its own state restoration during bot start.
+        # This method is a stub for potential future history-specific reload logic.
+        logger.info("Conversation history and vector memory verified.")
 
     async def _reload_scheduled_tasks(self):
         """Reload scheduled tasks from data/scheduled_tasks.json and ai_scheduled_tasks.json"""

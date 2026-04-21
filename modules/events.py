@@ -384,7 +384,36 @@ Respond with JSON only:
                 dm.update_guild_data(active_event.guild_id, f"user_{user_id}", user_data)
 
     def _update_event_message(self, event: ScheduledEvent):
-        pass
+        """Update the event embed to reflect current participant count."""
+        if not event.message_id:
+            return
+
+        async def _update():
+            try:
+                channel = self.bot.get_channel(event.channel_id)
+                if not channel:
+                    return
+                message = await channel.fetch_message(event.message_id)
+                if not message:
+                    return
+
+                embed = message.embeds[0]
+                # Update participant count field
+                field_found = False
+                for i, field in enumerate(embed.fields):
+                    if field.name == "Participants":
+                        embed.set_field_at(i, name="Participants", value=str(len(event.participants)), inline=True)
+                        field_found = True
+                        break
+
+                if not field_found:
+                    embed.add_field(name="Participants", value=str(len(event.participants)), inline=True)
+
+                await message.edit(embed=embed)
+            except Exception as e:
+                logger.debug(f"Could not update event message: {e}")
+
+        asyncio.create_task(_update())
 
     async def create_event(self, guild_id: int, channel_id: int, name: str, description: str,
                           event_type: EventType, schedule: str, created_by: int, 

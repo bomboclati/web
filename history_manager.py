@@ -188,59 +188,5 @@ class HistoryManager:
         
         return formatted_exchanges
 
-    async def search_history(self, guild_id: int, user_id: int, query: str, 
-                      start_time: Optional[float] = None, 
-                      end_time: Optional[float] = None) -> List[Dict]:
-        """Search conversation history for relevant exchanges"""
-        if not dm.use_sqlite:
-            history = dm.load_json(self.history_file, default={})
-            key = self._get_key(guild_id, user_id)
-            if key not in history:
-                return []
-            
-            results = []
-            query_lower = query.lower()
-            for i in range(0, len(history[key]), 2):
-                if i+1 < len(history[key]):
-                    user_msg = history[key][i].get("content", "")
-                    bot_msg = history[key][i+1].get("content", "")
-                    combined = (user_msg + " " + bot_msg).lower()
-                    if query_lower in combined:
-                        results.append({"role": "user", "content": user_msg, "timestamp": 0})
-                        results.append({"role": "assistant", "content": bot_msg, "timestamp": 0})
-            return results
-        else:
-            async with aiosqlite.connect(dm.db_path) as db:
-                db.row_factory = aiosqlite.Row
-                query_sql = """SELECT role, content, timestamp, importance_score 
-                               FROM exchanges WHERE guild_id=? AND user_id=?
-                               AND content LIKE ?"""
-                params = [guild_id, user_id, f"%{query}%"]
-                if start_time is not None:
-                    query_sql += " AND timestamp >= ?"
-                    params.append(start_time)
-                if end_time is not None:
-                    query_sql += " AND timestamp <= ?"
-                    params.append(end_time)
-                query_sql += " ORDER BY timestamp DESC"
-                async with db.execute(query_sql, params) as cursor:
-                    rows = await cursor.fetchall()
-            return [{"role": r["role"], "content": r["content"], 
-                     "timestamp": r["timestamp"], "importance_score": r["importance_score"]} for r in rows]
-
-    async def clear_history(self, guild_id: int, user_id: int):
-        key = self._get_key(guild_id, user_id)
-        if dm.use_sqlite:
-            async with aiosqlite.connect(dm.db_path) as db:
-                await db.execute("DELETE FROM exchanges WHERE guild_id=? AND user_id=?", (guild_id, user_id))
-                await db.execute("DELETE FROM conversation_summaries WHERE guild_id=? AND user_id=?", (guild_id, user_id))
-                await db.commit()
-        else:
-            history = dm.load_json(self.history_file, default={})
-            if key in history:
-                del history[key]
-                dm.save_json(self.history_file, history)
-
-
 # Initialize global HistoryManager
 history_manager = HistoryManager()
