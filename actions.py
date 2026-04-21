@@ -141,7 +141,7 @@ class ActionHandler:
         "send_message", "send_embed", "add_role", "remove_role",
         "create_channel", "create_shop_channel", "delete_channel", "create_role", "delete_role",
         "create_category", "edit_channel", "edit_role", "assign_role",
-        "assign_role_by_name", "create_prefix_command", "delete_prefix_command",
+        "assign_role_by_name", "create_prefix_command", "create_command", "make_command", "add_command", "new_command", "delete_prefix_command",
         "setup_welcome", "setup_logging", "setup_verification", "setup_economy", "setup_leveling",
         "setup_tickets", "setup_applications", "setup_appeals", "setup_moderation", "setup_staff_system",
         "send_dm", "create_invite", "schedule_ai_action", "ping",
@@ -1408,6 +1408,22 @@ class ActionHandler:
         cmds[cmd_name] = cmd_code
         dm.update_guild_data(guild_id, "custom_commands", cmds)
         return True, {"action": "delete_prefix_command", "cmd_name": cmd_name, "previous_code": existing}
+
+    async def action_create_command(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Alias for action_create_prefix_command."""
+        return await self.action_create_prefix_command(interaction, params)
+
+    async def action_make_command(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Alias for action_create_prefix_command."""
+        return await self.action_create_prefix_command(interaction, params)
+
+    async def action_add_command(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Alias for action_create_prefix_command."""
+        return await self.action_create_prefix_command(interaction, params)
+
+    async def action_new_command(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Alias for action_create_prefix_command."""
+        return await self.action_create_prefix_command(interaction, params)
 
     async def action_send_embed(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         channel_name = self._get_param(params, "channel_name", "channel")
