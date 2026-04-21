@@ -167,17 +167,17 @@ class MiroBot(commands.Bot):
         # Register Persistent Views for long-term button functionality
         from modules.staff_system import StaffApplicationPersistentView, StaffReviewPersistentView
         from modules.tickets import TicketPersistentView
-        from modules.auto_setup import VerifyButton, AcceptRulesButton, CreateTicketButton, SuggestionButton, ApplyStaffButton, RoleSelectButton, AppealButton
+        from modules.auto_setup import VerifyButton, AcceptRulesButton, CreateTicketButton, SuggestionButton, ApplyStaffButton, RoleSelectButton, AppealButton, StartSetupPersistentView
         from modules.verification import VerifyView
         from modules.embed_system import EmbedVerifyView, EmbedApplyStaffView, EmbedCreateTicketView
-        
+
         # Note: We don't register auto-setup views here with dummy IDs since they need real guild/role/channel IDs
         # Instead, each setup function sends its own view with proper IDs when called
         self.add_view(StaffApplicationPersistentView(self))
         self.add_view(StaffReviewPersistentView())
         self.add_view(TicketPersistentView())
         self.add_view(VerifyView(self.verification))
-        
+
         # Register persistent views for auto-setup buttons (these work across restarts)
         # Each view uses a unique custom_id pattern that gets matched when buttons are clicked
         self.add_view(VerifyButton())
@@ -186,6 +186,7 @@ class MiroBot(commands.Bot):
         self.add_view(SuggestionButton(guild_id=0))
         self.add_view(ApplyStaffButton(guild_id=0))
         self.add_view(AppealButton(guild_id=0))
+        self.add_view(StartSetupPersistentView(self))
         # Note: RoleSelectButton is a Button, not a View, so it doesn't need to be registered here
         # It gets added dynamically to View instances when role selection embeds are created
 

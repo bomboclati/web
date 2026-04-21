@@ -4,6 +4,7 @@ from discord import app_commands
 from discord.ext import commands
 import logging
 from data_manager import dm
+from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -11,15 +12,92 @@ class CoreCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    # Model lists for each provider
+    MODEL_CHOICES = {
+        "openrouter": [
+            "openai/gpt-4o-mini", "openai/gpt-4o", "openai/gpt-4-turbo", "openai/gpt-3.5-turbo",
+            "anthropic/claude-3-5-sonnet", "anthropic/claude-3-haiku", "anthropic/claude-3-opus",
+            "google/gemini-pro-1.5", "google/gemini-flash-1.5",
+            "meta-llama/llama-3.2-90b-text", "meta-llama/llama-3.1-405b-instruct",
+            "mistralai/mistral-7b-instruct", "mistralai/mixtral-8x7b-instruct"
+        ],
+        "openai": [
+            "gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"
+        ],
+        "gemini": [
+            "gemini-1.5-flash-latest", "gemini-1.5-pro-latest", "gemini-1.0-pro"
+        ],
+        "anthropic": [
+            "claude-3-5-sonnet-20240620", "claude-3-opus-20240229", "claude-3-haiku-20240307",
+            "claude-3-sonnet-20240229"
+        ],
+        "groq": [
+            "llama-3.3-70b-versatile", "llama-3.2-90b-text", "llama-3.1-70b-versatile",
+            "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"
+        ],
+        "mistral": [
+            "mistral-large-latest", "mistral-medium", "mistral-small", "open-mistral-7b"
+        ],
+        "deepseek": [
+            "deepseek-chat", "deepseek-coder"
+        ],
+        "dashscope": [
+            "qwen2.5-72b-instruct", "qwen2-72b-instruct", "qwen-turbo", "qwen-plus"
+        ],
+        "cerebras": [
+            "llama3.3-70b", "llama3.1-70b", "llama3.1-8b"
+        ],
+        "sambanova": [
+            "llama3.1-70b-instruct", "llama3.1-405b-instruct", "llama3.1-8b-instruct"
+        ],
+        "together": [
+            "meta-llama/Llama-3.3-70B-Instruct-Turbo", "meta-llama/Llama-3.1-405B-Instruct",
+            "meta-llama/Llama-3.1-70B-Instruct", "meta-llama/Llama-3.1-8B-Instruct"
+        ]
+    }
+
+    def get_default_model(self, provider: str) -> str:
+        """Get the default model for a provider"""
+        defaults = {
+            "openrouter": "openai/gpt-4o-mini",
+            "openai": "gpt-4o-mini",
+            "gemini": "gemini-1.5-flash-latest",
+            "anthropic": "claude-3-5-sonnet-20240620",
+            "groq": "llama-3.3-70b-versatile",
+            "mistral": "mistral-large-latest",
+            "deepseek": "deepseek-chat",
+            "dashscope": "qwen2.5-72b-instruct",
+            "cerebras": "llama3.3-70b",
+            "sambanova": "llama3.1-70b-instruct",
+            "together": "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+        }
+        return defaults.get(provider, "gpt-3.5-turbo")
+
     config = app_commands.Group(name="config", description="Configure bot settings")
+
+    async def config_model_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
+        """Autocomplete for model selection based on active provider"""
+        # Get the guild's active provider
+        current_config = dm.get_guild_api_key(interaction.guild.id) if interaction.guild else None
+        provider = current_config.get("provider", "openrouter") if current_config else "openrouter"
+
+        # Get models for this provider
+        available_models = self.MODEL_CHOICES.get(provider, self.MODEL_CHOICES["openrouter"])
+
+        # Filter models based on current input
+        filtered_models = [m for m in available_models if current.lower() in m.lower()]
+
+        # Return up to 25 choices
+        return [app_commands.Choice(name=model, value=model) for model in filtered_models[:25]]
 
     @config.command(name="model", description="Set the AI model")
     @app_commands.describe(model="Model name (e.g. gpt-4, claude-3)")
+    @app_commands.autocomplete(model=config_model_autocomplete)
     async def config_model(self, interaction: discord.Interaction, model: str):
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("Only Administrators can change configuration.", ephemeral=True)
             return
-        
+
         dm.update_guild_data(interaction.guild.id, "custom_model", model)
         await interaction.response.send_message(f"? AI model set to **{model}** for this server.", ephemeral=True)
 
@@ -41,22 +119,25 @@ class CoreCommands(commands.Cog):
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("Only Administrators can change configuration.", ephemeral=True)
             return
-            
+
         if provider not in self.bot.ai.base_urls:
             await interaction.response.send_message(f"? Unknown provider. Valid: {', '.join(self.bot.ai.base_urls.keys())}", ephemeral=True)
             return
-        
+
         current_key_data = dm.get_guild_api_key(interaction.guild.id, provider=provider)
         api_key = current_key_data.get("api_key") if current_key_data else None
-        
+
         if not api_key:
             global_key = os.getenv("AI_API_KEY") if provider == os.getenv("AI_PROVIDER", "openrouter") else None
             if not global_key:
                 await interaction.response.send_message(f"?? **Note:** Provider set to **{provider}**, but no API key is configured for it. Use `/config key` to set one.", ephemeral=True)
                 return
-        
+
         dm.set_guild_api_key(interaction.guild.id, api_key or "", provider)
-        await interaction.response.send_message(f"? AI provider switched to **{provider}**.", ephemeral=True)
+        # Reset custom_model to provider's default
+        default_model = self.get_default_model(provider)
+        dm.update_guild_data(interaction.guild.id, "custom_model", default_model)
+        await interaction.response.send_message(f"? AI provider switched to **{provider}** and model reset to **{default_model}**.", ephemeral=True)
 
     @config.command(name="key", description="Set the API key for a provider")
     @app_commands.choices(provider=[
