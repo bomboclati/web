@@ -652,11 +652,28 @@ class StartSetupView(discord.ui.View):
         self.auto_setup = auto_setup
         self.guild_id = guild_id
 
-    @discord.ui.button(label="Start Auto-Setup", style=discord.ButtonStyle.success, custom_id=f"start_auto_setup_{guild_id}", emoji="🚀")
-    async def start_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Extract guild_id from custom_id for DM context
-        button_guild_id = int(button.custom_id.split('_')[-1])
-        guild = interaction.guild or self.auto_setup.bot.get_guild(button_guild_id)
+        # Create buttons dynamically using stored guild_id in custom_id
+        start_button = discord.ui.Button(
+            label="Start Auto-Setup",
+            style=discord.ButtonStyle.success,
+            custom_id=f"start_auto_setup_{guild_id}",
+            emoji="🚀"
+        )
+        start_button.callback = self.start_setup
+        self.add_item(start_button)
+
+        skip_button = discord.ui.Button(
+            label="Skip / Use Defaults",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"skip_auto_setup_{guild_id}",
+            emoji="⏭️"
+        )
+        skip_button.callback = self.skip_setup
+        self.add_item(skip_button)
+
+    async def start_setup(self, interaction: discord.Interaction):
+        # Use self.guild_id to retrieve the guild
+        guild = interaction.client.get_guild(self.guild_id)
 
         if not guild:
             await interaction.response.send_message("Guild not found. This setup link may be expired.", ephemeral=True)
@@ -676,11 +693,9 @@ class StartSetupView(discord.ui.View):
             logger.error(f"Error starting interactive setup: {e}")
             await interaction.followup.send("❌ An error occurred while starting setup. Please try again.", ephemeral=True)
 
-    @discord.ui.button(label="Skip / Use Defaults", style=discord.ButtonStyle.secondary, custom_id=f"skip_auto_setup_{guild_id}", emoji="⏭️")
-    async def skip_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Extract guild_id from custom_id for DM context
-        button_guild_id = int(button.custom_id.split('_')[-1])
-        guild = interaction.guild or self.auto_setup.bot.get_guild(button_guild_id)
+    async def skip_setup(self, interaction: discord.Interaction):
+        # Use self.guild_id to retrieve the guild
+        guild = interaction.client.get_guild(self.guild_id)
 
         if not guild:
             await interaction.response.send_message("Guild not found. This setup link may be expired.", ephemeral=True)
@@ -1446,6 +1461,10 @@ class SystemSelectionView(discord.ui.View):
 
     def get_setup_status(self, guild_id: int) -> Optional[ServerSetup]:
         return self._pending_setups.get(guild_id)
+
+    async def setup_hook(self):
+        # Register persistent views for setup buttons in channels
+        self.bot.add_view(StartSetupPersistentView(self.bot))
 
     # --- Individual Setup Methods for AI Actions ---
     
