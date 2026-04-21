@@ -2,6 +2,7 @@ import discord
 import json
 import asyncio
 import time
+import difflib
 from datetime import datetime, timezone
 import datetime as dt
 from typing import List, Dict, Any, Tuple, Optional
@@ -496,6 +497,20 @@ class ActionHandler:
             if var in self.ALLOWED_ACTIONS:
                 return var
         return original_name
+
+    def _fuzzy_match(self, target: str, candidates: List[str], cutoff: float = 0.6) -> Optional[str]:
+        """Find the best fuzzy match for target in candidates using difflib."""
+        if not target or not candidates:
+            return None
+
+        target_lower = target.lower()
+        matches = difflib.get_close_matches(target_lower, [c.lower() for c in candidates], n=1, cutoff=cutoff)
+        if matches:
+            # Find the original case candidate
+            for candidate in candidates:
+                if candidate.lower() == matches[0]:
+                    return candidate
+        return None
 
     async def dispatch(self, interaction: discord.Interaction, name: str, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Routes action names to specific methods with permission enforcement. Returns (success, undo_data)."""
@@ -3276,12 +3291,140 @@ class ActionHandler:
 
     async def action_allow_channel_permission(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Allows a permission for a role in a channel (merges with existing overwrites)."""
-        channel_name = params.get("channel") or params.get("channel_name")
-        role_name = params.get("role_name")
-        permission = params.get("permission", "send_messages")
 
-        if not channel_name or not role_name:
-            return False, None
+        # Improved parameter resolution - accept alternative parameter names
+        channel_ident = None
+        for key in ["channel", "channel_name", "channel_id"]:
+            if key in params and params[key]:
+                channel_ident = params[key]
+                break
+
+        role_ident = None
+        for key in ["role", "role_name", "role_id"]:
+            if key in params and params[key]:
+                role_ident = params[key]
+                break
+
+        permission = None
+        for key in ["permission", "perm", "permission_name"]:
+            if key in params and params[key]:
+                permission = params[key]
+                break
+
+        if not permission:
+            permission = "send_messages"
+
+        if not channel_ident:
+            logger.error("allow_channel_permission: No channel identifier provided")
+            return False, {"error": "Channel identifier is required. Use 'channel', 'channel_name', or 'channel_id'."}
+
+        if not role_ident:
+            logger.error("allow_channel_permission: No role identifier provided")
+            return False, {"error": "Role identifier is required. Use 'role', 'role_name', or 'role_id'."}
+
+        # Resolve channel with fuzzy matching
+        channel = None
+        if isinstance(channel_ident, int) or (isinstance(channel_ident, str) and channel_ident.isdigit()):
+            # Try as ID first
+            try:
+                cid = int(channel_ident)
+                channel = interaction.guild.get_channel(cid)
+                if channel:
+                    logger.info(f"allow_channel_permission: Resolved channel by ID '{channel_ident}' -> '{channel.name}'")
+            except (ValueError, TypeError):
+                pass
+
+        if not channel and isinstance(channel_ident, str):
+            # Try exact match first
+            channel = discord.utils.get(interaction.guild.channels, name=channel_ident)
+            if channel:
+                logger.info(f"allow_channel_permission: Resolved channel by exact match '{channel_ident}' -> '{channel.name}'")
+            else:
+                # Try fuzzy matching
+                channel_names = [c.name for c in interaction.guild.channels]
+                fuzzy_match = self._fuzzy_match(channel_ident, channel_names)
+                if fuzzy_match:
+                    channel = discord.utils.get(interaction.guild.channels, name=fuzzy_match)
+                    logger.info(f"allow_channel_permission: Resolved channel by fuzzy match '{channel_ident}' -> '{channel.name}'")
+                else:
+                    logger.error(f"allow_channel_permission: Channel '{channel_ident}' not found, available: {channel_names[:5]}...")
+                    return False, {"error": f"Channel '{channel_ident}' not found. Available channels include: {', '.join(channel_names[:5])}"}
+
+        if not channel:
+            logger.error(f"allow_channel_permission: Could not resolve channel '{channel_ident}'")
+            return False, {"error": f"Channel '{channel_ident}' not found"}
+
+        # Resolve role with fuzzy matching
+        role = None
+        if isinstance(role_ident, int) or (isinstance(role_ident, str) and role_ident.isdigit()):
+            # Try as ID first
+            try:
+                rid = int(role_ident)
+                role = interaction.guild.get_role(rid)
+                if role:
+                    logger.info(f"allow_channel_permission: Resolved role by ID '{role_ident}' -> '{role.name}'")
+            except (ValueError, TypeError):
+                pass
+
+        if not role:
+            # Use the existing _resolve_role method which handles names well
+            role = await self._resolve_role(interaction.guild, **{k: role_ident for k in ["role_name", "name"]})
+            if role:
+                logger.info(f"allow_channel_permission: Resolved role '{role_ident}' -> '{role.name}'")
+            else:
+                # Try fuzzy matching for role names
+                role_names = [r.name for r in interaction.guild.roles]
+                fuzzy_match = self._fuzzy_match(role_ident, role_names)
+                if fuzzy_match:
+                    role = discord.utils.get(interaction.guild.roles, name=fuzzy_match)
+                    logger.info(f"allow_channel_permission: Resolved role by fuzzy match '{role_ident}' -> '{role.name}'")
+                else:
+                    logger.error(f"allow_channel_permission: Role '{role_ident}' not found, available: {role_names[:5]}...")
+                    return False, {"error": f"Role '{role_ident}' not found. Available roles include: {', '.join(role_names[:5])}"}
+
+        if not role:
+            logger.error(f"allow_channel_permission: Could not resolve role '{role_ident}'")
+            return False, {"error": f"Role '{role_ident}' not found"}
+
+        # Check idempotency - if permission is already allowed, return success
+        existing_overwrites = channel.overwrites_for(role)
+        perm_names = {
+            "send_messages": "send_messages",
+            "read_messages": "read_messages",
+            "view_channel": "view_channel",
+            "connect": "connect",
+            "speak": "speak",
+            "mute_members": "mute_members",
+            "deafen_members": "deafen_members",
+            "move_members": "move_members",
+            "manage_messages": "manage_messages",
+            "manage_channels": "manage_channels",
+            "attach_files": "attach_files",
+            "embed_links": "embed_links",
+            "add_reactions": "add_reactions",
+            "use_external_emojis": "use_external_emojis",
+            "manage_permissions": "manage_permissions",
+            "create_instant_invite": "create_instant_invite",
+            "mention_everyone": "mention_everyone",
+            "manage_webhooks": "manage_webhooks",
+            "read_message_history": "read_message_history",
+            "use_application_commands": "use_application_commands",
+            "stream": "stream",
+            "use_voice_activation": "use_voice_activation",
+        }
+        perm_attr = perm_names.get(permission, permission)
+
+        if hasattr(existing_overwrites, perm_attr) and getattr(existing_overwrites, perm_attr) is True:
+            logger.info(f"allow_channel_permission: Permission '{permission}' already allowed for role '{role.name}' in channel '{channel.name}'")
+            return True, {"role": role.name, "permission": permission, "already_allowed": True}
+
+        try:
+            await self._merge_channel_permission(channel, role, **{perm_attr: True})
+            logger.info(f"allow_channel_permission: Successfully allowed permission '{permission}' for role '{role.name}' in channel '{channel.name}'")
+            return True, {"role": role.name, "permission": permission}
+        except Exception as e:
+            logger.error(f"Error allowing permission: {e}")
+            return False, {"error": f"Failed to allow permission: {str(e)}"}
 
         channel = discord.utils.get(interaction.guild.channels, name=channel_name)
         role = await self._resolve_role(interaction.guild, role_name=role_name)
