@@ -2139,7 +2139,14 @@ CRITICAL INSTRUCTIONS:
             if "actions" not in res:
                 res["actions"] = processed.get("actions", [])
 
-    
+
+    # Ensure res is a dict before accessing
+    if not isinstance(res, dict):
+        logger.error(f"AI response is not a dict: {type(res)} - {res}")
+        summary = "Something went wrong with the AI response. Please try again."
+        await interaction.followup.send(summary, ephemeral=False)
+        return
+
     reasoning = res.get("reasoning", "Thinking...")
     walkthrough = res.get("walkthrough", "Planning...")
     # Flexible key check for AI response content
