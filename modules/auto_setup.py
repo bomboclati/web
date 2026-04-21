@@ -941,11 +941,16 @@ class SystemSelectionView(discord.ui.View):
             await interaction.response.send_message("Please select at least one system to set up!", ephemeral=True)
             return
 
-        # Fetch guild to ensure it exists
+        # Fetch guild to ensure it exists with retry mechanism
         guild = self.auto_setup.bot.get_guild(self.guild_id)
         if not guild:
-            await interaction.response.send_message("❌ Guild not found. The setup cannot proceed.", ephemeral=True)
-            return
+            # Wait 1 second and try again
+            await asyncio.sleep(1)
+            guild = self.auto_setup.bot.get_guild(self.guild_id)
+            if not guild:
+                logger.error(f"Guild {self.guild_id} not found after retry in auto-setup")
+                await interaction.response.send_message("Something went wrong, please re-invite the bot", ephemeral=True)
+                return
 
         setup = self.auto_setup._pending_setups.get(self.guild_id)
         if setup:

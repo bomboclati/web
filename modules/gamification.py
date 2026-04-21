@@ -90,6 +90,7 @@ class AdaptiveGamification:
         self._seasonal_events: Dict[int, dict] = {}
         self.awarded_badges: Dict[str, Dict[str, List[str]]] = {}
         self._load_data()
+        self._load_awarded_badges()
         self._init_default_badges()
 
     def _load_data(self):
@@ -364,7 +365,15 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
                 await self._award_badge(guild_id, user_id, badge_id)
 
     async def _award_badge(self, guild_id: int, user_id: int, badge_id: str):
+        # Check if already awarded to prevent duplicates
+        if self._is_badge_awarded(guild_id, user_id, badge_id):
+            return
+
         user_badges = dm.get_guild_data(guild_id, f"badges_{user_id}", [])
+
+        # Check if badge already in user's badges
+        if any(b["badge_id"] == badge_id for b in user_badges):
+            return
         
         user_badges.append({
             "badge_id": badge_id,
