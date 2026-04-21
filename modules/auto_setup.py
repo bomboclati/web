@@ -645,6 +645,94 @@ class AutoSetup:
         view = SystemSelectionView(self, interaction.guild_id)
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
+    async def _run_selected_setup(self, guild: discord.Guild, user: discord.Member, selected_systems: List[str]):
+        """Run setup for selected systems with progress updates and final summary."""
+        setup = self._pending_setups.get(guild.id)
+        if not setup:
+            return
+
+        # Analyze server structure first
+        analysis = await self._analyze_server(guild)
+        logger.info(f"Server analysis complete for {guild.name}: {len(analysis.existing_channels)} channels, {len(analysis.existing_roles)} roles")
+
+        results = []
+        system_map = {
+            "verification": ("Verification System", self._setup_verification_system),
+            "tickets": ("Ticket System", self._setup_ticket_system),
+            "applications": ("Applications System", self._setup_applications_system),
+            "appeals": ("Appeals System", self._setup_appeals_system),
+            "economy": ("Economy System", self._setup_economy_system),
+            "leveling": ("Leveling System", self._setup_leveling_system),
+            "welcome": ("Welcome System", self._setup_welcome_system),
+            "moderation": ("Moderation System", self._setup_moderation_system),
+        }
+
+        for system in selected_systems:
+            if system in system_map:
+                name, func = system_map[system]
+                try:
+                    logger.info(f"Setting up {name} for {guild.name}")
+                    result = await func(guild, analysis)
+                    results.append((name, result, None))
+                    setup.steps_completed.append(system)
+                    # Send progress update to user
+                    embed = discord.Embed(
+                        title=":gear: Setup Progress",
+                        description=f"✅ **{name}** setup completed!",
+                        color=discord.Color.green()
+                    )
+                    try:
+                        await user.send(embed=embed)
+                    except discord.Forbidden:
+                        pass  # Can't DM user
+                    await asyncio.sleep(0.5)
+                except Exception as e:
+                    logger.error(f"{name} setup failed: {e}")
+                    results.append((name, False, str(e)))
+            else:
+                logger.warning(f"Unknown system: {system}")
+
+        setup.state = SetupState.COMPLETED
+        setup.completed_at = time.time()
+
+        # Mark guild as completed setup
+        completed = dm.load_json("completed_setups", default={})
+        completed[str(guild.id)] = time.time()
+        dm.save_json("completed_setups", completed)
+
+        await self._send_setup_results(guild, user, results)
+
+    async def _send_setup_results(self, guild: discord.Guild, user: discord.Member, results: List[Tuple[str, bool, Optional[str]]]):
+        """Send final setup summary to user."""
+        embed = discord.Embed(
+            title=":white_check_mark: Auto-Setup Complete",
+            description=f"Setup completed for **{guild.name}**!",
+            color=discord.Color.green()
+        )
+
+        success_count = sum(1 for _, success, _ in results if success)
+        total_count = len(results)
+        embed.add_field(
+            name="Summary",
+            value=f"Successfully set up {success_count}/{total_count} systems.",
+            inline=False
+        )
+
+        for name, success, error in results:
+            status = "✅" if success else "❌"
+            value = f"{status} {name}"
+            if error:
+                value += f" - Error: {error}"
+            embed.add_field(name="", value=value, inline=False)
+
+        try:
+            await user.send(embed=embed)
+        except discord.Forbidden:
+            # Try to send in a channel
+            system_channel = guild.system_channel
+            if system_channel:
+                await system_channel.send(f"{user.mention}", embed=embed)
+
 
 class StartSetupView(discord.ui.View):
     def __init__(self, auto_setup, guild_id):
