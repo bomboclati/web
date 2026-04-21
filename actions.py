@@ -498,8 +498,33 @@ class ActionHandler:
         return original_name
 
     async def dispatch(self, interaction: discord.Interaction, name: str, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Routes action names to specific methods. Returns (success, undo_data)."""
+        """Routes action names to specific methods with permission enforcement. Returns (success, undo_data)."""
         name = self._normalize_action_name(name)
+
+        # --- PERMISSION ENFORCEMENT ---
+        # Critical Security: Ensure the initiating user has Administrator permission
+        # for sensitive actions. This prevents exploitation via AI or custom commands.
+
+        # Read-only actions that don't require admin
+        read_only_actions = {
+            "analyze_server_state", "query_server_info", "query_channels",
+            "query_roles", "query_members", "query_member_details",
+            "query_economy_leaderboard", "query_xp_leaderboard",
+            "query_pending_applications", "query_active_shifts",
+            "query_recent_messages", "send_message", "reply_message",
+            "add_reaction", "send_notification"
+        }
+
+        # If action is not read-only and user is not admin, block it.
+        if name not in read_only_actions and not interaction.user.guild_permissions.administrator:
+            # Special case: allow the bot itself (e.g. for scheduled tasks or system connections)
+            if interaction.user.id != self.bot.user.id:
+                logger.warning(
+                    "Blocked sensitive action '%s' triggered by non-admin user %s (%d) in guild %d",
+                    name, interaction.user, interaction.user.id, interaction.guild.id
+                )
+                return False, {"error": f"You do not have Administrator permission to execute the '{name}' action."}
+
         method_name = f"action_{name}"
         if hasattr(self, method_name):
             method = getattr(self, method_name)

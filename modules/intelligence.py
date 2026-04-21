@@ -227,64 +227,6 @@ class ServerIntelligence:
         if time.time() % 60 == 0:
             self._save_data()
 
-    async def track_command(self, guild_id: int, user_id: int):
-        if guild_id not in self._activity_data:
-            self._activity_data[guild_id] = {}
-        
-        if user_id not in self._activity_data[guild_id]:
-            member = self.bot.get_guild(guild_id).get_member(user_id)
-            self._activity_data[guild_id][user_id] = UserActivity(
-                user_id=user_id,
-                messages_sent=0,
-                voice_time=0,
-                commands_used=0,
-                last_active=time.time(),
-                joined_at=member.joined_at.timestamp() if member and member.joined_at else time.time(),
-                interaction_scores=[]
-            )
-        
-        self._activity_data[guild_id][user_id].commands_used += 1
-        self._activity_data[guild_id][user_id].last_active = time.time()
-
-    async def track_ai_interaction(self, guild_id: int, user_id: int, response_quality: float = 0.5):
-        if guild_id not in self._activity_data:
-            self._activity_data[guild_id] = {}
-        
-        if user_id not in self._activity_data[guild_id]:
-            self._activity_data[guild_id][user_id] = UserActivity(
-                user_id=user_id,
-                messages_sent=0,
-                voice_time=0,
-                commands_used=0,
-                last_active=time.time(),
-                joined_at=time.time(),
-                interaction_scores=[]
-            )
-        
-        activity = self._activity_data[guild_id][user_id]
-        activity.interaction_scores.append(response_quality)
-        activity.interaction_scores = activity.interaction_scores[-20:]
-
-    def get_user_stats(self, guild_id: int, user_id: int) -> Optional[dict]:
-        if guild_id not in self._activity_data:
-            return None
-        
-        if user_id not in self._activity_data[guild_id]:
-            return None
-        
-        activity = self._activity_data[guild_id][user_id]
-        avg_quality = sum(activity.interaction_scores) / len(activity.interaction_scores) if activity.interaction_scores else 0
-        
-        return {
-            "messages_sent": activity.messages_sent,
-            "commands_used": activity.commands_used,
-            "voice_time_minutes": activity.voice_time // 60,
-            "last_active": datetime.fromtimestamp(activity.last_active).strftime("%Y-%m-%d %H:%M"),
-            "days_member": int((time.time() - activity.joined_at) / 86400),
-            "ai_interaction_quality": avg_quality,
-            "is_at_risk": (time.time() - activity.last_active) > (7 * 24 * 60 * 60)
-        }
-
     def get_topic_trends(self, guild_id: int) -> List[dict]:
         return self._topic_trends.get(guild_id, [])
 
