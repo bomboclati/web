@@ -645,8 +645,18 @@ class AutoSetup:
         view = SystemSelectionView(self, interaction.guild_id)
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
-    async def _run_selected_setup(self, guild: discord.Guild, user: discord.Member, selected_systems: List[str]):
+    async def _run_selected_setup(self, guild_id: int, user: discord.Member, selected_systems: List[str]):
         """Run setup for selected systems with progress updates and final summary."""
+        # Retrieve guild using guild_id to handle cases where interaction.guild is None (e.g., from DM)
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            # Send error message to user if guild not found
+            try:
+                await user.send("❌ Guild not found. The setup cannot proceed.")
+            except discord.Forbidden:
+                pass  # Can't DM user
+            return
+
         setup = self._pending_setups.get(guild.id)
         if not setup:
             return
@@ -937,7 +947,7 @@ class SystemSelectionView(discord.ui.View):
             setup.state = SetupState.STARTED
 
         await interaction.response.send_message("🚀 Starting setup... This may take a few moments.", ephemeral=True)
-        await self.auto_setup._run_selected_setup(interaction.guild, interaction.user, list(self.selected_systems))
+        await self.auto_setup._run_selected_setup(self.guild_id, interaction.user, list(self.selected_systems))
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, custom_id="cancel_setup", emoji="❌", row=2)
     async def cancel_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
