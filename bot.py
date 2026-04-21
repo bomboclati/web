@@ -160,8 +160,8 @@ class MiroBot(commands.Bot):
         # Reload persistent data
         await self._reload_scheduled_tasks()
         await self._reload_event_listeners()
-        self._reload_custom_commands()
-        self._reload_conversation_history()
+        await self._reload_custom_commands()
+        await self._reload_conversation_history()
         logger.info("Immortal state restored – resuming all automations.")
         
         # Register Persistent Views for long-term button functionality
@@ -1431,99 +1431,49 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             logger.error(f"Error in mention AI handler: {e}")
             await message.channel.send("[WARNING] Sorry, I'm having trouble processing that right now. Please try again!", suppress_embeds=True)
 
-# Global exception handler for asyncio tasks
-def handle_asyncio_exception(loop, context):
-    """Handle exceptions in asyncio tasks to prevent bot crashes."""
-    exception = context.get('exception')
-    if exception:
-        logger.error(f"Unhandled exception in asyncio task: {type(exception).__name__}: {exception}")
-        logger.debug(f"Asyncio context: {context}")
-    else:
-        logger.error(f"Asyncio error: {context}")
-
-# Set the exception handler
-try:
-    loop = asyncio.get_running_loop()
-except RuntimeError:
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-loop.set_exception_handler(handle_asyncio_exception)
-
-# Initialize Bot
-bot = MiroBot()
-
-class AIReplyModal(ui.Modal, title='Reply to AI'):
-    """Modal for users to answer AI clarifying questions."""
-    def __init__(self, question: str):
-        super().__init__()
-        self.answer = ui.TextInput(
-            label=question,
-            style=discord.TextStyle.paragraph,
-            placeholder="Type your answer here..."
-        )
-        self.add_item(self.answer)
-
-class ModmailReplyModal(ui.Modal, title='Reply to User'):
-    """Modal for staff to reply to modmail."""
-    def __init__(self, bot, user, guild_id):
-        super().__init__()
-        self.bot = bot
-        self.user = user
-        self.guild_id = guild_id
-    
-        self.reply = ui.TextInput(
-            label='Message',
-            style=discord.TextStyle.paragraph,
-            placeholder='Type your reply...'
-        )
-        self.add_item(self.reply)
-    
-    async def callback(self, interaction: discord.Interaction):
-        guild = self.bot.get_guild(self.guild_id)
-        user = self.bot.get_user(self.user.id)
-        
-        if not user or not guild:
-            await interaction.response.send_message("❌ User not found.", ephemeral=False)
-            return
-        
-        embed = discord.Embed(
-            title=f"📩 Reply from {guild.name} Staff",
-            description=self.reply.value,
-            color=discord.Color.green()
-        )
-        
-        try:
-            await user.send(embed=embed)
-            await interaction.response.send_message("✅ Reply sent!", ephemeral=False)
-        except Exception as e:
-            logger.warning("Failed to send modmail reply DM: %s", e)
-            await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=False)
-
     async def _reload_event_listeners(self):
         """Reload event listeners from data/event_listeners.json"""
         try:
             listeners_data = dm.load_json("event_listeners", default=[])
-            if not isinstance(listeners_data, list):
-                # If it's a dict, convert it to a list of its values or handle accordingly
-                if isinstance(listeners_data, dict):
-                    listeners_data = list(listeners_data.values())
-                else:
-                    listeners_data = []
+            if not isinstance(listeners_data, (list, dict)):
+                listeners_data = []
+
+            if isinstance(listeners_data, dict):
+                listeners_data = list(listeners_data.values())
 
             self._listeners = {}
+            count = 0
             for listener in listeners_data:
-                event = listener.get("event")
-                if event:
-                    if event not in self._listeners:
-                        self._listeners[event] = []
-                    self._listeners[event].append(listener)
+                if isinstance(listener, dict) and listener.get("event"):
+                    self._register_listener(listener)
+                    count += 1
 
-            count = sum(len(l) for l in self._listeners.values())
             logger.info(f"Restored {count} event listeners.")
         except Exception as e:
             logger.error(f"Error reloading event listeners: {e}")
 
-    def _reload_custom_commands(self):
+    def _register_listener(self, listener_data):
+        """Registers a dynamic event listener."""
+        event = listener_data.get("event")
+        if not event:
+            return
+
+        if event not in self._listeners:
+            self._listeners[event] = []
+
+            # Register a single global dispatcher for this event type
+            # (unless it is on_message which is already handled in on_message)
+            if event != "on_message":
+                async def event_dispatcher(*args, **kwargs):
+                    await self._process_event_listeners(event, *args, **kwargs)
+
+                # Use add_listener to attach it to the bot
+                self.add_listener(event_dispatcher, event)
+                logger.debug(f"Registered global dispatcher for event: {event}")
+
+        self._listeners[event].append(listener_data)
+
+    async def _reload_custom_commands(self):
         """Reload custom commands into memory cache."""
         try:
             count = 0
@@ -1545,7 +1495,7 @@ class ModmailReplyModal(ui.Modal, title='Reply to User'):
         except Exception as e:
             logger.error(f"Error reloading custom commands: {e}")
 
-    def _reload_conversation_history(self):
+    async def _reload_conversation_history(self):
         """Reload conversation history and vector memory."""
         # Vector memory should handle its own loading
         pass
@@ -1655,6 +1605,75 @@ class ModmailReplyModal(ui.Modal, title='Reply to User'):
             logger.info(f"Executed scheduled task: {task_name}")
         except Exception as e:
             logger.error(f"Error executing scheduled action {task_name}: {e}")
+
+# Global exception handler for asyncio tasks
+def handle_asyncio_exception(loop, context):
+    """Handle exceptions in asyncio tasks to prevent bot crashes."""
+    exception = context.get('exception')
+    if exception:
+        logger.error(f"Unhandled exception in asyncio task: {type(exception).__name__}: {exception}")
+        logger.debug(f"Asyncio context: {context}")
+    else:
+        logger.error(f"Asyncio error: {context}")
+
+# Set the exception handler
+try:
+    loop = asyncio.get_running_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+loop.set_exception_handler(handle_asyncio_exception)
+
+# Initialize Bot
+bot = MiroBot()
+
+class AIReplyModal(ui.Modal, title='Reply to AI'):
+    """Modal for users to answer AI clarifying questions."""
+    def __init__(self, question: str):
+        super().__init__()
+        self.answer = ui.TextInput(
+            label=question,
+            style=discord.TextStyle.paragraph,
+            placeholder="Type your answer here..."
+        )
+        self.add_item(self.answer)
+
+class ModmailReplyModal(ui.Modal, title='Reply to User'):
+    """Modal for staff to reply to modmail."""
+    def __init__(self, bot, user, guild_id):
+        super().__init__()
+        self.bot = bot
+        self.user = user
+        self.guild_id = guild_id
+
+        self.reply = ui.TextInput(
+            label='Message',
+            style=discord.TextStyle.paragraph,
+            placeholder='Type your reply...'
+        )
+        self.add_item(self.reply)
+
+    async def callback(self, interaction: discord.Interaction):
+        guild = self.bot.get_guild(self.guild_id)
+        user = self.bot.get_user(self.user.id)
+
+        if not user or not guild:
+            await interaction.response.send_message("❌ User not found.", ephemeral=False)
+            return
+
+        embed = discord.Embed(
+            title=f"📩 Reply from {guild.name} Staff",
+            description=self.reply.value,
+            color=discord.Color.green()
+        )
+
+        try:
+            await user.send(embed=embed)
+            await interaction.response.send_message("✅ Reply sent!", ephemeral=False)
+        except Exception as e:
+            logger.warning("Failed to send modmail reply DM: %s", e)
+            await interaction.response.send_message("❌ Could not send DM to user.", ephemeral=False)
+
 
 # --- Slash Commands ---
 
