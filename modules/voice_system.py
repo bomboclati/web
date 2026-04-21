@@ -254,6 +254,10 @@ Respond with JSON only:
         
         return leaderboard
 
+    def get_hourly_voice_minutes(self, guild_id: int) -> int:
+        """Get the total hourly voice minutes for the guild."""
+        return 0
+
     async def setup(self, interaction: discord.Interaction, params: Dict = None):
         guild = interaction.guild
         
