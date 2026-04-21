@@ -88,6 +88,7 @@ class AdaptiveGamification:
         self._badge_definitions: Dict[str, Badge] = {}
         self._user_skills: Dict[int, Dict[int, Dict[str, Skill]]] = {}
         self._seasonal_events: Dict[int, dict] = {}
+        self.awarded_badges: Dict[str, Dict[str, List[str]]] = {}
         self._load_data()
         self._init_default_badges()
 
@@ -138,6 +139,28 @@ class AdaptiveGamification:
             }
         
         dm.save_json("active_quests", quests_data)
+
+    def _load_awarded_badges(self):
+        self.awarded_badges = dm.load_json("awarded_badges", default={})
+
+    def _save_awarded_badges(self):
+        dm.save_json("awarded_badges", self.awarded_badges)
+
+    def _is_badge_awarded(self, guild_id: int, user_id: int, badge_id: str) -> bool:
+        guild_badges = self.awarded_badges.get(str(guild_id), {})
+        user_badges = guild_badges.get(str(user_id), [])
+        return badge_id in user_badges
+
+    def _mark_badge_awarded(self, guild_id: int, user_id: int, badge_id: str):
+        str_guild = str(guild_id)
+        str_user = str(user_id)
+        if str_guild not in self.awarded_badges:
+            self.awarded_badges[str_guild] = {}
+        if str_user not in self.awarded_badges[str_guild]:
+            self.awarded_badges[str_guild][str_user] = []
+        if badge_id not in self.awarded_badges[str_guild][str_user]:
+            self.awarded_badges[str_guild][str_user].append(badge_id)
+            self._save_awarded_badges()
 
     def _init_default_badges(self):
         default_badges = [
@@ -296,11 +319,11 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
     async def _check_and_award_badges(self, guild_id: int, user_id: int):
         user_badges = dm.get_guild_data(guild_id, f"badges_{user_id}", [])
         earned_ids = {b["badge_id"] for b in user_badges}
-        
+
         user_data = dm.get_guild_data(guild_id, f"user_{user_id}", {})
-        
+
         for badge_id, badge_def in self._badge_definitions.items():
-            if badge_id in earned_ids:
+            if self._is_badge_awarded(guild_id, user_id, badge_id):
                 continue
             
             req = badge_def.requirements
@@ -366,6 +389,8 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
                 channel = self.bot.get_guild(guild_id).system_channel
                 if channel:
                     await channel.send(embed=embed)
+
+        self._mark_badge_awarded(guild_id, user_id, badge_id)
 
     async def _notify_quest_complete(self, quest: Quest):
         member = self.bot.get_guild(quest.guild_id).get_member(quest.user_id)
@@ -600,8 +625,11 @@ Respond with JSON only:
         })
         
         dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
-        
+
         return True
+
+    async def setup_hook(self):
+        self._load_awarded_badges()
 
 
 from discord import app_commands
