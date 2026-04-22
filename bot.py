@@ -148,7 +148,8 @@ class MiroBot(commands.Bot):
         # AutoSetup is not a cog and should not be added as one
 
         # Clear command tree to force resync and fix signature mismatches
-        self.tree.clear_commands()
+        # In discord.py v2.0+, clear_commands() requires a guild argument; pass None to clear global commands
+        self.tree.clear_commands(guild=None)
 
         # Add AutoSetup slash command to the command tree
         self.tree.add_command(self.auto_setup.autosetup)
