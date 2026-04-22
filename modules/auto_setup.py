@@ -509,89 +509,47 @@ class AutoSetup:
             logger.error(f"Failed to remove data for guild {guild.id}: {e}")
 
     async def _send_welcome_dm(self, guild: discord.Guild):
-        """Send a premium, comprehensive welcome DM to the server owner."""
+        """Send a polished, friendly welcome DM to the server owner without auto-setup buttons."""
         owner = guild.owner or await guild.fetch_member(guild.owner_id)
         if not owner: return
 
-        # Embed 1: Introduction
-        embed1 = discord.Embed(
-            title="🚀 Welcome to Miro Bot!",
-            description=f"Hi {owner.mention}! I've been added to **{guild.name}** and I'm ready to help you build the ultimate community. 🤖",
+        # Single polished embed with comprehensive welcome message
+        embed = discord.Embed(
+            title="🎉 Welcome to Miro Bot!",
+            description=f"Hello {owner.mention}! I'm thrilled to be joining **{guild.name}**. Let's make your Discord server amazing together! 🤖",
             color=discord.Color.from_rgb(88, 101, 242) # Discord Blurple
         )
-        embed1.add_field(
+
+        embed.add_field(
             name="🤖 What I Can Do",
-            value="I'm an AI-powered Discord bot that can build and manage features for your server. Use `/bot` to tell me what you want to create!",
-            inline=False
-        )
-        embed1.add_field(
-            name="⚡ Quick Start Commands",
-            value="• `/bot` - Build custom features\n• `/help` - View all commands\n• `/status` - Check bot health",
-            inline=False
-        )
-        embed1.add_field(
-            name="🔧 Auto-Setup Available",
-            value="I can automatically set up essential systems like verification, tickets, applications, and more. Click the button below to get started!\n*This setup process is optional and can be customized to your needs.*",
+            value="I'm an AI-powered Discord bot designed to help you build and manage incredible features for your community. From automated systems to custom commands, I can create almost anything you need!",
             inline=False
         )
 
-        # Embed 2: How to Use & Config
-        embed2 = discord.Embed(
-            title="🚀 Quick Start Guide",
-            description="Here's how to get the most out of Miro Bot:",
-            color=discord.Color.from_rgb(255, 101, 42) # Vibrant Orange
-        )
-        embed2.add_field(
-            name="💡 How to Use the Bot",
-            value="Use `/bot` for any task - just describe what you want in plain English!\n*Example: `/bot create welcome system` or `/bot give @user Member role`*",
+        embed.add_field(
+            name="🚀 Getting Started",
+            value="**Main Command:** Use `/bot` to create features - just describe what you want in plain English!\n\n**Bulk Setup:** Run `/autosetup` to quickly install 33 pre-built systems like verification, tickets, applications, and more.\n\n**Configuration:** Customize your AI settings with these commands:\n• `/config key <provider> <api_key>` - Set your API key\n• `/config provider <provider>` - Choose AI provider\n• `/config model <model>` - Select AI model\n\n*All settings can be changed later, so don't worry about getting it perfect right away!*",
             inline=False
         )
-        embed2.add_field(
-            name="⚙️ Configuration Guide",
-            value="Configure your AI settings to customize the bot's behavior:",
-            inline=False
-        )
-        embed2.add_field(
-            name="🔑 Set API Key",
-            value="`/config key <provider> <api_key>`\n*Example: `/config key openai sk-your-key-here`*\n**Required before using AI features!**",
-            inline=False
-        )
-        embed2.add_field(
-            name="🏢 Change Provider",
-            value="`/config provider <provider>`\n*Providers: openrouter, openai, gemini, anthropic, groq, mistral, deepseek, dashscope*\n*Example: `/config provider openai`*",
-            inline=True
-        )
-        embed2.add_field(
-            name="🤖 Change Model",
-            value="`/config model <model>`\n*Choose from provider-specific models*\n*Example: `/config model gpt-4o`*",
-            inline=True
-        )
-        
-        embed2.set_footer(text=f"Server: {guild.name} • ID: {guild.id}")
 
-        # Add Start Setup Button
-        view = ui.View(timeout=None)
-        start_btn = ui.Button(label="Start Auto-Setup", style=discord.ButtonStyle.success, emoji="🚀", custom_id=f"start_auto_setup_{guild.id}")
-        
-        async def start_callback(interaction: discord.Interaction):
-            await interaction.response.defer(ephemeral=True)
-            await self._start_interactive_setup(interaction, guild_id=guild.id)
-        
-        start_btn.callback = start_callback
-        view.add_item(start_btn)
+        embed.add_field(
+            name="📚 Quick Examples",
+            value="• `/bot create welcome system`\n• `/bot add verification`\n• `/bot setup ticket system`\n• `/bot make a daily reward command`",
+            inline=False
+        )
+
+        embed.set_footer(text=f"Server: {guild.name} • ID: {guild.id} • Need help? Use /help anytime!")
 
         try:
-            await owner.send(embeds=[embed1, embed2], view=view)
-            logger.info(f"Sent welcome DM to owner of {guild.name}")
+            await owner.send(embed=embed)
+            logger.info(f"Sent polished welcome DM to owner of {guild.name}")
         except discord.Forbidden:
             logger.warning(f"Could not DM owner of {guild.name}")
             # Fallback: Send in system channel if available
             if guild.system_channel:
                 try:
-                    await guild.system_channel.send(f"Welcome {owner.mention}! I've been added to the server. Please check your DMs (if open) or use `/autosetup` to get started.", embeds=[embed1, embed2], view=view)
+                    await guild.system_channel.send(f"Welcome {owner.mention}! I've been added to the server. Please check your DMs (if open) or use `/autosetup` to get started.", embed=embed)
                 except: pass
-
-        # Fallback to system channel or create bot-setup channel
 
         # Fallback to system channel or create bot-setup channel
         fallback_channel = None
@@ -620,40 +578,43 @@ class AutoSetup:
 
         if fallback_channel:
             try:
-                await fallback_channel.send(f"{owner.mention}", embeds=[embed, quick_start_embed, config_embed], view=view)
+                await fallback_channel.send(f"{owner.mention}", embed=embed)
                 logger.info(f"Sent welcome message to {fallback_channel.mention} for guild {guild.id}")
             except Exception as e:
                 logger.error(f"Failed to send fallback message: {e}")
         else:
             logger.error(f"No suitable channel found to send setup message for guild {guild.id}")
 
-    async def _start_interactive_setup(self, interaction: discord.Interaction, guild_id: int = None):
-        """Start the interactive system selection setup."""
-        if guild_id is None:
-            guild_id = interaction.guild_id
-            
-        embed = discord.Embed(
-            title=":gear: Server Auto-Setup",
-            description="Let's customize your server setup! Choose which systems you'd like me to install. I'll analyze your existing server structure and avoid creating duplicates.",
-            color=discord.Color.blurple()
-        )
+    # Removed _start_interactive_setup method as part of eliminating auto-setup buttons
+    # Users now use /autosetup command for bulk setup instead of interactive buttons
 
-        embed.add_field(
-            name=":white_check_mark: Available Systems",
-            value="• **Verification** - Member verification with roles\n• **Tickets** - Support ticket system\n• **Applications** - Staff application system\n• **Appeals** - Ban/unmute appeal system\n• **Economy** - Virtual currency and shop\n• **Leveling** - XP and level-up system\n• **Welcome** - Welcome messages and roles\n• **Moderation** - Auto-mod and logging",
-            inline=False
-        )
-
-        embed.add_field(
-            name=":information_source: How It Works",
-            value="Click the buttons below to toggle systems on/off. When you're ready, click **Start Setup** to begin installation.",
-            inline=False
-        )
-
-        embed.set_footer(text="You can change these settings later using /bot commands.")
-
-        view = SystemSelectionView(self, guild_id)
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+    # async def _start_interactive_setup(self, interaction: discord.Interaction, guild_id: int = None):
+    #     """Start the interactive system selection setup."""
+    #     if guild_id is None:
+    #         guild_id = interaction.guild_id
+    #
+    #     embed = discord.Embed(
+    #         title=":gear: Server Auto-Setup",
+    #         description="Let's customize your server setup! Choose which systems you'd like me to install. I'll analyze your existing server structure and avoid creating duplicates.",
+    #         color=discord.Color.blurple()
+    #     )
+    #
+    #     embed.add_field(
+    #         name=":white_check_mark: Available Systems",
+    #         value="• **Verification** - Member verification with roles\n• **Tickets** - Support ticket system\n• **Applications** - Staff application system\n• **Appeals** - Ban/unmute appeal system\n• **Economy** - Virtual currency and shop\n• **Leveling** - XP and level-up system\n• **Welcome** - Welcome messages and roles\n• **Moderation** - Auto-mod and logging",
+    #         inline=False
+    #     )
+    #
+    #     embed.add_field(
+    #         name=":information_source: How It Works",
+    #         value="Click the buttons below to toggle systems on/off. When you're ready, click **Start Setup** to begin installation.",
+    #         inline=False
+    #     )
+    #
+    #     embed.set_footer(text="You can change these settings later using /bot commands.")
+    #
+    #     view = SystemSelectionView(self, guild_id)
+    #     await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
     def _register_system_commands(self, guild_id: int, system_name: str):
         """Helper to register custom commands for a system set up by the auto-setup."""
@@ -1578,228 +1539,231 @@ async def setup(bot: commands.Bot):
         logger.info(f"Setup logging system in {guild.name}")
         return True
 
-class StartSetupView(discord.ui.View):
-    def __init__(self, auto_setup, guild_id):
-        super().__init__(timeout=None)
-        self.auto_setup = auto_setup
-        self.guild_id = guild_id
+# Removed StartSetupView and related classes to eliminate auto-setup buttons from welcome DM
+# The welcome DM now sends a clean embed without interactive components, encouraging users to use /bot and /autosetup commands instead
 
-        # Create buttons dynamically using stored guild_id in custom_id
-        start_button = discord.ui.Button(
-            label="Start Auto-Setup",
-            style=discord.ButtonStyle.success,
-            custom_id=f"start_auto_setup_{guild_id}",
-            emoji="🚀"
-        )
-        start_button.callback = self.start_setup
-        self.add_item(start_button)
+# class StartSetupView(discord.ui.View):
+#     def __init__(self, auto_setup, guild_id):
+#         super().__init__(timeout=None)
+#         self.auto_setup = auto_setup
+#         self.guild_id = guild_id
 
-        skip_button = discord.ui.Button(
-            label="Skip / Use Defaults",
-            style=discord.ButtonStyle.secondary,
-            custom_id=f"skip_auto_setup_{guild_id}",
-            emoji="⏭️"
-        )
-        skip_button.callback = self.skip_setup
-        self.add_item(skip_button)
+#         # Create buttons dynamically using stored guild_id in custom_id
+#         start_button = discord.ui.Button(
+#             label="Start Auto-Setup",
+#             style=discord.ButtonStyle.success,
+#             custom_id=f"start_auto_setup_{guild_id}",
+#             emoji="🚀"
+#         )
+#         start_button.callback = self.start_setup
+#         self.add_item(start_button)
 
-    async def start_setup(self, interaction: discord.Interaction):
-        # Use self.guild_id to retrieve the guild
-        guild = interaction.client.get_guild(self.guild_id)
+#         skip_button = discord.ui.Button(
+#             label="Skip / Use Defaults",
+#             style=discord.ButtonStyle.secondary,
+#             custom_id=f"skip_auto_setup_{guild_id}",
+#             emoji="⏭️"
+#         )
+#         skip_button.callback = self.skip_setup
+#         self.add_item(skip_button)
 
-        if not guild:
-            await interaction.response.send_message("Guild not found. This setup link may be expired.", ephemeral=True)
-            return
+#     async def start_setup(self, interaction: discord.Interaction):
+#         # Use self.guild_id to retrieve the guild
+#         guild = interaction.client.get_guild(self.guild_id)
 
-        # Check if user is owner or admin
-        member = guild.get_member(interaction.user.id)
-        if not member or (not member.guild_permissions.administrator and interaction.user.id != guild.owner_id):
-            await interaction.response.send_message("Only server administrators or the owner can start auto-setup.", ephemeral=True)
-            return
+#         if not guild:
+#             await interaction.response.send_message("Guild not found. This setup link may be expired.", ephemeral=True)
+#             return
 
-        await interaction.response.defer(ephemeral=True)
+#         # Check if user is owner or admin
+#         member = guild.get_member(interaction.user.id)
+#         if not member or (not member.guild_permissions.administrator and interaction.user.id != guild.owner_id):
+#             await interaction.response.send_message("Only server administrators or the owner can start auto-setup.", ephemeral=True)
+#             return
 
-        try:
-            await self.auto_setup._start_interactive_setup(interaction, guild_id=self.guild_id)
-        except Exception as e:
-            logger.error(f"Error starting interactive setup: {e}")
-            await interaction.followup.send("❌ An error occurred while starting setup. Please try again.", ephemeral=True)
+#         await interaction.response.defer(ephemeral=True)
 
-    async def skip_setup(self, interaction: discord.Interaction):
-        # Use self.guild_id to retrieve the guild
-        guild = interaction.client.get_guild(self.guild_id)
+#         try:
+#             await self.auto_setup._start_interactive_setup(interaction, guild_id=self.guild_id)
+#         except Exception as e:
+#             logger.error(f"Error starting interactive setup: {e}")
+#             await interaction.followup.send("❌ An error occurred while starting setup. Please try again.", ephemeral=True)
 
-        if not guild:
-            await interaction.response.send_message("Guild not found. This setup link may be expired.", ephemeral=True)
-            return
+#     async def skip_setup(self, interaction: discord.Interaction):
+#         # Use self.guild_id to retrieve the guild
+#         guild = interaction.client.get_guild(self.guild_id)
 
-        # Check if user is owner or admin
-        member = guild.get_member(interaction.user.id)
-        if not member or (not member.guild_permissions.administrator and interaction.user.id != guild.owner_id):
-            await interaction.response.send_message("Only server administrators or the owner can skip setup.", ephemeral=True)
-            return
+#         if not guild:
+#             await interaction.response.send_message("Guild not found. This setup link may be expired.", ephemeral=True)
+#             return
 
-        setup = self.auto_setup._pending_setups.get(guild.id)
-        if setup:
-            setup.state = SetupState.SKIPPED
+#         # Check if user is owner or admin
+#         member = guild.get_member(interaction.user.id)
+#         if not member or (not member.guild_permissions.administrator and interaction.user.id != guild.owner_id):
+#             await interaction.response.send_message("Only server administrators or the owner can skip setup.", ephemeral=True)
+#             return
 
-        await interaction.response.send_message("✅ Setup skipped! You can use `/bot` anytime to create features manually.", ephemeral=True)
+#         setup = self.auto_setup._pending_setups.get(guild.id)
+#         if setup:
+#             setup.state = SetupState.SKIPPED
 
-
-# Persistent version for setup_hook registration - handles guild-specific custom_ids
-class StartSetupPersistentView(discord.ui.View):
-    def __init__(self, bot):
-        super().__init__(timeout=None)
-        self.bot = bot
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # Handle start_auto_setup_{guild_id} pattern
-        if interaction.data and interaction.data.get("custom_id", "").startswith("start_auto_setup_"):
-            await self.handle_start_setup(interaction)
-            return False  # Prevent default handling
-
-        # Handle skip_auto_setup_{guild_id} pattern
-        if interaction.data and interaction.data.get("custom_id", "").startswith("skip_auto_setup_"):
-            await self.handle_skip_setup(interaction)
-            return False  # Prevent default handling
-
-        return True
-
-    async def handle_start_setup(self, interaction: discord.Interaction):
-        # Extract guild_id from custom_id
-        custom_id = interaction.data["custom_id"]
-        try:
-            button_guild_id = int(custom_id.split('_')[-1])
-        except (ValueError, IndexError):
-            await interaction.response.send_message("Invalid setup button.", ephemeral=True)
-            return
-
-        guild = interaction.guild or self.bot.get_guild(button_guild_id)
-
-        if not guild:
-            await interaction.response.send_message("Guild not found. This setup link may be expired.", ephemeral=True)
-            return
-
-        # Check if user is owner or admin
-        member = guild.get_member(interaction.user.id)
-        if not member or (not member.guild_permissions.administrator and interaction.user.id != guild.owner_id):
-            await interaction.response.send_message("Only server administrators or the owner can start auto-setup.", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        try:
-            # Create a temporary auto_setup instance for this interaction
-            from modules.auto_setup import AutoSetup
-            auto_setup = AutoSetup(self.bot)
-            await auto_setup._start_interactive_setup(interaction, guild_id=guild.id)
-        except Exception as e:
-            logger.error(f"Error starting interactive setup: {e}")
-            await interaction.followup.send("❌ An error occurred while starting setup. Please try again.", ephemeral=True)
-
-    async def handle_skip_setup(self, interaction: discord.Interaction):
-        # Extract guild_id from custom_id
-        custom_id = interaction.data["custom_id"]
-        try:
-            button_guild_id = int(custom_id.split('_')[-1])
-        except (ValueError, IndexError):
-            await interaction.response.send_message("Invalid setup button.", ephemeral=True)
-            return
-
-        guild = interaction.guild or self.bot.get_guild(button_guild_id)
-
-        if not guild:
-            await interaction.response.send_message("Guild not found. This setup link may be expired.", ephemeral=True)
-            return
-
-        # Check if user is owner or admin
-        member = guild.get_member(interaction.user.id)
-        if not member or (not member.guild_permissions.administrator and interaction.user.id != guild.owner_id):
-            await interaction.response.send_message("Only server administrators or the owner can skip setup.", ephemeral=True)
-            return
-
-        # Create a temporary auto_setup instance for this interaction
-        from modules.auto_setup import AutoSetup
-        auto_setup = AutoSetup(self.bot)
-        setup = auto_setup._pending_setups.get(guild.id)
-        if setup:
-            setup.state = SetupState.SKIPPED
-
-        await interaction.response.send_message("✅ Setup skipped! You can use `/bot` anytime to create features manually.", ephemeral=True)
+#         await interaction.response.send_message("✅ Setup skipped! You can use `/bot` anytime to create features manually.", ephemeral=True)
 
 
-class SystemSelectionView(discord.ui.View):
-    def __init__(self, auto_setup, guild_id):
-        super().__init__(timeout=600)  # 10 minute timeout
-        self.auto_setup = auto_setup
-        self.guild_id = guild_id
-        self.selected_systems = set()
+# # Persistent version for setup_hook registration - handles guild-specific custom_ids
+# class StartSetupPersistentView(discord.ui.View):
+#     def __init__(self, bot):
+#         super().__init__(timeout=None)
+#         self.bot = bot
 
-    @discord.ui.button(label="Verification", style=discord.ButtonStyle.primary, custom_id="select_verification", emoji="✅")
-    async def toggle_verification(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._toggle_system(interaction, "verification", button)
+#     async def interaction_check(self, interaction: discord.Interaction) -> bool:
+#         # Handle start_auto_setup_{guild_id} pattern
+#         if interaction.data and interaction.data.get("custom_id", "").startswith("start_auto_setup_"):
+#             await self.handle_start_setup(interaction)
+#             return False  # Prevent default handling
 
-    @discord.ui.button(label="Tickets", style=discord.ButtonStyle.primary, custom_id="select_tickets", emoji="🎫")
-    async def toggle_tickets(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._toggle_system(interaction, "tickets", button)
+#         # Handle skip_auto_setup_{guild_id} pattern
+#         if interaction.data and interaction.data.get("custom_id", "").startswith("skip_auto_setup_"):
+#             await self.handle_skip_setup(interaction)
+#             return False  # Prevent default handling
 
-    @discord.ui.button(label="Applications", style=discord.ButtonStyle.primary, custom_id="select_applications", emoji="📝")
-    async def toggle_applications(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._toggle_system(interaction, "applications", button)
+#         return True
 
-    @discord.ui.button(label="Appeals", style=discord.ButtonStyle.primary, custom_id="select_appeals", emoji="⚖️")
-    async def toggle_appeals(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._toggle_system(interaction, "appeals", button)
+#     async def handle_start_setup(self, interaction: discord.Interaction):
+#         # Extract guild_id from custom_id
+#         custom_id = interaction.data["custom_id"]
+#         try:
+#             button_guild_id = int(custom_id.split('_')[-1])
+#         except (ValueError, IndexError):
+#             await interaction.response.send_message("Invalid setup button.", ephemeral=True)
+#             return
 
-    @discord.ui.button(label="Economy", style=discord.ButtonStyle.secondary, custom_id="select_economy", emoji="💰")
-    async def toggle_economy(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._toggle_system(interaction, "economy", button)
+#         guild = interaction.guild or self.bot.get_guild(button_guild_id)
 
-    @discord.ui.button(label="Leveling", style=discord.ButtonStyle.secondary, custom_id="select_leveling", emoji="⬆️")
-    async def toggle_leveling(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._toggle_system(interaction, "leveling", button)
+#         if not guild:
+#             await interaction.response.send_message("Guild not found. This setup link may be expired.", ephemeral=True)
+#             return
 
-    async def _toggle_system(self, interaction: discord.Interaction, system: str, button: discord.ui.Button):
-        if system in self.selected_systems:
-            self.selected_systems.remove(system)
-            button.style = discord.ButtonStyle.secondary
-        else:
-            self.selected_systems.add(system)
-            button.style = discord.ButtonStyle.success
+#         # Check if user is owner or admin
+#         member = guild.get_member(interaction.user.id)
+#         if not member or (not member.guild_permissions.administrator and interaction.user.id != guild.owner_id):
+#             await interaction.response.send_message("Only server administrators or the owner can start auto-setup.", ephemeral=True)
+#             return
 
-        await interaction.response.edit_message(view=self)
+#         await interaction.response.defer(ephemeral=True)
 
-    @discord.ui.button(label="Start Setup", style=discord.ButtonStyle.success, custom_id="confirm_setup", emoji="🚀", row=2)
-    async def start_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not self.selected_systems:
-            await interaction.response.send_message("Please select at least one system to set up!", ephemeral=True)
-            return
+#         try:
+#             # Create a temporary auto_setup instance for this interaction
+#             from modules.auto_setup import AutoSetup
+#             auto_setup = AutoSetup(self.bot)
+#             await auto_setup._start_interactive_setup(interaction, guild_id=guild.id)
+#         except Exception as e:
+#             logger.error(f"Error starting interactive setup: {e}")
+#             await interaction.followup.send("❌ An error occurred while starting setup. Please try again.", ephemeral=True)
 
-        # Fetch guild to ensure it exists with retry mechanism
-        guild = self.auto_setup.bot.get_guild(self.guild_id)
-        if not guild:
-            # Wait 1 second and try again
-            await asyncio.sleep(1)
-            guild = self.auto_setup.bot.get_guild(self.guild_id)
-            if not guild:
-                logger.error(f"Guild {self.guild_id} not found after retry in auto-setup")
-                await interaction.response.send_message("Something went wrong, please re-invite the bot", ephemeral=True)
-                return
+#     async def handle_skip_setup(self, interaction: discord.Interaction):
+#         # Extract guild_id from custom_id
+#         custom_id = interaction.data["custom_id"]
+#         try:
+#             button_guild_id = int(custom_id.split('_')[-1])
+#         except (ValueError, IndexError):
+#             await interaction.response.send_message("Invalid setup button.", ephemeral=True)
+#             return
 
-        setup = self.auto_setup._pending_setups.get(self.guild_id)
-        if setup:
-            setup.selected_systems = list(self.selected_systems)
-            setup.state = SetupState.STARTED
+#         guild = interaction.guild or self.bot.get_guild(button_guild_id)
 
-        await interaction.response.send_message("🚀 Starting setup... This may take a few moments.", ephemeral=True)
-        await self.auto_setup._run_selected_setup(self.guild_id, interaction.user, list(self.selected_systems))
+#         if not guild:
+#             await interaction.response.send_message("Guild not found. This setup link may be expired.", ephemeral=True)
+#             return
 
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, custom_id="cancel_setup", emoji="❌", row=2)
-    async def cancel_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
-        setup = self.auto_setup._pending_setups.get(self.guild_id)
-        if setup:
-            setup.state = SetupState.SKIPPED
+#         # Check if user is owner or admin
+#         member = guild.get_member(interaction.user.id)
+#         if not member or (not member.guild_permissions.administrator and interaction.user.id != guild.owner_id):
+#             await interaction.response.send_message("Only server administrators or the owner can skip setup.", ephemeral=True)
+#             return
 
-        await interaction.response.send_message("✅ Setup cancelled. You can start over anytime!", ephemeral=True)
-        self.stop()
+#         # Create a temporary auto_setup instance for this interaction
+#         from modules.auto_setup import AutoSetup
+#         auto_setup = AutoSetup(self.bot)
+#         setup = auto_setup._pending_setups.get(guild.id)
+#         if setup:
+#            setup.state = SetupState.SKIPPED
+
+#         await interaction.response.send_message("✅ Setup skipped! You can use `/bot` anytime to create features manually.", ephemeral=True)
+
+
+# class SystemSelectionView(discord.ui.View):
+#     def __init__(self, auto_setup, guild_id):
+#         super().__init__(timeout=600)  # 10 minute timeout
+#         self.auto_setup = auto_setup
+#         self.guild_id = guild_id
+#         self.selected_systems = set()
+
+#     @discord.ui.button(label="Verification", style=discord.ButtonStyle.primary, custom_id="select_verification", emoji="✅")
+#     async def toggle_verification(self, interaction: discord.Interaction, button: discord.ui.Button):
+#         await self._toggle_system(interaction, "verification", button)
+
+#     @discord.ui.button(label="Tickets", style=discord.ButtonStyle.primary, custom_id="select_tickets", emoji="🎫")
+#     async def toggle_tickets(self, interaction: discord.Interaction, button: discord.ui.Button):
+#         await self._toggle_system(interaction, "tickets", button)
+
+#     @discord.ui.button(label="Applications", style=discord.ButtonStyle.primary, custom_id="select_applications", emoji="📝")
+#     async def toggle_applications(self, interaction: discord.Interaction, button: discord.ui.Button):
+#         await self._toggle_system(interaction, "applications", button)
+
+#     @discord.ui.button(label="Appeals", style=discord.ButtonStyle.primary, custom_id="select_appeals", emoji="⚖️")
+#     async def toggle_appeals(self, interaction: discord.Interaction, button: discord.ui.Button):
+#         await self._toggle_system(interaction, "appeals", button)
+
+#     @discord.ui.button(label="Economy", style=discord.ButtonStyle.secondary, custom_id="select_economy", emoji="💰")
+#     async def toggle_economy(self, interaction: discord.Interaction, button: discord.ui.Button):
+#         await self._toggle_system(interaction, "economy", button)
+
+#     @discord.ui.button(label="Leveling", style=discord.ButtonStyle.secondary, custom_id="select_leveling", emoji="⬆️")
+#     async def toggle_leveling(self, interaction: discord.Interaction, button: discord.ui.Button):
+#         await self._toggle_system(interaction, "leveling", button)
+
+#     async def _toggle_system(self, interaction: discord.Interaction, system: str, button: discord.ui.Button):
+#         if system in self.selected_systems:
+#             self.selected_systems.remove(system)
+#             button.style = discord.ButtonStyle.secondary
+#         else:
+#             self.selected_systems.add(system)
+#             button.style = discord.ButtonStyle.success
+
+#         await interaction.response.edit_message(view=self)
+
+#     @discord.ui.button(label="Start Setup", style=discord.ButtonStyle.success, custom_id="confirm_setup", emoji="🚀", row=2)
+#     async def start_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
+#         if not self.selected_systems:
+#             await interaction.response.send_message("Please select at least one system to set up!", ephemeral=True)
+#             return
+
+#         # Fetch guild to ensure it exists with retry mechanism
+#         guild = self.auto_setup.bot.get_guild(self.guild_id)
+#         if not guild:
+#             # Wait 1 second and try again
+#             await asyncio.sleep(1)
+#             guild = self.auto_setup.bot.get_guild(self.guild_id)
+#             if not guild:
+#                 logger.error(f"Guild {self.guild_id} not found after retry in auto-setup")
+#                 await interaction.response.send_message("Something went wrong, please re-invite the bot", ephemeral=True)
+#                 return
+
+#         setup = self.auto_setup._pending_setups.get(self.guild_id)
+#         if setup:
+#             setup.selected_systems = list(self.selected_systems)
+#             setup.state = SetupState.STARTED
+
+#         await interaction.response.send_message("🚀 Starting setup... This may take a few moments.", ephemeral=True)
+#         await self.auto_setup._run_selected_setup(self.guild_id, interaction.user, list(self.selected_systems))
+
+#     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, custom_id="cancel_setup", emoji="❌", row=2)
+#     async def cancel_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
+#         setup = self.auto_setup._pending_setups.get(self.guild_id)
+#         if setup:
+#             setup.state = SetupState.SKIPPED
+
+#         await interaction.response.send_message("✅ Setup cancelled. You can start over anytime!", ephemeral=True)
+#         self.stop()
 
