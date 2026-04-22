@@ -145,7 +145,7 @@ class MiroBot(commands.Bot):
         register_all_persistent_views(self)
         
         # Add cogs that contain slash commands
-        await self.add_cog(self.auto_setup)
+        # AutoSetup is not a cog and should not be added as one
         
         # Sync slash commands globally (important if not synced elsewhere)
         await self.tree.sync()
