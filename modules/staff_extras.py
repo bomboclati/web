@@ -21,22 +21,25 @@ class StaffExtras:
         self._load_data()
 
     def _load_data(self):
-        data = dm.load_json("staff_extras", default={})
-        self._reviews = data.get("reviews", {})
-        self._training_tasks = data.get("training_tasks", {})
-        self._promotion_history = data.get("promotion_history", {})
-        self._appeals = data.get("appeals", {})
-        self._exit_interviews = data.get("exit_interviews", {})
+        """Data is now loaded per-guild in respective methods."""
+        pass
 
-    def _save_data(self):
-        data = {
-            "reviews": self._reviews,
-            "training_tasks": self._training_tasks,
-            "promotion_history": self._promotion_history,
-            "appeals": self._appeals,
-            "exit_interviews": self._exit_interviews
-        }
-        dm.save_json("staff_extras", data)
+    def _save_guild_data(self, guild_id: int):
+        """Save all staff extras data for a specific guild."""
+        dm.update_guild_data(guild_id, "staff_reviews", self._reviews.get(guild_id, {}))
+        dm.update_guild_data(guild_id, "training_tasks", self._training_tasks.get(guild_id, {}))
+        dm.update_guild_data(guild_id, "promotion_history", self._promotion_history.get(guild_id, []))
+        dm.update_guild_data(guild_id, "staff_appeals", self._appeals.get(guild_id, {}))
+        dm.update_guild_data(guild_id, "exit_interviews", self._exit_interviews.get(guild_id, []))
+
+    def _get_guild_data(self, guild_id: int):
+        """Ensure guild data is loaded into memory."""
+        if guild_id not in self._reviews:
+            self._reviews[guild_id] = dm.get_guild_data(guild_id, "staff_reviews", {})
+            self._training_tasks[guild_id] = dm.get_guild_data(guild_id, "training_tasks", {})
+            self._promotion_history[guild_id] = dm.get_guild_data(guild_id, "promotion_history", [])
+            self._appeals[guild_id] = dm.get_guild_data(guild_id, "staff_appeals", {})
+            self._exit_interviews[guild_id] = dm.get_guild_data(guild_id, "exit_interviews", [])
 
     async def on_member_remove(self, member):
         """Handle exit interviews when staff leave"""
@@ -81,9 +84,7 @@ class StaffExtras:
             await msg.add_reaction("🟡")
             await msg.add_reaction("🔴")
             
-            if guild_id not in self._exit_interviews:
-                self._exit_interviews[guild_id] = []
-            
+            self._get_guild_data(guild_id)
             self._exit_interviews[guild_id].append({
                 "user_id": member.id,
                 "username": str(member),
@@ -91,7 +92,7 @@ class StaffExtras:
                 "guild_id": guild_id,
                 "reaction": None
             })
-            self._save_data()
+            self._save_guild_data(guild_id)
         except:
             pass
 
@@ -121,6 +122,7 @@ class StaffExtras:
 
     async def get_staff_leaderboard(self, guild_id: int, limit: int = 10) -> List[dict]:
         """Get staff ranked by performance"""
+        self._get_guild_data(guild_id)
         config = dm.get_guild_data(guild_id, "staff_promo_config", {})
         tiers = config.get("tiers", [])
         
@@ -233,19 +235,18 @@ class StaffExtras:
     async def create_training_task(self, guild_id: int, name: str, description: str, 
                               required_score: float, reward_boost: float):
         """Create a training task"""
-        if guild_id not in self._training_tasks:
-            self._training_tasks[guild_id] = {}
-        
+        self._get_guild_data(guild_id)
         self._training_tasks[guild_id][name] = {
             "description": description,
             "required_score": required_score,
             "reward_boost": reward_boost,
             "created_at": time.time()
         }
-        self._save_data()
+        self._save_guild_data(guild_id)
 
     async def get_training_tasks(self, guild_id: int) -> List[dict]:
         """Get available training tasks"""
+        self._get_guild_data(guild_id)
         tasks = self._training_tasks.get(guild_id, {})
         return [{"name": k, **v} for k, v in tasks.items()]
 

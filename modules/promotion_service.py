@@ -39,37 +39,29 @@ class PromotionService:
         self._last_notification_time = {}
 
     def _calculate_gamification_score(self, guild_id: int, user_id: int) -> int:
-        """Calculate a gamification score based on badges, quests, and skills"""
+        """Calculate a gamification score based on badges, quests, and skills."""
         try:
-            # Import gamification system to access its data
-            from modules.gamification import AdaptiveGamification
-            # Note: In a real implementation, we'd need access to the bot instance
-            # For now, we'll calculate based on available data
+            # Base score from badges earned
+            awarded = dm.load_json("awarded_badges", default={}).get(str(guild_id), {}).get(str(user_id), [])
+            badge_score = len(awarded) * 5
             
-            # Base score from badges
-            badges = dm.get_guild_data(guild_id, f"badges_{user_id}", [])
-            badge_score = len(badges) * 10  # 10 points per badge
-            
-            # Bonus for rare/evolved badges
-            evolved_bonus = 0
-            for badge_data in badges:
-                evolved_level = badge_data.get("evolved_level", 1)
-                if evolved_level > 1:
-                    evolved_bonus += (evolved_level - 1) * 5
-            
-            # Skill points (if available)
-            skills = dm.get_guild_data(guild_id, f"skills_{user_id}", {})
-            skill_score = 0
-            for skill_name, skill_data in skills.items():
-                level = skill_data.get("level", 1)
-                skill_score += level * 2  # 2 points per skill level
+            # Bonus from legacy badge data if it exists
+            legacy_badges = dm.get_guild_data(guild_id, f"badges_{user_id}", [])
+            if isinstance(legacy_badges, list):
+                for b in legacy_badges:
+                    if isinstance(b, dict):
+                        badge_score += b.get("evolved_level", 1) * 2
             
             # Quest completion bonus
-            quests_completed = dm.get_guild_data(guild_id, f"user_{user_id}", {}).get("quests_completed", 0)
-            quest_bonus = quests_completed * 5  # 5 points per completed quest
+            udata = dm.get_guild_data(guild_id, f"user_{user_id}", {})
+            quests = udata.get("quests_completed", 0)
             
-            total_score = badge_score + evolved_bonus + skill_score + quest_bonus
-            return min(100, total_score)  # Cap at 100
+            # Skill points
+            skills = dm.get_guild_data(guild_id, f"skills_{user_id}", {})
+            skill_score = sum(s.get("level", 1) for s in skills.values()) if isinstance(skills, dict) else 0
+            
+            total_score = badge_score + (quests * 5) + (skill_score * 2)
+            return min(100, total_score)
         except Exception as e:
             logger.error(f"Error calculating gamification score: {e}")
             return 0
@@ -92,7 +84,7 @@ class PromotionService:
             logger.error(f"Error getting user level: {e}")
             return 1
 
-    def _compute_score(self, guild_id: int, user_id: int, member: discord.Member, metrics: dict) -> float:
+    def _compute_score(self, guild_id: int, user_id: int, member: discord.Member, metrics: dict, config: Optional[dict] = None) -> float:
         """Compute promotion score based on various metrics"""
         now = discord.utils.utcnow()
         joined = member.joined_at or now
@@ -115,24 +107,27 @@ class PromotionService:
         }
         
         score = 0.0
-        for metric_name, config in metrics.items():
-            if not config.get("enabled", True):
+        for metric_name, m_config in metrics.items():
+            if not m_config.get("enabled", True):
                 continue
-            weight = config.get("weight", 0)
-            max_val = config.get("max", 100)
+            weight = m_config.get("weight", 0)
+            max_val = m_config.get("max", 100)
             raw_val = values.get(metric_name, 0)
             normalized = max(0, min(1, raw_val / max_val)) if max_val > 0 else 0
             score += normalized * weight
         
         # Apply achievement bonuses
-        # Note: In a real implementation, we'd pass the full config here
-        # For now, using default bonuses
-        bonuses = self._default_achievement_bonuses
+        bonuses = config.get("achievement_bonuses", self._default_achievement_bonuses) if config else self._default_achievement_bonuses
         
         user_achievements = dm.get_guild_data(guild_id, f"achievements_{user_id}", [])
+        # Also check new awarded_badges.json
+        awarded = dm.load_json("awarded_badges", default={}).get(str(guild_id), {}).get(str(user_id), [])
+
         total_bonus = 1.0
         for ach_name, multiplier in bonuses.items():
-            if ach_name in user_achievements:
+            # Check by name in legacy data or by ID in new data
+            has_ach = any(a.get("name") == ach_name for a in user_achievements if isinstance(a, dict)) or ach_name in awarded
+            if has_ach:
                 total_bonus += (multiplier - 1.0)
         
         score = score * min(total_bonus, 2.0)

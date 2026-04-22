@@ -175,8 +175,16 @@ class AchievementSystem:
 
     async def check_achievements(self, guild_id: int, user_id: int):
         user_data = dm.get_guild_data(guild_id, f"user_{user_id}", {})
-        earned = dm.get_guild_data(guild_id, f"achievements_{user_id}", [])
-        earned_ids = [a["achievement_id"] for a in earned]
+
+        # Truly immortal check using dedicated awarded_badges.json
+        awarded = dm.load_json("awarded_badges", default={})
+        gid_str = str(guild_id)
+        uid_str = str(user_id)
+
+        if gid_str not in awarded: awarded[gid_str] = {}
+        if uid_str not in awarded[gid_str]: awarded[gid_str][uid_str] = []
+
+        earned_ids = awarded[gid_str][uid_str]
         
         new_earned = []
         
@@ -223,13 +231,23 @@ class AchievementSystem:
         return new_earned
 
     async def _award_achievement(self, guild_id: int, user_id: int, achievement: Achievement, new_earned: list):
-        earned = dm.get_guild_data(guild_id, f"achievements_{user_id}", [])
+        # Update awarded_badges.json
+        awarded = dm.load_json("awarded_badges", default={})
+        gid_str = str(guild_id)
+        uid_str = str(user_id)
+        if gid_str not in awarded: awarded[gid_str] = {}
+        if uid_str not in awarded[gid_str]: awarded[gid_str][uid_str] = []
         
+        if achievement.id not in awarded[gid_str][uid_str]:
+            awarded[gid_str][uid_str].append(achievement.id)
+            dm.save_json("awarded_badges", awarded)
+
+        # Legacy update for backward compatibility
+        earned = dm.get_guild_data(guild_id, f"achievements_{user_id}", [])
         earned.append({
             "achievement_id": achievement.id,
             "earned_at": time.time()
         })
-        
         dm.update_guild_data(guild_id, f"achievements_{user_id}", earned)
         
         reward = achievement.reward
@@ -360,11 +378,12 @@ class AchievementSystem:
         return True
 
     def get_user_achievements(self, guild_id: int, user_id: int) -> List[dict]:
-        earned = dm.get_guild_data(guild_id, f"achievements_{user_id}", [])
+        awarded = dm.load_json("awarded_badges", default={})
+        earned_ids = awarded.get(str(guild_id), {}).get(str(user_id), [])
         
         result = []
-        for e in earned:
-            ach = self._achievements.get(e["achievement_id"])
+        for ach_id in earned_ids:
+            ach = self._achievements.get(ach_id)
             if ach:
                 result.append({
                     "id": ach.id,
@@ -372,9 +391,24 @@ class AchievementSystem:
                     "description": ach.description,
                     "icon": ach.icon,
                     "category": ach.category,
-                    "earned_at": e["earned_at"]
+                    "earned_at": time.time() # Approximation since original timestamp not in new file
                 })
         
+        # Fallback to legacy data if needed
+        if not result:
+            earned = dm.get_guild_data(guild_id, f"achievements_{user_id}", [])
+            for e in earned:
+                ach = self._achievements.get(e["achievement_id"])
+                if ach:
+                    result.append({
+                        "id": ach.id,
+                        "name": ach.name,
+                        "description": ach.description,
+                        "icon": ach.icon,
+                        "category": ach.category,
+                        "earned_at": e["earned_at"]
+                    })
+
         return result
 
     def get_user_titles(self, guild_id: int, user_id: int) -> List[dict]:

@@ -94,52 +94,66 @@ class AdaptiveGamification:
         self._init_default_badges()
 
     def _load_data(self):
-        quests_data = dm.load_json("active_quests", default={})
-        
-        for quest_id, data in quests_data.items():
-            try:
-                quest = Quest(
-                    id=quest_id,
-                    guild_id=data["guild_id"],
-                    user_id=data["user_id"],
-                    quest_type=QuestType(data["quest_type"]),
-                    title=data["title"],
-                    description=data["description"],
-                    requirements=data["requirements"],
-                    rewards=data["rewards"],
-                    expires_at=data["expires_at"],
-                    status=QuestStatus(data["status"]),
-                    progress=data["progress"],
-                    created_at=data["created_at"]
-                )
-                
-                if quest.status == QuestStatus.ACTIVE and quest.expires_at > time.time():
-                    self._active_quests[quest_id] = quest
-            except Exception as e:
-                logger.error(f"Failed to load quest {quest_id}: {e}")
-        
-        seasonal = dm.load_json("seasonal_events", default={})
-        self._seasonal_events = {int(k): v for k, v in seasonal.items()}
+        """Load quests and events from guild-specific files."""
+        count = 0
+        data_dir = "data"
+        if os.path.exists(data_dir):
+            for filename in os.listdir(data_dir):
+                if filename.startswith("guild_") and filename.endswith(".json"):
+                    try:
+                        guild_id_str = filename[6:-5]
+                        if not guild_id_str.isdigit(): continue
+                        guild_id = int(guild_id_str)
+                        guild_data = dm.load_json(filename[:-5], default={})
 
-    def _save_quests(self):
-        quests_data = {}
+                        # Load quests
+                        quests_data = guild_data.get("quests", {})
+                        for quest_id, data in quests_data.items():
+                            quest = Quest(
+                                id=quest_id,
+                                guild_id=guild_id,
+                                user_id=data["user_id"],
+                                quest_type=QuestType(data["quest_type"]),
+                                title=data["title"],
+                                description=data["description"],
+                                requirements=data["requirements"],
+                                rewards=data["rewards"],
+                                expires_at=data["expires_at"],
+                                status=QuestStatus(data["status"]),
+                                progress=data["progress"],
+                                created_at=data["created_at"]
+                            )
+                            if quest.status == QuestStatus.ACTIVE and quest.expires_at > time.time():
+                                self._active_quests[quest_id] = quest
+                                count += 1
+
+                        # Load seasonal events
+                        guild_seasonal = guild_data.get("seasonal_events", {})
+                        if guild_seasonal:
+                            self._seasonal_events[guild_id] = guild_seasonal
+
+                    except Exception as e:
+                        logger.error(f"Failed to load gamification data from {filename}: {e}")
+        logger.info(f"Loaded {count} active quests from guild files.")
+
+    def _save_quests(self, quest: Quest):
+        """Save a single quest to its guild-specific file."""
+        guild_id = quest.guild_id
+        quests = dm.get_guild_data(guild_id, "quests", {})
         
-        for quest_id, quest in self._active_quests.items():
-            quests_data[quest_id] = {
-                "guild_id": quest.guild_id,
-                "user_id": quest.user_id,
-                "quest_type": quest.quest_type.value,
-                "title": quest.title,
-                "description": quest.description,
-                "requirements": quest.requirements,
-                "rewards": quest.rewards,
-                "expires_at": quest.expires_at,
-                "status": quest.status.value,
-                "progress": quest.progress,
-                "created_at": quest.created_at
-            }
-        
-        dm.save_json("active_quests", quests_data)
+        quests[quest.id] = {
+            "user_id": quest.user_id,
+            "quest_type": quest.quest_type.value,
+            "title": quest.title,
+            "description": quest.description,
+            "requirements": quest.requirements,
+            "rewards": quest.rewards,
+            "expires_at": quest.expires_at,
+            "status": quest.status.value,
+            "progress": quest.progress,
+            "created_at": quest.created_at
+        }
+        dm.update_guild_data(guild_id, "quests", quests)
 
     def _load_awarded_badges(self):
         self.awarded_badges = dm.load_json("awarded_badges", default={})
@@ -267,7 +281,7 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
             )
             
             self._active_quests[quest_id] = quest
-            self._save_quests()
+            self._save_quests(quest)
             
         except Exception as e:
             error_str = str(e)
@@ -284,7 +298,7 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
             
             if quest.expires_at < current_time:
                 quest.status = QuestStatus.EXPIRED
-                self._save_quests()
+                self._save_quests(quest)
                 continue
             
             if quest.quest_type == QuestType.DAILY:
@@ -307,7 +321,7 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
                     quest.status = QuestStatus.COMPLETED
                     await self._notify_quest_complete(quest)
                 
-                self._save_quests()
+                self._save_quests(quest)
 
     async def _check_badge_awards(self):
         for guild in self.bot.guilds:
@@ -442,7 +456,7 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
         dm.update_guild_data(guild_id, f"user_{user_id}", user_data)
         
         quest.status = QuestStatus.CLAIMED
-        self._save_quests()
+        self._save_quests(quest)
         
         return True
 
@@ -538,7 +552,7 @@ Respond with JSON only:
             )
             
             self._active_quests[quest_id] = quest
-            self._save_quests()
+            self._save_quests(quest)
             
             return quest
             

@@ -31,38 +31,56 @@ class ReminderSystem:
         self._load_reminders()
 
     def _load_reminders(self):
-        data = dm.load_json("reminders", default={})
-        
-        for rem_id, rem_data in data.items():
-            try:
-                reminder = Reminder(
-                    id=rem_id,
-                    user_id=rem_data["user_id"],
-                    guild_id=rem_data["guild_id"],
-                    channel_id=rem_data.get("channel_id"),
-                    message=rem_data["message"],
-                    remind_at=rem_data["remind_at"],
-                    recurring=rem_data.get("recurring"),
-                    created_at=rem_data["created_at"]
-                )
-                
-                if reminder.remind_at > time.time():
-                    self._reminders[rem_id] = reminder
-            except Exception as e:
-                logger.error(f"Failed to load reminder {rem_id}: {e}")
+        """Load reminders from all guild-specific data files."""
+        count = 0
+        data_dir = "data"
+        if os.path.exists(data_dir):
+            for filename in os.listdir(data_dir):
+                if filename.startswith("guild_") and filename.endswith(".json"):
+                    try:
+                        guild_id_str = filename[6:-5]
+                        if not guild_id_str.isdigit(): continue
+                        guild_id = int(guild_id_str)
+                        guild_data = dm.load_json(filename[:-5], default={})
+                        reminders_data = guild_data.get("reminders", {})
+
+                        for rem_id, rem_data in reminders_data.items():
+                            reminder = Reminder(
+                                id=rem_id,
+                                user_id=rem_data["user_id"],
+                                guild_id=guild_id,
+                                channel_id=rem_data.get("channel_id"),
+                                message=rem_data["message"],
+                                remind_at=rem_data["remind_at"],
+                                recurring=rem_data.get("recurring"),
+                                created_at=rem_data["created_at"]
+                            )
+                            if reminder.remind_at > time.time():
+                                self._reminders[rem_id] = reminder
+                                count += 1
+                    except Exception as e:
+                        logger.error(f"Failed to load reminders from {filename}: {e}")
+        logger.info(f"Loaded {count} reminders from guild files.")
 
     def _save_reminder(self, reminder: Reminder):
-        data = dm.load_json("reminders", default={})
-        data[reminder.id] = {
-            "user_id": reminder.user_id,
-            "guild_id": reminder.guild_id,
-            "channel_id": reminder.channel_id,
-            "message": reminder.message,
-            "remind_at": reminder.remind_at,
-            "recurring": reminder.recurring,
-            "created_at": reminder.created_at
-        }
-        dm.save_json("reminders", data)
+        """Save a single reminder to its guild-specific data file."""
+        guild_id = reminder.guild_id
+        reminders = dm.get_guild_data(guild_id, "reminders", {})
+
+        # If the reminder is deleted from memory (e.g. executed), it's also removed from disk
+        if reminder.id in self._reminders:
+            reminders[reminder.id] = {
+                "user_id": reminder.user_id,
+                "channel_id": reminder.channel_id,
+                "message": reminder.message,
+                "remind_at": reminder.remind_at,
+                "recurring": reminder.recurring,
+                "created_at": reminder.created_at
+            }
+        else:
+            reminders.pop(reminder.id, None)
+
+        dm.update_guild_data(guild_id, "reminders", reminders)
 
     def start_reminder_loop(self):
         asyncio.create_task(self._reminder_loop())
@@ -217,13 +235,13 @@ class ReminderSystem:
 
     def cancel_reminder(self, reminder_id: str) -> bool:
         if reminder_id in self._reminders:
+            reminder = self._reminders[reminder_id]
+            guild_id = reminder.guild_id
             del self._reminders[reminder_id]
             
-            data = dm.load_json("reminders", default={})
-            if reminder_id in data:
-                del data[reminder_id]
-                dm.save_json("reminders", data)
-            
+            reminders = dm.get_guild_data(guild_id, "reminders", {})
+            reminders.pop(reminder_id, None)
+            dm.update_guild_data(guild_id, "reminders", reminders)
             return True
         return False
 

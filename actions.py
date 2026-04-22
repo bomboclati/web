@@ -3923,11 +3923,21 @@ class ActionHandler:
         """
         Executes a custom '!' command's stored code.
         Can be a simple string, a list of actions, or a special command object.
-        Includes error prevention based on learned patterns.
+        Includes error prevention based on learned patterns and supports arguments.
         """
         guild_id = message.guild.id
         user_id = message.author.id
         cmd_data_obj = None
+
+        # Extract arguments
+        full_content = message.content
+        prefix = "!" # Fallback
+        if message.guild:
+             prefix = dm.get_guild_data(message.guild.id, "prefix", "!")
+
+        args_str = ""
+        if cmd_name and full_content.startswith(f"{prefix}{cmd_name} "):
+            args_str = full_content[len(prefix) + len(cmd_name) + 1:].strip()
 
         cooldown_key = (guild_id, user_id, cmd_name)
         now = time.time()
@@ -3944,6 +3954,12 @@ class ActionHandler:
 
             valid, error_msg = validate_command_json(data)
             if not valid:
+                # If it's intended to be a simple command but user wrote something that looks like broken JSON
+                if "command_type" not in data:
+                     # For backward compatibility with non-JSON commands that might be stored
+                     # although now we prefer JSON, we still support plain text
+                     await message.channel.send(code.replace("{args}", args_str) if args_str else code)
+                     return True
                 await message.channel.send(f"❌ {error_msg}")
                 return False
 
@@ -3961,31 +3977,31 @@ class ActionHandler:
                 # or {"actions": [{"name": "...", "parameters": {...}}]}
                 if not command_type and (data.get("action") or data.get("actions")):
                     await message.channel.send(f"⚙️ Running **!{cmd_name}**...")
-                    # Build a fake interaction-like context using message
-                    class _FakeInteraction:
-                        def __init__(self, msg):
-                            self.guild = msg.guild
-                            self.channel = msg.channel
-                            self.user = msg.author
-                            self.response = self
-                            self._responded = False
-                        async def send_message(self, content=None, embed=None, ephemeral=False):
-                            await message.channel.send(content=content, embed=embed)
-                        async def defer(self, ephemeral=False):
-                            pass
-                        async def followup_send(self, *a, **kw):
-                            await message.channel.send(*a, **kw)
-                        async def edit_message(self, *a, **kw):
-                            pass
-                    fake = _FakeInteraction(message)
+                    from modules.auto_setup import MockInteraction
+                    fake = MockInteraction(self.bot, message.guild, message.author)
+                    fake.channel = message.channel
+
                     actions = data.get("actions", [])
                     if not actions and data.get("action"):
                         actions = [{"name": data["action"], "parameters": data.get("parameters", {})}]
+
+                    # Replace {args} in parameters
+                    for action in actions:
+                        params = action.get("parameters", {})
+                        for k, v in params.items():
+                            if isinstance(v, str):
+                                params[k] = v.replace("{args}", args_str)
+
                     result = await self.execute_sequence(fake, actions)
                     if result["success"]:
                         await message.channel.send(f"✅ **!{cmd_name}** completed!")
                     else:
                         await message.channel.send(f"❌ **!{cmd_name}** failed: {result.get('error', 'Unknown error')}")
+                    return True
+
+                if command_type == "simple":
+                    content = data.get("content", "")
+                    await message.channel.send(content.replace("{args}", args_str) if args_str else content)
                     return True
 
                 if command_type == "application_status":
@@ -4125,17 +4141,22 @@ class ActionHandler:
         return True
 
     async def send_help_embed(self, message: discord.Message, data: dict) -> bool:
-        """Send a help embed based on stored data"""
-        title = data.get("title", "Help")
-        description = data.get("description", "")
+        """Send a help embed based on stored data with argument support"""
+        # Extract arguments from message
+        full_content = message.content
+        parts = full_content.split(maxsplit=2)
+        args_str = parts[2] if len(parts) > 2 else (parts[1] if len(parts) > 1 and not parts[0].endswith(parts[1]) else "")
+
+        title = data.get("title", "Help").replace("{args}", args_str)
+        description = data.get("description", "").replace("{args}", args_str)
         fields = data.get("fields", [])
 
         embed = discord.Embed(title=title, description=description, color=discord.Color.blue())
 
         for field in fields:
             embed.add_field(
-                name=field.get("name", ""),
-                value=field.get("value", ""),
+                name=field.get("name", "").replace("{args}", args_str),
+                value=field.get("value", "").replace("{args}", args_str),
                 inline=field.get("inline", False)
             )
 
@@ -4518,6 +4539,12 @@ class ActionHandler:
         guild_id = message.guild.id
         custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
 
+        # If a specific help command exists for this system, execute it
+        help_cmd_name = f"help {system}"
+        if help_cmd_name in custom_cmds:
+            return await self.execute_custom_command(message, custom_cmds[help_cmd_name], help_cmd_name)
+
+        # Fallback: find all commands that start with the system name
         system_commands = {k: v for k, v in custom_cmds.items() if k.startswith(system)}
         if not system_commands:
             await message.channel.send(f"No commands found for system '{system}'. Try !help for all commands.")

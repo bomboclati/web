@@ -16,12 +16,12 @@ class AutoPublisher:
         self._load_settings()
 
     def _load_settings(self):
-        data = dm.load_json("auto_publisher_settings", default={})
-        self._publish_channels = data.get("channels", {})
+        """Settings are now loaded per-guild in get_guild_settings."""
+        # No global settings to load
+        return
 
-    def _save_settings(self):
-        data = {"channels": self._publish_channels}
-        dm.save_json("auto_publisher_settings", data)
+    def _save_settings(self, guild_id: int, settings: dict):
+        dm.update_guild_data(guild_id, "auto_publisher_settings", settings)
 
     def start_bump_monitor(self):
         asyncio.create_task(self._bump_monitor_loop())
@@ -53,9 +53,12 @@ class AutoPublisher:
         except:
             return
         
+        # Common bump bot IDs (DISBOARD, etc.)
+        BUMP_BOT_IDS = [302050872383242240]
+
         for message in messages:
-            if message.author.id == 302050872383242240:
-                if "bump" in message.content.lower():
+            if message.author.id in BUMP_BOT_IDS:
+                if "bump" in message.content.lower() or "success" in message.content.lower():
                     last_bump = message.created_at.timestamp()
                     time_since = time.time() - last_bump
                     
@@ -123,12 +126,13 @@ class AutoPublisher:
                 pass
 
     def add_publish_channel(self, guild_id: int, channel_id: int):
-        if guild_id not in self._publish_channels:
-            self._publish_channels[guild_id] = []
+        settings = self.get_guild_settings(guild_id)
+        if "publish_channels" not in settings:
+            settings["publish_channels"] = []
         
-        if channel_id not in self._publish_channels[guild_id]:
-            self._publish_channels[guild_id].append(channel_id)
-            self._save_settings()
+        if channel_id not in settings["publish_channels"]:
+            settings["publish_channels"].append(channel_id)
+            self._save_settings(guild_id, settings)
 
     async def create_announcement(self, guild_id: int, channel_id: int, title: str, 
                                   content: str, mention_roles: List[int] = None) -> discord.Message:
