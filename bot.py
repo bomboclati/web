@@ -147,10 +147,13 @@ class MiroBot(commands.Bot):
         # Add cogs that contain slash commands
         # AutoSetup is not a cog and should not be added as one
 
+        # Clear command tree to force resync and fix signature mismatches
+        self.tree.clear_commands()
+
         # Add AutoSetup slash command to the command tree
         self.tree.add_command(self.auto_setup.autosetup)
 
-        # Sync slash commands globally (important if not synced elsewhere)
+        # Force sync slash commands globally
         await self.tree.sync()
         logger.info("Slash commands synced successfully.")
         
