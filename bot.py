@@ -156,7 +156,12 @@ class MiroBot(commands.Bot):
 
         # Force sync slash commands globally
         await self.tree.sync()
-        logger.info("Slash commands synced successfully.")
+        logger.info("Slash commands synced globally.")
+
+        # Also sync to all guilds to ensure guild-specific registrations are updated
+        for guild in self.guilds:
+            await self.tree.sync(guild=guild)
+        logger.info("Slash commands synced to all guilds.")
         
         await self.scheduler.start()
         
