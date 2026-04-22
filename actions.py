@@ -1891,6 +1891,18 @@ class ActionHandler:
                 "currency_symbol": "💰"
             }
             dm.update_guild_data(guild.id, "economy_config", economy_config)
+            
+            # Register custom commands
+            custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
+            custom_cmds["daily"] = json.dumps({"command_type": "economy_daily"})
+            custom_cmds["balance"] = json.dumps({"command_type": "economy_balance"})
+            custom_cmds["work"] = json.dumps({"command_type": "economy_work"})
+            custom_cmds["beg"] = json.dumps({"command_type": "economy_beg"})
+            custom_cmds["shop"] = json.dumps({"command_type": "help_embed", "title": "Premium Shop", "description": "Spend your coins on exclusive items.", "fields": [{"name": "!shop", "value": "Browse available items.", "inline": False}, {"name": "!buy <item>", "value": "Purchase an item.", "inline": False}]})
+            custom_cmds["help economy"] = json.dumps({"command_type": "help_embed", "title": "Economy System Help", "description": "Manage your coins and trade with others.", "fields": [{"name": "!daily", "value": "Claim your daily coin reward.", "inline": False}, {"name": "!balance", "value": "Check your coin balance.", "inline": False}, {"name": "!work", "value": "Work to earn coins.", "inline": False}, {"name": "!beg", "value": "Beg for coins.", "inline": False}, {"name": "!shop", "value": "View the shop.", "inline": False}]})
+            custom_cmds["help"] = json.dumps({"command_type": "help_all"})
+            dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
+
             await self._auto_document_system(guild.id, "economy")
             return True, {"action": "undo_economy", "guild_id": guild.id}
 
@@ -2052,6 +2064,15 @@ class ActionHandler:
                         logger.warning(f"Could not create {role_name} role")
 
             dm.update_guild_data(guild.id, "leveling_config", leveling_config)
+
+            # Register custom commands
+            custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
+            custom_cmds["rank"] = json.dumps({"command_type": "leveling_rank"})
+            custom_cmds["leaderboard"] = json.dumps({"command_type": "leveling_leaderboard"})
+            custom_cmds["help leveling"] = json.dumps({"command_type": "help_embed", "title": "Leveling System Help", "description": "Earn XP by chatting and level up!", "fields": [{"name": "!rank", "value": "Check your current level and XP.", "inline": False}, {"name": "!leaderboard", "value": "View the top members.", "inline": False}]})
+            custom_cmds["help"] = json.dumps({"command_type": "help_all"})
+            dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
+
             await self._auto_document_system(guild.id, "leveling")
             return True, {"action": "undo_leveling", "guild_id": guild.id}
 

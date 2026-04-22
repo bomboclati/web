@@ -57,6 +57,7 @@ from modules.guardian import GuardianSystem
 from modules.server_analytics import setup_analytics, get_analytics
 from modules.verification import Verification
 from modules.embed_system import EmbedSystem
+from modules.config_panels import handle_config_panel_command, register_all_persistent_views
 
 load_dotenv()
 
@@ -138,6 +139,7 @@ class MiroBot(commands.Bot):
     async def setup_hook(self):
         logger.info("Recovering immortal state...")
         logger.info("Restoring trigger role presence monitoring...")
+        register_all_persistent_views(self)
         await self.scheduler.start()
         
         # Start background monitors
@@ -585,6 +587,17 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             if cmd_content.startswith("importmemory"):
                 await self._handle_import_memory(message)
                 return
+            
+            # Handle configpanel commands
+            if cmd_content.startswith("configpanel"):
+                system = cmd_content[len("configpanel"):].strip()
+                if system:
+                    # Check if user is admin or owner
+                    if not message.author.guild_permissions.administrator and message.author.id != message.guild.owner_id:
+                        await message.channel.send("❌ Only administrators can use this command.")
+                        return
+                    await handle_config_panel_command(message, system)
+                    return
             
             if cmd_content.startswith("scheduled"):
                 await self._handle_scheduled_actions(message, cmd_content)

@@ -429,7 +429,7 @@ class AutoSetup:
             selected_systems=None
         )
 
-        await self._send_welcome_dm(guild)
+        # await self._send_welcome_dm(guild)  # Removed as requested
         await self._initialize_server_data(guild)
 
     async def on_guild_remove(self, guild: discord.Guild):
@@ -680,12 +680,80 @@ class AutoSetup:
             "moderation": ("Moderation System", self._setup_moderation_system),
         }
 
+    def _register_system_commands(self, guild_id: int, system_name: str):
+        """Helper to register custom commands for a system set up by the auto-setup."""
+        import json
+        from data_manager import dm
+        custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
+        
+        if system_name == "economy":
+            custom_cmds["daily"] = json.dumps({"command_type": "economy_daily"})
+            custom_cmds["balance"] = json.dumps({"command_type": "economy_balance"})
+            custom_cmds["work"] = json.dumps({"command_type": "economy_work"})
+            custom_cmds["beg"] = json.dumps({"command_type": "economy_beg"})
+            custom_cmds["shop"] = json.dumps({"command_type": "help_embed", "title": "Premium Shop", "description": "Spend your coins on exclusive items.", "fields": [{"name": "!shop", "value": "Browse available items.", "inline": False}, {"name": "!buy <item>", "value": "Purchase an item.", "inline": False}]})
+            custom_cmds["help economy"] = json.dumps({"command_type": "help_embed", "title": "Economy System Help", "description": "Manage your coins and trade with others.", "fields": [{"name": "!daily", "value": "Claim your daily coin reward.", "inline": False}, {"name": "!balance", "value": "Check your coin balance.", "inline": False}, {"name": "!work", "value": "Work to earn coins.", "inline": False}, {"name": "!beg", "value": "Beg for coins.", "inline": False}, {"name": "!shop", "value": "View the shop.", "inline": False}]})
+            custom_cmds["challenge"] = json.dumps({"command_type": "help_embed", "title": "Daily Challenge", "description": "Complete daily challenges to earn bonus coins!", "fields": [{"name": "!challenge", "value": "View today's challenge progress.", "inline": False}]})
+            custom_cmds["achievements"] = json.dumps({"command_type": "help_embed", "title": "Economy Achievements", "description": "Earn achievements for economy activities!", "fields": [{"name": "!achievements", "value": "View your achievements.", "inline": False}]})
+            custom_cmds["help"] = json.dumps({"command_type": "help_all"})
+            
+        elif system_name == "tickets":
+            custom_cmds["ticket"] = json.dumps({"command_type": "ticket_create"})
+            custom_cmds["tickets"] = json.dumps({"command_type": "ticket_list"})
+            custom_cmds["close"] = json.dumps({"command_type": "ticket_close"})
+            custom_cmds["help tickets"] = json.dumps({"command_type": "help_embed", "title": "Support Ticket System", "description": "Manage support tickets.", "fields": [{"name": "!ticket", "value": "Create a new support ticket.", "inline": False}, {"name": "!tickets", "value": "List your open tickets.", "inline": False}, {"name": "!close", "value": "Close the current ticket.", "inline": False}]})
+            
+        elif system_name == "appeals":
+            custom_cmds["appeal"] = json.dumps({"command_type": "appeal_create"})
+            custom_cmds["help appeals"] = json.dumps({"command_type": "help_embed", "title": "Appeals System", "description": "Appeal moderation actions.", "fields": [{"name": "!appeal", "value": "Start an appeal.", "inline": False}]})
+            
+        elif system_name == "applications":
+            custom_cmds["apply"] = json.dumps({"command_type": "application_status"})
+            custom_cmds["help staffapply"] = json.dumps({"command_type": "help_embed", "title": "Staff Application System", "description": "Apply for staff positions.", "fields": [{"name": "!apply", "value": "Check your application status.", "inline": False}]})
+            
+        elif system_name == "verification":
+            custom_cmds["triggers"] = json.dumps({"command_type": "list_triggers"})
+            
+        elif system_name == "moderation":
+            custom_cmds["modstats"] = json.dumps({"command_type": "modstats"})
+            custom_cmds["appeal"] = json.dumps({"command_type": "appeal_create"})
+            
+        elif system_name == "welcome":
+            custom_cmds["welcome"] = json.dumps({"command_type": "welcome_config"})
+
+        elif system_name == "leveling":
+            custom_cmds["rank"] = json.dumps({"command_type": "leveling_rank"})
+            custom_cmds["leaderboard"] = json.dumps({"command_type": "leveling_leaderboard"})
+
+        # New systems added for config panels
+        elif system_name == "antiraid":
+            custom_cmds["help antiraid"] = json.dumps({"command_type": "help_embed", "title": "Anti-Raid System", "description": "Protects against mass joins.", "fields": [{"name": "!lockdown", "value": "Manually lock the server.", "inline": False}]})
+        elif system_name == "guardian":
+            custom_cmds["help guardian"] = json.dumps({"command_type": "help_embed", "title": "Guardian System", "description": "Advanced anti-abuse protection.", "fields": [{"name": "!guardian stats", "value": "View protection statistics.", "inline": False}]})
+        elif system_name == "suggestion":
+            custom_cmds["suggest"] = json.dumps({"command_type": "suggestion_create"})
+            custom_cmds["help suggestions"] = json.dumps({"command_type": "help_embed", "title": "Suggestions System", "description": "Manage server suggestions.", "fields": [{"name": "!suggest <text>", "value": "Submit a new suggestion.", "inline": False}]})
+        elif system_name == "reminder":
+            custom_cmds["remind"] = json.dumps({"command_type": "reminder_create"})
+            custom_cmds["help reminders"] = json.dumps({"command_type": "help_embed", "title": "Reminders System", "description": "Set personal and scheduled reminders.", "fields": [{"name": "!remind <time> <text>", "value": "Set a reminder.", "inline": False}]})
+        elif system_name == "giveaway":
+            custom_cmds["giveaway"] = json.dumps({"command_type": "giveaway_create"})
+            custom_cmds["help giveaways"] = json.dumps({"command_type": "help_embed", "title": "Giveaways System", "description": "Host and manage giveaways.", "fields": [{"name": "!giveaway create", "value": "Start a new giveaway.", "inline": False}]})
+        elif system_name == "warning":
+            custom_cmds["warn"] = json.dumps({"command_type": "moderation_warn"})
+            custom_cmds["warnings"] = json.dumps({"command_type": "moderation_warnings"})
+            custom_cmds["help warnings"] = json.dumps({"command_type": "help_embed", "title": "Warning System", "description": "Manage user warnings.", "fields": [{"name": "!warn <user> <reason>", "value": "Issue a warning.", "inline": False}, {"name": "!warnings <user>", "value": "View user warnings.", "inline": False}]})
+
+        dm.update_guild_data(guild_id, "custom_commands", custom_cmds)
+
         for system in selected_systems:
             if system in system_map:
                 name, func = system_map[system]
                 try:
                     logger.info(f"Setting up {name} for {guild.name}")
                     result = await func(guild, analysis)
+                    if result:
+                        self._register_system_commands(guild.id, system)
                     results.append((name, result, None))
                     setup.steps_completed.append(system)
                     # Send progress update to user
@@ -1302,6 +1370,20 @@ class AutoSetup:
     def get_setup_status(self, guild_id: int) -> Optional[ServerSetup]:
         return self._pending_setups.get(guild_id)
 
+    @discord.app_commands.command(name="autosetup", description="Start the interactive server auto-setup.")
+    async def autosetup(self, interaction: discord.Interaction):
+        """Slash command to start the interactive setup."""
+        if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
+            return await interaction.response.send_message("❌ Only administrators can use this command.", ephemeral=True)
+            
+        await interaction.response.defer(ephemeral=True)
+        await self._start_interactive_setup(interaction, guild_id=interaction.guild.id)
+
+async def setup(bot: commands.Bot):
+    cog = AutoSetup(bot)
+    await bot.add_cog(cog)
+    # Registration of persistent views is handled in bot.py setup_hook
+
     async def setup_hook(self):
         # Register persistent views for setup buttons in channels
         self.bot.add_view(StartSetupPersistentView(self.bot))
@@ -1344,6 +1426,7 @@ class AutoSetup:
         dm.update_guild_data(guild.id, "ticket_category", category.id)
         
         logger.info(f"Setup ticket system in {guild.name}")
+        self._register_system_commands(guild.id, "tickets")
         return True
     
     async def setup_applications(self, interaction: discord.Interaction, params: dict) -> bool:
@@ -1375,6 +1458,7 @@ class AutoSetup:
         dm.update_guild_data(guild.id, "applications_channel", channel.id)
         
         logger.info(f"Setup applications system in {guild.name}")
+        self._register_system_commands(guild.id, "applications")
         return True
     
     async def setup_appeals(self, interaction: discord.Interaction, params: dict) -> bool:
@@ -1407,6 +1491,7 @@ class AutoSetup:
         dm.update_guild_data(guild.id, "appeals_channel", channel.id)
         
         logger.info(f"Setup appeals system in {guild.name}")
+        self._register_system_commands(guild.id, "appeals")
         return True
     
     async def setup_moderation(self, interaction: discord.Interaction, params: dict) -> bool:
