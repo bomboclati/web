@@ -50,12 +50,15 @@ class TaskScheduler:
     def add_task(self, name: str, cron_expr: str, handler=None, guild_id: int = None, params: dict = None):
         """Register a new scheduled task."""
         tasks = dm.load_json("scheduled_tasks", default={})
+        # Preserve last_run if it exists
+        last_run = tasks.get(name, {}).get("last_run")
+
         tasks[name] = {
             "cron": cron_expr,
             "guild_id": guild_id,
             "params": params or {},
             "enabled": True,
-            "last_run": None
+            "last_run": last_run
         }
         dm.save_json("scheduled_tasks", tasks)
         self._tasks[name] = handler
@@ -215,6 +218,9 @@ class TaskScheduler:
     def add_ai_task(self, name: str, guild_id: int, cron_expr: str, action_type: str, action_params: dict, channel_id: int = None):
         """Register an AI-scheduled action task."""
         tasks = dm.load_json("ai_scheduled_tasks", default={})
+        # Preserve last_run if it exists
+        last_run = tasks.get(name, {}).get("last_run")
+
         tasks[name] = {
             "cron": cron_expr,
             "guild_id": guild_id,
@@ -222,7 +228,7 @@ class TaskScheduler:
             "action_params": action_params,
             "channel_id": channel_id,
             "enabled": True,
-            "last_run": None
+            "last_run": last_run
         }
         dm.save_json("ai_scheduled_tasks", tasks)
         logger.info("AI scheduled task added: %s (%s)", name, action_type)

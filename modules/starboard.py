@@ -27,43 +27,48 @@ class StarboardSystem:
         self._starboard_channels: Dict[int, int] = {}
         self._reaction_roles: Dict[int, Dict[str, int]] = {}
         self._emoji_rewards: Dict[int, dict] = {}
-        self._load_data()
 
-    def _load_data(self):
-        data = dm.load_json("starboard_data", default={})
-        
-        self._starboard_channels = data.get("channels", {})
-        self._reaction_roles = data.get("reaction_roles", {})
-        self._emoji_rewards = data.get("emoji_rewards", {})
-        
-        starred = data.get("starred_messages", {})
-        for msg_id, msg_data in starred.items():
-            self._starred_messages[int(msg_id)] = StarredMessage(
-                message_id=int(msg_id),
-                channel_id=msg_data["channel_id"],
-                guild_id=msg_data["guild_id"],
-                star_count=msg_data["star_count"],
-                original_url=msg_data["original_url"],
-                created_at=msg_data["created_at"]
-            )
+    def _load_guild_data(self, guild_id: int):
+        """Lazy load guild data to ensure multi-server isolation."""
+        if guild_id not in self._starboard_channels:
+            data = dm.get_guild_data(guild_id, "starboard_system_data", {})
+            self._starboard_channels[guild_id] = data.get("channel_id")
+            self._reaction_roles[guild_id] = data.get("reaction_roles", {})
+            self._emoji_rewards[guild_id] = data.get("emoji_rewards", {})
 
-    def _save_data(self):
-        data = {
-            "channels": self._starboard_channels,
-            "reaction_roles": self._reaction_roles,
-            "emoji_rewards": self._emoji_rewards,
-            "starred_messages": {
-                str(msg_id): {
-                    "channel_id": msg.channel_id,
-                    "guild_id": msg.guild_id,
-                    "star_count": msg.star_count,
-                    "original_url": msg.original_url,
-                    "created_at": msg.created_at
-                }
-                for msg_id, msg in self._starred_messages.items()
+            starred = data.get("starred_messages", {})
+            for msg_id, msg_data in starred.items():
+                self._starred_messages[int(msg_id)] = StarredMessage(
+                    message_id=int(msg_id),
+                    channel_id=msg_data["channel_id"],
+                    guild_id=msg_data["guild_id"],
+                    star_count=msg_data["star_count"],
+                    original_url=msg_data["original_url"],
+                    created_at=msg_data["created_at"]
+                )
+
+    def _save_guild_data(self, guild_id: int):
+        """Save guild data immediately for immortality."""
+        # Filter starred messages for this guild
+        guild_starred = {
+            str(msg_id): {
+                "channel_id": msg.channel_id,
+                "guild_id": msg.guild_id,
+                "star_count": msg.star_count,
+                "original_url": msg.original_url,
+                "created_at": msg.created_at
             }
+            for msg_id, msg in self._starred_messages.items()
+            if msg.guild_id == guild_id
         }
-        dm.save_json("starboard_data", data)
+
+        data = {
+            "channel_id": self._starboard_channels.get(guild_id),
+            "reaction_roles": self._reaction_roles.get(guild_id, {}),
+            "emoji_rewards": self._emoji_rewards.get(guild_id, {}),
+            "starred_messages": guild_starred
+        }
+        dm.update_guild_data(guild_id, "starboard_system_data", data)
 
     def get_guild_settings(self, guild_id: int) -> dict:
         return dm.get_guild_data(guild_id, "starboard_settings", {
@@ -86,6 +91,7 @@ class StarboardSystem:
         
         message = reaction.message
         guild = message.guild
+        self._load_guild_data(guild.id)
         
         if guild.id in self._reaction_roles:
             role_map = self._reaction_roles[guild.id]
@@ -115,6 +121,7 @@ class StarboardSystem:
         
         message = reaction.message
         guild = message.guild
+        self._load_guild_data(guild.id)
         
         if guild.id in self._reaction_roles:
             role_map = self._reaction_roles[guild.id]
@@ -131,8 +138,9 @@ class StarboardSystem:
 
     async def add_to_starboard(self, message: discord.Message, star_count: int):
         guild_id = message.guild.id
+        self._load_guild_data(guild_id)
         
-        if guild_id not in self._starboard_channels:
+        if guild_id not in self._starboard_channels or not self._starboard_channels[guild_id]:
             return
         
         starboard_channel_id = self._starboard_channels[guild_id]
@@ -178,7 +186,7 @@ class StarboardSystem:
                     created_at=time.time()
                 )
                 
-                self._save_data()
+                self._save_guild_data(guild_id)
                 
                 await self._check_reward(guild_id, message.author, star_count)
                 await self._check_auto_pin(message, star_count)
@@ -217,17 +225,20 @@ class StarboardSystem:
                 pass
 
     def set_starboard_channel(self, guild_id: int, channel_id: int):
+        self._load_guild_data(guild_id)
         self._starboard_channels[guild_id] = channel_id
-        self._save_data()
+        self._save_guild_data(guild_id)
 
     def add_reaction_role(self, guild_id: int, emoji: str, role_id: int):
+        self._load_guild_data(guild_id)
         if guild_id not in self._reaction_roles:
             self._reaction_roles[guild_id] = {}
         
         self._reaction_roles[guild_id][emoji] = role_id
-        self._save_data()
+        self._save_guild_data(guild_id)
 
     def get_leaderboard(self, guild_id: int) -> List[dict]:
+        self._load_guild_data(guild_id)
         messages = [m for m in self._starred_messages.values() if m.guild_id == guild_id]
         messages.sort(key=lambda x: x.star_count, reverse=True)
         

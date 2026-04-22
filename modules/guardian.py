@@ -258,7 +258,7 @@ class GuardianSystem:
 
     async def ai_analyze_message(self, message: discord.Message) -> float:
         """Use AI to analyze message for raid/spam content"""
-        if not hasattr(self.bot, 'ai_client') or self.bot.ai_client is None:
+        if not hasattr(self.bot, 'ai') or self.bot.ai is None:
             return 0.0
         
         prompt = f"""Analyze this Discord message for raid/spam behavior. 
@@ -267,15 +267,19 @@ Consider: repetitive content, malicious links, excessive caps, suspicious patter
 
 Message: "{message.content}"
 Author Account Age: {(discord.utils.utcnow() - message.author.created_at).days} days
-Is New Member: {discord.utils.utcnow() - message.author.joined_at < timedelta(hours=1)}
+Is New Member: {(discord.utils.utcnow() - message.author.joined_at).total_seconds() < 3600 if message.author.joined_at else True}
 
 Respond with ONLY a number between 0.0 and 1.0."""
 
         try:
-            response = await self.bot.ai_client.chat(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1
+            # Using MiroBot's ai client which returns a dict
+            res = await self.bot.ai.chat(
+                guild_id=message.guild.id,
+                user_id=message.author.id,
+                user_input=prompt,
+                system_prompt="You are a security AI. Respond only with a number."
             )
+            response = res.get("summary", "0.0")
             
             # Extract number from response
             import re

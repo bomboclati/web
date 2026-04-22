@@ -377,6 +377,119 @@ class RoleSelectButton(discord.ui.Button):
             await interaction.response.send_message(f"❌ Role '{self.role_name}' not found.", ephemeral=True)
 
 
+class SystemSelect(discord.ui.Select):
+    def __init__(self, options, placeholder):
+        super().__init__(
+            placeholder=placeholder,
+            min_values=0,
+            max_values=len(options),
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        # No response needed here, we'll collect values in start_setup
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+
+class SystemSelectionView(discord.ui.View):
+    def __init__(self, auto_setup, guild_id):
+        super().__init__(timeout=600)
+        self.auto_setup = auto_setup
+        self.guild_id = guild_id
+
+        # Define all 33 systems
+        self.systems_list = [
+            ("Verification", "verification", "🛡️"),
+            ("Anti-Raid", "anti_raid", "⚔️"),
+            ("Guardian System", "guardian", "🛡️"),
+            ("Welcome/Leave Messages", "welcome", "👋"),
+            ("Welcome DM Buttons", "welcome_dm", "✉️"),
+            ("Tickets", "tickets", "🎫"),
+            ("Applications (Staff Apply)", "apps_simple", "📝"),
+            ("Applications System with Modals", "apps_modals", "📑"),
+            ("Appeals", "appeals_simple", "⚖️"),
+            ("Appeals System", "appeals_system", "⚖️"),
+            ("Modmail", "modmail", "📬"),
+            ("Suggestions", "suggestions", "💡"),
+            ("Reminders", "reminders", "⏰"),
+            ("Scheduled Reminders", "scheduled_reminders", "📅"),
+            ("Announcements", "announcements", "📢"),
+            ("Auto-Responder", "auto_responder", "🤖"),
+            ("Economy", "economy", "💰"),
+            ("Economy Shop", "economy_shop", "🛒"),
+            ("Leveling / XP", "leveling", "⬆️"),
+            ("Leveling Rewards Shop", "leveling_shop", "🎁"),
+            ("Giveaways", "giveaways", "🎁"),
+            ("Achievements", "achievements", "🏆"),
+            ("Gamification", "gamification", "🎮"),
+            ("Reaction Roles", "reaction_roles", "🎭"),
+            ("Reaction Role Menus", "reaction_menus", "🗄️"),
+            ("Role Buttons", "role_buttons", "🔘"),
+            ("Moderation Logging", "mod_logging", "📝"),
+            ("Logging", "logging", "📁"),
+            ("Auto-Mod (Keyword Filter)", "auto_mod", "🛡️"),
+            ("User Warning System", "warning_system", "⚠️"),
+            ("Staff Promotion", "staff_promotion", "📈"),
+            ("Staff Shifts", "staff_shifts", "🕒"),
+            ("Staff Reviews", "staff_reviews", "📋")
+        ]
+
+        # Split into two Select menus (max 25 options each)
+        options1 = [discord.SelectOption(label=name, value=val, emoji=emoji) for name, val, emoji in self.systems_list[:17]]
+        options2 = [discord.SelectOption(label=name, value=val, emoji=emoji) for name, val, emoji in self.systems_list[17:]]
+
+        self.select1 = SystemSelect(options1, "Select Admin/Engagement Systems (Part 1)")
+        self.select2 = SystemSelect(options2, "Select Engagement/Staff Systems (Part 2)")
+
+        self.add_item(self.select1)
+        self.add_item(self.select2)
+
+    @discord.ui.button(label="Start Setup", style=discord.ButtonStyle.success, emoji="🚀", row=2)
+    async def start_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
+        selected = self.select1.values + self.select2.values
+        if not selected:
+            return await interaction.response.send_message("❌ Please select at least one system!", ephemeral=True)
+
+        guild = interaction.guild
+        setup = self.auto_setup._pending_setups.get(guild.id)
+        if not setup:
+            self.auto_setup._pending_setups[guild.id] = ServerSetup(
+                guild_id=guild.id,
+                state=SetupState.STARTED,
+                started_at=time.time(),
+                completed_at=None,
+                steps_completed=[],
+                config={},
+                selected_systems=selected
+            )
+        else:
+            setup.selected_systems = selected
+            setup.state = SetupState.STARTED
+
+        await interaction.response.edit_message(content="⚙️ Starting setup of selected systems...", embed=None, view=None)
+        await self.auto_setup._run_selected_setup(guild.id, interaction.user, selected)
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, emoji="❌", row=2)
+    async def cancel_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(content="❌ Setup cancelled.", embed=None, view=None)
+        self.stop()
+
+
+class MockInteraction:
+    def __init__(self, bot, guild, user=None):
+        self.bot = bot
+        self.guild = guild
+        self.user = user or guild.owner or bot.user
+        self.channel = guild.system_channel or (guild.text_channels[0] if guild.text_channels else None)
+        self.response = self
+        self.followup = self
+
+    async def send_message(self, *args, **kwargs): pass
+    async def send(self, *args, **kwargs): pass
+    async def edit_message(self, *args, **kwargs): pass
+    async def defer(self, *args, **kwargs): pass
+    async def followup_send(self, *args, **kwargs): pass
+
 class AutoSetup:
     def __init__(self, bot):
         self.bot = bot
@@ -546,100 +659,72 @@ class AutoSetup:
         except discord.Forbidden:
             logger.warning(f"Could not DM owner of {guild.name} - DMs may be disabled")
 
-    # Removed _start_interactive_setup method as part of eliminating auto-setup buttons
-    # Users now use /autosetup command for bulk setup instead of interactive buttons
-
-    # async def _start_interactive_setup(self, interaction: discord.Interaction, guild_id: int = None):
-    #     """Start the interactive system selection setup."""
-    #     if guild_id is None:
-    #         guild_id = interaction.guild_id
-    #
-    #     embed = discord.Embed(
-    #         title=":gear: Server Auto-Setup",
-    #         description="Let's customize your server setup! Choose which systems you'd like me to install. I'll analyze your existing server structure and avoid creating duplicates.",
-    #         color=discord.Color.blurple()
-    #     )
-    #
-    #     embed.add_field(
-    #         name=":white_check_mark: Available Systems",
-    #         value="• **Verification** - Member verification with roles\n• **Tickets** - Support ticket system\n• **Applications** - Staff application system\n• **Appeals** - Ban/unmute appeal system\n• **Economy** - Virtual currency and shop\n• **Leveling** - XP and level-up system\n• **Welcome** - Welcome messages and roles\n• **Moderation** - Auto-mod and logging",
-    #         inline=False
-    #     )
-    #
-    #     embed.add_field(
-    #         name=":information_source: How It Works",
-    #         value="Click the buttons below to toggle systems on/off. When you're ready, click **Start Setup** to begin installation.",
-    #         inline=False
-    #     )
-    #
-    #     embed.set_footer(text="You can change these settings later using /bot commands.")
-    #
-    #     view = SystemSelectionView(self, guild_id)
-    #     await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-
     def _register_system_commands(self, guild_id: int, system_name: str):
-        """Helper to register custom commands for a system set up by the auto-setup."""
+        """Helper to register custom commands and auto-documentation for all 33 systems."""
         import json
         from data_manager import dm
         custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
         
-        if system_name == "economy":
-            custom_cmds["daily"] = json.dumps({"command_type": "economy_daily"})
-            custom_cmds["balance"] = json.dumps({"command_type": "economy_balance"})
-            custom_cmds["work"] = json.dumps({"command_type": "economy_work"})
-            custom_cmds["beg"] = json.dumps({"command_type": "economy_beg"})
-            custom_cmds["shop"] = json.dumps({"command_type": "help_embed", "title": "Premium Shop", "description": "Spend your coins on exclusive items.", "fields": [{"name": "!shop", "value": "Browse available items.", "inline": False}, {"name": "!buy <item>", "value": "Purchase an item.", "inline": False}]})
-            custom_cmds["help economy"] = json.dumps({"command_type": "help_embed", "title": "Economy System Help", "description": "Manage your coins and trade with others.", "fields": [{"name": "!daily", "value": "Claim your daily coin reward.", "inline": False}, {"name": "!balance", "value": "Check your coin balance.", "inline": False}, {"name": "!work", "value": "Work to earn coins.", "inline": False}, {"name": "!beg", "value": "Beg for coins.", "inline": False}, {"name": "!shop", "value": "View the shop.", "inline": False}]})
-            custom_cmds["challenge"] = json.dumps({"command_type": "help_embed", "title": "Daily Challenge", "description": "Complete daily challenges to earn bonus coins!", "fields": [{"name": "!challenge", "value": "View today's challenge progress.", "inline": False}]})
-            custom_cmds["achievements"] = json.dumps({"command_type": "help_embed", "title": "Economy Achievements", "description": "Earn achievements for economy activities!", "fields": [{"name": "!achievements", "value": "View your achievements.", "inline": False}]})
-            custom_cmds["help"] = json.dumps({"command_type": "help_all"})
-            
-        elif system_name == "tickets":
-            custom_cmds["ticket"] = json.dumps({"command_type": "ticket_create"})
-            custom_cmds["tickets"] = json.dumps({"command_type": "ticket_list"})
-            custom_cmds["close"] = json.dumps({"command_type": "ticket_close"})
-            custom_cmds["help tickets"] = json.dumps({"command_type": "help_embed", "title": "Support Ticket System", "description": "Manage support tickets.", "fields": [{"name": "!ticket", "value": "Create a new support ticket.", "inline": False}, {"name": "!tickets", "value": "List your open tickets.", "inline": False}, {"name": "!close", "value": "Close the current ticket.", "inline": False}]})
-            
-        elif system_name == "appeals":
-            custom_cmds["appeal"] = json.dumps({"command_type": "appeal_create"})
-            custom_cmds["help appeals"] = json.dumps({"command_type": "help_embed", "title": "Appeals System", "description": "Appeal moderation actions.", "fields": [{"name": "!appeal", "value": "Start an appeal.", "inline": False}]})
-            
-        elif system_name == "applications":
-            custom_cmds["apply"] = json.dumps({"command_type": "application_status"})
-            custom_cmds["help staffapply"] = json.dumps({"command_type": "help_embed", "title": "Staff Application System", "description": "Apply for staff positions.", "fields": [{"name": "!apply", "value": "Check your application status.", "inline": False}]})
-            
-        elif system_name == "verification":
-            custom_cmds["triggers"] = json.dumps({"command_type": "list_triggers"})
-            
-        elif system_name == "moderation":
-            custom_cmds["modstats"] = json.dumps({"command_type": "modstats"})
-            custom_cmds["appeal"] = json.dumps({"command_type": "appeal_create"})
-            
-        elif system_name == "welcome":
-            custom_cmds["welcome"] = json.dumps({"command_type": "welcome_config"})
+        # Unified !help system mapping
+        help_data = {
+            "verification": {"title": "🛡️ Verification System", "desc": "Member verification with roles.", "cmds": [("!verify", "Open verification prompt (if not automatic)")]},
+            "anti_raid": {"title": "⚔️ Anti-Raid System", "desc": "Protects against mass joins and spam.", "cmds": [("!raidstatus", "Check current security status")]},
+            "guardian": {"title": "🛡️ Guardian System", "desc": "AI-powered advanced server protection.", "cmds": [("!guardian stats", "View protection analytics")]},
+            "welcome": {"title": "👋 Welcome System", "desc": "Automated welcome/leave messages.", "cmds": [("!welcome config", "Adjust welcome settings")]},
+            "welcome_dm": {"title": "✉️ Welcome DM Buttons", "desc": "Interactive buttons in member DMs.", "cmds": [("!welcomedm test", "Send a test welcome DM")]},
+            "tickets": {"title": "🎫 Ticket System", "desc": "Private support ticket channels.", "cmds": [("!ticket", "Create a new ticket"), ("!close", "Close current ticket")]},
+            "apps_simple": {"title": "📝 Staff Applications", "desc": "Simple staff application system.", "cmds": [("!apply", "Start staff application")]},
+            "apps_modals": {"title": "📑 Advanced Applications", "desc": "Multi-step applications with modals.", "cmds": [("!apply", "Open application modal")]},
+            "appeals_simple": {"title": "⚖️ Moderation Appeals", "desc": "Simple appeal system for punishments.", "cmds": [("!appeal", "Start an appeal")]},
+            "appeals_system": {"title": "⚖️ Appeals System", "desc": "Advanced tracking for appeals.", "cmds": [("!appeal status", "Check your appeal progress")]},
+            "modmail": {"title": "📬 Modmail System", "desc": "Direct communication with server staff.", "cmds": [("DM the Bot", "Send a message directly to me to talk to staff")]},
+            "suggestions": {"title": "💡 Suggestions System", "desc": "Member-driven server improvements.", "cmds": [("!suggest <text>", "Submit a new suggestion")]},
+            "reminders": {"title": "⏰ Reminders System", "desc": "Personal and channel reminders.", "cmds": [("!remind <time> <text>", "Set a reminder")]},
+            "scheduled_reminders": {"title": "📅 Scheduled Reminders", "desc": "Recurring automated reminders.", "cmds": [("!reminders list", "View scheduled reminders")]},
+            "announcements": {"title": "📢 Announcements", "desc": "Polished announcement delivery.", "cmds": [("!announce <text>", "Post a formatted announcement")]},
+            "auto_responder": {"title": "🤖 Auto-Responder", "desc": "Keyword-based automated replies.", "cmds": [("!responders", "List active auto-replies")]},
+            "economy": {"title": "💰 Economy System", "desc": "Virtual currency and engagement.", "cmds": [("!daily", "Claim daily coins"), ("!balance", "Check your wallet"), ("!work", "Earn coins via work")]},
+            "economy_shop": {"title": "🛒 Economy Shop", "desc": "Spend your coins on items.", "cmds": [("!shop", "View available items"), ("!buy <item>", "Purchase an item")]},
+            "leveling": {"title": "⬆️ Leveling System", "desc": "XP and level progression.", "cmds": [("!rank", "Check your level"), ("!leaderboard", "Top members by XP")]},
+            "leveling_shop": {"title": "🎁 Leveling Shop", "desc": "Rewards for high-level members.", "cmds": [("!levels", "View level rewards")]},
+            "giveaways": {"title": "🎁 Giveaways System", "desc": "Host automated prize giveaways.", "cmds": [("!giveaway create", "Start a new giveaway")]},
+            "achievements": {"title": "🏆 Achievements", "desc": "Earn badges for server activity.", "cmds": [("!achievements", "View your earned badges")]},
+            "gamification": {"title": "🎮 Gamification", "desc": "Quests and interactive challenges.", "cmds": [("!quests", "View active server quests")]},
+            "reaction_roles": {"title": "🎭 Reaction Roles", "desc": "Assign roles via reactions.", "cmds": [("!rr create", "Create a reaction role setup")]},
+            "reaction_menus": {"title": "🗄️ Reaction Menus", "desc": "Interactive menus for role selection.", "cmds": [("!menu create", "Start menu builder")]},
+            "role_buttons": {"title": "🔘 Role Buttons", "desc": "One-click role assignment buttons.", "cmds": [("!buttons setup", "Add role buttons to channel")]},
+            "mod_logging": {"title": "📝 Moderation Logging", "desc": "Track staff actions and violations.", "cmds": [("!modlogs @user", "View user history")]},
+            "logging": {"title": "📁 Logging System", "desc": "Comprehensive server event tracking.", "cmds": [("!logs channel", "Set log destination")]},
+            "auto_mod": {"title": "🛡️ Auto-Mod", "desc": "Filter spam and prohibited content.", "cmds": [("!automod status", "View filter settings")]},
+            "warning_system": {"title": "⚠️ Warning System", "desc": "Track and manage user warnings.", "cmds": [("!warn @user <reason>", "Issue a warning"), ("!warnings @user", "Check user history")]},
+            "staff_promotion": {"title": "📈 Staff Promotion", "desc": "Automatic staff activity tracking.", "cmds": [("!staffprogress", "Check your promotion path")]},
+            "staff_shifts": {"title": "🕒 Staff Shifts", "desc": "Track moderator active hours.", "cmds": [("!shift start/end", "Manage your shift")]},
+            "staff_reviews": {"title": "📋 Staff Reviews", "desc": "Peer and admin staff evaluation.", "cmds": [("!review @staff", "Submit a review")]}
+        }
 
-        elif system_name == "leveling":
-            custom_cmds["rank"] = json.dumps({"command_type": "leveling_rank"})
-            custom_cmds["leaderboard"] = json.dumps({"command_type": "leveling_leaderboard"})
-
-        # New systems added for config panels
-        elif system_name == "antiraid":
-            custom_cmds["help antiraid"] = json.dumps({"command_type": "help_embed", "title": "Anti-Raid System", "description": "Protects against mass joins.", "fields": [{"name": "!lockdown", "value": "Manually lock the server.", "inline": False}]})
-        elif system_name == "guardian":
-            custom_cmds["help guardian"] = json.dumps({"command_type": "help_embed", "title": "Guardian System", "description": "Advanced anti-abuse protection.", "fields": [{"name": "!guardian stats", "value": "View protection statistics.", "inline": False}]})
-        elif system_name == "suggestion":
-            custom_cmds["suggest"] = json.dumps({"command_type": "suggestion_create"})
-            custom_cmds["help suggestions"] = json.dumps({"command_type": "help_embed", "title": "Suggestions System", "description": "Manage server suggestions.", "fields": [{"name": "!suggest <text>", "value": "Submit a new suggestion.", "inline": False}]})
-        elif system_name == "reminder":
-            custom_cmds["remind"] = json.dumps({"command_type": "reminder_create"})
-            custom_cmds["help reminders"] = json.dumps({"command_type": "help_embed", "title": "Reminders System", "description": "Set personal and scheduled reminders.", "fields": [{"name": "!remind <time> <text>", "value": "Set a reminder.", "inline": False}]})
-        elif system_name == "giveaway":
-            custom_cmds["giveaway"] = json.dumps({"command_type": "giveaway_create"})
-            custom_cmds["help giveaways"] = json.dumps({"command_type": "help_embed", "title": "Giveaways System", "description": "Host and manage giveaways.", "fields": [{"name": "!giveaway create", "value": "Start a new giveaway.", "inline": False}]})
-        elif system_name == "warning":
-            custom_cmds["warn"] = json.dumps({"command_type": "moderation_warn"})
-            custom_cmds["warnings"] = json.dumps({"command_type": "moderation_warnings"})
-            custom_cmds["help warnings"] = json.dumps({"command_type": "help_embed", "title": "Warning System", "description": "Manage user warnings.", "fields": [{"name": "!warn <user> <reason>", "value": "Issue a warning.", "inline": False}, {"name": "!warnings <user>", "value": "View user warnings.", "inline": False}]})
+        if system_name in help_data:
+            data = help_data[system_name]
+            fields = [{"name": cmd, "value": desc, "inline": False} for cmd, desc in data["cmds"]]
+            
+            # Create the system-specific help command
+            custom_cmds[f"help {system_name}"] = json.dumps({
+                "command_type": "help_embed",
+                "title": data["title"],
+                "description": data["desc"],
+                "fields": fields
+            })
+            
+            # Map specific functional commands if they don't exist
+            if system_name == "economy":
+                custom_cmds.setdefault("daily", json.dumps({"command_type": "economy_daily"}))
+                custom_cmds.setdefault("balance", json.dumps({"command_type": "economy_balance"}))
+            elif system_name == "leveling":
+                custom_cmds.setdefault("rank", json.dumps({"command_type": "leveling_rank"}))
+                custom_cmds.setdefault("leaderboard", json.dumps({"command_type": "leveling_leaderboard"}))
+            elif system_name == "tickets":
+                custom_cmds.setdefault("ticket", json.dumps({"command_type": "ticket_create"}))
+            elif system_name == "apps_simple" or system_name == "apps_modals":
+                custom_cmds.setdefault("apply", json.dumps({"command_type": "application_status"}))
 
         dm.update_guild_data(guild_id, "custom_commands", custom_cmds)
 
@@ -664,15 +749,41 @@ class AutoSetup:
         logger.info(f"Server analysis complete for {guild.name}: {len(analysis.existing_channels)} channels, {len(analysis.existing_roles)} roles")
 
         results = []
+        # Mapping system values to human-friendly names and setup functions
         system_map = {
             "verification": ("Verification System", self._setup_verification_system),
-            "tickets": ("Ticket System", self._setup_ticket_system),
-            "applications": ("Applications System", self._setup_applications_system),
-            "appeals": ("Appeals System", self._setup_appeals_system),
-            "economy": ("Economy System", self._setup_economy_system),
-            "leveling": ("Leveling System", self._setup_leveling_system),
+            "anti_raid": ("Anti-Raid System", self._setup_anti_raid),
+            "guardian": ("Guardian System", self._setup_guardian),
             "welcome": ("Welcome System", self._setup_welcome_system),
-            "moderation": ("Moderation System", self._setup_moderation_system),
+            "welcome_dm": ("Welcome DM Buttons", self._setup_welcome_dm_buttons),
+            "tickets": ("Ticket System", self._setup_ticket_system),
+            "apps_simple": ("Applications (Simple)", self._setup_apps_simple),
+            "apps_modals": ("Applications (Modals)", self._setup_apps_modals),
+            "appeals_simple": ("Appeals (Simple)", self._setup_appeals_simple),
+            "appeals_system": ("Appeals System", self._setup_appeals_system),
+            "modmail": ("Modmail System", self._setup_modmail),
+            "suggestions": ("Suggestions System", self._setup_suggestions),
+            "reminders": ("Reminders System", self._setup_reminders),
+            "scheduled_reminders": ("Scheduled Reminders", self._setup_scheduled_reminders),
+            "announcements": ("Announcements System", self._setup_announcements),
+            "auto_responder": ("Auto-Responder System", self._setup_auto_responder),
+            "economy": ("Economy System", self._setup_economy_system),
+            "economy_shop": ("Economy Shop", self._setup_economy_shop),
+            "leveling": ("Leveling System", self._setup_leveling_system),
+            "leveling_shop": ("Leveling Shop", self._setup_leveling_shop),
+            "giveaways": ("Giveaways System", self._setup_giveaways),
+            "achievements": ("Achievements System", self._setup_achievements),
+            "gamification": ("Gamification System", self._setup_gamification),
+            "reaction_roles": ("Reaction Roles", self._setup_reaction_roles),
+            "reaction_menus": ("Reaction Menus", self._setup_reaction_menus),
+            "role_buttons": ("Role Buttons", self._setup_role_buttons),
+            "mod_logging": ("Moderation Logging", self._setup_moderation_system),
+            "logging": ("Logging System", self._setup_logging_system),
+            "auto_mod": ("Auto-Mod", self._setup_auto_mod),
+            "warning_system": ("Warning System", self._setup_warning_system),
+            "staff_promotion": ("Staff Promotion", self._setup_staff_promotion),
+            "staff_shifts": ("Staff Shifts", self._setup_staff_shifts),
+            "staff_reviews": ("Staff Reviews", self._setup_staff_reviews),
         }
 
         for system in selected_systems:
@@ -1234,517 +1345,302 @@ class AutoSetup:
             logger.error(f"Failed to setup moderation system: {e}")
             return False
 
-    async def _send_setup_results(self, guild: discord.Guild, owner: discord.Member, results: List[Tuple[str, bool, Optional[str]]]):
-        """Send setup results summary."""
-        success_count = sum(1 for _, success, _ in results if success)
+    # --- Administrative & Security Systems ---
 
-        embed = discord.Embed(
-            title=":white_check_mark: Setup Complete!",
-            description=f"Auto-setup for **{guild.name}** finished with **{success_count}/{len(results)}** systems successfully installed.",
-            color=discord.Color.green() if success_count == len(results) else discord.Color.orange()
-        )
-
-        successful_systems = []
-        failed_systems = []
-
-        for name, success, error in results:
-            if success:
-                successful_systems.append(f"✅ **{name}**")
-            else:
-                failed_systems.append(f"❌ **{name}**" + (f" - {error}" if error else ""))
-
-        if successful_systems:
-            embed.add_field(
-                name=":white_check_mark: Successfully Installed",
-                value="\n".join(successful_systems),
-                inline=False
-            )
-
-        if failed_systems:
-            embed.add_field(
-                name=":x: Failed to Install",
-                value="\n".join(failed_systems),
-                inline=False
-            )
-
-        embed.add_field(
-            name=":rocket: Next Steps",
-            value="• Check your new channels for setup instructions\n• Use `/bot` to create additional features\n• Type `/help` to see all available commands\n• Configure system settings with `/settings`",
-            inline=False
-        )
-
-        embed.set_footer(text="Miro Bot • Server Setup Complete")
-        embed.timestamp = discord.utils.utcnow()
-
-        # Try to DM owner first
+    async def _setup_anti_raid(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            await owner.send(embed=embed)
-        except (discord.Forbidden, discord.HTTPException):
-            # Fallback to log channel or system channel
-            log_ch_id = dm.get_guild_data(guild.id, "log_channel")
-            fallback_channel = guild.get_channel(log_ch_id) if log_ch_id else guild.system_channel
+            log_channel = analysis.existing_channels.get("security-logs") or analysis.existing_channels.get("bot-logs")
+            if not log_channel:
+                log_channel = await guild.create_text_channel("security-logs")
 
-            if fallback_channel and fallback_channel.permissions_for(guild.me).send_messages:
-                try:
-                    await fallback_channel.send(content=f"{owner.mention}", embed=embed)
-                except Exception as e:
-                    logger.error(f"Failed to send setup results: {e}")
+            if hasattr(self.bot, 'anti_raid'):
+                settings = self.bot.anti_raid.get_guild_settings(guild.id)
+                settings["enabled"] = True
+                settings["log_channel"] = log_channel.id
+                dm.update_guild_data(guild.id, "anti_raid_settings", settings)
+                return await self.bot.anti_raid.setup(MockInteraction(self.bot, guild))
+            return False
+        except Exception as e:
+            logger.error(f"Anti-raid setup failed: {e}")
+            return False
+
+    async def _setup_guardian(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            config = dm.load_json("guardian_config", default={})
+            config[str(guild.id)] = {
+                "join_rate_threshold": 10,
+                "lockdown_duration": 300,
+                "enabled": True
+            }
+            dm.save_json("guardian_config", config)
+            return True
+        except Exception as e:
+            logger.error(f"Guardian setup failed: {e}")
+            return False
+
+    async def _setup_logging_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            log_channel = analysis.existing_channels.get("logs") or analysis.existing_channels.get("bot-logs")
+            if not log_channel:
+                log_channel = await guild.create_text_channel("bot-logs")
+            dm.update_guild_data(guild.id, "log_channel", log_channel.id)
+            dm.update_guild_data(guild.id, "logging_enabled", True)
+            return True
+        except Exception as e:
+            logger.error(f"Logging setup failed: {e}")
+            return False
+
+    async def _setup_auto_mod(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            config = dm.get_guild_data(guild.id, "moderation_config", {})
+            config["auto_moderation"] = True
+            config["enabled"] = True
+            config["keywords"] = {
+                "critical": ["scam", "nazi", "hitler"],
+                "high": ["fuck", "shit", "asshole"],
+                "medium": ["dumb", "idiot"],
+                "low": []
+            }
+            dm.update_guild_data(guild.id, "moderation_config", config)
+            return True
+        except Exception as e:
+            logger.error(f"Auto-mod setup failed: {e}")
+            return False
+
+    async def _setup_warning_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            dm.update_guild_data(guild.id, "warnings_enabled", True)
+            # Register warning system commands
+            self._register_system_commands(guild.id, "warning")
+            return True
+        except Exception as e:
+            logger.error(f"Warning system setup failed: {e}")
+            return False
+
+    # --- Communication Systems ---
+
+    async def _setup_welcome_dm_buttons(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            dm.update_guild_data(guild.id, "welcome_dm_buttons", True)
+            return True
+        except Exception as e:
+            logger.error(f"Welcome DM buttons setup failed: {e}")
+            return False
+
+    async def _setup_modmail(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            channel = analysis.existing_channels.get("modmail")
+            if not channel:
+                category = await guild.create_category("Modmail")
+                channel = await guild.create_text_channel("modmail", category=category)
+                await channel.set_permissions(guild.default_role, read_messages=False)
+            dm.update_guild_data(guild.id, "modmail_channel", channel.id)
+            return True
+        except Exception as e:
+            logger.error(f"Modmail setup failed: {e}")
+            return False
+
+    async def _setup_suggestions(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            channel = analysis.existing_channels.get("suggestions")
+            if not channel:
+                channel = await guild.create_text_channel("suggestions")
+
+            embed = discord.Embed(title="💡 Server Suggestions", description="Submit your ideas here using `!suggest <text>` or the button below!", color=discord.Color.blue())
+            view = SuggestionButton(guild.id)
+            await channel.send(embed=embed, view=view)
+
+            dm.update_guild_data(guild.id, "suggestions_channel", channel.id)
+            self._register_system_commands(guild.id, "suggestion")
+            return True
+        except Exception as e:
+            logger.error(f"Suggestions setup failed: {e}")
+            return False
+
+    async def _setup_announcements(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            channel = analysis.existing_channels.get("announcements")
+            if not channel:
+                channel = await guild.create_text_channel("announcements")
+            dm.update_guild_data(guild.id, "announcements_channel", channel.id)
+            return True
+        except Exception as e:
+            logger.error(f"Announcements setup failed: {e}")
+            return False
+
+    async def _setup_auto_responder(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            responders = {"hello": "Hi there! How can I help you today?", "help": "Use `/help` to see all my commands!"}
+            dm.update_guild_data(guild.id, "auto_responders", responders)
+            return True
+        except Exception as e:
+            logger.error(f"Auto-responder setup failed: {e}")
+            return False
+
+    # --- Engagement Systems ---
+
+    async def _setup_reminders(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            if hasattr(self.bot, 'reminders'):
+                return await self.bot.reminders.setup(MockInteraction(self.bot, guild))
+            return False
+        except Exception as e:
+            logger.error(f"Reminders setup failed: {e}")
+            return False
+
+    async def _setup_scheduled_reminders(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            dm.update_guild_data(guild.id, "scheduled_reminders_enabled", True)
+            self._register_system_commands(guild.id, "reminder")
+            return True
+        except Exception as e:
+            logger.error(f"Scheduled reminders setup failed: {e}")
+            return False
+
+    async def _setup_economy_shop(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            channel = analysis.existing_channels.get("shop")
+            if not channel:
+                channel = await guild.create_text_channel("shop")
+
+            items = {"VIP Role": {"price": 1000, "desc": "Exclusive VIP role"}, "Custom Tag": {"price": 500, "desc": "A custom tag next to your name"}}
+            dm.update_guild_data(guild.id, "shop", items)
+            dm.update_guild_data(guild.id, "shop_channel", channel.id)
+            return True
+        except Exception as e:
+            logger.error(f"Economy shop setup failed: {e}")
+            return False
+
+    async def _setup_leveling_shop(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            dm.update_guild_data(guild.id, "leveling_shop_enabled", True)
+            return True
+        except Exception as e:
+            logger.error(f"Leveling shop setup failed: {e}")
+            return False
+
+    async def _setup_giveaways(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            if hasattr(self.bot, 'giveaways'):
+                return await self.bot.giveaways.setup(MockInteraction(self.bot, guild))
+            return False
+        except Exception as e:
+            logger.error(f"Giveaways setup failed: {e}")
+            return False
+
+    async def _setup_achievements(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            if hasattr(self.bot, 'achievements'):
+                return await self.bot.achievements.setup(MockInteraction(self.bot, guild))
+            return False
+        except Exception as e:
+            logger.error(f"Achievements setup failed: {e}")
+            return False
+
+    async def _setup_gamification(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            dm.update_guild_data(guild.id, "gamification_enabled", True)
+            return True
+        except Exception as e:
+            logger.error(f"Gamification setup failed: {e}")
+            return False
+
+    async def _setup_reaction_roles(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            channel = analysis.existing_channels.get("reaction-roles")
+            if not channel:
+                channel = await guild.create_text_channel("reaction-roles")
+            embed = discord.Embed(title="🎭 Reaction Roles", description="React to gain roles!", color=discord.Color.blue())
+            msg = await channel.send(embed=embed)
+            dm.update_guild_data(guild.id, "reaction_roles_msg", msg.id)
+            return True
+        except Exception as e:
+            logger.error(f"Reaction roles setup failed: {e}")
+            return False
+
+    async def _setup_reaction_menus(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            dm.update_guild_data(guild.id, "reaction_menus", [])
+            return True
+        except Exception as e:
+            logger.error(f"Reaction menus setup failed: {e}")
+            return False
+
+    async def _setup_role_buttons(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            dm.update_guild_data(guild.id, "role_buttons", [])
+            return True
+        except Exception as e:
+            logger.error(f"Role buttons setup failed: {e}")
+            return False
+
+    # --- Staff Management Systems ---
+
+    async def _setup_apps_simple(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        return await self._setup_applications_system(guild, analysis)
+
+    async def _setup_apps_modals(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        return await self._setup_applications_system(guild, analysis)
+
+    async def _setup_appeals_simple(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        return await self._setup_appeals_system(guild, analysis)
+
+    async def _setup_staff_promotion(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            if hasattr(self.bot, 'staff_promo'):
+                dm.update_guild_data(guild.id, "staff_promotion_enabled", True)
+                return await self.bot.staff_promo.setup(MockInteraction(self.bot, guild))
+            return False
+        except Exception as e:
+            logger.error(f"Staff promotion setup failed: {e}")
+            return False
+
+    async def _setup_staff_shifts(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            if hasattr(self.bot, 'staff_shift'):
+                dm.update_guild_data(guild.id, "staff_shifts_enabled", True)
+                return await self.bot.staff_shift.setup(MockInteraction(self.bot, guild))
+            return False
+        except Exception as e:
+            logger.error(f"Staff shifts setup failed: {e}")
+            return False
+
+    async def _setup_staff_reviews(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        try:
+            if hasattr(self.bot, 'staff_reviews'):
+                dm.update_guild_data(guild.id, "staff_reviews_enabled", True)
+                return await self.bot.staff_reviews.setup(MockInteraction(self.bot, guild))
+            return False
+        except Exception as e:
+            logger.error(f"Staff reviews setup failed: {e}")
+            return False
 
     async def on_guild_remove(self, guild: discord.Guild):
         logger.info(f"Bot removed from guild: {guild.name} (ID: {guild.id})")
-        
+
         if guild.id in self._pending_setups:
             del self._pending_setups[guild.id]
 
     def get_setup_status(self, guild_id: int) -> Optional[ServerSetup]:
         return self._pending_setups.get(guild_id)
 
-    @discord.app_commands.command(name="autosetup", description="Quickly install all pre-built server systems (verification, tickets, applications, etc.)")
+    @discord.app_commands.command(name="autosetup", description="Launch the 33-system auto-setup panel")
     async def autosetup(self, interaction: discord.Interaction):
-        """Slash command to install all available systems at once."""
+        """Slash command to launch the interactive setup panel."""
         if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
             return await interaction.response.send_message("❌ Only administrators can use this command.", ephemeral=True)
 
-        await interaction.response.defer(ephemeral=True)
+        embed = discord.Embed(
+            title="🛠️ Miro Bot Auto-Setup Panel",
+            description="Select the systems you wish to install from the dropdowns below. You can pick multiple systems from each category.",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Systems Part 1", value="Verification, Anti-Raid, Guardian, Welcome, DM Buttons, Tickets, Applications, Appeals, Modmail, Suggestions, Reminders, Announcements, Auto-Responder, Economy", inline=False)
+        embed.add_field(name="Systems Part 2", value="Shop, Leveling, Giveaways, Achievements, Gamification, Reaction Roles, Menus, Role Buttons, Logging, Auto-Mod, Warning System, Staff Management", inline=False)
 
-        # Select all available systems
-        selected_systems = ["verification", "tickets", "applications", "appeals", "economy", "leveling", "welcome", "moderation"]
-
-        # Initialize setup if not already done
-        guild = interaction.guild
-        if guild.id not in self._pending_setups:
-            self._pending_setups[guild.id] = ServerSetup(
-                guild_id=guild.id,
-                state=SetupState.STARTED,
-                started_at=time.time(),
-                completed_at=None,
-                steps_completed=[],
-                config={},
-                selected_systems=selected_systems
-            )
-
-        # Run setup for all systems
-        await self._run_selected_setup(guild.id, interaction.user, selected_systems)
-
-        await interaction.followup.send("✅ Auto-setup completed! All systems have been installed.", ephemeral=True)
+        view = SystemSelectionView(self, interaction.guild.id)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 async def setup(bot: commands.Bot):
     cog = AutoSetup(bot)
     await bot.add_cog(cog)
-    # Registration of persistent views is handled in bot.py setup_hook
-
-    async def setup_hook(self):
-        # Register persistent views for setup buttons in channels
-        self.bot.add_view(StartSetupPersistentView(self.bot))
-
-    # --- Individual Setup Methods for AI Actions ---
-    
-    async def setup_verification(self, interaction: discord.Interaction, params: dict) -> bool:
-        """Setup verification system with button embed for AI actions."""
-        guild = interaction.guild
-        analysis = await self._analyze_server(guild)
-        return await self._setup_verification_system(guild, analysis)
-    
-    async def setup_tickets(self, interaction: discord.Interaction, params: dict) -> bool:
-        """Setup ticket system with button embed for AI actions."""
-        guild = interaction.guild
-        category_name = params.get("category", "Support")
-        queue_channel_name = params.get("queue_channel", "ticket-queue")
-        
-        # Create category
-        category = discord.utils.get(guild.categories, name=category_name)
-        if not category:
-            category = await guild.create_category(category_name)
-        
-        # Create queue channel
-        queue_channel = discord.utils.get(guild.text_channels, name=queue_channel_name)
-        if not queue_channel:
-            queue_channel = await guild.create_text_channel(queue_channel_name, category=category)
-        
-        # Send embed with persistent button
-        embed = discord.Embed(
-            title="🎫 Support Tickets",
-            description="Need help? Click the button below to create a ticket!",
-            color=discord.Color.blue()
-        )
-        view = CreateTicketButton(guild.id, queue_channel.id)
-        await queue_channel.send(embed=embed, view=view)
-        
-        # Store config
-        dm.update_guild_data(guild.id, "ticket_queue_channel", queue_channel.id)
-        dm.update_guild_data(guild.id, "ticket_category", category.id)
-        
-        logger.info(f"Setup ticket system in {guild.name}")
-        self._register_system_commands(guild.id, "tickets")
-        return True
-    
-    async def setup_applications(self, interaction: discord.Interaction, params: dict) -> bool:
-        """Setup applications system with button embed for AI actions."""
-        guild = interaction.guild
-        category_name = params.get("category", "Applications")
-        channel_name = params.get("channel", "applications")
-        
-        # Create category
-        category = discord.utils.get(guild.categories, name=category_name)
-        if not category:
-            category = await guild.create_category(category_name)
-        
-        # Create channel
-        channel = discord.utils.get(guild.text_channels, name=channel_name)
-        if not channel:
-            channel = await guild.create_text_channel(channel_name, category=category)
-        
-        # Send embed with persistent button (opens modal)
-        embed = discord.Embed(
-            title="📝 Staff Applications",
-            description="Want to join our staff team? Click below to apply!",
-            color=discord.Color.purple()
-        )
-        view = ApplyStaffButton(guild.id)
-        await channel.send(embed=embed, view=view)
-        
-        # Store config
-        dm.update_guild_data(guild.id, "applications_channel", channel.id)
-        
-        logger.info(f"Setup applications system in {guild.name}")
-        self._register_system_commands(guild.id, "applications")
-        return True
-    
-    async def setup_appeals(self, interaction: discord.Interaction, params: dict) -> bool:
-        """Setup appeals system with button embed for AI actions."""
-        guild = interaction.guild
-        category_name = params.get("category", "Appeals")
-        channel_name = params.get("channel", "appeals")
-        
-        # Create category
-        category = discord.utils.get(guild.categories, name=category_name)
-        if not category:
-            category = await guild.create_category(category_name)
-        
-        # Create channel
-        channel = discord.utils.get(guild.text_channels, name=channel_name)
-        if not channel:
-            channel = await guild.create_text_channel(channel_name, category=category)
-        
-        # Send embed with button
-        embed = discord.Embed(
-            title="⚖️ Ban Appeals",
-            description="Want to appeal a ban? Click below to submit an appeal!",
-            color=discord.Color.orange()
-        )
-        # Reuse the application modal for appeals
-        view = ApplyStaffButton(guild.id)
-        await channel.send(embed=embed, view=view)
-        
-        # Store config
-        dm.update_guild_data(guild.id, "appeals_channel", channel.id)
-        
-        logger.info(f"Setup appeals system in {guild.name}")
-        self._register_system_commands(guild.id, "appeals")
-        return True
-    
-    async def setup_moderation(self, interaction: discord.Interaction, params: dict) -> bool:
-        """Setup moderation logging system for AI actions."""
-        guild = interaction.guild
-        category_name = params.get("category", "Moderation")
-        logs_channel_name = params.get("logs_channel", "mod-logs")
-        
-        # Create category
-        category = discord.utils.get(guild.categories, name=category_name)
-        if not category:
-            category = await guild.create_category(category_name)
-        
-        # Create logs channel
-        logs_channel = discord.utils.get(guild.text_channels, name=logs_channel_name)
-        if not logs_channel:
-            logs_channel = await guild.create_text_channel(logs_channel_name, category=category)
-        
-        mod_role = discord.utils.get(guild.roles, name="Moderator")
-        if not mod_role:
-            mod_role = await guild.create_role(
-                name="Moderator",
-                color=discord.Color.red(),
-                permissions=discord.Permissions(
-                    view_channel=True,
-                    send_messages=True,
-                    manage_messages=True,
-                    kick_members=True,
-                    moderate_members=True,
-                    read_message_history=True,
-                    attach_files=True,
-                    embed_links=True,
-                    add_reactions=True,
-                    use_application_commands=True,
-                    connect=True,
-                    speak=True,
-                    mute_members=True,
-                    move_members=True,
-                ),
-                hoist=True
-            )
-        
-        # Store config
-        mod_config = {
-            "enabled": True,
-            "ai_enabled": True,
-            "sensitivity": "medium",
-            "auto_moderation": True,
-            "mod_role": mod_role.id,
-            "logs_channel": logs_channel.id
-        }
-        dm.update_guild_data(guild.id, "moderation_config", mod_config)
-        
-        logger.info(f"Setup moderation system in {guild.name}")
-        return True
-    
-    async def setup_logging(self, interaction: discord.Interaction, params: dict) -> bool:
-        """Setup server logging system for AI actions."""
-        guild = interaction.guild
-        category_name = params.get("category", "Logs")
-        logs_channel_name = params.get("channel", "server-logs")
-        
-        # Create category
-        category = discord.utils.get(guild.categories, name=category_name)
-        if not category:
-            category = await guild.create_category(category_name)
-        
-        # Create logs channel
-        logs_channel = discord.utils.get(guild.text_channels, name=logs_channel_name)
-        if not logs_channel:
-            logs_channel = await guild.create_text_channel(logs_channel_name, category=category)
-        
-        # Store config
-        dm.update_guild_data(guild.id, "logging_channel", logs_channel.id)
-        dm.update_guild_data(guild.id, "logging_enabled", True)
-        
-        logger.info(f"Setup logging system in {guild.name}")
-        return True
-
-# Removed StartSetupView and related classes to eliminate auto-setup buttons from welcome DM
-# The welcome DM now sends a clean embed without interactive components, encouraging users to use /bot and /autosetup commands instead
-
-# class StartSetupView(discord.ui.View):
-#     def __init__(self, auto_setup, guild_id):
-#         super().__init__(timeout=None)
-#         self.auto_setup = auto_setup
-#         self.guild_id = guild_id
-
-#         # Create buttons dynamically using stored guild_id in custom_id
-#         start_button = discord.ui.Button(
-#             label="Start Auto-Setup",
-#             style=discord.ButtonStyle.success,
-#             custom_id=f"start_auto_setup_{guild_id}",
-#             emoji="🚀"
-#         )
-#         start_button.callback = self.start_setup
-#         self.add_item(start_button)
-
-#         skip_button = discord.ui.Button(
-#             label="Skip / Use Defaults",
-#             style=discord.ButtonStyle.secondary,
-#             custom_id=f"skip_auto_setup_{guild_id}",
-#             emoji="⏭️"
-#         )
-#         skip_button.callback = self.skip_setup
-#         self.add_item(skip_button)
-
-#     async def start_setup(self, interaction: discord.Interaction):
-#         # Use self.guild_id to retrieve the guild
-#         guild = interaction.client.get_guild(self.guild_id)
-
-#         if not guild:
-#             await interaction.response.send_message("Guild not found. This setup link may be expired.", ephemeral=True)
-#             return
-
-#         # Check if user is owner or admin
-#         member = guild.get_member(interaction.user.id)
-#         if not member or (not member.guild_permissions.administrator and interaction.user.id != guild.owner_id):
-#             await interaction.response.send_message("Only server administrators or the owner can start auto-setup.", ephemeral=True)
-#             return
-
-#         await interaction.response.defer(ephemeral=True)
-
-#         try:
-#             await self.auto_setup._start_interactive_setup(interaction, guild_id=self.guild_id)
-#         except Exception as e:
-#             logger.error(f"Error starting interactive setup: {e}")
-#             await interaction.followup.send("❌ An error occurred while starting setup. Please try again.", ephemeral=True)
-
-#     async def skip_setup(self, interaction: discord.Interaction):
-#         # Use self.guild_id to retrieve the guild
-#         guild = interaction.client.get_guild(self.guild_id)
-
-#         if not guild:
-#             await interaction.response.send_message("Guild not found. This setup link may be expired.", ephemeral=True)
-#             return
-
-#         # Check if user is owner or admin
-#         member = guild.get_member(interaction.user.id)
-#         if not member or (not member.guild_permissions.administrator and interaction.user.id != guild.owner_id):
-#             await interaction.response.send_message("Only server administrators or the owner can skip setup.", ephemeral=True)
-#             return
-
-#         setup = self.auto_setup._pending_setups.get(guild.id)
-#         if setup:
-#             setup.state = SetupState.SKIPPED
-
-#         await interaction.response.send_message("✅ Setup skipped! You can use `/bot` anytime to create features manually.", ephemeral=True)
-
-
-# # Persistent version for setup_hook registration - handles guild-specific custom_ids
-# class StartSetupPersistentView(discord.ui.View):
-#     def __init__(self, bot):
-#         super().__init__(timeout=None)
-#         self.bot = bot
-
-#     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-#         # Handle start_auto_setup_{guild_id} pattern
-#         if interaction.data and interaction.data.get("custom_id", "").startswith("start_auto_setup_"):
-#             await self.handle_start_setup(interaction)
-#             return False  # Prevent default handling
-
-#         # Handle skip_auto_setup_{guild_id} pattern
-#         if interaction.data and interaction.data.get("custom_id", "").startswith("skip_auto_setup_"):
-#             await self.handle_skip_setup(interaction)
-#             return False  # Prevent default handling
-
-#         return True
-
-#     async def handle_start_setup(self, interaction: discord.Interaction):
-#         # Extract guild_id from custom_id
-#         custom_id = interaction.data["custom_id"]
-#         try:
-#             button_guild_id = int(custom_id.split('_')[-1])
-#         except (ValueError, IndexError):
-#             await interaction.response.send_message("Invalid setup button.", ephemeral=True)
-#             return
-
-#         guild = interaction.guild or self.bot.get_guild(button_guild_id)
-
-#         if not guild:
-#             await interaction.response.send_message("Guild not found. This setup link may be expired.", ephemeral=True)
-#             return
-
-#         # Check if user is owner or admin
-#         member = guild.get_member(interaction.user.id)
-#         if not member or (not member.guild_permissions.administrator and interaction.user.id != guild.owner_id):
-#             await interaction.response.send_message("Only server administrators or the owner can start auto-setup.", ephemeral=True)
-#             return
-
-#         await interaction.response.defer(ephemeral=True)
-
-#         try:
-#             # Create a temporary auto_setup instance for this interaction
-#             from modules.auto_setup import AutoSetup
-#             auto_setup = AutoSetup(self.bot)
-#             await auto_setup._start_interactive_setup(interaction, guild_id=guild.id)
-#         except Exception as e:
-#             logger.error(f"Error starting interactive setup: {e}")
-#             await interaction.followup.send("❌ An error occurred while starting setup. Please try again.", ephemeral=True)
-
-#     async def handle_skip_setup(self, interaction: discord.Interaction):
-#         # Extract guild_id from custom_id
-#         custom_id = interaction.data["custom_id"]
-#         try:
-#             button_guild_id = int(custom_id.split('_')[-1])
-#         except (ValueError, IndexError):
-#             await interaction.response.send_message("Invalid setup button.", ephemeral=True)
-#             return
-
-#         guild = interaction.guild or self.bot.get_guild(button_guild_id)
-
-#         if not guild:
-#             await interaction.response.send_message("Guild not found. This setup link may be expired.", ephemeral=True)
-#             return
-
-#         # Check if user is owner or admin
-#         member = guild.get_member(interaction.user.id)
-#         if not member or (not member.guild_permissions.administrator and interaction.user.id != guild.owner_id):
-#             await interaction.response.send_message("Only server administrators or the owner can skip setup.", ephemeral=True)
-#             return
-
-#         # Create a temporary auto_setup instance for this interaction
-#         from modules.auto_setup import AutoSetup
-#         auto_setup = AutoSetup(self.bot)
-#         setup = auto_setup._pending_setups.get(guild.id)
-#         if setup:
-#            setup.state = SetupState.SKIPPED
-
-#         await interaction.response.send_message("✅ Setup skipped! You can use `/bot` anytime to create features manually.", ephemeral=True)
-
-
-# class SystemSelectionView(discord.ui.View):
-#     def __init__(self, auto_setup, guild_id):
-#         super().__init__(timeout=600)  # 10 minute timeout
-#         self.auto_setup = auto_setup
-#         self.guild_id = guild_id
-#         self.selected_systems = set()
-
-#     @discord.ui.button(label="Verification", style=discord.ButtonStyle.primary, custom_id="select_verification", emoji="✅")
-#     async def toggle_verification(self, interaction: discord.Interaction, button: discord.ui.Button):
-#         await self._toggle_system(interaction, "verification", button)
-
-#     @discord.ui.button(label="Tickets", style=discord.ButtonStyle.primary, custom_id="select_tickets", emoji="🎫")
-#     async def toggle_tickets(self, interaction: discord.Interaction, button: discord.ui.Button):
-#         await self._toggle_system(interaction, "tickets", button)
-
-#     @discord.ui.button(label="Applications", style=discord.ButtonStyle.primary, custom_id="select_applications", emoji="📝")
-#     async def toggle_applications(self, interaction: discord.Interaction, button: discord.ui.Button):
-#         await self._toggle_system(interaction, "applications", button)
-
-#     @discord.ui.button(label="Appeals", style=discord.ButtonStyle.primary, custom_id="select_appeals", emoji="⚖️")
-#     async def toggle_appeals(self, interaction: discord.Interaction, button: discord.ui.Button):
-#         await self._toggle_system(interaction, "appeals", button)
-
-#     @discord.ui.button(label="Economy", style=discord.ButtonStyle.secondary, custom_id="select_economy", emoji="💰")
-#     async def toggle_economy(self, interaction: discord.Interaction, button: discord.ui.Button):
-#         await self._toggle_system(interaction, "economy", button)
-
-#     @discord.ui.button(label="Leveling", style=discord.ButtonStyle.secondary, custom_id="select_leveling", emoji="⬆️")
-#     async def toggle_leveling(self, interaction: discord.Interaction, button: discord.ui.Button):
-#         await self._toggle_system(interaction, "leveling", button)
-
-#     async def _toggle_system(self, interaction: discord.Interaction, system: str, button: discord.ui.Button):
-#         if system in self.selected_systems:
-#             self.selected_systems.remove(system)
-#             button.style = discord.ButtonStyle.secondary
-#         else:
-#             self.selected_systems.add(system)
-#             button.style = discord.ButtonStyle.success
-
-#         await interaction.response.edit_message(view=self)
-
-#     @discord.ui.button(label="Start Setup", style=discord.ButtonStyle.success, custom_id="confirm_setup", emoji="🚀", row=2)
-#     async def start_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
-#         if not self.selected_systems:
-#             await interaction.response.send_message("Please select at least one system to set up!", ephemeral=True)
-#             return
-
-#         # Fetch guild to ensure it exists with retry mechanism
-#         guild = self.auto_setup.bot.get_guild(self.guild_id)
-#         if not guild:
-#             # Wait 1 second and try again
-#             await asyncio.sleep(1)
-#             guild = self.auto_setup.bot.get_guild(self.guild_id)
-#             if not guild:
-#                 logger.error(f"Guild {self.guild_id} not found after retry in auto-setup")
-#                 await interaction.response.send_message("Something went wrong, please re-invite the bot", ephemeral=True)
-#                 return
-
-#         setup = self.auto_setup._pending_setups.get(self.guild_id)
-#         if setup:
-#             setup.selected_systems = list(self.selected_systems)
-#             setup.state = SetupState.STARTED
-
-#         await interaction.response.send_message("🚀 Starting setup... This may take a few moments.", ephemeral=True)
-#         await self.auto_setup._run_selected_setup(self.guild_id, interaction.user, list(self.selected_systems))
-
-#     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, custom_id="cancel_setup", emoji="❌", row=2)
-#     async def cancel_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
-#         setup = self.auto_setup._pending_setups.get(self.guild_id)
-#         if setup:
-#             setup.state = SetupState.SKIPPED
-
-#         await interaction.response.send_message("✅ Setup cancelled. You can start over anytime!", ephemeral=True)
-#         self.stop()
-

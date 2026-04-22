@@ -38,37 +38,50 @@ class GiveawaySystem:
         self._load_giveaways()
 
     def _load_giveaways(self):
-        data = dm.load_json("giveaways", default={})
-        
-        for gw_id, gw_data in data.items():
-            try:
-                giveaway = Giveaway(
-                    id=gw_id,
-                    guild_id=gw_data["guild_id"],
-                    channel_id=gw_data["channel_id"],
-                    message_id=gw_data.get("message_id"),
-                    name=gw_data["name"],
-                    description=gw_data["description"],
-                    prize=gw_data["prize"],
-                    winners_count=gw_data["winners_count"],
-                    requirements=gw_data.get("requirements", {}),
-                    ends_at=gw_data["ends_at"],
-                    entries=gw_data.get("entries", []),
-                    winners=gw_data.get("winners", []),
-                    created_by=gw_data["created_by"],
-                    created_at=gw_data["created_at"],
-                    ended=gw_data.get("ended", False)
-                )
-                
-                if not giveaway.ended and giveaway.ends_at > time.time():
-                    self._giveaways[gw_id] = giveaway
-            except Exception as e:
-                logger.error(f"Failed to load giveaway {gw_id}: {e}")
+        """Load giveaways from all guild-specific files."""
+        count = 0
+        data_dir = "data"
+        if os.path.exists(data_dir):
+            for filename in os.listdir(data_dir):
+                if filename.startswith("guild_") and filename.endswith(".json"):
+                    try:
+                        guild_id_str = filename[6:-5]
+                        if not guild_id_str.isdigit(): continue
+                        guild_id = int(guild_id_str)
+                        guild_data = dm.load_json(filename[:-5], default={})
+                        giveaways_data = guild_data.get("giveaways", {})
+
+                        for gw_id, gw_data in giveaways_data.items():
+                            giveaway = Giveaway(
+                                id=gw_id,
+                                guild_id=guild_id,
+                                channel_id=gw_data["channel_id"],
+                                message_id=gw_data.get("message_id"),
+                                name=gw_data["name"],
+                                description=gw_data["description"],
+                                prize=gw_data["prize"],
+                                winners_count=gw_data["winners_count"],
+                                requirements=gw_data.get("requirements", {}),
+                                ends_at=gw_data["ends_at"],
+                                entries=gw_data.get("entries", []),
+                                winners=gw_data.get("winners", []),
+                                created_by=gw_data["created_by"],
+                                created_at=gw_data["created_at"],
+                                ended=gw_data.get("ended", False)
+                            )
+                            if not giveaway.ended and giveaway.ends_at > time.time():
+                                self._giveaways[gw_id] = giveaway
+                                count += 1
+                    except Exception as e:
+                        logger.error(f"Failed to load giveaways from {filename}: {e}")
+        logger.info(f"Loaded {count} active giveaways from guild files.")
 
     def _save_giveaway(self, giveaway: Giveaway):
-        data = dm.load_json("giveaways", default={})
-        data[giveaway.id] = {
-            "guild_id": giveaway.guild_id,
+        """Save a giveaway to its guild-specific data file."""
+        guild_id = giveaway.guild_id
+        giveaways = dm.get_guild_data(guild_id, "giveaways", {})
+
+        giveaways[giveaway.id] = {
             "channel_id": giveaway.channel_id,
             "message_id": giveaway.message_id,
             "name": giveaway.name,
@@ -83,7 +96,7 @@ class GiveawaySystem:
             "created_at": giveaway.created_at,
             "ended": giveaway.ended
         }
-        dm.save_json("giveaways", data)
+        dm.update_guild_data(guild_id, "giveaways", giveaways)
 
     def start_giveaway_monitor(self):
         asyncio.create_task(self._giveaway_monitor_loop())

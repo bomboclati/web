@@ -18,23 +18,21 @@ class StaffReviewSystem:
         self._probation: Dict[int, Dict[int, dict]] = {}
         self._votes: Dict[int, List[dict]] = {}
         self._alerts_sent: Dict[int, float] = {}
-        self._load_data()
 
-    def _load_data(self):
-        data = dm.load_json("staff_reviews", default={})
-        self._reviews = data.get("reviews", {})
-        self._probation = data.get("probation", {})
-        self._votes = data.get("votes", {})
-        self._alerts_sent = data.get("alerts_sent", {})
+    def _load_guild_data(self, guild_id: int):
+        """Lazy load guild data to ensure multi-server isolation."""
+        if guild_id not in self._reviews:
+            self._reviews[guild_id] = dm.get_guild_data(guild_id, "staff_review_data", {})
+            self._probation[guild_id] = dm.get_guild_data(guild_id, "staff_probation", {})
+            self._votes[guild_id] = dm.get_guild_data(guild_id, "staff_votes", [])
+            self._alerts_sent[guild_id] = dm.get_guild_data(guild_id, "staff_alerts_sent", {})
 
-    def _save_data(self):
-        data = {
-            "reviews": self._reviews,
-            "probation": self._probation,
-            "votes": self._votes,
-            "alerts_sent": self._alerts_sent
-        }
-        dm.save_json("staff_reviews", data)
+    def _save_guild_data(self, guild_id: int):
+        """Save guild data immediately for immortality."""
+        dm.update_guild_data(guild_id, "staff_review_data", self._reviews.get(guild_id, {}))
+        dm.update_guild_data(guild_id, "staff_probation", self._probation.get(guild_id, {}))
+        dm.update_guild_data(guild_id, "staff_votes", self._votes.get(guild_id, []))
+        dm.update_guild_data(guild_id, "staff_alerts_sent", self._alerts_sent.get(guild_id, {}))
 
     def start_review_loop(self):
         asyncio.create_task(self._review_loop())
@@ -169,9 +167,7 @@ class StaffReviewSystem:
 
     async def _process_vote(self, guild, user_id, voter_id, vote):
         guild_id = guild.id
-        
-        if guild_id not in self._votes:
-            self._votes[guild_id] = []
+        self._load_guild_data(guild_id)
         
         self._votes[guild_id].append({
             "user_id": user_id,
@@ -181,13 +177,11 @@ class StaffReviewSystem:
         })
         
         self._votes[guild_id] = self._votes[guild_id][-50:]
-        self._save_data()
+        self._save_guild_data(guild_id)
 
     async def start_probation(self, guild, member, days=14):
         guild_id = guild.id
-        
-        if guild_id not in self._probation:
-            self._probation[guild_id] = {}
+        self._load_guild_data(guild_id)
         
         self._probation[guild_id][member.id] = {
             "start_time": time.time(),
@@ -200,7 +194,7 @@ class StaffReviewSystem:
             }
         }
         
-        self._save_data()
+        self._save_guild_data(guild_id)
         
         try:
             await member.send(f"🎓 Welcome to your {days}-day probation period!\n\nRequired:\n1. Shadow a senior staff for 2 hours\n2. Complete training modules\n3. Introduce yourself in #staff-chat\n\nGood luck!")
@@ -280,7 +274,7 @@ class StaffReviewSystem:
             if guild_id not in self._alerts_sent:
                 self._alerts_sent[guild_id] = {}
             self._alerts_sent[guild_id][member.id] = time.time()
-            self._save_data()
+            self._save_guild_data(guild_id)
         
         except:
             pass

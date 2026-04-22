@@ -28,15 +28,19 @@ class VoiceActivitySystem:
         self._voice_sessions: Dict[int, VoiceSession] = {}
         self._voice_channels: Dict[int, dict] = {}
         self._leaderboards: Dict[int, List[dict]] = {}
-        self._load_settings()
 
-    def _load_settings(self):
-        settings_data = dm.load_json("voice_settings", default={})
-        self._voice_channels = settings_data.get("channels", {})
+    def _load_guild_data(self, guild_id: int):
+        """Lazy load guild data to ensure multi-server isolation."""
+        if guild_id not in self._voice_channels:
+            data = dm.get_guild_data(guild_id, "voice_system_data", {})
+            self._voice_channels[guild_id] = data.get("channels", {})
 
-    def _save_settings(self):
-        settings_data = {"channels": self._voice_channels}
-        dm.save_json("voice_settings", settings_data)
+    def _save_guild_data(self, guild_id: int):
+        """Save guild data immediately for immortality."""
+        data = {
+            "channels": self._voice_channels.get(guild_id, {})
+        }
+        dm.update_guild_data(guild_id, "voice_system_data", data)
 
     def get_guild_settings(self, guild_id: int) -> dict:
         return dm.get_guild_data(guild_id, "voice_settings", {
@@ -60,6 +64,7 @@ class VoiceActivitySystem:
         while not self.bot.is_closed:
             try:
                 for guild in self.bot.guilds:
+                    self._load_guild_data(guild.id)
                     for voice_channel in guild.voice_channels:
                         for member in voice_channel.members:
                             if member.bot:
@@ -144,7 +149,14 @@ class VoiceActivitySystem:
         user_data = dm.get_guild_data(guild_id, f"user_{user_id}", {})
         user_data["xp"] = user_data.get("xp", 0) + session.xp_earned
         user_data["coins"] = user_data.get("coins", 0) + session.coins_earned
-        user_data["voice_minutes"] = user_data.get("voice_minutes", 0) + int((time.time() - session.started_at) / 60)
+        minutes = int((time.time() - session.started_at) / 60)
+        user_data["voice_minutes"] = user_data.get("voice_minutes", 0) + minutes
+
+        # Track timestamped voice activity for analytics
+        activity = dm.get_guild_data(guild_id, "voice_activity_log", [])
+        activity.append({"timestamp": time.time(), "user_id": user_id, "minutes": minutes})
+        # Keep only last 1000 entries
+        dm.update_guild_data(guild_id, "voice_activity_log", activity[-1000:])
         
         dm.update_guild_data(guild_id, f"user_{user_id}", user_data)
 
@@ -255,8 +267,22 @@ Respond with JSON only:
         return leaderboard
 
     def get_hourly_voice_minutes(self, guild_id: int) -> int:
-        """Get the total hourly voice minutes for the guild."""
-        return 0
+        """Get the total voice minutes for the guild in the last hour."""
+        cutoff = time.time() - 3600
+        total = 0
+
+        activity = dm.get_guild_data(guild_id, "voice_activity_log", [])
+        for entry in activity:
+            if entry.get("timestamp", 0) > cutoff:
+                total += entry.get("minutes", 0)
+
+        # Also add currently active sessions
+        for session_key, session in self._voice_sessions.items():
+            if session.guild_id == guild_id:
+                current_minutes = int((time.time() - session.started_at) / 60)
+                total += current_minutes
+
+        return total
 
     async def setup(self, interaction: discord.Interaction, params: Dict = None):
         guild = interaction.guild

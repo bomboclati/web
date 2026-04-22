@@ -1591,7 +1591,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             logger.error(f"Error reloading scheduled tasks: {e}")
 
     async def _process_event_listeners(self, event_type, *args, **kwargs):
-        """Process custom event listeners."""
+        """Process custom event listeners with guild-aware filtering."""
         if event_type not in self._listeners:
             return
 
@@ -1600,6 +1600,21 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
 
         for listener in self._listeners[event_type]:
             try:
+                # Guild filtering for multi-server safety
+                listener_guild_id = listener.get("guild_id")
+
+                # Try to determine current guild from args
+                current_guild_id = None
+                if event_type == "on_message":
+                    current_guild_id = args[0].guild.id if args[0].guild else None
+                elif hasattr(args[0], "guild"):
+                    current_guild_id = args[0].guild.id
+                elif "guild_id" in kwargs:
+                    current_guild_id = kwargs["guild_id"]
+
+                if listener_guild_id and current_guild_id and listener_guild_id != current_guild_id:
+                    continue
+
                 # Basic condition check
                 condition = listener.get("condition")
                 if condition:
@@ -1616,19 +1631,8 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                     # Mock interaction based on event
                     if event_type == "on_message":
                         message = args[0]
-                        class MockInteraction:
-                            def __init__(self, bot, msg):
-                                self.bot = bot
-                                self.guild = msg.guild
-                                self.channel = msg.channel
-                                self.user = msg.author
-                                self.followup = self
-                                self.response = self
-                            async def send_message(self, *args, **kwargs): pass
-                            async def edit_message(self, *args, **kwargs): pass
-                            async def defer(self, *args, **kwargs): pass
-
-                        interaction = MockInteraction(self, message)
+                        from modules.auto_setup import MockInteraction
+                        interaction = MockInteraction(self, message.guild, message.author)
                         await handler.execute_sequence(interaction, [{"name": action, "parameters": params}])
             except Exception as e:
                 logger.error(f"Error processing listener for {event_type}: {e}")
