@@ -130,6 +130,9 @@ class MiroBot(commands.Bot):
         self.analytics = setup_analytics(self)
         self.verification = Verification(self)
         self.embed_system = EmbedSystem(self)
+        
+        # Add cogs (important for slash commands)
+        # Note: We'll add them in setup_hook to ensure async compatibility
 
     async def get_dynamic_prefix(self, bot, message):
         if not message.guild:
@@ -140,6 +143,14 @@ class MiroBot(commands.Bot):
         logger.info("Recovering immortal state...")
         logger.info("Restoring trigger role presence monitoring...")
         register_all_persistent_views(self)
+        
+        # Add cogs that contain slash commands
+        await self.add_cog(self.auto_setup)
+        
+        # Sync slash commands globally (important if not synced elsewhere)
+        await self.tree.sync()
+        logger.info("Slash commands synced successfully.")
+        
         await self.scheduler.start()
         
         # Start background monitors

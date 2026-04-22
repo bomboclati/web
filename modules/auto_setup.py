@@ -429,7 +429,7 @@ class AutoSetup:
             selected_systems=None
         )
 
-        # await self._send_welcome_dm(guild)  # Removed as requested
+        await self._send_welcome_dm(guild)
         await self._initialize_server_data(guild)
 
     async def on_guild_remove(self, guild: discord.Guild):
@@ -508,83 +508,89 @@ class AutoSetup:
             logger.error(f"Failed to remove data for guild {guild.id}: {e}")
 
     async def _send_welcome_dm(self, guild: discord.Guild):
-        """Send welcome DM to server owner with auto-setup option."""
+        """Send a premium, comprehensive welcome DM to the server owner."""
         owner = guild.owner or await guild.fetch_member(guild.owner_id)
+        if not owner: return
 
-        if not owner:
-            logger.error(f"Could not find owner for guild {guild.id}")
-            return
-
-        embed = discord.Embed(
-            title=":rocket: Welcome to Miro Bot!",
-            description=f"Hi {owner.mention}! I've been added to **{guild.name}** and I'm ready to help you set up your server.",
-            color=discord.Color.blurple()
+        # Embed 1: Introduction
+        embed1 = discord.Embed(
+            title="🚀 Welcome to Miro Bot!",
+            description=f"Hi {owner.mention}! I've been added to **{guild.name}** and I'm ready to help you build the ultimate community. 🤖",
+            color=discord.Color.from_rgb(88, 101, 242) # Discord Blurple
         )
-
-        embed.add_field(
+        embed1.add_field(
             name="🤖 What I Can Do",
             value="I'm an AI-powered Discord bot that can build and manage features for your server. Use `/bot` to tell me what you want to create!",
             inline=False
         )
-
-        embed.add_field(
+        embed1.add_field(
             name="⚡ Quick Start Commands",
             value="• `/bot` - Build custom features\n• `/help` - View all commands\n• `/status` - Check bot health",
             inline=False
         )
-
-        embed.add_field(
+        embed1.add_field(
             name="🔧 Auto-Setup Available",
-            value="I can automatically set up essential systems like verification, tickets, applications, and more. Click the button below to get started!",
+            value="I can automatically set up essential systems like verification, tickets, applications, and more. Click the button below to get started!\n*This setup process is optional and can be customized to your needs.*",
             inline=False
         )
 
-        # Add Quick Start embed as requested
-        quick_start_embed = discord.Embed(
+        # Embed 2: How to Use & Config
+        embed2 = discord.Embed(
             title="🚀 Quick Start Guide",
             description="Here's how to get the most out of Miro Bot:",
-            color=discord.Color.green()
+            color=discord.Color.from_rgb(255, 101, 42) # Vibrant Orange
         )
-        quick_start_embed.add_field(
+        embed2.add_field(
             name="💡 How to Use the Bot",
-            value="Use `/bot` for any task - just describe what you want in plain English!\nExample: `/bot create welcome system` or `/bot give @user Member role`",
+            value="Use `/bot` for any task - just describe what you want in plain English!\n*Example: `/bot create welcome system` or `/bot give @user Member role`*",
             inline=False
         )
-
-        # Add Configuration Guide embed
-        config_embed = discord.Embed(
-            title="⚙️ Configuration Guide",
-            description="Configure your AI settings to customize the bot's behavior:",
-            color=discord.Color.blue()
+        embed2.add_field(
+            name="⚙️ Configuration Guide",
+            value="Configure your AI settings to customize the bot's behavior:",
+            inline=False
         )
-        config_embed.add_field(
+        embed2.add_field(
             name="🔑 Set API Key",
-            value="`/config key <provider> <api_key>`\nExample: `/config key openai sk-your-key-here`\nRequired before using AI features!",
+            value="`/config key <provider> <api_key>`\n*Example: `/config key openai sk-your-key-here`*\n**Required before using AI features!**",
             inline=False
         )
-        config_embed.add_field(
+        embed2.add_field(
             name="🏢 Change Provider",
-            value="`/config provider <provider>`\nProviders: openrouter, openai, gemini, anthropic, groq, mistral, deepseek, dashscope\nExample: `/config provider openai`",
-            inline=False
+            value="`/config provider <provider>`\n*Providers: openrouter, openai, gemini, anthropic, groq, mistral, deepseek, dashscope*\n*Example: `/config provider openai`*",
+            inline=True
         )
-        config_embed.add_field(
+        embed2.add_field(
             name="🤖 Change Model",
-            value="`/config model <model>`\nChoose from provider-specific models (autocomplete available)\nExample: `/config model gpt-4o`",
-            inline=False
+            value="`/config model <model>`\n*Choose from provider-specific models*\n*Example: `/config model gpt-4o`*",
+            inline=True
         )
+        
+        embed2.set_footer(text=f"Server: {guild.name} • ID: {guild.id}")
 
-        embed.set_footer(text="This setup process is optional and can be customized to your needs.")
+        # Add Start Setup Button
+        view = ui.View(timeout=None)
+        start_btn = ui.Button(label="Start Auto-Setup", style=discord.ButtonStyle.success, emoji="🚀", custom_id=f"start_auto_setup_{guild.id}")
+        
+        async def start_callback(interaction: discord.Interaction):
+            await interaction.response.defer(ephemeral=True)
+            await self._start_interactive_setup(interaction, guild_id=guild.id)
+        
+        start_btn.callback = start_callback
+        view.add_item(start_btn)
 
-        # Send all embeds
-        view = StartSetupView(self, guild.id)
-
-        # Try to DM the owner first
         try:
-            await owner.send(embeds=[embed, quick_start_embed, config_embed], view=view)
-            logger.info(f"Sent welcome DM to {owner} for guild {guild.id}")
-            return
-        except (discord.Forbidden, discord.HTTPException) as e:
-            logger.warning(f"Could not DM owner {owner}: {e}. Attempting fallback.")
+            await owner.send(embeds=[embed1, embed2], view=view)
+            logger.info(f"Sent welcome DM to owner of {guild.name}")
+        except discord.Forbidden:
+            logger.warning(f"Could not DM owner of {guild.name}")
+            # Fallback: Send in system channel if available
+            if guild.system_channel:
+                try:
+                    await guild.system_channel.send(f"Welcome {owner.mention}! I've been added to the server. Please check your DMs (if open) or use `/autosetup` to get started.", embeds=[embed1, embed2], view=view)
+                except: pass
+
+        # Fallback to system channel or create bot-setup channel
 
         # Fallback to system channel or create bot-setup channel
         fallback_channel = None
