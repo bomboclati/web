@@ -648,38 +648,6 @@ class AutoSetup:
         view = SystemSelectionView(self, guild_id)
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
-    async def _run_selected_setup(self, guild_id: int, user: discord.Member, selected_systems: List[str]):
-        """Run setup for selected systems with progress updates and final summary."""
-        # Retrieve guild using guild_id to handle cases where interaction.guild is None (e.g., from DM)
-        guild = self.bot.get_guild(guild_id)
-        if not guild:
-            # Send error message to user if guild not found
-            try:
-                await user.send("❌ Guild not found. The setup cannot proceed.")
-            except discord.Forbidden:
-                pass  # Can't DM user
-            return
-
-        setup = self._pending_setups.get(guild.id)
-        if not setup:
-            return
-
-        # Analyze server structure first
-        analysis = await self._analyze_server(guild)
-        logger.info(f"Server analysis complete for {guild.name}: {len(analysis.existing_channels)} channels, {len(analysis.existing_roles)} roles")
-
-        results = []
-        system_map = {
-            "verification": ("Verification System", self._setup_verification_system),
-            "tickets": ("Ticket System", self._setup_ticket_system),
-            "applications": ("Applications System", self._setup_applications_system),
-            "appeals": ("Appeals System", self._setup_appeals_system),
-            "economy": ("Economy System", self._setup_economy_system),
-            "leveling": ("Leveling System", self._setup_leveling_system),
-            "welcome": ("Welcome System", self._setup_welcome_system),
-            "moderation": ("Moderation System", self._setup_moderation_system),
-        }
-
     def _register_system_commands(self, guild_id: int, system_name: str):
         """Helper to register custom commands for a system set up by the auto-setup."""
         import json
@@ -745,6 +713,38 @@ class AutoSetup:
             custom_cmds["help warnings"] = json.dumps({"command_type": "help_embed", "title": "Warning System", "description": "Manage user warnings.", "fields": [{"name": "!warn <user> <reason>", "value": "Issue a warning.", "inline": False}, {"name": "!warnings <user>", "value": "View user warnings.", "inline": False}]})
 
         dm.update_guild_data(guild_id, "custom_commands", custom_cmds)
+
+    async def _run_selected_setup(self, guild_id: int, user: discord.Member, selected_systems: List[str]):
+        """Run setup for selected systems with progress updates and final summary."""
+        # Retrieve guild using guild_id to handle cases where interaction.guild is None (e.g., from DM)
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            # Send error message to user if guild not found
+            try:
+                await user.send("❌ Guild not found. The setup cannot proceed.")
+            except discord.Forbidden:
+                pass  # Can't DM user
+            return
+
+        setup = self._pending_setups.get(guild.id)
+        if not setup:
+            return
+
+        # Analyze server structure first
+        analysis = await self._analyze_server(guild)
+        logger.info(f"Server analysis complete for {guild.name}: {len(analysis.existing_channels)} channels, {len(analysis.existing_roles)} roles")
+
+        results = []
+        system_map = {
+            "verification": ("Verification System", self._setup_verification_system),
+            "tickets": ("Ticket System", self._setup_ticket_system),
+            "applications": ("Applications System", self._setup_applications_system),
+            "appeals": ("Appeals System", self._setup_appeals_system),
+            "economy": ("Economy System", self._setup_economy_system),
+            "leveling": ("Leveling System", self._setup_leveling_system),
+            "welcome": ("Welcome System", self._setup_welcome_system),
+            "moderation": ("Moderation System", self._setup_moderation_system),
+        }
 
         for system in selected_systems:
             if system in system_map:
