@@ -203,7 +203,7 @@ Walkthrough: {walkthrough}
             }
             
             # Store in collection — run in executor to avoid blocking the event loop
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             coll = self.collection
             doc_text = document_text
             meta = metadata
@@ -287,7 +287,7 @@ Walkthrough: {walkthrough}
             where_clause = {"$and": where_conditions} if len(where_conditions) > 1 else where_conditions[0]
             
             # Query the collection — run in executor to avoid blocking the event loop
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             collection = self.collection
             results = await loop.run_in_executor(
                 None,

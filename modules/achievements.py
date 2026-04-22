@@ -42,6 +42,9 @@ class AchievementSystem:
         self.bot = bot
         self._achievements: Dict[str, Achievement] = {}
         self._titles: Dict[str, dict] = {}
+        # Notifications are suppressed during startup to prevent restart badge-spam.
+        # bot.py enables this flag 30 s after on_ready via _enable_achievement_notifications().
+        self._notifications_enabled = False
         self._load_achievements()
         self._init_default_achievements()
 
@@ -243,19 +246,29 @@ class AchievementSystem:
         await self._check_title_unlock(guild_id, user_id)
 
     async def _notify_achievement(self, guild_id: int, user_id: int, achievement: Achievement):
+        # Suppress all notifications during startup to prevent restart badge-spam.
+        # The bot enables this flag 30 s after on_ready.
+        if not self._notifications_enabled:
+            logger.debug("Achievement '%s' earned by %d (notifications suppressed during startup)",
+                         achievement.id, user_id)
+            return
+
         settings = self.get_guild_settings(guild_id)
-        
-        member = self.bot.get_guild(guild_id).get_member(user_id)
+
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            return
+        member = guild.get_member(user_id)
         if not member:
             return
-        
+
         embed = discord.Embed(
-            title=f"🏆 Achievement Unlocked!",
+            title="🏆 Achievement Unlocked!",
             description=f"**{achievement.icon} {achievement.name}**",
             color=discord.Color.gold()
         )
         embed.add_field(name="Description", value=achievement.description, inline=False)
-        
+
         if achievement.reward:
             reward_text = []
             if achievement.reward.get("coins"):
@@ -264,15 +277,15 @@ class AchievementSystem:
                 reward_text.append(f"{achievement.reward['xp']} XP")
             if reward_text:
                 embed.add_field(name="Reward", value=", ".join(reward_text), inline=True)
-        
+
         if settings.get("notify_channel"):
-            channel = self.bot.get_guild(guild_id).get_channel(int(settings["notify_channel"]))
+            channel = guild.get_channel(int(settings["notify_channel"]))
             if channel:
                 await channel.send(embed=embed)
-        
+
         try:
             await member.send(embed=embed)
-        except:
+        except Exception:
             pass
 
     async def _check_title_unlock(self, guild_id: int, user_id: int):
@@ -303,30 +316,37 @@ class AchievementSystem:
 
     async def _unlock_title(self, guild_id: int, user_id: int, title_id: str):
         user_titles = dm.get_guild_data(guild_id, f"titles_{user_id}", [])
-        
+
         existing = [t["title_id"] for t in user_titles]
-        
+
         if title_id not in existing:
             user_titles.append({
                 "title_id": title_id,
                 "unlocked_at": time.time(),
                 "active": False
             })
-            
+
             dm.update_guild_data(guild_id, f"titles_{user_id}", user_titles)
-            
+
+            # Only send DM notifications after startup is complete
+            if not self._notifications_enabled:
+                logger.debug("Title '%s' unlocked for %d (notifications suppressed during startup)",
+                             title_id, user_id)
+                return
+
             title = self._titles.get(title_id)
             if title:
-                member = self.bot.get_guild(guild_id).get_member(user_id)
+                guild = self.bot.get_guild(guild_id)
+                member = guild.get_member(user_id) if guild else None
                 if member:
                     embed = discord.Embed(
-                        title=f"🎖️ Title Unlocked!",
+                        title="🎖️ Title Unlocked!",
                         description=f"You unlocked: **{title['icon']} {title['name']}**",
                         color=discord.Color.gold()
                     )
                     try:
                         await member.send(embed=embed)
-                    except:
+                    except Exception:
                         pass
 
     def set_active_title(self, guild_id: int, user_id: int, title_id: str) -> bool:

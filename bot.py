@@ -243,12 +243,31 @@ class MiroBot(commands.Bot):
             ticket_ch = dm.get_guild_data(guild.id, 'tickets_channel') or dm.get_guild_data(guild.id, 'ticket_queue_channel')
             if ticket_ch:
                 self.add_view(CreateTicketButton(guild_id=guild.id, channel_id=ticket_ch))
-        self.loop.create_task(self._auto_backup_loop())
-        self.loop.create_task(self._cleanup_expired_sessions())
-        self.loop.create_task(self._command_refinement_loop())
+
+        # Only start background loops once (guard against on_ready firing on reconnects)
+        if not getattr(self, '_background_loops_started', False):
+            self._background_loops_started = True
+            self.loop.create_task(self._auto_backup_loop())
+            self.loop.create_task(self._cleanup_expired_sessions())
+            self.loop.create_task(self._command_refinement_loop())
+
         await self._setup_crash_recovery()
         self._setup_signal_handlers()
         self.loop.create_task(self._check_new_guilds())
+
+        # Enable achievement/title notifications only after startup is fully complete
+        # This prevents badge-spam when the bot restarts and re-evaluates existing state
+        self.loop.create_task(self._enable_achievement_notifications())
+
+    async def _enable_achievement_notifications(self):
+        """Delay enabling achievement DMs/channel posts until the bot is fully settled
+        after a restart.  Without this, every restart would re-award and spam all badges
+        that were already earned by members who happen to be checked during boot."""
+        await asyncio.sleep(30)  # Give all startup checks 30 s to complete quietly
+        if hasattr(self, 'achievements'):
+            self.achievements._notifications_enabled = True
+        logger.info("Achievement notifications enabled (post-startup guard lifted)")
+
 
     async def _check_new_guilds(self):
         """Check for any guilds the bot just joined"""
@@ -476,7 +495,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             reflection_text = reflection_result.get("summary", "No reflection generated.")
             
             # Store reflection in vector memory for future reference
-            vector_memory.store_conversation(
+            await vector_memory.store_conversation(
                 guild_id=guild_id,
                 user_id=user_id,
                 user_message=f"SELF_REFLECTION_ON: {user_input[:100]}...",
