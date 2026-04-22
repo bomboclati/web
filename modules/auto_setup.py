@@ -544,46 +544,7 @@ class AutoSetup:
             await owner.send(embed=embed)
             logger.info(f"Sent polished welcome DM to owner of {guild.name}")
         except discord.Forbidden:
-            logger.warning(f"Could not DM owner of {guild.name}")
-            # Fallback: Send in system channel if available
-            if guild.system_channel:
-                try:
-                    await guild.system_channel.send(f"Welcome {owner.mention}! I've been added to the server. Please check your DMs (if open) or use `/autosetup` to get started.", embed=embed)
-                except: pass
-
-        # Fallback to system channel or create bot-setup channel
-        fallback_channel = None
-
-        # Try system channel first
-        if guild.system_channel and guild.system_channel.permissions_for(guild.me).send_messages:
-            fallback_channel = guild.system_channel
-        else:
-            # Try to find or create bot-setup channel
-            bot_setup_channel = discord.utils.get(guild.text_channels, name="bot-setup")
-            if bot_setup_channel and bot_setup_channel.permissions_for(guild.me).send_messages:
-                fallback_channel = bot_setup_channel
-            else:
-                # Create bot-setup channel
-                try:
-                    # Find a suitable category
-                    general_category = discord.utils.get(guild.categories, name="general") or discord.utils.get(guild.categories, name="info")
-                    fallback_channel = await guild.create_text_channel("bot-setup", category=general_category, topic="Bot setup and configuration")
-                except (discord.Forbidden, discord.HTTPException) as e:
-                    logger.error(f"Could not create bot-setup channel: {e}")
-                    # Try any writable channel as last resort
-                    for channel in guild.text_channels:
-                        if channel.permissions_for(guild.me).send_messages:
-                            fallback_channel = channel
-                            break
-
-        if fallback_channel:
-            try:
-                await fallback_channel.send(f"{owner.mention}", embed=embed)
-                logger.info(f"Sent welcome message to {fallback_channel.mention} for guild {guild.id}")
-            except Exception as e:
-                logger.error(f"Failed to send fallback message: {e}")
-        else:
-            logger.error(f"No suitable channel found to send setup message for guild {guild.id}")
+            logger.warning(f"Could not DM owner of {guild.name} - DMs may be disabled")
 
     # Removed _start_interactive_setup method as part of eliminating auto-setup buttons
     # Users now use /autosetup command for bulk setup instead of interactive buttons
@@ -1338,14 +1299,34 @@ class AutoSetup:
     def get_setup_status(self, guild_id: int) -> Optional[ServerSetup]:
         return self._pending_setups.get(guild_id)
 
-    @discord.app_commands.command(name="autosetup", description="Start the interactive server auto-setup.")
+    @discord.app_commands.command(name="autosetup", description="Quickly install all pre-built server systems (verification, tickets, applications, etc.)")
     async def autosetup(self, interaction: discord.Interaction):
-        """Slash command to start the interactive setup."""
+        """Slash command to install all available systems at once."""
         if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
             return await interaction.response.send_message("❌ Only administrators can use this command.", ephemeral=True)
-            
+
         await interaction.response.defer(ephemeral=True)
-        await self._start_interactive_setup(interaction, guild_id=interaction.guild.id)
+
+        # Select all available systems
+        selected_systems = ["verification", "tickets", "applications", "appeals", "economy", "leveling", "welcome", "moderation"]
+
+        # Initialize setup if not already done
+        guild = interaction.guild
+        if guild.id not in self._pending_setups:
+            self._pending_setups[guild.id] = ServerSetup(
+                guild_id=guild.id,
+                state=SetupState.STARTED,
+                started_at=time.time(),
+                completed_at=None,
+                steps_completed=[],
+                config={},
+                selected_systems=selected_systems
+            )
+
+        # Run setup for all systems
+        await self._run_selected_setup(guild.id, interaction.user, selected_systems)
+
+        await interaction.followup.send("✅ Auto-setup completed! All systems have been installed.", ephemeral=True)
 
 async def setup(bot: commands.Bot):
     cog = AutoSetup(bot)
