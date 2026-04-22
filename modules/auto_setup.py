@@ -620,8 +620,11 @@ class AutoSetup:
         else:
             logger.error(f"No suitable channel found to send setup message for guild {guild.id}")
 
-    async def _start_interactive_setup(self, interaction: discord.Interaction):
+    async def _start_interactive_setup(self, interaction: discord.Interaction, guild_id: int = None):
         """Start the interactive system selection setup."""
+        if guild_id is None:
+            guild_id = interaction.guild_id
+            
         embed = discord.Embed(
             title=":gear: Server Auto-Setup",
             description="Let's customize your server setup! Choose which systems you'd like me to install. I'll analyze your existing server structure and avoid creating duplicates.",
@@ -642,7 +645,7 @@ class AutoSetup:
 
         embed.set_footer(text="You can change these settings later using /bot commands.")
 
-        view = SystemSelectionView(self, interaction.guild_id)
+        view = SystemSelectionView(self, guild_id)
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
     async def _run_selected_setup(self, guild_id: int, user: discord.Member, selected_systems: List[str]):
@@ -786,7 +789,7 @@ class StartSetupView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
 
         try:
-            await self.auto_setup._start_interactive_setup(interaction)
+            await self.auto_setup._start_interactive_setup(interaction, guild_id=self.guild_id)
         except Exception as e:
             logger.error(f"Error starting interactive setup: {e}")
             await interaction.followup.send("❌ An error occurred while starting setup. Please try again.", ephemeral=True)
@@ -858,7 +861,7 @@ class StartSetupPersistentView(discord.ui.View):
             # Create a temporary auto_setup instance for this interaction
             from modules.auto_setup import AutoSetup
             auto_setup = AutoSetup(self.bot)
-            await auto_setup._start_interactive_setup(interaction)
+            await auto_setup._start_interactive_setup(interaction, guild_id=guild.id)
         except Exception as e:
             logger.error(f"Error starting interactive setup: {e}")
             await interaction.followup.send("❌ An error occurred while starting setup. Please try again.", ephemeral=True)
