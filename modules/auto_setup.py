@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 import discord.ui as ui
 from discord.ext import commands
 import asyncio
@@ -491,7 +492,7 @@ class MockInteraction:
     async def defer(self, *args, **kwargs): pass
     async def followup_send(self, *args, **kwargs): pass
 
-class AutoSetup:
+class AutoSetup(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._pending_setups: Dict[int, ServerSetup] = {}
@@ -1625,6 +1626,8 @@ class AutoSetup:
     def get_setup_status(self, guild_id: int) -> Optional[ServerSetup]:
         return self._pending_setups.get(guild_id)
 
+    @app_commands.command(name="autosetup", description="Launch the 33-system auto-setup panel")
+    @app_commands.checks.has_permissions(administrator=True)
     async def autosetup(self, interaction: discord.Interaction):
         """Slash command to launch the interactive setup panel."""
         if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:

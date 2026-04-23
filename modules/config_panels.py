@@ -1,5 +1,5 @@
 import discord
-from discord import ui, Interaction
+from discord import ui, Interaction, app_commands
 import json
 import os
 from data_manager import dm
@@ -252,6 +252,44 @@ async def handle_config_panel_command(message: discord.Message, system: str):
     embed = view.create_embed()
     await message.channel.send(embed=embed, view=view)
 
+# --- Slash Command Group ---
+
+configpanel_group = app_commands.Group(name="configpanel", description="Quick access to system configuration panels")
+
+@configpanel_group.command(name="open", description="Open a specific configuration panel")
+@app_commands.describe(system="The system configuration panel to open")
+async def configpanel_open(interaction: Interaction, system: str):
+    if not interaction.user.guild_permissions.administrator:
+        return await interaction.response.send_message("❌ Only administrators can use this command.", ephemeral=True)
+
+    view = get_config_panel(interaction.guild.id, system)
+    if not view:
+        return await interaction.response.send_message(f"❌ System '{system}' not found. Use autocomplete to see available systems.", ephemeral=True)
+
+    embed = view.create_embed()
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+@configpanel_open.autocomplete('system')
+async def configpanel_system_autocomplete(interaction: Interaction, current: str) -> List[app_commands.Choice[str]]:
+    all_systems = list(SPECIALIZED_VIEWS.keys()) + list(SYSTEM_METADATA.keys())
+    return [
+        app_commands.Choice(name=system.replace('_', ' ').title(), value=system)
+        for system in all_systems if current.lower() in system.lower()
+    ][:25]
+
+def _create_standalone_panel_callback(system_name: str):
+    async def callback(interaction: Interaction):
+        if not interaction.user.guild_permissions.administrator:
+            return await interaction.response.send_message("❌ Only administrators can use this command.", ephemeral=True)
+
+        view = get_config_panel(interaction.guild.id, system_name)
+        if not view:
+            return await interaction.response.send_message(f"❌ System '{system_name}' not found.", ephemeral=True)
+
+        embed = view.create_embed()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    return callback
+
 def register_all_persistent_views(bot: discord.Client):
     """Register all persistent views in setup_hook."""
     # Register the specialized views (using a dummy guild_id=0 for registration)
@@ -264,4 +302,22 @@ def register_all_persistent_views(bot: discord.Client):
         if system_key not in SPECIALIZED_VIEWS:
             bot.add_view(GenericConfigPanelView(0, system_key, fields))
     
-    logger.info("All 33 config panel persistent views registered.")
+    # Also register the configpanel group and standalone commands to the bot's tree
+    if hasattr(bot, 'tree'):
+        bot.tree.add_command(configpanel_group)
+
+        # Register standalone /configpanel<system> commands
+        for system_key in list(SPECIALIZED_VIEWS.keys()) + list(SYSTEM_METADATA.keys()):
+            name = f"configpanel{system_key.replace('_', '')}"
+            cmd = app_commands.Command(
+                name=name,
+                description=f"Open the {system_key} configuration panel",
+                callback=_create_standalone_panel_callback(system_key)
+            )
+            # Add to tree directly as top-level command
+            try:
+                bot.tree.add_command(cmd)
+            except Exception as e:
+                logger.warning(f"Could not register standalone command /{name}: {e}")
+
+    logger.info("All 33 config panel persistent views and slash commands registered.")
