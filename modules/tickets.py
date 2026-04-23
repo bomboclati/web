@@ -3,10 +3,11 @@ from discord.ext import commands
 import asyncio
 import json
 import time
-from typing import Dict, List, Optional
+import io
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 from data_manager import dm
 from logger import logger
@@ -57,94 +58,133 @@ class Ticket:
     sentiment_label: str
 
 
-@dataclass
-class TicketResponse:
-    trigger: str
-    response: str
-    category: TicketCategory
+class TicketModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Open a Support Ticket")
+
+        self.subject = discord.ui.TextInput(
+            label="Subject",
+            placeholder="What is your ticket about?",
+            required=True,
+            max_length=100
+        )
+        self.description = discord.ui.TextInput(
+            label="Description",
+            placeholder="Please provide details about your issue...",
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=1000
+        )
+        self.priority = discord.ui.TextInput(
+            label="Priority",
+            placeholder="Low, Medium, or High",
+            required=True,
+            min_length=3,
+            max_length=6
+        )
+
+        self.add_item(self.subject)
+        self.add_item(self.description)
+        self.add_item(self.priority)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        priority_map = {
+            "low": TicketPriority.LOW,
+            "medium": TicketPriority.MEDIUM,
+            "high": TicketPriority.HIGH
+        }
+        priority = priority_map.get(self.priority.value.lower(), TicketPriority.MEDIUM)
+
+        system = getattr(interaction.client, "tickets", None)
+        if system:
+            await system.create_ticket_from_modal(
+                interaction,
+                self.subject.value,
+                self.description.value,
+                priority
+            )
+        else:
+            await interaction.followup.send("❌ Ticket system not found.", ephemeral=True)
+
+class TicketOpenPanel(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="🎫 Open Ticket", style=discord.ButtonStyle.success, custom_id="ticket_open_btn")
+    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        system = getattr(interaction.client, "tickets", None)
+        if not system: return
+
+        # Check max per user
+        settings = system.get_guild_settings(interaction.guild_id)
+        max_per_user = settings.get("max_per_user", 0)
+
+        if max_per_user > 0:
+            open_tickets = system.get_user_tickets(interaction.guild_id, interaction.user.id)
+            if len(open_tickets) >= max_per_user:
+                return await interaction.response.send_message(f"❌ You already have {len(open_tickets)} open tickets. Please close one before opening another.", ephemeral=True)
+
+        await interaction.response.send_modal(TicketModal())
+
+class TicketPersistentView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="🔒 Close", style=discord.ButtonStyle.danger, custom_id="ticket_close_v3", row=0)
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        system = getattr(interaction.client, "tickets", None)
+        if system: await system.handle_close_ticket(interaction)
+
+    @discord.ui.button(label="📋 Transcript", style=discord.ButtonStyle.secondary, custom_id="ticket_transcript_v3", row=0)
+    async def transcript(self, interaction: discord.Interaction, button: discord.ui.Button):
+        system = getattr(interaction.client, "tickets", None)
+        if system: await system.handle_transcript(interaction)
+
+    @discord.ui.button(label="👤 Add", style=discord.ButtonStyle.primary, custom_id="ticket_add_user_v3", row=0)
+    async def add_user(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(_UserIDModal("Add User to Ticket", "add"))
+
+    @discord.ui.button(label="🚫 Remove", style=discord.ButtonStyle.primary, custom_id="ticket_remove_user_v3", row=0)
+    async def remove_user(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(_UserIDModal("Remove User from Ticket", "remove"))
+
+    @discord.ui.button(label="✋ Claim", style=discord.ButtonStyle.success, custom_id="ticket_claim_v3", row=1)
+    async def claim_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        system = getattr(interaction.client, "tickets", None)
+        if system: await system.handle_claim_ticket(interaction)
+
+    @discord.ui.button(label="🔁 Unclaim", style=discord.ButtonStyle.secondary, custom_id="ticket_unclaim_v3", row=1)
+    async def unclaim_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        system = getattr(interaction.client, "tickets", None)
+        if system: await system.handle_unclaim_ticket(interaction)
+
+    @discord.ui.button(label="⬆️ Escalate", style=discord.ButtonStyle.danger, custom_id="ticket_escalate_v3", row=1)
+    async def escalate(self, interaction: discord.Interaction, button: discord.ui.Button):
+        system = getattr(interaction.client, "tickets", None)
+        if system: await system.handle_escalate(interaction)
+
+    @discord.ui.button(label="📌 Pin", style=discord.ButtonStyle.secondary, custom_id="ticket_pin_v3", row=1)
+    async def pin_message(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(_MessageIDModal())
+
+    @discord.ui.button(label="❗ Resolve", style=discord.ButtonStyle.success, custom_id="ticket_resolve_v3", row=2)
+    async def mark_resolved(self, interaction: discord.Interaction, button: discord.ui.Button):
+        system = getattr(interaction.client, "tickets", None)
+        if system: await system.handle_mark_resolved(interaction)
+
+    @discord.ui.button(label="🔓 Reopen", style=discord.ButtonStyle.primary, custom_id="ticket_reopen_v3", row=2)
+    async def reopen(self, interaction: discord.Interaction, button: discord.ui.Button):
+        system = getattr(interaction.client, "tickets", None)
+        if system: await system.handle_reopen(interaction)
 
 
 class AdvancedTickets:
-    """Ticket system with templates and canned responses."""
-    
-    TICKET_TEMPLATES = {
-        "bug_report": {
-            "name": "Bug Report",
-            "category": "technical",
-            "priority": "high",
-            "title": "Bug Report: [Title]",
-            "questions": [
-                "What were you doing when the bug occurred?",
-                "What did you expect to happen?",
-                "What actually happened?",
-                "Any error messages?",
-                "Steps to reproduce:"
-            ]
-        },
-        "feature_request": {
-            "name": "Feature Request",
-            "category": "suggestion",
-            "priority": "medium",
-            "title": "Feature Request: [Title]",
-            "questions": [
-                "What feature would you like?",
-                "Why do you need this feature?",
-                "How would you use it?",
-                "Any alternative solutions?"
-            ]
-        },
-        "billing": {
-            "name": "Billing Issue",
-            "category": "billing",
-            "priority": "high",
-            "title": "Billing: [Issue]",
-            "questions": [
-                "What is your billing concern?",
-                "What card/email used?",
-                "Expected vs actual charge?",
-                "Refund request?"
-            ]
-        },
-        "account": {
-            "name": "Account Help",
-            "category": "support",
-            "priority": "medium",
-            "title": "Account: [Issue]",
-            "questions": [
-                "What issue are you having?",
-                "Email associated with account?",
-                "Any error messages?",
-                " Tried troubleshooting?"
-            ]
-        },
-        "general": {
-            "name": "General Support",
-            "category": "general", 
-            "priority": "low",
-            "title": "Support: [Topic]",
-            "questions": [
-                "How can we help you today?",
-                "Any relevant details?",
-                "Links to related info?"
-            ]
-        }
-    }
-    
-    CANNED_RESPONSES = {
-        "greeting": "Hi! Thanks for creating a ticket. We'll help you shortly.",
-        "thanks": "Thank you for your patience while we look into this.",
-        "more_info": "Could you provide more details about this?",
-        "resolved": "Glad we could help! Is there anything else you need?",
-        "closing": "This ticket will be closed. Create a new one if you need more help!",
-        "escalated": "Escalating this to our team. Theyll respond soon.",
-        "wait": "Please allow us some time to investigate this."
-    }
-    
     def __init__(self, bot):
         self.bot = bot
         self._active_tickets: Dict[str, Ticket] = {}
         self._ticket_channels: Dict[int, int] = {}
-        self._auto_responses: Dict[int, List[TicketResponse]] = {}
         self._load_tickets()
 
     def _load_tickets(self):
@@ -193,461 +233,263 @@ class AdvancedTickets:
         dm.save_json("tickets", tickets_data)
 
     def get_guild_settings(self, guild_id: int) -> dict:
-        return dm.get_guild_data(guild_id, "ticket_settings", {
+        return dm.get_guild_data(guild_id, "tickets_config", {
             "enabled": True,
-            "auto_category": True,
-            "sentiment_analysis": True,
-            "auto_responses": True,
-            "escalation_channel": None,
-            "staff_role": None,
-            "categories": {
-                "general": {"emoji": "??", "color": "blue"},
-                "support": {"emoji": "?", "color": "green"},
-                "report": {"emoji": "??", "color": "red"},
-                "appeal": {"emoji": "??", "color": "yellow"},
-                "suggestion": {"emoji": "??", "color": "purple"},
-                "technical": {"emoji": "??", "color": "orange"},
-                "billing": {"emoji": "??", "color": "gold"}
-            }
+            "staff_role_id": None,
+            "category_id": None,
+            "log_channel_id": None,
+            "max_per_user": 3,
+            "auto_close_hours": 24,
+            "panel_title": "Support Tickets",
+            "panel_description": "Click below to open a ticket.",
+            "panel_color": 0x3498db,
+            "senior_staff_role_id": None,
+            "opener_dm_enabled": True
         })
 
-    async def analyze_sentiment(self, message: str, guild_id: int) -> tuple:
-        if not self.get_guild_settings(guild_id).get("sentiment_analysis", True):
-            return 0.5, "neutral"
+    def get_user_tickets(self, guild_id: int, user_id: int) -> List[Ticket]:
+        return [t for t in self._active_tickets.values()
+                if t.guild_id == guild_id and t.user_id == user_id
+                and t.status not in [TicketStatus.CLOSED]]
+
+    def get_ticket_by_channel(self, channel_id: int) -> Optional[Ticket]:
+        ticket_id = self._ticket_channels.get(channel_id)
+        return self._active_tickets.get(ticket_id)
+
+    async def create_ticket_from_modal(self, interaction: discord.Interaction, subject, description, priority):
+        guild = interaction.guild
+        settings = self.get_guild_settings(guild.id)
         
-        prompt = f"""Analyze the sentiment of this support message.
-
-MESSAGE: {message}
-
-Respond with JSON only:
-{{
-    "sentiment_score": 0.0 to 1.0,
-    "sentiment_label": "negative/neutral/positive",
-    "urgency_level": "low/medium/high",
-    "emotion": "frustrated/angry/sad/confused/hopeful/happy"
-}}
-
-Consider:
-- All caps = frustrated/urgent
-- Lots of punctuation!!! = strong emotion
-- Words like "urgent", "asap", "now" = high urgency
-- "please help", "thanks" = positive/polite
-- "terrible", "worst", "hate" = negative"""
-
-        try:
-            result = await self.bot.ai.chat(
-                guild_id=guild_id,
-                user_id=0,
-                user_input=prompt,
-                system_prompt="You analyze support message sentiment. Be accurate and consider context."
-            )
-            
-            score = float(result.get("sentiment_score", 0.5))
-            label = result.get("sentiment_label", "neutral")
-            
-            priority = TicketPriority.LOW
-            urgency = result.get("urgency_level", "low")
-            if urgency == "high":
-                priority = TicketPriority.HIGH
-            elif urgency == "medium":
-                priority = TicketPriority.MEDIUM
-            
-            emotion = result.get("emotion", "neutral")
-            if emotion in ["frustrated", "angry"]:
-                priority = TicketPriority(min(priority.value + 1, 4))
-            
-            return score, label, priority
-            
-        except Exception as e:
-            logger.error(f"Sentiment analysis failed: {e}")
-            return 0.5, "neutral", TicketPriority.MEDIUM
-
-    async def categorize_ticket(self, message: str, guild_id: int) -> TicketCategory:
-        settings = self.get_guild_settings(guild_id)
+        # Determine category
+        category_id = settings.get("category_id")
+        category = guild.get_channel(int(category_id)) if category_id else None
         
-        if not settings.get("auto_category", True):
-            return TicketCategory.GENERAL
+        # Ticket number
+        stats = dm.get_guild_data(guild.id, "ticket_stats", {"total": 0, "open": 0})
+        stats["total"] += 1
+        stats["open"] += 1
+        dm.update_guild_data(guild.id, "ticket_stats", stats)
+
+        # Create channel
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True)
+        }
         
-        prompt = f"""Categorize this support ticket.
+        staff_role_id = settings.get("staff_role_id")
+        if staff_role_id:
+            staff_role = guild.get_role(int(staff_role_id))
+            if staff_role:
+                overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
 
-MESSAGE: {message}
-
-Available categories: general, support, report, appeal, suggestion, technical, billing
-
-Respond with JSON only:
-{{
-    "category": "one of the categories",
-    "reason": "brief explanation"
-}}"""
-
-        try:
-            result = await self.bot.ai.chat(
-                guild_id=guild_id,
-                user_id=0,
-                user_input=prompt,
-                system_prompt="You categorize support tickets. Choose the most appropriate category."
-            )
-            
-            category_str = result.get("category", "general")
-            return TicketCategory(category_str)
-            
-        except Exception as e:
-            logger.error(f"Ticket categorization failed: {e}")
-            return TicketCategory.GENERAL
-
-    async def create_ticket(self, guild_id: int, user_id: int, channel: discord.TextChannel, 
-                         initial_message: str) -> Ticket:
-        sentiment_score, sentiment_label, priority = await self.analyze_sentiment(initial_message, guild_id)
-        category = await self.categorize_ticket(initial_message, guild_id)
+        channel_name = f"ticket-{interaction.user.name}-{stats['total']}"
+        channel = await guild.create_text_channel(channel_name, category=category, overwrites=overwrites)
         
-        ticket_id = f"ticket_{guild_id}_{int(time.time())}"
-        
+        # Create Ticket object
+        ticket_id = f"ticket_{guild.id}_{stats['total']}"
         ticket = Ticket(
             id=ticket_id,
-            guild_id=guild_id,
+            guild_id=guild.id,
             channel_id=channel.id,
-            user_id=user_id,
-            category=category,
+            user_id=interaction.user.id,
+            category=TicketCategory.SUPPORT,
             priority=priority,
             status=TicketStatus.OPEN,
-            title=initial_message[:100],
-            messages=[{
-                "role": "user",
-                "content": initial_message,
-                "timestamp": time.time(),
-                "sentiment": sentiment_label
-            }],
+            title=subject,
+            messages=[],
             created_at=time.time(),
             updated_at=time.time(),
             assigned_to=None,
-            sentiment_score=sentiment_score,
-            sentiment_label=sentiment_label
+            sentiment_score=0.5,
+            sentiment_label="neutral"
         )
         
         self._active_tickets[ticket_id] = ticket
         self._ticket_channels[channel.id] = ticket_id
         self._save_ticket(ticket)
         
-        assigned_staff = await self._assign_ticket_to_staff(guild, ticket)
-        
-        await self._send_ticket_created_message(ticket, channel, initial_message, assigned_staff)
-        
-        await self._check_auto_responses(ticket)
-        
-        vector_memory.store_conversation(
-            guild_id=guild_id,
-            user_id=user_id,
-            user_message=f"TICKET: {initial_message[:200]}",
-            bot_response=f"Ticket created - Category: {category.value}, Priority: {priority.name}",
-            reasoning="Ticket system - initial message stored for learning",
-            walkthrough="Creating ticket with AI categorization",
-            importance_score=0.8
+        # Send initial message
+        embed = discord.Embed(
+            title=f"Ticket #{stats['total']}: {subject}",
+            description=description,
+            color=0x3498db
         )
+        embed.add_field(name="Opener", value=interaction.user.mention, inline=True)
+        embed.add_field(name="Priority", value=priority.name, inline=True)
+        embed.set_footer(text="Staff will be with you shortly.")
         
-        return ticket
+        view = TicketPersistentView()
+        await channel.send(embed=embed, view=view)
+        
+        if staff_role_id:
+            await channel.send(f"<@&{staff_role_id}> New ticket created!")
 
-    async def _assign_ticket_to_staff(self, guild: discord.Guild, ticket: Ticket) -> Optional[discord.Member]:
-        """Find and assign ticket to available staff"""
-        settings = self.get_guild_settings(guild.id)
-        staff_role_ids = settings.get("staff_roles", [])
-        
-        if not staff_role_ids:
-            return None
-        
-        staff_members = []
-        for role_id in staff_role_ids:
-            role = guild.get_role(role_id)
-            if role:
-                staff_members.extend(role.members)
-        
-        if not staff_members:
-            return None
-        
-        counts = {}
-        for member in staff_members:
-            if member.bot:
-                continue
-            count = sum(1 for t in self._active_tickets.values() 
-                        if t.staff_id == member.id and t.status == TicketStatus.OPEN)
-            counts[member.id] = count
-        
-        if not counts:
-            return None
-        
-        staff_id = min(counts, key=counts.get)
-        staff = guild.get_member(staff_id)
-        
-        if staff:
-            ticket.staff_id = staff_id
-            ticket.assigned_to = staff_id
-        
-        return staff
+        await interaction.followup.send(f"✅ Ticket created! Go to {channel.mention}", ephemeral=True)
 
-class TicketPersistentView(discord.ui.View):
-    """Persistent view for ticket channels (Close button)."""
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="ticket_close_system")
-    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
+    async def handle_claim_ticket(self, interaction: discord.Interaction):
+        ticket = self.get_ticket_by_channel(interaction.channel_id)
+        if not ticket: return
         
-        # Identify ticket by channel
-        from modules.tickets import AdvancedTickets
-        # We need the instance which is attached to the bot
-        ticket_sys = getattr(interaction.client, "tickets", None)
-        if not ticket_sys:
-            return await interaction.followup.send("[ERROR] Ticket system not found.", ephemeral=True)
-            
-        ticket = ticket_sys.get_ticket_by_channel(interaction.channel.id)
-        if not ticket:
-            return await interaction.followup.send("[ERROR] This channel is not an active ticket.", ephemeral=True)
+        ticket.assigned_to = interaction.user.id
+        ticket.status = TicketStatus.IN_PROGRESS
+        self._save_ticket(ticket)
 
-        await interaction.followup.send("[AI] Closing ticket...", ephemeral=True)
-        await interaction.channel.send(f"[AI] Ticket closed by {interaction.user.mention}.")
-        
-        # Closing logic
-        ticket.status = TicketStatus.CLOSED
-        ticket.updated_at = time.time()
-        ticket_sys._save_ticket(ticket)
-        
-        # Disable view and delay deletion
-        await interaction.message.edit(view=None)
-        await asyncio.sleep(5)
-        await interaction.channel.delete(reason="Ticket closed")
+        await interaction.response.send_message(f"✋ Ticket claimed by {interaction.user.mention}.", ephemeral=False)
+        try:
+            await interaction.channel.edit(name=f"claimed-{interaction.user.name}")
+        except:
+            pass
 
-    async def _send_ticket_created_message(self, ticket: Ticket, channel: discord.TextChannel, message: str, assigned_staff=None):
-        settings = self.get_guild_settings(ticket.guild_id)
-        cat_settings = settings.get("categories", {}).get(ticket.category.value, {})
+    async def handle_unclaim_ticket(self, interaction: discord.Interaction):
+        ticket = self.get_ticket_by_channel(interaction.channel_id)
+        if not ticket: return
+        
+        ticket.assigned_to = None
+        ticket.status = TicketStatus.OPEN
+        self._save_ticket(ticket)
+        
+        await interaction.response.send_message("🔁 Ticket unclaimed.", ephemeral=False)
+
+    async def handle_mark_resolved(self, interaction: discord.Interaction):
+        ticket = self.get_ticket_by_channel(interaction.channel_id)
+        if not ticket: return
+
+        ticket.status = TicketStatus.RESOLVED
+        self._save_ticket(ticket)
         
         embed = discord.Embed(
-            title=f"{cat_settings.get('emoji', '??')} Ticket Created",
-            description=f"**{ticket.title}**",
-            color=discord.Color.blue()
-        )
-        
-        if assigned_staff:
-            embed.add_field(name="Assigned To", value=assigned_staff.mention, inline=True)
-            ping_msg = f"{assigned_staff.mention} ?? New ticket assigned to you!"
-        else:
-            ping_msg = ""
-        
-        priority_emoji = "??" if ticket.priority == TicketPriority.URGENT else "??" if ticket.priority == TicketPriority.HIGH else "??" if ticket.priority == TicketPriority.MEDIUM else "??"
-        embed.add_field(name="Priority", value=f"{priority_emoji} {ticket.priority.name}", inline=True)
-        
-        embed.add_field(name="Status", value=ticket.status.value.title(), inline=True)
-        embed.add_field(name="Sentiment", value=f"{ticket.sentiment_label} ({ticket.sentiment_score:.1f})", inline=True)
-        
-        # Use the Persistent View
-        view = TicketPersistentView()
-        await channel.send(ping_msg, embed=embed, view=view)
-
-    async def _check_auto_responses(self, ticket: Ticket):
-        settings = self.get_guild_settings(ticket.guild_id)
-        if not settings.get("auto_responses", True):
-            return
-        
-        last_message = ticket.messages[-1]["content"] if ticket.messages else ""
-        
-        auto_responses = dm.get_guild_data(ticket.guild_id, "ticket_auto_responses", {})
-        
-        for trigger, response in auto_responses.items():
-            if trigger.lower() in last_message.lower():
-                await self.add_ticket_response(ticket.id, "assistant", response)
-                break
-
-    async def add_ticket_response(self, ticket_id: str, role: str, content: str):
-        if ticket_id not in self._active_tickets:
-            return
-        
-        ticket = self._active_tickets[ticket_id]
-        ticket.messages.append({
-            "role": role,
-            "content": content,
-            "timestamp": time.time()
-        })
-        ticket.updated_at = time.time()
-        
-        self._save_ticket(ticket)
-
-    async def resolve_ticket(self, ticket_id: str, resolution: str):
-        if ticket_id not in self._active_tickets:
-            return
-        
-        ticket = self._active_tickets[ticket_id]
-        
-        if ticket.status != TicketStatus.RESOLVED:
-            ticket.status = TicketStatus.RESOLVED
-            ticket.updated_at = time.time()
-            
-            ticket.messages.append({
-                "role": "system",
-                "content": f"RESOLVED: {resolution}",
-                "timestamp": time.time()
-            })
-            
-            self._save_ticket(ticket)
-            
-            staff_id = ticket.staff_id
-            if staff_id:
-                current = dm.get_guild_data(ticket.guild_id, f"tickets_resolved_{staff_id}", 0)
-                dm.update_guild_data(ticket.guild_id, f"tickets_resolved_{staff_id}", current + 1)
-        
-        vector_memory.store_conversation(
-            guild_id=ticket.guild_id,
-            user_id=ticket.user_id,
-            user_message=f"TICKET RESOLUTION: {ticket.title}",
-            bot_response=resolution,
-            reasoning="Ticket resolved - stored for learning",
-            walkthrough="Marking ticket as resolved",
-            importance_score=0.6
-        )
-
-    async def escalate_ticket(self, ticket_id: str, reason: str):
-        if ticket_id not in self._active_tickets:
-            return
-        
-        ticket = self._active_tickets[ticket_id]
-        ticket.status = TicketStatus.ESCALATED
-        ticket.priority = TicketPriority.URGENT
-        ticket.updated_at = time.time()
-        
-        settings = self.get_guild_settings(ticket.guild_id)
-        escalation_channel_id = settings.get("escalation_channel")
-        
-        if escalation_channel_id:
-            guild = self.bot.get_guild(ticket.guild_id)
-            escalation_channel = guild.get_channel(escalation_channel_id)
-            
-            if escalation_channel:
-                embed = discord.Embed(
-                    title="?? Ticket Escalated",
-                    description=f"**{ticket.title}**",
-                    color=discord.Color.red()
-                )
-                embed.add_field(name="User", value=f"<@{ticket.user_id}>", inline=True)
-                embed.add_field(name="Category", value=ticket.category.value, inline=True)
-                embed.add_field(name="Reason", value=reason, inline=False)
-                embed.add_field(name="Sentiment", value=f"{ticket.sentiment_label} ({ticket.sentiment_score:.1f})", inline=True)
-                
-                await escalation_channel.send(embed=embed)
-        
-        self._save_ticket(ticket)
-
-    def get_user_tickets(self, guild_id: int, user_id: int) -> List[Ticket]:
-        return [t for t in self._active_tickets.values() 
-                if t.guild_id == guild_id and t.user_id == user_id 
-                and t.status not in [TicketStatus.CLOSED, TicketStatus.RESOLVED]]
-
-    def get_ticket_by_channel(self, channel_id: int) -> Optional[Ticket]:
-        ticket_id = self._ticket_channels.get(channel_id)
-        return self._active_tickets.get(ticket_id)
-
-    async def setup(self, interaction: discord.Interaction, params: Dict = None):
-        guild = interaction.guild
-        
-        settings = self.get_guild_settings(guild.id)
-        settings["enabled"] = True
-        dm.update_guild_data(guild.id, "ticket_settings", settings)
-        
-        # Create documentation channel
-        try:
-            doc_channel = await guild.create_text_channel("tickets-guide", category=None)
-        except:
-            doc_channel = interaction.channel
-        
-        # Post comprehensive documentation
-        doc_embed = discord.Embed(
-            title="?? Advanced Ticket System Guide",
-            description="Complete guide to using the AI-powered ticket system with sentiment analysis!",
-            color=discord.Color.blue()
-        )
-        doc_embed.add_field(
-            name="?? How It Works",
-            value="Create tickets by describing your issue. AI automatically categorizes it, analyzes sentiment (frustrated/happy), and assigns priority. Staff get notified and can respond.",
-            inline=False
-        )
-        doc_embed.add_field(
-            name="?? Available Commands",
-            value="**!ticket <message>** - Create a new support ticket\n" +
-                  "**!tickets** - List your active tickets\n" +
-                  "**!close** - Close the current ticket\n" +
-                  "**!help tickets** - Show this guide",
-            inline=False
-        )
-        doc_embed.add_field(
-            name="?? How to Use",
-            value="1. Type `!ticket I need help with...` describing your issue\n" +
-                  "2. AI categorizes it (support/technical/billing/etc)\n" +
-                  "3. Sentiment is analyzed - urgent issues get priority\n" +
-                  "4. Staff get notified and respond\n" +
-                  "5. Use `!close` when resolved",
-            inline=False
-        )
-        doc_embed.add_field(
-            name="??? Ticket Categories",
-            value=". **general** - General questions\n" +
-                  ". **support** - Technical support\n" +
-                  ". **report** - Report issues\n" +
-                  ". **appeal** - Appeal decisions\n" +
-                  ". **suggestion** - Make suggestions\n" +
-                  ". **technical** - Tech help\n" +
-                  ". **billing** - Payment issues",
-            inline=False
-        )
-        doc_embed.set_footer(text="Created by Miro AI . Use !help tickets for more info")
-        
-        await doc_channel.send(embed=doc_embed)
-        await doc_channel.send("?? **Quick Start:** Create a ticket with `!ticket <your message>`")
-        
-        help_embed = discord.Embed(
-            title="?? Advanced Ticket System",
-            description="AI-powered ticket system with sentiment analysis and auto-routing.",
+            title="✅ Ticket Resolved",
+            description="This ticket has been marked as resolved. You can close it or reopen if needed.",
             color=discord.Color.green()
         )
-        help_embed.add_field(
-            name="How it works",
-            value="Users create tickets by describing their issue. AI automatically categorizes, analyzes sentiment, and assigns priority.",
-            inline=False
-        )
-        help_embed.add_field(
-            name="Features",
-            value=". AI categorization\n. Sentiment analysis\n. Auto-responses\n. Escalation to staff\n. Vector memory learning",
-            inline=False
-        )
-        help_embed.add_field(
-            name="!ticket <message>",
-            value="Create a new support ticket.",
-            inline=False
-        )
+        await interaction.response.send_message(embed=embed)
+
+    async def handle_reopen(self, interaction: discord.Interaction):
+        ticket = self.get_ticket_by_channel(interaction.channel_id)
+        if not ticket: return
         
-        await interaction.followup.send(embed=help_embed, ephemeral=True)
+        ticket.status = TicketStatus.OPEN
+        self._save_ticket(ticket)
         
-        custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
+        await interaction.response.send_message("🔓 Ticket reopened.", ephemeral=False)
+
+    async def handle_close_ticket(self, interaction: discord.Interaction):
+        ticket = self.get_ticket_by_channel(interaction.channel_id)
+        if not ticket: return
         
-        custom_cmds["ticket"] = json.dumps({
-            "command_type": "create_ticket"
-        })
-        custom_cmds["tickets"] = json.dumps({
-            "command_type": "list_tickets"
-        })
-        custom_cmds["close"] = json.dumps({
-            "command_type": "close_ticket"
-        })
-        custom_cmds["help tickets"] = json.dumps({
-            "command_type": "help_embed",
-            "title": "?? Advanced Ticket System",
-            "description": "AI-powered ticket system with sentiment analysis.",
-            "fields": [
-                {"name": "!ticket <message>", "value": "Create a new support ticket.", "inline": False},
-                {"name": "!tickets", "value": "List your active tickets.", "inline": False},
-                {"name": "!close", "value": "Close current ticket.", "inline": False}
-            ]
-        })
+        await interaction.response.send_message("🔒 Closing ticket in 10 seconds... Generating transcript.", ephemeral=False)
         
-        dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
+        # Generate and send transcript
+        transcript_file = await self.generate_transcript(interaction.channel)
         
+        settings = self.get_guild_settings(interaction.guild_id)
+        log_channel_id = settings.get("log_channel_id")
+        if log_channel_id:
+            log_channel = interaction.guild.get_channel(int(log_channel_id))
+            if log_channel:
+                embed = discord.Embed(title="📁 Ticket Transcript", description=f"Ticket: {ticket.title}\nUser: <@{ticket.user_id}>", color=0x3498db)
+                await log_channel.send(embed=embed, file=discord.File(transcript_file, filename=f"transcript-{interaction.channel.name}.txt"))
+        
+        # DM opener
+        if settings.get("opener_dm_enabled", True):
+            try:
+                opener = await interaction.guild.fetch_member(ticket.user_id)
+                if opener:
+                    transcript_file.seek(0)
+                    await opener.send(content=f"Your ticket '{ticket.title}' in {interaction.guild.name} has been closed. Here is your transcript:", file=discord.File(transcript_file, filename="transcript.txt"))
+            except:
+                pass
+        
+        ticket.status = TicketStatus.CLOSED
+        self._save_ticket(ticket)
+        
+        stats = dm.get_guild_data(interaction.guild_id, "ticket_stats", {"total": 0, "open": 1, "closed": 0})
+        stats["open"] = max(0, stats.get("open", 1) - 1)
+        stats["closed"] = stats.get("closed", 0) + 1
+        dm.update_guild_data(interaction.guild_id, "ticket_stats", stats)
+        
+        await asyncio.sleep(10)
+        await interaction.channel.delete()
+
+    async def handle_transcript(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        file = await self.generate_transcript(interaction.channel)
+        await interaction.followup.send("📋 Transcript generated:", file=discord.File(file, filename="transcript.txt"), ephemeral=True)
+
+    async def generate_transcript(self, channel):
+        messages = []
+        async for msg in channel.history(limit=None, oldest_first=True):
+            ts = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            content = msg.clean_content
+            messages.append(f"[{ts}] {msg.author.name}: {content}")
+        
+        transcript_text = "\n".join(messages)
+        return io.BytesIO(transcript_text.encode('utf-8'))
+
+    async def handle_escalate(self, interaction: discord.Interaction):
+        class EscalationSelect(discord.ui.Select):
+            def __init__(self):
+                options = [
+                    discord.SelectOption(label="Technical Issues", value="tech"),
+                    discord.SelectOption(label="Billing Query", value="billing"),
+                    discord.SelectOption(label="Abuse/Report", value="abuse"),
+                    discord.SelectOption(label="Other", value="other")
+                ]
+                super().__init__(placeholder="Reason for escalation...", options=options)
+
+            async def callback(self, it: discord.Interaction):
+                system = getattr(it.client, "tickets", None)
+                if not system: return
+                ticket = system.get_ticket_by_channel(it.channel_id)
+                if not ticket: return
+                ticket.status = TicketStatus.ESCALATED
+                ticket.priority = TicketPriority.URGENT
+                system._save_ticket(ticket)
+                settings = system.get_guild_settings(it.guild_id)
+                senior_role_id = settings.get("senior_staff_role_id")
+                ping = f"<@&{senior_role_id}> " if senior_role_id else ""
+                await it.response.send_message(f"🚨 {ping}**Ticket Escalated!** Reason: {self.values[0]}", ephemeral=False)
+
+        view = discord.ui.View()
+        view.add_item(EscalationSelect())
+        await interaction.response.send_message("Please select a reason for escalation:", view=view, ephemeral=True)
+
+    async def setup(self, interaction: discord.Interaction, params: Dict = None):
         return True
 
+class _UserIDModal(discord.ui.Modal):
+    def __init__(self, title, action_type):
+        super().__init__(title=title)
+        self.action_type = action_type
+        self.user_input = discord.ui.TextInput(label="User ID or Mention", required=True)
+        self.add_item(self.user_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        user_id_str = self.user_input.value.strip("<@!>")
+        try:
+            user = await interaction.guild.fetch_member(int(user_id_str))
+            if self.action_type == "add":
+                await interaction.channel.set_permissions(user, view_channel=True, send_messages=True)
+                await interaction.response.send_message(f"✅ Added {user.mention} to ticket.", ephemeral=True)
+            else:
+                await interaction.channel.set_permissions(user, overwrite=None)
+                await interaction.response.send_message(f"✅ Removed {user.mention} from ticket.", ephemeral=True)
+        except:
+            await interaction.response.send_message("❌ User not found.", ephemeral=True)
+
+class _MessageIDModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="Pin Message")
+        self.message_input = discord.ui.TextInput(label="Message ID", required=True)
+        self.add_item(self.message_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            msg = await interaction.channel.fetch_message(int(self.message_input.value))
+            await msg.pin()
+            await interaction.response.send_message("📌 Message pinned.", ephemeral=True)
+        except:
+            await interaction.response.send_message("❌ Message not found.", ephemeral=True)
 
 from discord import app_commands

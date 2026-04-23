@@ -3,213 +3,329 @@ from discord.ext import commands
 import asyncio
 import json
 import time
-from typing import Dict, List, Optional
+import io
+from datetime import datetime, timezone, timedelta
+from typing import Dict, List, Optional, Any
 
 from data_manager import dm
 from logger import logger
 
 
+class WelcomeDMView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="✅ Verify Now", style=discord.ButtonStyle.success, custom_id="wdm_verify")
+    async def verify(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._handle_button(interaction, "verify")
+
+    @discord.ui.button(label="📜 Read Rules", style=discord.ButtonStyle.primary, custom_id="wdm_rules")
+    async def rules(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._handle_button(interaction, "rules")
+
+    @discord.ui.button(label="🎭 Pick Roles", style=discord.ButtonStyle.primary, custom_id="wdm_roles")
+    async def roles(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._handle_button(interaction, "roles")
+
+    @discord.ui.button(label="🎫 Open Ticket", style=discord.ButtonStyle.primary, custom_id="wdm_ticket")
+    async def ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._handle_button(interaction, "ticket")
+
+    @discord.ui.button(label="📋 Apply for Staff", style=discord.ButtonStyle.primary, custom_id="wdm_apply")
+    async def apply(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._handle_button(interaction, "apply")
+
+    @discord.ui.button(label="🆘 Get Help", style=discord.ButtonStyle.danger, custom_id="wdm_help")
+    async def help_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._handle_button(interaction, "help")
+
+    @discord.ui.button(label="📊 Server Info", style=discord.ButtonStyle.secondary, custom_id="wdm_info")
+    async def info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._handle_button(interaction, "info")
+
+    @discord.ui.button(label="🔕 Opt Out", style=discord.ButtonStyle.secondary, custom_id="wdm_optout")
+    async def optout(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._handle_button(interaction, "optout")
+
+    async def _handle_button(self, interaction: discord.Interaction, action: str):
+        # In a real DM interaction, interaction.guild will be None.
+        # We need to find the shared guild.
+        user = interaction.user
+        shared_guilds = [g for g in interaction.client.guilds if g.get_member(user.id)]
+        if not shared_guilds:
+            return await interaction.response.send_message("❌ No shared servers found.", ephemeral=True)
+
+        guild = shared_guilds[0] # Use first one for simplicity
+
+        if action == "optout":
+            opted_out = dm.get_guild_data(guild.id, "welcomedm_optout", [])
+            if user.id not in opted_out:
+                opted_out.append(user.id)
+                dm.update_guild_data(guild.id, "welcomedm_optout", opted_out)
+            return await interaction.response.send_message("✅ You have opted out of Welcome DMs from this bot.", ephemeral=True)
+
+        if action == "verify":
+            ch_id = dm.get_guild_data(guild.id, "verify_channel")
+            if ch_id: return await interaction.response.send_message(f"Go to <#{ch_id}> to verify!", ephemeral=True)
+            return await interaction.response.send_message("Verification channel not found.", ephemeral=True)
+
+        if action == "rules":
+            ch_id = dm.get_guild_data(guild.id, "rules_channel")
+            if ch_id: return await interaction.response.send_message(f"Read our rules here: <#{ch_id}>", ephemeral=True)
+            return await interaction.response.send_message("Rules channel not found.", ephemeral=True)
+
+        if action == "ticket":
+            # Direct ticket creation from DM
+            tickets_sys = getattr(interaction.client, "tickets", None)
+            if tickets_sys:
+                from modules.tickets import TicketModal
+                await interaction.response.send_modal(TicketModal())
+            else:
+                await interaction.response.send_message("Ticket system not available.", ephemeral=True)
+            return
+
+        await interaction.response.send_message(f"Button '{action}' clicked! Functionality coming soon or check server channels.", ephemeral=True)
+
 class WelcomeLeaveSystem:
     def __init__(self, bot):
         self.bot = bot
-        self._member_counters: Dict[int, int] = {}
-        self._load_settings()
 
-    def _load_settings(self):
-        data = dm.load_json("welcome_leave_settings", default={})
-        self._member_counters = data.get("member_counters", {})
-
-    def _save_settings(self):
-        data = {"member_counters": self._member_counters}
-        dm.save_json("welcome_leave_settings", data)
-
-    def get_guild_settings(self, guild_id: int) -> dict:
-        return dm.get_guild_data(guild_id, "welcome_leave_settings", {
-            "enabled": True,
-            "welcome_channel": None,
-            "welcome_message": "Welcome {user} to {server}! 🎉",
-            "welcome_dm": None,
-            "leave_channel": None,
-            "leave_message": "{user} has left {server}. Goodbye! 👋",
-            "join_roles": [],
-            "verify_on_join": False,
-            "verify_role": None,
-            "member_count_channel": None,
-            "member_count_format": "Members: {count}"
+    def get_welcome_config(self, guild_id: int) -> dict:
+        return dm.get_guild_data(guild_id, "welcome_config", {
+            "enabled": False,
+            "channel_id": None,
+            "message": "Welcome {user} to {server}! 🎉",
+            "embed_title": "Welcome to {server}!",
+            "embed_color": 0x2ecc71,
+            "thumbnail_enabled": True,
+            "image_url": None,
+            "show_member_number": True,
+            "show_account_age": True,
+            "ping_on_welcome": False,
+            "rules_summary": None,
+            "important_channels": []
         })
+
+    def get_leave_config(self, guild_id: int) -> dict:
+        return dm.get_guild_data(guild_id, "leave_config", {
+            "enabled": False,
+            "channel_id": None,
+            "message": "{user} has left {server}. Goodbye! 👋",
+            "embed_title": "Member Left",
+            "embed_color": 0xe74c3c,
+            "show_duration": True,
+            "show_roles": True,
+            "show_reason": True
+        })
+
+    def get_dm_config(self, guild_id: int) -> dict:
+        return dm.get_guild_data(guild_id, "welcomedm_config", {
+            "enabled": False,
+            "message": "Welcome to {server}! We're glad to have you here.",
+            "embed_color": 0x3498db,
+            "enabled_buttons": ["verify", "rules", "roles", "ticket", "apply", "help", "info", "optout"],
+            "server_info_content": "Welcome to our community! Please check out our channels.",
+            "help_role_id": None,
+            "apply_redirect_id": None
+        })
+
+    def _format_message(self, member: discord.Member, text: str) -> str:
+        if not text:
+            return ""
+
+        guild = member.guild
+        now = datetime.now(timezone.utc)
+
+        # Account age in days
+        account_age = (now - member.created_at).days
+
+        # Ordinal for member number
+        def get_ordinal(n):
+            if 11 <= (n % 100) <= 13:
+                suffix = 'th'
+            else:
+                suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
+            return f"{n:,}{suffix}"
+
+        replacements = {
+            "{user}": member.mention,
+            "{user.mention}": member.mention,
+            "{user.name}": member.name,
+            "{user.id}": str(member.id),
+            "{server}": guild.name,
+            "{server.membercount}": f"{guild.member_count:,}",
+            "{date}": now.strftime("%Y-%m-%d"),
+            "{time}": now.strftime("%H:%M:%S UTC"),
+            "{member_number}": get_ordinal(guild.member_count),
+            "{account_age}": f"{account_age} days",
+            "{join_position}": f"member #{guild.member_count:,}"
+        }
+
+        for placeholder, value in replacements.items():
+            text = text.replace(placeholder, str(value))
+
+        return text
+
+    def _track_stat(self, guild_id: int, stat_type: str):
+        """Track join/leave stats."""
+        history_key = f"wl_history_{stat_type}"
+        history = dm.get_guild_data(guild_id, history_key, [])
+        now = time.time()
+        history.append(now)
+
+        # Keep only last 31 days
+        cutoff = now - (31 * 24 * 60 * 60)
+        history = [ts for ts in history if ts > cutoff]
+        dm.update_guild_data(guild_id, history_key, history)
+
+    def get_stats(self, guild_id: int) -> dict:
+        now = time.time()
+        joins = dm.get_guild_data(guild_id, "wl_history_joins", [])
+        leaves = dm.get_guild_data(guild_id, "wl_history_leaves", [])
+
+        def count_since(history, seconds):
+            cutoff = now - seconds
+            return sum(1 for ts in history if ts > cutoff)
+
+        return {
+            "joins_today": count_since(joins, 24*3600),
+            "joins_week": count_since(joins, 7*24*3600),
+            "joins_month": count_since(joins, 30*24*3600),
+            "leaves_today": count_since(leaves, 24*3600),
+            "leaves_week": count_since(leaves, 7*24*3600)
+        }
 
     async def on_member_join(self, member: discord.Member):
         if member.bot:
             return
         
         guild_id = member.guild.id
-        settings = self.get_guild_settings(guild_id)
+        self._track_stat(guild_id, "joins")
         
-        for role_id in settings.get("join_roles", []):
-            role = member.guild.get_role(int(role_id))
-            if role:
-                try:
-                    await member.add_roles(role)
-                except:
-                    pass
-        
-        if settings.get("verify_on_join"):
-            verify_role_id = settings.get("verify_role")
-            if verify_role_id:
-                role = member.guild.get_role(int(verify_role_id))
-                if role:
-                    try:
-                        await member.add_roles(role)
-                    except:
-                        pass
-        
-        welcome_channel_id = settings.get("welcome_channel")
-        if welcome_channel_id:
-            welcome_channel = member.guild.get_channel(int(welcome_channel_id))
-            if welcome_channel:
-                message = settings.get("welcome_message", "Welcome {user} to {server}!")
-                
-                message = message.replace("{user}", member.mention)
-                message = message.replace("{username}", member.display_name)
-                message = message.replace("{server}", member.guild.name)
-                message = message.replace("{count}", str(member.guild.member_count))
+        # 1. Channel Welcome
+        config = self.get_welcome_config(guild_id)
+        if config.get("enabled") and config.get("channel_id"):
+            channel = member.guild.get_channel(int(config["channel_id"]))
+            if channel:
+                content = member.mention if config.get("ping_on_welcome") else None
                 
                 embed = discord.Embed(
-                    description=message,
-                    color=discord.Color.green()
+                    title=self._format_message(member, config.get("embed_title", "Welcome!")),
+                    description=self._format_message(member, config.get("message", "")),
+                    color=config.get("embed_color", 0x2ecc71)
                 )
-                embed.set_thumbnail(url=member.display_avatar.url)
                 
-                await welcome_channel.send(embed=embed)
-        
-        welcome_dm = settings.get("welcome_dm")
-        if welcome_dm:
-            try:
-                message = welcome_dm.replace("{user}", member.display_name)
-                message = message.replace("{server}", member.guild.name)
+                if config.get("thumbnail_enabled"):
+                    embed.set_thumbnail(url=member.display_avatar.url)
                 
-                await member.send(message)
-            except:
-                pass
-        
-        await self._update_member_count(member.guild)
+                if config.get("image_url"):
+                    embed.set_image(url=config["image_url"])
+
+                if config.get("show_member_number"):
+                    embed.add_field(name="Member Number", value=f"You are our {self._get_member_number(member.guild)} member!", inline=True)
+
+                if config.get("show_account_age"):
+                    now = datetime.now(timezone.utc)
+                    age = (now - member.created_at).days
+                    embed.add_field(name="Account Age", value=f"Created {age} days ago", inline=True)
+
+                if config.get("rules_summary"):
+                    embed.add_field(name="📜 Server Rules", value=config["rules_summary"], inline=False)
+
+                if config.get("important_channels"):
+                    channels_str = " ".join([f"<#{cid}>" for cid in config["important_channels"]])
+                    if channels_str:
+                        embed.add_field(name="📍 Key Channels", value=channels_str, inline=False)
+
+                await channel.send(content=content, embed=embed)
+
+        # 2. Welcome DM
+        dm_config = self.get_dm_config(guild_id)
+        if dm_config.get("enabled"):
+            # Check if user opted out
+            opted_out = dm.get_guild_data(guild_id, "welcomedm_optout", [])
+            if member.id not in opted_out:
+                try:
+                    embed = discord.Embed(
+                        title=f"Welcome to {member.guild.name}!",
+                        description=self._format_message(member, dm_config.get("message", "")),
+                        color=dm_config.get("embed_color", 0x3498db)
+                    )
+                    embed.set_thumbnail(url=member.guild.icon.url if member.guild.icon else None)
+                    embed.add_field(name="Server Stats", value=f"👥 {member.guild.member_count:,} members", inline=True)
+
+                    view = WelcomeDMView()
+                    # We can't easily filter persistent view buttons per instance without making them non-persistent
+                    # or adding logic in the button callback to check config.
+                    # Given the persistence requirement, let's keep all buttons and handle them.
+
+                    await member.send(embed=embed, view=view)
+
+                    # Track DM stats
+                    stats = dm.get_guild_data(guild_id, "welcomedm_stats", {"sent": 0, "optout": 0, "verify_clicks": 0})
+                    stats["sent"] += 1
+                    dm.update_guild_data(guild_id, "welcomedm_stats", stats)
+                except discord.Forbidden:
+                    pass
+
+    def _get_member_number(self, guild):
+        def get_ordinal(n):
+            if 11 <= (n % 100) <= 13:
+                suffix = 'th'
+            else:
+                suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
+            return f"{n:,}{suffix}"
+        return get_ordinal(guild.member_count)
 
     async def on_member_remove(self, member: discord.Member):
         if member.bot:
             return
         
         guild_id = member.guild.id
-        settings = self.get_guild_settings(guild_id)
+        self._track_stat(guild_id, "leaves")
         
-        leave_channel_id = settings.get("leave_channel")
-        if leave_channel_id:
-            leave_channel = member.guild.get_channel(int(leave_channel_id))
-            if leave_channel:
-                message = settings.get("leave_message", "{user} has left {server}.")
-                
-                message = message.replace("{user}", member.display_name)
-                message = message.replace("{server}", member.guild.name)
-                message = message.replace("{count}", str(member.guild.member_count))
-                
+        config = self.get_leave_config(guild_id)
+        if config.get("enabled") and config.get("channel_id"):
+            channel = member.guild.get_channel(int(config["channel_id"]))
+            if channel:
                 embed = discord.Embed(
-                    description=message,
-                    color=discord.Color.red()
+                    title=self._format_message(member, config.get("embed_title", "Goodbye")),
+                    description=self._format_message(member, config.get("message", "")),
+                    color=config.get("embed_color", 0xe74c3c)
                 )
-                embed.set_thumbnail(url=member.display_avatar.url)
                 
-                await leave_channel.send(embed=embed)
-        
-        await self._update_member_count(member.guild)
+                if config.get("show_duration"):
+                    joined_at = member.joined_at
+                    if joined_at:
+                        duration = datetime.now(timezone.utc) - joined_at
+                        days = duration.days
+                        hours = (duration.seconds // 3600)
+                        minutes = (duration.seconds // 60) % 60
+                        embed.add_field(name="Stay Duration", value=f"{days}d {hours}h {minutes}m", inline=True)
 
-    async def _update_member_count(self, guild: discord.Guild):
-        settings = self.get_guild_settings(guild.id)
-        counter_channel_id = settings.get("member_count_channel")
-        
-        if not counter_channel_id:
-            return
-        
-        counter_channel = guild.get_channel(int(counter_channel_id))
-        if not counter_channel:
-            return
-        
-        count_format = settings.get("member_count_format", "Members: {count}")
-        count_format = count_format.replace("{count}", str(guild.member_count))
-        
-        try:
-            await counter_channel.edit(name=count_format[:100])
-        except:
-            pass
+                if config.get("show_roles"):
+                    roles = [role.mention for role in member.roles if role.name != "@everyone"]
+                    if roles:
+                        embed.add_field(name="Roles", value=" ".join(roles[:10]), inline=False)
 
-    async def generate_welcome_message(self, guild: discord.Guild, member: discord.Member) -> str:
-        prompt = f"""Generate a welcome message for a new member.
+                if config.get("show_reason"):
+                    # Attempt to fetch last kick/ban from audit log
+                    try:
+                        async for entry in member.guild.audit_logs(limit=5, action=discord.AuditLogAction.kick):
+                            if entry.target.id == member.id and (datetime.now(timezone.utc) - entry.created_at).total_seconds() < 60:
+                                embed.add_field(name="Kick Reason", value=entry.reason or "No reason provided", inline=False)
+                                break
+                        async for entry in member.guild.audit_logs(limit=5, action=discord.AuditLogAction.ban):
+                            if entry.target.id == member.id and (datetime.now(timezone.utc) - entry.created_at).total_seconds() < 60:
+                                embed.add_field(name="Ban Reason", value=entry.reason or "No reason provided", inline=False)
+                                break
+                    except:
+                        pass
 
-SERVER: {guild.name}
-NEW MEMBER: {member.display_name}
-MEMBER COUNT: {guild.member_count}
-
-Respond with JSON only:
-{{
-    "message": "A warm, creative welcome message (1-2 sentences)",
-    "tip": "One helpful tip for new members"
-}}
-
-Make it fun and welcoming!"""
-
-        try:
-            result = await self.bot.ai.chat(
-                guild_id=guild.id,
-                user_id=member.id,
-                user_input=prompt,
-                system_prompt="You write welcoming messages. Be warm, creative, and concise."
-            )
-            
-            return result.get("message", f"Welcome {member.mention} to {guild.name}!")
-        except:
-            return f"Welcome {member.mention} to {guild.name}!"
+                await channel.send(embed=embed)
 
     async def setup(self, interaction: discord.Interaction, params: Dict = None):
-        guild = interaction.guild
-        
-        settings = self.get_guild_settings(guild.id)
-        settings["enabled"] = True
-        dm.update_guild_data(guild.id, "welcome_leave_settings", settings)
-        
-        try:
-            doc_channel = await guild.create_text_channel("welcome-guide", category=None)
-        except:
-            doc_channel = interaction.channel
-        
-        doc_embed = discord.Embed(title="👋 Welcome/Leave System Guide", description="Complete guide!", color=discord.Color.green())
-        doc_embed.add_field(name="📖 How It Works", value="Automatically welcomes new members and says goodbye when they leave. Can assign roles and send DMs.", inline=False)
-        doc_embed.add_field(name="Available Variables", value="• {user} - Mention user\n• {username} - Username\n• {server} - Server name\n• {member_count} - Total members", inline=False)
-        doc_embed.add_field(name="Features", value="• Custom welcome/leave messages\n• Role assignment on join\n• Member counter channel\n• Welcome DMs", inline=False)
-        
-        await doc_channel.send(embed=doc_embed)
-        await doc_channel.send("💡 **Quick Start:** Members will see welcome messages automatically when they join!")
-        
-        help_embed = discord.Embed(title="👋 Welcome/Leave System", description="Custom welcome and leave messages with role assignment.", color=discord.Color.green())
-        help_embed.add_field(name="How it works", value="Automatically sends welcome messages when members join/leave. Can assign roles, update member count channels, and send DMs.", inline=False)
-        help_embed.add_field(name="!welcome", value="Test welcome message.", inline=False)
-        
-        await interaction.followup.send(embed=help_embed, ephemeral=True)
-        
-        custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
-        
-        custom_cmds["welcome"] = json.dumps({
-            "command_type": "test_welcome"
-        })
-        custom_cmds["help welcomeleave"] = json.dumps({
-            "command_type": "help_embed",
-            "title": "👋 Welcome/Leave System",
-            "description": "Welcome and leave messages.",
-            "fields": [
-                {"name": "!welcome", "value": "Test welcome message.", "inline": False}
-            ]
-        })
-        
-        dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
-        
+        # Implementation for /autosetup integration
         return True
-
 
 from discord import app_commands
