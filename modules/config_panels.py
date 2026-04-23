@@ -10,6 +10,11 @@ from data_manager import dm
 from logger import logger
 from typing import Dict, Any, List, Optional, Union
 
+# Forward imports for panel views used in registry
+RemindersPanelView = None
+ScheduledPanelView = None
+AnnouncementsPanelView = None
+
 def log_panel_action(guild_id: int, user_id: int, action: str):
     """Log an admin panel action to the guild's action logs."""
     logs = dm.get_guild_data(guild_id, "action_logs", [])
@@ -1319,23 +1324,58 @@ class _TicketEmbedModal(ui.Modal):
 # --- Registry ---
 
 SPECIALIZED_VIEWS = {
-    "verification": VerificationConfigView,
-    "antiraid": AntiRaidConfigView,
-    "guardian": GuardianConfigView,
-    "tickets": TicketsConfigView,
-    "welcome": WelcomeConfigView,
-    "welcomedm": WelcomeDMConfigView,
-    "application": ApplicationConfigView,
-    "applicationmodal": ApplicationConfigView,
-    "appeals": AppealsConfigView,
-    "appeal": AppealsConfigView,
-    "modmail": ModmailConfigView,
-    "suggestions": SuggestionsConfigView,
+    "verification": "VerificationConfigView",
+    "antiraid": "AntiRaidConfigView",
+    "guardian": "GuardianConfigView",
+    "tickets": "TicketsConfigView",
+    "welcome": "WelcomeConfigView",
+    "welcomedm": "WelcomeDMConfigView",
+    "application": "ApplicationConfigView",
+    "applicationmodal": "ApplicationConfigView",
+    "appeals": "AppealsConfigView",
+    "appeal": "AppealsConfigView",
+    "modmail": "ModmailConfigView",
+    "suggestions": "SuggestionsConfigView",
+    "reminders": "RemindersPanelView",
+    "scheduled": "ScheduledPanelView",
+    "announcements": "AnnouncementsPanelView",
 }
 
+# Local cache for lazy-loaded view classes
+_view_cache = {}
+
 def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
+    # Lazy import for all systems
+    global _view_cache
+    
+    if "VerificationConfigView" not in _view_cache:
+        from modules.config_panels import (
+            VerificationConfigView, AntiRaidConfigView, GuardianConfigView,
+            TicketsConfigView, WelcomeConfigView, WelcomeDMConfigView,
+            ApplicationConfigView, AppealsConfigView, ModmailConfigView,
+            SuggestionsConfigView
+        )
+        _view_cache["VerificationConfigView"] = VerificationConfigView
+        _view_cache["AntiRaidConfigView"] = AntiRaidConfigView
+        _view_cache["GuardianConfigView"] = GuardianConfigView
+        _view_cache["TicketsConfigView"] = TicketsConfigView
+        _view_cache["WelcomeConfigView"] = WelcomeConfigView
+        _view_cache["WelcomeDMConfigView"] = WelcomeDMConfigView
+        _view_cache["ApplicationConfigView"] = ApplicationConfigView
+        _view_cache["AppealsConfigView"] = AppealsConfigView
+        _view_cache["ModmailConfigView"] = ModmailConfigView
+        _view_cache["SuggestionsConfigView"] = SuggestionsConfigView
+    
+    if "RemindersPanelView" not in _view_cache:
+        from modules.reminders import RemindersPanelView, ScheduledPanelView, AnnouncementsPanelView
+        _view_cache["RemindersPanelView"] = RemindersPanelView
+        _view_cache["ScheduledPanelView"] = ScheduledPanelView
+        _view_cache["AnnouncementsPanelView"] = AnnouncementsPanelView
+    
     system_key = system.lower().replace("_", "").replace("system", "")
-    if system_key in SPECIALIZED_VIEWS: return SPECIALIZED_VIEWS[system_key](guild_id)
+    class_name = SPECIALIZED_VIEWS.get(system_key)
+    if class_name and class_name in _view_cache:
+        return _view_cache[class_name](guild_id)
     return None
 
 async def handle_config_panel_command(message: discord.Message, system: str):
@@ -1355,6 +1395,10 @@ def register_all_persistent_views(bot: discord.Client):
     bot.add_view(AppealsConfigView(0))
     bot.add_view(ModmailConfigView(0))
     bot.add_view(SuggestionsConfigView(0))
+    from modules.reminders import RemindersPanelView, ScheduledPanelView, AnnouncementsPanelView
+    bot.add_view(RemindersPanelView(0))
+    bot.add_view(ScheduledPanelView(0))
+    bot.add_view(AnnouncementsPanelView(0))
 
     # System Components
     from modules.tickets import TicketOpenPanel, TicketPersistentView
