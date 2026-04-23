@@ -80,16 +80,25 @@ class _GenericChannelSelect(ui.ChannelSelect):
 
 class _NumberModal(ui.Modal):
     value_input = ui.TextInput(label="Value", required=True, max_length=15)
+    second_value = ui.TextInput(label="Secondary Value (optional)", required=False, max_length=15)
 
-    def __init__(self, parent: ConfigPanelView, key: str, label: str, guild_id: int, min_v: int = 0, max_v: int = 999999999999):
+    def __init__(self, parent: ConfigPanelView, key: str, label: str, guild_id: int, min_v: int = 0, max_v: int = 999999999999, second_label: str = None):
         super().__init__(title=label)
         self.parent = parent
         self.key = key
         self.min_v, self.max_v = min_v, max_v
         self.value_input.label = label
+        if second_label:
+            self.second_value.label = second_label
+            self.second_value.required = False
         existing = parent.get_config(guild_id).get(key)
         if existing is not None:
-            self.value_input.default = str(existing)
+            if isinstance(existing, (list, tuple)) and len(existing) >= 1:
+                self.value_input.default = str(existing[0])
+                if len(existing) >= 2 and second_label:
+                    self.second_value.default = str(existing[1])
+            else:
+                self.value_input.default = str(existing)
 
     async def on_submit(self, interaction: Interaction):
         try:
@@ -98,7 +107,47 @@ class _NumberModal(ui.Modal):
                 raise ValueError
         except ValueError:
             return await interaction.response.send_message(f"❌ Enter a valid number.", ephemeral=True)
+        
         config = self.parent.get_config(interaction.guild_id)
+        
+        # Special handling for whitelist operations
+        if self.key == "whitelist_add":
+            user_id = v
+            whitelist = config.get("whitelist", [])
+            if user_id not in whitelist:
+                whitelist.append(user_id)
+                config["whitelist"] = whitelist
+                self.parent.save_config(config, interaction.guild_id, interaction.client)
+                log_panel_action(interaction.guild_id, interaction.user.id, f"Added {user_id} to whitelist")
+                return await interaction.response.send_message(f"✅ User `{user_id}` added to whitelist.", ephemeral=True)
+            else:
+                return await interaction.response.send_message(f"⚠️ User `{user_id}` is already whitelisted.", ephemeral=True)
+        
+        # Special handling for duplicate filter (X messages in Y seconds)
+        if self.key == "duplicate_threshold_config":
+            if self.second_value.value:
+                try:
+                    y = int(self.second_value.value)
+                    config["duplicate_threshold"] = v
+                    config["duplicate_window"] = y
+                    self.parent.save_config(config, interaction.guild_id, interaction.client)
+                    log_panel_action(interaction.guild_id, interaction.user.id, f"Set duplicate filter to {v} msgs in {y}s")
+                    return await interaction.response.send_message(f"✅ Duplicate filter: **{v}** messages in **{y}** seconds.", ephemeral=True)
+                except ValueError:
+                    return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
+            config["duplicate_threshold"] = v
+            self.parent.save_config(config, interaction.guild_id, interaction.client)
+            log_panel_action(interaction.guild_id, interaction.user.id, f"Set duplicate threshold to {v}")
+            return await interaction.response.send_message(f"✅ Duplicate threshold set to **{v}** messages.", ephemeral=True)
+        
+        # Special handling for mention threshold config
+        if self.key == "mention_threshold_config":
+            config["mention_threshold"] = v
+            self.parent.save_config(config, interaction.guild_id, interaction.client)
+            log_panel_action(interaction.guild_id, interaction.user.id, f"Set mention threshold to {v}")
+            return await interaction.response.send_message(f"✅ Max mentions per message: **{v}**.", ephemeral=True)
+        
+        # Default: single value storage
         config[self.key] = v
         self.parent.save_config(config, interaction.guild_id, interaction.client)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {v}")
