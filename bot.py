@@ -2848,6 +2848,14 @@ async def on_guild_remove(guild: discord.Guild):
     await bot.auto_setup.on_guild_remove(guild)
 
 @bot.event
+async def on_guild_channel_create(channel):
+    """Auto-lock any new channel/category if verification is active in the guild."""
+    try:
+        await bot.verification.on_guild_channel_create(channel)
+    except Exception as e:
+        logger.warning(f"Verification auto-lock on channel create error: {e}")
+
+@bot.event
 async def on_member_join(member: discord.Member):
     if member.bot:
         return

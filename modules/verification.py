@@ -230,6 +230,38 @@ class Verification:
             logger.error(f"[Verification] Error locking channel {channel.name}: {e}")
 
     # ──────────────────────────────────────────────
+    # Auto-lock newly created channels / categories
+    # ──────────────────────────────────────────────
+
+    async def on_guild_channel_create(self, channel):
+        """Automatically lock any new channel or category so Unverified members
+        can't see it. Skips the verify channel itself and only runs if the
+        verification system is set up (Unverified role exists)."""
+        guild = channel.guild
+        if not guild:
+            return
+
+        unverified, verified = self._get_roles(guild)
+        if not unverified:
+            # Verification system not set up in this guild — do nothing
+            return
+
+        # Don't lock the verify channel
+        verify_channel_id = self._get_verify_channel_id(guild.id)
+        if channel.id == verify_channel_id or getattr(channel, "name", "") == "verify":
+            return
+
+        try:
+            everyone = guild.default_role
+            if isinstance(channel, discord.CategoryChannel):
+                await self._lock_category(channel, everyone, unverified, verified)
+            else:
+                await self._apply_lock(channel, everyone, unverified, verified)
+            logger.info(f"[Verification] Auto-locked new {type(channel).__name__}: {channel.name}")
+        except Exception as e:
+            logger.error(f"[Verification] Failed to auto-lock new channel {channel.name}: {e}")
+
+    # ──────────────────────────────────────────────
     # Member join -> assign Unverified role
     # ──────────────────────────────────────────────
 
