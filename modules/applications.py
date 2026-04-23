@@ -151,6 +151,18 @@ class ApplicationReviewView(ui.View):
 
         if target_app:
             dm.update_guild_data(guild_id, "applications", apps)
+            # Log action
+            log_entry = {
+                "action": f"application_{status}",
+                "user_id": int(user_id_str),
+                "moderator_id": interaction.user.id,
+                "timestamp": time.time(),
+                "app_id": target_app["id"],
+                "reason": reason
+            }
+            logs = dm.get_guild_data(guild_id, "action_logs", [])
+            logs.append(log_entry)
+            dm.update_guild_data(guild_id, "action_logs", logs[-100:])
             return target_app
         return None
 
@@ -330,6 +342,20 @@ class RequestInfoModal(ui.Modal):
             embed = interaction.message.embeds[0]
             embed.add_field(name="Information Requested", value=f"By {interaction.user.mention}: {self.question.value}", inline=False)
             await interaction.message.edit(embed=embed)
+            
+            # Log action
+            log_entry = {
+                "action": "application_info_requested",
+                "user_id": int(self.user_id_str),
+                "moderator_id": interaction.user.id,
+                "timestamp": time.time(),
+                "app_id": target_app["id"],
+                "question": self.question.value
+            }
+            logs = dm.get_guild_data(guild_id, "action_logs", [])
+            logs.append(log_entry)
+            dm.update_guild_data(guild_id, "action_logs", logs[-100:])
+            
             await interaction.response.send_message("✅ Information requested from applicant.", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Could not find application data.", ephemeral=True)
