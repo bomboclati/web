@@ -144,14 +144,13 @@ class MiroBot(commands.Bot):
         logger.info("Restoring trigger role presence monitoring...")
         register_all_persistent_views(self)
         
-        # Add cogs that contain slash commands
-        # AutoSetup is not a cog and should not be added as one
-
-        # Add AutoSetup slash command to the command tree using a wrapper to ensure correct signature
-        @self.tree.command(name="autosetup", description="Launch the 33-system auto-setup panel")
-        @app_commands.checks.has_permissions(administrator=True)
-        async def autosetup_wrapper(interaction: discord.Interaction):
-            await self.auto_setup.autosetup(interaction)
+        # Add extensions that contain slash commands
+        try:
+            await self.load_extension('cogs.core_commands')
+            await self.load_extension('modules.auto_setup')
+            logger.info("Core extensions loaded successfully.")
+        except Exception as e:
+            logger.error(f"Failed to load extensions: {e}")
 
         # Initial sync handled at the end of setup_hook if SYNC_COMMANDS is true
         
@@ -2828,165 +2827,6 @@ async def health_cmd(interaction: discord.Interaction):
     
     await interaction.followup.send(embed=embed)
 
-# --- Configuration Commands Group ---
-config_group = app_commands.Group(name="config", description="Configure server-specific AI settings")
-
-COMMON_MODELS = [
-    # Groq Models (Prioritized - Ultra-Fast) - ONLY ACTIVE MODELS
-    "llama-3.3-70b-versatile", "llama-3.3-8b-instant",
-    "llama-3.2-1b-preview", "llama-3.2-3b-preview", "llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview",
-    "llama-3.1-8b-instant",
-    "llama-guard-3-8b",
-    "whisper-large-v3-turbo", "whisper-large-v3",
-    "gemma2-9b-it", "gemma-7b-it",
-    "mixtral-8x7b-32768",
-    "qwen-2.5-coder-32b-instruct", "qwen-2.5-32b-instruct", "qwen-k1-0905",
-    "mistral-saba-24b",
-    "moonshot-v1-8k",
-    "deepseek-r1-distill-qwen-32b",
-    "meta-llama/llama-4-maverick-17b-128e-instruct-fp8", "meta-llama/llama-4-scout-17b-16e-instruct",
-    "llama-3-groq-70b-tool-use-preview", "llama-3-groq-8b-tool-use-preview",
-    
-    # Qwen Family (Latest 2026)
-    "qwen3.6-plus", "qwen3.6-max", "qwen3.5-omni", "qwen-max-latest", "qwen-turbo-latest",
-    
-    # Gemini 3.1 Family (Latest 2026)
-    "gemini-3.1-pro", "gemini-3.1-flash", "gemini-3.1-flash-lite", "gemini-3.1-flash-live",
-    "gemini-3-pro", "gemini-3-flash",
-    
-    # Gemini 2.5 Family (Stable)
-    "gemini-2.5-pro", "gemini-2.5-flash-lite",
-    "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash",
-    
-    # OpenAI & Other Flagships
-    "gpt-5", "gpt-4o", "gpt-4o-mini", "o1", "o3-mini",
-    "claude-3-5-sonnet", "claude-3-7-sonnet", "claude-4-opus",
-    "llama-4-405b", "llama-3.1-405b",
-    
-    # OpenRouter Specific Aliases
-    "google/gemini-3.1-pro",
-    "deepseek/deepseek-v3", "meta-llama/llama-3.1-70b"
-]
-
-@config_group.command(name="model", description="Set the default AI model for this server")
-@app_commands.describe(model="AI Model to use (Pick from list)")
-async def config_model(it: discord.Interaction, model: str):
-    if not it.user.guild_permissions.administrator:
-        return await it.response.send_message("[ERROR] Admin only.", ephemeral=True)
-    
-    # Get current active provider
-    ai_config = dm.get_guild_api_key(it.guild.id)
-    active_provider = ai_config.get("provider", "openrouter") if ai_config else "openrouter"
-    
-    # Define model mappings for each provider
-    provider_models = {
-        "openrouter": ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash"],
-        "openai": ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
-        "gemini": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
-        "groq": ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
-        "mistral": ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"],
-        "deepseek": ["deepseek-chat", "deepseek-coder"],
-        "anthropic": ["claude-3-5-sonnet-20240620", "claude-3-opus-20240229"],
-        "dashscope": ["qwen-turbo", "qwen-plus", "qwen-max"]
-    }
-    
-    # Get allowed models for current provider
-    allowed_models = provider_models.get(active_provider, provider_models["openrouter"])
-    
-    # Validate that the model is allowed for the current provider
-    if model not in allowed_models:
-        await it.response.send_message(
-            f"[ERROR] Model '{model}' is not supported for provider '{active_provider}'. "
-            f"Allowed models: {', '.join(allowed_models)}", 
-            ephemeral=True
-        )
-        return
-    
-    dm.update_guild_data(it.guild.id, "custom_model", model)
-    await it.response.send_message(f"[SUCCESS] AI model set to **{model}**.", ephemeral=True)
-
-@config_model.autocomplete('model')
-async def model_autocomplete(interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
-    # Get current active provider for this guild
-    guild_id = interaction.guild.id if interaction.guild else None
-    if guild_id:
-        from data_manager import dm
-        ai_config = dm.get_guild_api_key(guild_id)
-        active_provider = ai_config.get("provider", "openrouter") if ai_config else "openrouter"
-        
-        # Define model mappings for each provider
-        provider_models = {
-            "openrouter": ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash"],
-            "openai": ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
-            "gemini": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
-            "groq": ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
-            "mistral": ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"],
-            "deepseek": ["deepseek-chat", "deepseek-coder"],
-            "anthropic": ["claude-3-5-sonnet-20240620", "claude-3-opus-20240229"],
-            "dashscope": ["qwen-turbo", "qwen-plus", "qwen-max"]
-        }
-        
-        # Get allowed models for current provider
-        allowed_models = provider_models.get(active_provider, provider_models["openrouter"])
-        
-        # Filter by current input
-        return [
-            app_commands.Choice(name=m, value=m)
-            for m in allowed_models if current.lower() in m.lower()
-        ][:25]
-    else:
-        # Fallback to common models if no guild
-        return [
-            app_commands.Choice(name=m, value=m)
-            for m in COMMON_MODELS if current.lower() in m.lower()
-        ][:25]
-
-@config_group.command(name="provider", description="Set the active AI provider")
-@app_commands.choices(provider=[
-    app_commands.Choice(name="OpenRouter (Universal)", value="openrouter"),
-    app_commands.Choice(name="OpenAI", value="openai"),
-    app_commands.Choice(name="Google Gemini", value="gemini"),
-    app_commands.Choice(name="Groq (Ultra-Fast)", value="groq"),
-    app_commands.Choice(name="Mistral AI", value="mistral"),
-    app_commands.Choice(name="DeepSeek", value="deepseek"),
-    app_commands.Choice(name="Anthropic", value="anthropic"),
-    app_commands.Choice(name="Alibaba DashScope (Qwen)", value="dashscope")
-])
-async def config_provider(it: discord.Interaction, provider: str):
-    if not it.user.guild_permissions.administrator:
-        return await it.response.send_message("[ERROR] Admin only.", ephemeral=True)
-    dm.update_guild_data(it.guild.id, "active_provider", provider)
-    # Reset custom_model to provider's default when provider changes
-    dm.update_guild_data(it.guild.id, "custom_model", None)
-    await it.response.send_message(f"[SUCCESS] AI provider switched to **{provider}**. Model reset to default.", ephemeral=True)
-
-@config_group.command(name="key", description="Set your own API key for a specific provider")
-@app_commands.choices(provider=[
-    app_commands.Choice(name="OpenRouter", value="openrouter"),
-    app_commands.Choice(name="OpenAI", value="openai"),
-    app_commands.Choice(name="Gemini", value="gemini"),
-    app_commands.Choice(name="Groq", value="groq"),
-    app_commands.Choice(name="Mistral", value="mistral"),
-    app_commands.Choice(name="DeepSeek", value="deepseek"),
-    app_commands.Choice(name="Anthropic", value="anthropic"),
-    app_commands.Choice(name="Alibaba DashScope (Qwen)", value="dashscope")
-])
-async def config_key(it: discord.Interaction, provider: str, api_key: str):
-    if not it.user.guild_permissions.administrator:
-        return await it.response.send_message("[ERROR] Admin only.", ephemeral=True)
-    dm.set_guild_api_key(it.guild.id, api_key, provider)
-    await it.response.send_message(f"[SUCCESS] API key for **{provider}** encrypted and saved.", ephemeral=True)
-
-@config_group.command(name="prefix", description="Set the server command prefix")
-async def config_prefix(it: discord.Interaction, prefix: str):
-    if not it.user.guild_permissions.administrator:
-        return await it.response.send_message("[ERROR] Admin only.", ephemeral=True)
-    if len(prefix) > 5:
-        return await it.response.send_message("[ERROR] Prefix too long (max 5).", ephemeral=True)
-    dm.update_guild_data(it.guild.id, "prefix", prefix)
-    await it.response.send_message(f"[SUCCESS] Prefix set to **{prefix}**.", ephemeral=True)
-
-bot.tree.add_command(config_group)
 
 @bot.tree.command(name="setup_verification", description="Set up the verification system (admin only)")
 async def setup_verification(interaction: discord.Interaction):
