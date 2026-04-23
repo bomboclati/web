@@ -1166,6 +1166,44 @@ class AutoSetup(commands.Cog):
             view = ApplicationPersistentView()
             await applications_channel.send(embed=embed, view=view)
 
+            # Create guide channel and post documentation
+            guide_channel = await guild.create_text_channel(
+                "applications-guide",
+                category=staff_category,
+                topic="Application system documentation"
+            )
+            for role in staff_roles or []:
+                await guide_channel.set_permissions(role, view_channel=True, send_messages=True)
+            await guide_channel.set_permissions(guild.default_role, view_channel=True, send_messages=False)
+
+            guide_embed = discord.Embed(
+                title="📋 Application System Guide",
+                description="Complete documentation for the staff application system.",
+                color=discord.Color.blue()
+            )
+            guide_embed.add_field(
+                name="How It Works",
+                value="1. Users click **Apply Now** in #applications\n2. They fill out a modal with custom questions\n3. Applications are posted to #application-logs\n4. Staff can Accept, Deny, Hold, or Request More Info\n5. Applicants receive DM notifications",
+                inline=False
+            )
+            guide_embed.add_field(
+                name="Admin Commands",
+                value="• `!applicationpanel` - Open admin configuration panel\n• `!help application` - Show this help embed",
+                inline=False
+            )
+            guide_embed.add_field(
+                name="Configuration Options",
+                value="• Custom application questions (up to 5)\n• Application types (Staff, Partner, etc.)\n• Cooldown period between applications\n• Auto-ping staff on new applications\n• Custom acceptance/denial DM messages\n• Role to give on acceptance",
+                inline=False
+            )
+            guide_embed.add_field(
+                name="Variables for DMs",
+                value="• `{user}` - Applicant's username\n• `{role}` - Role name given on acceptance\n• `{reason}` - Denial reason",
+                inline=False
+            )
+            guide_embed.set_footer(text="Use !applicationpanel in any channel to configure this system")
+            await guide_channel.send(embed=guide_embed)
+
             return True
         except Exception as e:
             logger.error(f"Failed to setup applications system: {e}")
