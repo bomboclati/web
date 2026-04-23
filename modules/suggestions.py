@@ -369,7 +369,7 @@ class SuggestionReviewView(ui.View):
         
         await interaction.response.send_modal(DenySuggestionModal(self.suggestion_id, self.guild_id))
     
-    @ui.button(label="In Progress", style=discord.ButtonStyle.yellow, emoji="🚧", custom_id="suggestion_progress")
+    @ui.button(label="In Progress", style=discord.ButtonStyle.primary, emoji="🚧", custom_id="suggestion_progress")
     async def in_progress(self, interaction: discord.Interaction, button: ui.Button):
         if not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
