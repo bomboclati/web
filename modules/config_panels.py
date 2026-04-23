@@ -1137,6 +1137,161 @@ class TicketsConfigView(ConfigPanelView):
         await i.channel.send(embed=embed, view=TicketOpenPanel())
         await i.response.send_message("Panel Sent.", ephemeral=True)
 
+
+class SuggestionsConfigView(ConfigPanelView):
+    """Admin configuration panel for the Suggestions system"""
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "suggestions")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id or self.guild_id)
+        embed = discord.Embed(title="💡 Suggestions System Configuration", color=discord.Color.blue())
+        embed.add_field(name="Status", value="✅ Open" if c.get("enabled", True) else "❌ Closed", inline=True)
+        embed.add_field(name="Suggestions Channel", value=f"<#{c.get('suggestions_channel_id')}>" if c.get('suggestions_channel_id') else "None", inline=True)
+        embed.add_field(name="Review Channel", value=f"<#{c.get('suggestions_review_channel_id')}>" if c.get('suggestions_review_channel_id') else "None", inline=True)
+        embed.add_field(name="Cooldown", value=f"{c.get('cooldown_minutes', 30)} minutes", inline=True)
+        embed.add_field(name="Submitter DMs", value="✅ Enabled" if c.get("submitter_dms_enabled", True) else "❌ Disabled", inline=True)
+
+        suggestions = dm.get_guild_data(guild_id or self.guild_id, "suggestions", [])
+        total = len(suggestions)
+        pending = len([s for s in suggestions if s.get('status') == 'pending'])
+        approved = len([s for s in suggestions if s.get('status') == 'approved'])
+        embed.add_field(name="📊 Total", value=f"{total} ({pending} pending, {approved} approved)", inline=False)
+
+        return embed
+
+    @ui.button(label="View All", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_suggest_view")
+    async def view_all(self, i, b):
+        suggestions = dm.get_guild_data(i.guild_id, "suggestions", [])
+        
+        class FilterView(ui.View):
+            def __init__(self, parent, suggestions_list):
+                super().__init__()
+                self.parent = parent
+                self.suggestions = suggestions_list
+            
+            @ui.select(placeholder="Filter by status", options=[
+                discord.SelectOption(label="All", value="all"),
+                discord.SelectOption(label="Pending", value="pending"),
+                discord.SelectOption(label="Approved", value="approved"),
+                discord.SelectOption(label="Denied", value="denied"),
+                discord.SelectOption(label="In Progress", value="in_progress"),
+                discord.SelectOption(label="Completed", value="completed")
+            ])
+            async def filter_select(self, it: discord.Interaction):
+                status = self.values[0]
+                filtered = self.suggestions if status == "all" else [s for s in self.suggestions if s.get('status') == status]
+                
+                if not filtered:
+                    return await it.response.send_message("No suggestions found.", ephemeral=True)
+                
+                desc = ""
+                for s in filtered[-15:]:
+                    status_emoji = {"approved": "✅", "denied": "❌", "in_progress": "🚧", "completed": "✅", "pending": "⏳"}.get(s['status'], "⚪")
+                    desc += f"{status_emoji} **#{s['id']}** - {s['title'][:50]} by <@{s['user_id']}>\\n"
+                
+                embed = discord.Embed(title=f"Suggestions ({status.title()})", description=desc, color=discord.Color.blue())
+                await it.response.send_message(embed=embed, ephemeral=True)
+        
+        await i.response.send_message("Select a filter:", view=FilterView(self, suggestions), ephemeral=True)
+
+    @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_suggest_stats")
+    async def stats(self, i, b):
+        suggestions = dm.get_guild_data(i.guild_id, "suggestions", [])
+        total = len(suggestions)
+        pending = len([s for s in suggestions if s.get('status') == 'pending'])
+        approved = len([s for s in suggestions if s.get('status') == 'approved'])
+        denied = len([s for s in suggestions if s.get('status') == 'denied'])
+        in_progress = len([s for s in suggestions if s.get('status') == 'in_progress'])
+        completed = len([s for s in suggestions if s.get('status') == 'completed'])
+        
+        # Top suggestion
+        top = max(suggestions, key=lambda s: len(s.get('upvotes', []))) if suggestions else None
+        
+        msg = f"**Total:** {total}\\n**Pending:** {pending}\\n**Approved:** {approved}\\n**Denied:** {denied}\\n**In Progress:** {in_progress}\\n**Completed:** {completed}\\n"
+        if top:
+            msg += f"\\n**Top Voted:** #{top['id']} - {top['title']} ({len(top['upvotes'])} upvotes)"
+        
+        await i.response.send_message(f"📊 **Suggestions Statistics**\\n{msg}", ephemeral=True)
+
+    @ui.button(label="Edit Categories", emoji="✏️", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_suggest_cats")
+    async def edit_cats(self, i, b):
+        class CatsModal(ui.Modal, title="Edit Suggestion Categories"):
+            cats = ui.TextInput(label="Categories (comma-separated)", placeholder="Feature, Bug, Content, Other", required=True)
+            async def on_submit(self, it):
+                categories = [c.strip() for c in self.cats.value.split(",") if c.strip()]
+                c = self.parent.get_config(it.guild_id) if hasattr(self, 'parent') else {}
+                c["categories"] = categories
+                if hasattr(self, 'parent'):
+                    self.parent.save_config(c, it.guild_id, it.client)
+                else:
+                    dm.update_guild_data(it.guild_id, "suggestions_config", c)
+                await it.response.send_message(f"✅ Categories updated: {', '.join(categories)}", ephemeral=True)
+        
+        modal = CatsModal()
+        modal.parent = self
+        existing = self.get_config(i.guild_id).get("categories", ["Feature", "Bug", "Content", "Other"])
+        modal.cats.default = ", ".join(existing)
+        await i.response.send_modal(modal)
+
+    @ui.button(label="Set Cooldown", emoji="⏱️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_suggest_cooldown")
+    async def set_cooldown(self, i, b):
+        await i.response.send_modal(_NumberModal(self, "cooldown_minutes", "Submission Cooldown (Minutes)", i.guild_id))
+
+    @ui.button(label="Set Suggestions Ch", emoji="📣", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_suggest_ch")
+    async def set_ch(self, i, b):
+        await i.response.send_message("Select Suggestions Channel:", view=_picker_view(_GenericChannelSelect(self, "suggestions_channel_id", "Suggestions Channel")), ephemeral=True)
+
+    @ui.button(label="Set Review Ch", emoji="📣", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_suggest_rev_ch")
+    async def set_rev_ch(self, i, b):
+        await i.response.send_message("Select Review Channel:", view=_picker_view(_GenericChannelSelect(self, "suggestions_review_channel_id", "Review Channel")), ephemeral=True)
+
+    @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_suggest_t_dm")
+    async def toggle_dm(self, i, b):
+        c = self.get_config(i.guild_id); c["submitter_dms_enabled"] = not c.get("submitter_dms_enabled", True)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Edit Approval DM", emoji="✏️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_suggest_acc_dm")
+    async def edit_acc_dm(self, i, b):
+        await i.response.send_modal(_TextModal(self, "approval_dm", "Approval DM Template", i.guild_id))
+
+    @ui.button(label="Edit Denial DM", emoji="✏️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_suggest_deny_dm")
+    async def edit_deny_dm(self, i, b):
+        await i.response.send_modal(_TextModal(self, "denial_dm", "Denial DM Template", i.guild_id))
+
+    @ui.button(label="Clear Denied", emoji="🗑️", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_suggest_clear")
+    async def clear_denied(self, i, b):
+        class ConfirmModal(ui.Modal, title="Clear Denied Suggestions"):
+            confirm = ui.TextInput(label="Type 'CLEAR' to confirm", required=True)
+            async def on_submit(self, it):
+                if self.confirm.value == "CLEAR":
+                    suggestions = dm.get_guild_data(it.guild_id, "suggestions", [])
+                    original = len(suggestions)
+                    suggestions = [s for s in suggestions if s.get('status') != 'denied']
+                    dm.update_guild_data(it.guild_id, "suggestions", suggestions)
+                    await it.response.send_message(f"✅ Cleared {original - len(suggestions)} denied suggestions.", ephemeral=True)
+                else:
+                    await it.response.send_message("❌ Cancelled.", ephemeral=True)
+        await i.response.send_modal(ConfirmModal())
+
+    @ui.button(label="Top Suggestions", emoji="🏆", style=discord.ButtonStyle.success, row=3, custom_id="cfg_suggest_top")
+    async def top(self, i, b):
+        suggestions = dm.get_guild_data(i.guild_id, "suggestions", [])
+        if not suggestions:
+            return await i.response.send_message("No suggestions yet.", ephemeral=True)
+        
+        sorted_suggestions = sorted(suggestions, key=lambda s: len(s.get('upvotes', [])), reverse=True)[:10]
+        desc = ""
+        for idx, s in enumerate(sorted_suggestions, 1):
+            desc += f"**#{idx}.** #{s['id']} - {s['title'][:40]} ({len(s.get('upvotes', []))} ✅)\\n"
+        
+        await i.response.send_message(f"🏆 **Top 10 Suggestions**\\n{desc}", ephemeral=True)
+
+    @ui.button(label="Toggle Open/Closed", emoji="🔒", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_suggest_toggle")
+    async def toggle_open(self, i, b):
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
 class _TicketEmbedModal(ui.Modal):
     def __init__(self, parent):
         super().__init__(title="Customize Ticket Panel")
@@ -1175,6 +1330,7 @@ SPECIALIZED_VIEWS = {
     "appeals": AppealsConfigView,
     "appeal": AppealsConfigView,
     "modmail": ModmailConfigView,
+    "suggestions": SuggestionsConfigView,
 }
 
 def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
@@ -1198,6 +1354,7 @@ def register_all_persistent_views(bot: discord.Client):
     bot.add_view(ApplicationConfigView(0))
     bot.add_view(AppealsConfigView(0))
     bot.add_view(ModmailConfigView(0))
+    bot.add_view(SuggestionsConfigView(0))
 
     # System Components
     from modules.tickets import TicketOpenPanel, TicketPersistentView
@@ -1205,6 +1362,7 @@ def register_all_persistent_views(bot: discord.Client):
     from modules.applications import ApplicationPersistentView, ApplicationReviewView
     from modules.appeals import AppealPersistentView, AppealReviewView
     from modules.modmail import ModmailThreadView
+    from modules.suggestions import SuggestionVoteView, SuggestionReviewView
     bot.add_view(TicketOpenPanel())
     bot.add_view(AppealPersistentView())
     bot.add_view(AppealReviewView())
@@ -1213,5 +1371,7 @@ def register_all_persistent_views(bot: discord.Client):
     bot.add_view(WelcomeDMView())
     bot.add_view(ApplicationPersistentView())
     bot.add_view(ApplicationReviewView())
+    bot.add_view(SuggestionVoteView(0, 0))
+    bot.add_view(SuggestionReviewView(0, 0))
 
     logger.info("All system persistent views registered.")
