@@ -446,7 +446,62 @@ class SystemSelectionView(discord.ui.View):
         self.add_item(self.select1)
         self.add_item(self.select2)
 
-    @discord.ui.button(label="Start Setup", style=discord.ButtonStyle.success, emoji="🚀", row=2)
+    @discord.ui.button(label="⚙️ Open Admin Panel", style=discord.ButtonStyle.primary, row=2)
+    async def open_panel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Master-hub action: open the full admin panel for the FIRST selected system.
+
+        Per blueprint: selecting a system from /autosetup should open its full
+        admin panel as a persistent message in the current channel.
+        """
+        selected = self.select1.values + self.select2.values
+        if not selected:
+            return await interaction.response.send_message(
+                "❌ Pick a system from the dropdown first, then click this button.",
+                ephemeral=True,
+            )
+
+        # Map auto_setup system keys -> config_panels keys
+        key_map = {
+            "anti_raid": "antiraid", "welcome_dm": "welcomedm",
+            "apps_simple": "application", "apps_modals": "applicationmodal",
+            "appeals_simple": "appeal", "appeals_system": "appealsystem",
+            "auto_responder": "autoresponder", "economy_shop": "economyshop",
+            "leveling_shop": "levelingshop", "scheduled_reminders": "scheduledreminder",
+            "reaction_roles": "reactionrole", "reaction_menus": "reactionrolemenu",
+            "role_buttons": "rolebutton", "mod_logging": "modlog",
+            "auto_mod": "automod", "warning_system": "warning",
+            "staff_promotion": "staffpromo", "staff_shifts": "staffshift",
+            "staff_reviews": "staffreview", "suggestions": "suggestion",
+            "reminders": "reminder", "announcements": "announcement",
+            "giveaways": "giveaway", "achievements": "achievement",
+        }
+
+        # Open a panel for each selected system (capped at 5 to avoid spam)
+        from modules.config_panels import get_config_panel
+
+        await interaction.response.defer(ephemeral=True)
+        opened, missing = [], []
+        for raw_key in selected[:5]:
+            panel_key = key_map.get(raw_key, raw_key)
+            view = get_config_panel(interaction.guild.id, panel_key)
+            if not view:
+                missing.append(raw_key)
+                continue
+            try:
+                embed = view.create_embed()
+                await interaction.channel.send(embed=embed, view=view)
+                opened.append(raw_key)
+            except Exception as e:
+                missing.append(f"{raw_key} ({e})")
+
+        msg = ""
+        if opened:
+            msg += f"✅ Opened admin panel(s): {', '.join(opened)}\n"
+        if missing:
+            msg += f"⚠️ Could not open: {', '.join(missing)}\n"
+        await interaction.followup.send(msg or "Nothing happened.", ephemeral=True)
+
+    @discord.ui.button(label="🚀 Bulk Install Selected", style=discord.ButtonStyle.success, row=2)
     async def start_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
         selected = self.select1.values + self.select2.values
         if not selected:
@@ -471,7 +526,7 @@ class SystemSelectionView(discord.ui.View):
         await interaction.response.edit_message(content="⚙️ Starting setup of selected systems...", embed=None, view=None)
         await self.auto_setup._run_selected_setup(guild.id, interaction.user, selected)
 
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger, emoji="❌", row=2)
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger, row=2)
     async def cancel_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.edit_message(content="❌ Setup cancelled.", embed=None, view=None)
         self.stop()

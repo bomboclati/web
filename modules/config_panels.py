@@ -291,33 +291,22 @@ def _create_standalone_panel_callback(system_name: str):
     return callback
 
 def register_all_persistent_views(bot: discord.Client):
-    """Register all persistent views in setup_hook."""
+    """Register all persistent views in setup_hook.
+
+    NOTE: Per the blueprint, /configpanel* slash commands are FORBIDDEN.
+    Panels are opened only via /autosetup (master hub) or via /bot
+    (AI-generated panels). Persistent views still need to be registered
+    so panel buttons keep working across restarts. Prefix commands
+    !configpanel<system> remain available via handle_config_panel_command.
+    """
     # Register the specialized views (using a dummy guild_id=0 for registration)
     bot.add_view(VerificationConfigView(0))
     bot.add_view(EconomyConfigView(0))
     bot.add_view(TicketsConfigView(0))
-    
+
     # Register generic views for all other systems
     for system_key, fields in SYSTEM_METADATA.items():
         if system_key not in SPECIALIZED_VIEWS:
             bot.add_view(GenericConfigPanelView(0, system_key, fields))
-    
-    # Also register the configpanel group and standalone commands to the bot's tree
-    if hasattr(bot, 'tree'):
-        bot.tree.add_command(configpanel_group)
 
-        # Register standalone /configpanel<system> commands
-        for system_key in list(SPECIALIZED_VIEWS.keys()) + list(SYSTEM_METADATA.keys()):
-            name = f"configpanel{system_key.replace('_', '')}"
-            cmd = app_commands.Command(
-                name=name,
-                description=f"Open the {system_key} configuration panel",
-                callback=_create_standalone_panel_callback(system_key)
-            )
-            # Add to tree directly as top-level command
-            try:
-                bot.tree.add_command(cmd)
-            except Exception as e:
-                logger.warning(f"Could not register standalone command /{name}: {e}")
-
-    logger.info("All 33 config panel persistent views and slash commands registered.")
+    logger.info("All 33 config panel persistent views registered (no slash commands per blueprint).")
