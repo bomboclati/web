@@ -643,6 +643,21 @@ class TicketsConfigView(ConfigPanelView):
     async def t_dm(self, i, b):
         c = self.get_config(i.guild_id); c["opener_dm"] = not c.get("opener_dm", True); self.save_config(i.guild_id, c); await self.update_panel(i)
 
+class EconomyConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int = 0):
+        super().__init__("economy", guild_id)
+
+    def create_embed(self, gid: int) -> discord.Embed:
+        c = self.get_config(gid)
+        embed = discord.Embed(title="💰 Economy System", color=discord.Color.gold())
+        embed.add_field(name="Currency", value=c.get("currency_name", "coins"), inline=True)
+        embed.add_field(name="Daily", value=str(c.get("daily_reward", 100)), inline=True)
+        return embed
+
+    @ui.button(label="Set Daily", style=discord.ButtonStyle.primary, custom_id="eco_btn_daily")
+    async def set_daily(self, i, b):
+        await i.response.send_modal(_NumberModal("economy", "daily_reward", "Daily Reward"))
+
 class TicketOpenButton(ui.View):
     def __init__(self): super().__init__(timeout=None)
     @ui.button(label="🎫 Open Ticket", style=discord.ButtonStyle.success, custom_id="ticket_open_v2")
@@ -659,6 +674,61 @@ class TicketCloseButton(ui.View):
         try: await i.channel.delete()
         except: pass
 
+# --- Generic Config ---
+
+SYSTEM_METADATA = {
+    "application": [{"key": "logs_channel", "name": "Logs Channel"}, {"key": "staff_role", "name": "Reviewer Role"}],
+    "applicationmodal": [{"key": "modal_title", "name": "Modal Title", "default": "Staff Application"}],
+    "appeal": [{"key": "appeal_channel", "name": "Appeal Channel"}],
+    "appealsystem": [{"key": "auto_unban", "name": "Auto Unban", "default": False}],
+    "modmail": [{"key": "category_id", "name": "Modmail Category"}],
+    "suggestion": [{"key": "suggestion_channel", "name": "Suggestions Channel"}],
+    "reminder": [{"key": "max_reminders", "name": "Max Reminders", "default": 5}],
+    "scheduledreminder": [{"key": "schedule_count", "name": "Active Schedules", "default": 0}],
+    "announcement": [{"key": "ping_role", "name": "Ping Role"}],
+    "autoresponder": [{"key": "responder_count", "name": "Active Responses", "default": 0}],
+    "economyshop": [{"key": "shop_enabled", "name": "Shop Enabled", "default": True}],
+    "leveling": [{"key": "xp_rate", "name": "XP Rate", "default": 1.0}],
+    "levelingshop": [{"key": "item_count", "name": "Shop Items", "default": 0}],
+    "giveaway": [{"key": "giveaway_logs", "name": "Giveaway Logs"}],
+    "achievement": [{"key": "milestones_enabled", "name": "Milestones", "default": True}],
+    "gamification": [{"key": "daily_quests", "name": "Daily Quests", "default": True}],
+    "reactionrole": [{"key": "message_id", "name": "Message ID"}],
+    "reactionrolemenu": [{"key": "menu_id", "name": "Menu ID"}],
+    "rolebutton": [{"key": "button_count", "name": "Total Buttons", "default": 0}],
+    "modlog": [{"key": "log_channel", "name": "Log Channel"}],
+    "logging": [{"key": "voice_logs", "name": "Voice Logs", "default": True}],
+    "automod": [{"key": "bad_words", "name": "Forbidden Words", "default": ""}],
+    "warning": [{"key": "max_warnings", "name": "Max Warnings", "default": 3}],
+    "staffpromo": [{"key": "score_threshold", "name": "Promotion Score", "default": 100}],
+    "staffshift": [{"key": "shift_logs", "name": "Shift Logs"}],
+    "staffreview": [{"key": "review_channel", "name": "Review Channel"}]
+}
+
+class GenericConfigPanelView(ConfigPanelView):
+    def __init__(self, system_name: str, fields: List[Dict[str, Any]], guild_id: int = 0):
+        super().__init__(system_name, guild_id)
+        self.fields = fields
+        for field in self.fields:
+            btn = ui.Button(label=f"Set {field['name']}", style=discord.ButtonStyle.secondary, custom_id=f"btn_{system_name}_{field['key']}")
+            btn.callback = self.create_callback(field)
+            self.add_item(btn)
+
+    def create_callback(self, field):
+        async def callback(interaction: Interaction):
+            await interaction.response.send_modal(_TextModal(self.system_name, field["key"], field["name"]))
+        return callback
+
+    def create_embed(self, gid: int) -> discord.Embed:
+        config = self.get_config(gid)
+        embed = discord.Embed(title=f"⚙️ {self.system_name.title()} Configuration", color=discord.Color.blue())
+        for field in self.fields:
+            key = field["key"]
+            name = field["name"]
+            value = config.get(key, field.get("default", "Not Set"))
+            embed.add_field(name=name, value=str(value), inline=True)
+        return embed
+
 # --- Registry ---
 
 SPECIALIZED_VIEWS = {
@@ -668,11 +738,13 @@ SPECIALIZED_VIEWS = {
     "antiraid": AntiRaidConfigView,
     "guardian": GuardianConfigView,
     "tickets": TicketsConfigView,
+    "economy": EconomyConfigView
 }
 
 def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
     system_key = system.lower().replace("_", "")
     if system_key in SPECIALIZED_VIEWS: return SPECIALIZED_VIEWS[system_key](guild_id)
+    if system_key in SYSTEM_METADATA: return GenericConfigPanelView(system_key, SYSTEM_METADATA[system_key], guild_id)
     return None
 
 async def handle_config_panel_command(message: discord.Message, system: str):
@@ -687,8 +759,11 @@ def register_all_persistent_views(bot: discord.Client):
     bot.add_view(AntiRaidConfigView(0))
     bot.add_view(GuardianConfigView(0))
     bot.add_view(TicketsConfigView(0))
+    bot.add_view(EconomyConfigView(0))
     bot.add_view(TicketOpenButton())
     bot.add_view(TicketCloseButton())
     from modules.tickets import TicketControlView
     bot.add_view(TicketControlView(0))
-    logger.info("Persistent config panels registered.")
+    for system_key, fields in SYSTEM_METADATA.items():
+        bot.add_view(GenericConfigPanelView(system_key, fields))
+    logger.info("All persistent config panels registered.")
