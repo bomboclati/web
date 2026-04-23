@@ -1,5 +1,6 @@
 import discord
 from discord import ui, Interaction, app_commands
+import asyncio
 import json
 import os
 import time
@@ -352,29 +353,512 @@ class EconomyConfigView(ConfigPanelView):
 
         await interaction.response.send_modal(DailyModal(self))
 
+class _GenericRoleSelect(ui.RoleSelect):
+    def __init__(self, parent: ConfigPanelView, key: str, placeholder: str):
+        super().__init__(placeholder=placeholder, min_values=1, max_values=1)
+        self.parent = parent
+        self.key = key
+
+    async def callback(self, interaction: Interaction):
+        config = self.parent.get_config()
+        config[self.key] = self.values[0].id
+        self.parent.save_config(config)
+        await interaction.response.send_message(f"✅ Saved {self.key.replace('_',' ')} = {self.values[0].mention}", ephemeral=True)
+
+
+class _GenericChannelSelect(ui.ChannelSelect):
+    def __init__(self, parent: ConfigPanelView, key: str, placeholder: str, channel_types=None):
+        super().__init__(
+            placeholder=placeholder,
+            channel_types=channel_types or [discord.ChannelType.text],
+            min_values=1, max_values=1,
+        )
+        self.parent = parent
+        self.key = key
+
+    async def callback(self, interaction: Interaction):
+        config = self.parent.get_config()
+        config[self.key] = self.values[0].id
+        self.parent.save_config(config)
+        await interaction.response.send_message(f"✅ Saved {self.key.replace('_',' ')} = <#{self.values[0].id}>", ephemeral=True)
+
+
+class _NumberModal(ui.Modal):
+    value_input = ui.TextInput(label="Value", required=True, max_length=10)
+
+    def __init__(self, parent: ConfigPanelView, key: str, label: str, min_v: int = 0, max_v: int = 999999):
+        super().__init__(title=label)
+        self.parent = parent
+        self.key = key
+        self.min_v, self.max_v = min_v, max_v
+        self.value_input.label = label
+        existing = parent.get_config().get(key)
+        if existing is not None:
+            self.value_input.default = str(existing)
+
+    async def on_submit(self, interaction: Interaction):
+        try:
+            v = int(self.value_input.value)
+            if v < self.min_v or v > self.max_v:
+                raise ValueError
+        except ValueError:
+            return await interaction.response.send_message(
+                f"❌ Enter a number between {self.min_v} and {self.max_v}.", ephemeral=True
+            )
+        config = self.parent.get_config()
+        config[self.key] = v
+        self.parent.save_config(config)
+        await interaction.response.send_message(f"✅ {self.key.replace('_',' ').title()} set to **{v}**.", ephemeral=True)
+
+
+class _TextModal(ui.Modal):
+    value_input = ui.TextInput(label="Value", style=discord.TextStyle.paragraph, required=True, max_length=1500)
+
+    def __init__(self, parent: ConfigPanelView, key: str, label: str):
+        super().__init__(title=label)
+        self.parent = parent
+        self.key = key
+        self.value_input.label = label
+        existing = parent.get_config().get(key, "")
+        if existing:
+            self.value_input.default = str(existing)
+
+    async def on_submit(self, interaction: Interaction):
+        config = self.parent.get_config()
+        config[self.key] = self.value_input.value
+        self.parent.save_config(config)
+        await interaction.response.send_message(f"✅ {self.key.replace('_',' ').title()} updated.", ephemeral=True)
+
+
+class TicketOpenButton(ui.View):
+    """Persistent public button users click to open a ticket."""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @ui.button(label="🎫 Open Ticket", style=discord.ButtonStyle.success, custom_id="ticket_open_public")
+    async def open_ticket(self, interaction: Interaction, button: ui.Button):
+        guild = interaction.guild
+        config = dm.get_guild_data(guild.id, "tickets_config", {}) or {}
+
+        if not config.get("enabled", True):
+            return await interaction.response.send_message("❌ Tickets are currently disabled.", ephemeral=True)
+
+        cat_id = config.get("category_id")
+        category = guild.get_channel(cat_id) if cat_id else None
+        if not isinstance(category, discord.CategoryChannel):
+            return await interaction.response.send_message(
+                "❌ Ticket category is not configured. Ask an admin to set it via /autosetup.", ephemeral=True
+            )
+
+        # Check existing tickets per user
+        max_per_user = int(config.get("max_per_user", 1) or 1)
+        existing = config.get("open_tickets", {})  # {user_id: [channel_id,...]}
+        user_tickets = existing.get(str(interaction.user.id), [])
+        # Filter out tickets whose channels no longer exist
+        user_tickets = [cid for cid in user_tickets if guild.get_channel(cid)]
+        if len(user_tickets) >= max_per_user:
+            return await interaction.response.send_message(
+                f"❌ You already have {len(user_tickets)} open ticket(s). Max allowed: {max_per_user}.", ephemeral=True
+            )
+
+        await interaction.response.defer(ephemeral=True)
+
+        # Build overwrites
+        staff_role_id = config.get("staff_role_id")
+        staff_role = guild.get_role(staff_role_id) if staff_role_id else None
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, attach_files=True, read_message_history=True),
+            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True),
+        }
+        if staff_role:
+            overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_messages=True)
+
+        counter = int(config.get("ticket_counter", 0)) + 1
+        config["ticket_counter"] = counter
+
+        try:
+            channel = await guild.create_text_channel(
+                name=f"ticket-{counter:04d}-{interaction.user.name}"[:90],
+                category=category,
+                overwrites=overwrites,
+                topic=f"Ticket #{counter} opened by {interaction.user} (ID: {interaction.user.id})",
+                reason=f"Ticket opened by {interaction.user}",
+            )
+        except discord.Forbidden:
+            return await interaction.followup.send("❌ I lack permissions to create the ticket channel.", ephemeral=True)
+
+        # Track
+        user_tickets.append(channel.id)
+        existing[str(interaction.user.id)] = user_tickets
+        config["open_tickets"] = existing
+        dm.update_guild_data(guild.id, "tickets_config", config)
+
+        welcome = config.get("welcome_message") or f"Hello {interaction.user.mention}, staff will be with you shortly. Use the 🔒 Close button when done."
+        embed = discord.Embed(title=f"🎫 Ticket #{counter:04d}", description=welcome, color=discord.Color.green())
+        await channel.send(
+            content=f"{interaction.user.mention} {staff_role.mention if staff_role else ''}",
+            embed=embed,
+            view=TicketCloseButton(),
+        )
+        await interaction.followup.send(f"✅ Your ticket: {channel.mention}", ephemeral=True)
+
+
+class TicketCloseButton(ui.View):
+    """Persistent close button inside each ticket channel."""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @ui.button(label="🔒 Close Ticket", style=discord.ButtonStyle.danger, custom_id="ticket_close_public")
+    async def close(self, interaction: Interaction, button: ui.Button):
+        channel = interaction.channel
+        guild = interaction.guild
+        config = dm.get_guild_data(guild.id, "tickets_config", {}) or {}
+
+        # Permission check: opener or staff
+        staff_role_id = config.get("staff_role_id")
+        staff_role = guild.get_role(staff_role_id) if staff_role_id else None
+        is_staff = staff_role in interaction.user.roles if staff_role else interaction.user.guild_permissions.manage_channels
+        topic = channel.topic or ""
+        is_opener = str(interaction.user.id) in topic
+        if not (is_staff or is_opener):
+            return await interaction.response.send_message("❌ Only the ticket opener or staff can close.", ephemeral=True)
+
+        await interaction.response.send_message("🔒 Closing in 5 seconds…", ephemeral=False)
+
+        # Cleanup tracking
+        existing = config.get("open_tickets", {})
+        for uid, ids in list(existing.items()):
+            if channel.id in ids:
+                ids.remove(channel.id)
+                if not ids:
+                    del existing[uid]
+                else:
+                    existing[uid] = ids
+        config["open_tickets"] = existing
+        config["closed_count"] = int(config.get("closed_count", 0)) + 1
+        dm.update_guild_data(guild.id, "tickets_config", config)
+
+        try:
+            await asyncio.sleep(5)
+        except Exception:
+            pass
+        try:
+            await channel.delete(reason=f"Ticket closed by {interaction.user}")
+        except Exception as e:
+            logger.warning(f"Ticket delete failed: {e}")
+
+
 class TicketsConfigView(ConfigPanelView):
+    """Full Tickets admin panel — 13 working buttons per blueprint."""
+
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "tickets")
 
     def create_embed(self) -> discord.Embed:
-        config = self.get_config()
-        category_id = config.get("category_id")
-        
+        c = self.get_config()
+        enabled = c.get("enabled", True)
+        cat = c.get("category_id")
+        staff = c.get("staff_role_id")
+        log_ch = c.get("log_channel_id")
+        max_per = c.get("max_per_user", 1)
+        auto_close_hrs = c.get("auto_close_hours", 0)
+        transcripts = c.get("transcripts_enabled", True)
+        open_count = sum(len(v) for v in c.get("open_tickets", {}).values())
+        closed = c.get("closed_count", 0)
+
         embed = discord.Embed(
-            title="🎫 Ticket System Configuration",
-            description="Manage support tickets and categories.",
-            color=discord.Color.blue()
+            title="🎫 Ticket System",
+            description="Configure support tickets. Every button works live.",
+            color=discord.Color.green() if enabled else discord.Color.red(),
         )
-        embed.add_field(name="Ticket Category", value=f"<#{category_id}>" if category_id else "Not Set", inline=True)
+        embed.add_field(name="Status", value="✅ Enabled" if enabled else "❌ Disabled", inline=True)
+        embed.add_field(name="Category", value=f"<#{cat}>" if cat else "_Not Set_", inline=True)
+        embed.add_field(name="Staff Role", value=f"<@&{staff}>" if staff else "_Not Set_", inline=True)
+        embed.add_field(name="Log Channel", value=f"<#{log_ch}>" if log_ch else "_Not Set_", inline=True)
+        embed.add_field(name="Max / User", value=str(max_per), inline=True)
+        embed.add_field(name="Auto-Close", value=f"{auto_close_hrs}h" if auto_close_hrs else "Off", inline=True)
+        embed.add_field(name="Transcripts", value="On" if transcripts else "Off", inline=True)
+        embed.add_field(name="Open Now", value=str(open_count), inline=True)
+        embed.add_field(name="Total Closed", value=str(closed), inline=True)
         return embed
 
-    @ui.button(label="Set Category", style=discord.ButtonStyle.primary, custom_id="ticket_cat")
-    async def set_category(self, interaction: Interaction, button: ui.Button):
-        config = self.get_config()
-        # Find category logic
-        config["category_id"] = interaction.channel.category_id if interaction.channel.category else None
-        self.save_config(config)
-        await self.update_panel(interaction)
+    # Row 0
+    @ui.button(label="Toggle System", emoji="✅", style=discord.ButtonStyle.success, custom_id="tk_toggle", row=0)
+    async def toggle(self, i: Interaction, b: ui.Button):
+        c = self.get_config(); c["enabled"] = not c.get("enabled", True); self.save_config(c)
+        await self.update_panel(i)
+
+    @ui.button(label="Set Category", emoji="📁", style=discord.ButtonStyle.primary, custom_id="tk_cat", row=0)
+    async def set_cat(self, i: Interaction, b: ui.Button):
+        await i.response.send_message(
+            "Pick the ticket **category**:",
+            view=_picker_view(_GenericChannelSelect(self, "category_id", "Select category…", [discord.ChannelType.category])),
+            ephemeral=True,
+        )
+
+    @ui.button(label="Set Staff Role", emoji="👥", style=discord.ButtonStyle.primary, custom_id="tk_staff", row=0)
+    async def set_staff(self, i: Interaction, b: ui.Button):
+        await i.response.send_message("Pick the **staff role**:",
+            view=_picker_view(_GenericRoleSelect(self, "staff_role_id", "Select staff role…")), ephemeral=True)
+
+    @ui.button(label="Set Log Channel", emoji="📋", style=discord.ButtonStyle.primary, custom_id="tk_log", row=0)
+    async def set_log(self, i: Interaction, b: ui.Button):
+        await i.response.send_message("Pick the **log channel**:",
+            view=_picker_view(_GenericChannelSelect(self, "log_channel_id", "Select log channel…")), ephemeral=True)
+
+    # Row 1
+    @ui.button(label="Welcome Msg", emoji="💬", style=discord.ButtonStyle.secondary, custom_id="tk_welcome", row=1)
+    async def set_welcome(self, i: Interaction, b: ui.Button):
+        await i.response.send_modal(_TextModal(self, "welcome_message", "Welcome message in new tickets"))
+
+    @ui.button(label="Max / User", emoji="🔢", style=discord.ButtonStyle.secondary, custom_id="tk_max", row=1)
+    async def set_max(self, i: Interaction, b: ui.Button):
+        await i.response.send_modal(_NumberModal(self, "max_per_user", "Max open tickets per user", 1, 25))
+
+    @ui.button(label="Auto-Close (hrs)", emoji="⏱️", style=discord.ButtonStyle.secondary, custom_id="tk_autoclose", row=1)
+    async def set_auto(self, i: Interaction, b: ui.Button):
+        await i.response.send_modal(_NumberModal(self, "auto_close_hours", "Auto-close after inactivity (hours, 0=off)", 0, 720))
+
+    @ui.button(label="Toggle Transcripts", emoji="📝", style=discord.ButtonStyle.secondary, custom_id="tk_trans", row=1)
+    async def toggle_trans(self, i: Interaction, b: ui.Button):
+        c = self.get_config(); c["transcripts_enabled"] = not c.get("transcripts_enabled", True); self.save_config(c)
+        await self.update_panel(i)
+
+    # Row 2
+    @ui.button(label="View Open", emoji="📂", style=discord.ButtonStyle.secondary, custom_id="tk_view", row=2)
+    async def view_open(self, i: Interaction, b: ui.Button):
+        c = self.get_config()
+        opens = c.get("open_tickets", {})
+        if not opens:
+            return await i.response.send_message("📂 No open tickets.", ephemeral=True)
+        lines = []
+        for uid, ids in opens.items():
+            for cid in ids:
+                ch = i.guild.get_channel(cid)
+                if ch:
+                    lines.append(f"• {ch.mention} — opened by <@{uid}>")
+        await i.response.send_message(
+            embed=discord.Embed(title=f"📂 {len(lines)} Open Ticket(s)", description="\n".join(lines) or "_None_", color=discord.Color.blurple()),
+            ephemeral=True,
+        )
+
+    @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.secondary, custom_id="tk_stats", row=2)
+    async def stats(self, i: Interaction, b: ui.Button):
+        c = self.get_config()
+        opens = sum(len(v) for v in c.get("open_tickets", {}).values())
+        closed = c.get("closed_count", 0)
+        total = int(c.get("ticket_counter", 0))
+        embed = discord.Embed(title="📊 Ticket Stats", color=discord.Color.blurple())
+        embed.add_field(name="Currently Open", value=str(opens), inline=True)
+        embed.add_field(name="Total Closed", value=str(closed), inline=True)
+        embed.add_field(name="Lifetime Created", value=str(total), inline=True)
+        await i.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="Send Public Panel", emoji="📨", style=discord.ButtonStyle.success, custom_id="tk_send", row=2)
+    async def send_panel(self, i: Interaction, b: ui.Button):
+        embed = discord.Embed(
+            title="🎫 Need Help?",
+            description="Click the button below to open a private support ticket. Staff will respond shortly.",
+            color=discord.Color.green(),
+        )
+        await i.channel.send(embed=embed, view=TicketOpenButton())
+        await i.response.send_message("✅ Public ticket panel posted in this channel.", ephemeral=True)
+
+    @ui.button(label="Close All", emoji="🧹", style=discord.ButtonStyle.danger, custom_id="tk_closeall", row=2)
+    async def close_all(self, i: Interaction, b: ui.Button):
+        c = self.get_config()
+        opens = c.get("open_tickets", {})
+        deleted = 0
+        for uid, ids in list(opens.items()):
+            for cid in list(ids):
+                ch = i.guild.get_channel(cid)
+                if ch:
+                    try:
+                        await ch.delete(reason=f"Bulk-close by {i.user}")
+                        deleted += 1
+                    except Exception:
+                        pass
+        c["open_tickets"] = {}
+        c["closed_count"] = int(c.get("closed_count", 0)) + deleted
+        self.save_config(c)
+        await i.response.send_message(f"🧹 Closed **{deleted}** ticket(s).", ephemeral=True)
+
+    @ui.button(label="Reset Counter", emoji="♻️", style=discord.ButtonStyle.danger, custom_id="tk_reset", row=3)
+    async def reset_counter(self, i: Interaction, b: ui.Button):
+        c = self.get_config(); c["ticket_counter"] = 0; c["closed_count"] = 0; self.save_config(c)
+        await i.response.send_message("♻️ Ticket counter and closed-count reset to 0.", ephemeral=True)
+
+
+class AntiRaidConfigView(ConfigPanelView):
+    """Full Anti-Raid admin panel — 16 working buttons per blueprint."""
+
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "antiraid")
+
+    def create_embed(self) -> discord.Embed:
+        c = self.get_config()
+        embed = discord.Embed(
+            title="🛡️ Anti-Raid System",
+            description="Defend your server from raids. Live config below.",
+            color=discord.Color.red() if c.get("lockdown_active") else (discord.Color.green() if c.get("enabled", True) else discord.Color.dark_grey()),
+        )
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Lockdown", value="🔒 ACTIVE" if c.get("lockdown_active") else "Inactive", inline=True)
+        embed.add_field(name="Mass-Join Threshold", value=str(c.get("mass_join_threshold", 10)), inline=True)
+        embed.add_field(name="Window (s)", value=str(c.get("mass_join_window", 10)), inline=True)
+        embed.add_field(name="Auto-Lockdown", value="On" if c.get("auto_lockdown", True) else "Off", inline=True)
+        embed.add_field(name="Account Age Filter", value=f"≥ {c.get('min_account_age_days', 0)}d" if c.get("age_filter_enabled") else "Off", inline=True)
+        embed.add_field(name="Avatar Filter", value="On" if c.get("avatar_filter_enabled") else "Off", inline=True)
+        embed.add_field(name="Quarantine Role", value=f"<@&{c['quarantine_role_id']}>" if c.get("quarantine_role_id") else "_Not Set_", inline=True)
+        embed.add_field(name="Alert Channel", value=f"<#{c['alert_channel_id']}>" if c.get("alert_channel_id") else "_Not Set_", inline=True)
+        embed.add_field(name="Recent Raids", value=str(len(c.get("raid_log", []))), inline=True)
+        return embed
+
+    # Row 0
+    @ui.button(label="Toggle System", emoji="✅", style=discord.ButtonStyle.success, custom_id="ar_toggle", row=0)
+    async def toggle(self, i, b):
+        c = self.get_config(); c["enabled"] = not c.get("enabled", True); self.save_config(c); await self.update_panel(i)
+
+    @ui.button(label="Mass-Join Threshold", emoji="🔢", style=discord.ButtonStyle.primary, custom_id="ar_thresh", row=0)
+    async def thresh(self, i, b):
+        await i.response.send_modal(_NumberModal(self, "mass_join_threshold", "Joins to trigger raid alarm", 2, 200))
+
+    @ui.button(label="Time Window (s)", emoji="⏱️", style=discord.ButtonStyle.primary, custom_id="ar_window", row=0)
+    async def window(self, i, b):
+        await i.response.send_modal(_NumberModal(self, "mass_join_window", "Time window in seconds", 1, 600))
+
+    @ui.button(label="Toggle Auto-Lockdown", emoji="🔒", style=discord.ButtonStyle.secondary, custom_id="ar_autolock", row=0)
+    async def autolock(self, i, b):
+        c = self.get_config(); c["auto_lockdown"] = not c.get("auto_lockdown", True); self.save_config(c); await self.update_panel(i)
+
+    # Row 1
+    @ui.button(label="Set Quarantine Role", emoji="🚧", style=discord.ButtonStyle.primary, custom_id="ar_qrole", row=1)
+    async def qrole(self, i, b):
+        await i.response.send_message("Pick **quarantine role**:",
+            view=_picker_view(_GenericRoleSelect(self, "quarantine_role_id", "Select role…")), ephemeral=True)
+
+    @ui.button(label="Set Alert Channel", emoji="🚨", style=discord.ButtonStyle.primary, custom_id="ar_alert", row=1)
+    async def alert_ch(self, i, b):
+        await i.response.send_message("Pick **alert channel**:",
+            view=_picker_view(_GenericChannelSelect(self, "alert_channel_id", "Select channel…")), ephemeral=True)
+
+    @ui.button(label="Toggle Age Filter", emoji="📅", style=discord.ButtonStyle.secondary, custom_id="ar_agetog", row=1)
+    async def age_tog(self, i, b):
+        c = self.get_config(); c["age_filter_enabled"] = not c.get("age_filter_enabled", False); self.save_config(c); await self.update_panel(i)
+
+    @ui.button(label="Min Account Age", emoji="📆", style=discord.ButtonStyle.secondary, custom_id="ar_age", row=1)
+    async def age(self, i, b):
+        await i.response.send_modal(_NumberModal(self, "min_account_age_days", "Minimum account age (days)", 0, 3650))
+
+    # Row 2
+    @ui.button(label="Toggle Avatar Filter", emoji="🖼️", style=discord.ButtonStyle.secondary, custom_id="ar_avatog", row=2)
+    async def avatar_tog(self, i, b):
+        c = self.get_config(); c["avatar_filter_enabled"] = not c.get("avatar_filter_enabled", False); self.save_config(c); await self.update_panel(i)
+
+    @ui.button(label="View Raid Log", emoji="📋", style=discord.ButtonStyle.secondary, custom_id="ar_viewlog", row=2)
+    async def view_log(self, i, b):
+        log = self.get_config().get("raid_log", [])[-15:][::-1]
+        if not log:
+            return await i.response.send_message("📋 No raids logged.", ephemeral=True)
+        lines = [f"<t:{int(e['ts'])}:R> — {e.get('joins',0)} joins in {e.get('window',0)}s — action: `{e.get('action','log')}`" for e in log]
+        await i.response.send_message(
+            embed=discord.Embed(title=f"📋 Last {len(log)} Raid Events", description="\n".join(lines), color=discord.Color.red()),
+            ephemeral=True,
+        )
+
+    @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.secondary, custom_id="ar_stats", row=2)
+    async def stats(self, i, b):
+        c = self.get_config()
+        log = c.get("raid_log", [])
+        now = time.time()
+        d = sum(1 for e in log if now - e.get("ts", 0) < 86400)
+        w = sum(1 for e in log if now - e.get("ts", 0) < 604800)
+        embed = discord.Embed(title="📊 Anti-Raid Stats", color=discord.Color.red())
+        embed.add_field(name="Last 24h", value=str(d))
+        embed.add_field(name="Last 7d", value=str(w))
+        embed.add_field(name="All Time", value=str(len(log)))
+        embed.add_field(name="Quarantined", value=str(c.get("quarantined_count", 0)))
+        await i.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="Reset Log", emoji="🗑️", style=discord.ButtonStyle.danger, custom_id="ar_resetlog", row=2)
+    async def reset_log(self, i, b):
+        c = self.get_config(); c["raid_log"] = []; c["quarantined_count"] = 0; self.save_config(c)
+        await i.response.send_message("🗑️ Raid log cleared.", ephemeral=True)
+
+    # Row 3 — Manual actions
+    @ui.button(label="🔒 LOCKDOWN NOW", style=discord.ButtonStyle.danger, custom_id="ar_lockdown", row=3)
+    async def lockdown(self, i: Interaction, b):
+        await i.response.defer(ephemeral=True)
+        guild = i.guild
+        c = self.get_config()
+        affected = 0
+        for ch in guild.text_channels:
+            try:
+                await ch.set_permissions(guild.default_role, send_messages=False, reason=f"Manual lockdown by {i.user}")
+                affected += 1
+            except Exception:
+                pass
+        c["lockdown_active"] = True
+        c.setdefault("raid_log", []).append({"ts": time.time(), "joins": 0, "window": 0, "action": "manual_lockdown"})
+        self.save_config(c)
+        await i.followup.send(f"🔒 Locked down **{affected}** channels. Use 'Lift Lockdown' to undo.", ephemeral=True)
+
+    @ui.button(label="🔓 LIFT LOCKDOWN", style=discord.ButtonStyle.success, custom_id="ar_lift", row=3)
+    async def lift(self, i: Interaction, b):
+        await i.response.defer(ephemeral=True)
+        guild = i.guild
+        c = self.get_config()
+        affected = 0
+        for ch in guild.text_channels:
+            try:
+                await ch.set_permissions(guild.default_role, send_messages=None, reason=f"Lockdown lifted by {i.user}")
+                affected += 1
+            except Exception:
+                pass
+        c["lockdown_active"] = False
+        self.save_config(c)
+        await i.followup.send(f"🔓 Unlocked **{affected}** channels.", ephemeral=True)
+
+    @ui.button(label="Quarantine User", emoji="🚧", style=discord.ButtonStyle.danger, custom_id="ar_quar", row=3)
+    async def quar(self, i: Interaction, b):
+        await i.response.send_modal(_QuarantineModal(self))
+
+    @ui.button(label="Set Lockdown Channel", emoji="📢", style=discord.ButtonStyle.primary, custom_id="ar_lockch", row=3)
+    async def lockch(self, i, b):
+        await i.response.send_message("Pick **lockdown announcement channel**:",
+            view=_picker_view(_GenericChannelSelect(self, "lockdown_channel_id", "Select channel…")), ephemeral=True)
+
+
+class _QuarantineModal(ui.Modal, title="🚧 Quarantine User"):
+    user_id = ui.TextInput(label="User ID to quarantine", required=True, max_length=25)
+    reason = ui.TextInput(label="Reason", required=False, max_length=200)
+
+    def __init__(self, parent: AntiRaidConfigView):
+        super().__init__()
+        self.parent = parent
+
+    async def on_submit(self, i: Interaction):
+        try:
+            uid = int(self.user_id.value.strip())
+        except ValueError:
+            return await i.response.send_message("❌ Invalid user ID.", ephemeral=True)
+        guild = i.guild
+        c = self.parent.get_config()
+        role_id = c.get("quarantine_role_id")
+        role = guild.get_role(role_id) if role_id else None
+        if not role:
+            return await i.response.send_message("❌ Quarantine role not configured.", ephemeral=True)
+        member = guild.get_member(uid)
+        if not member:
+            return await i.response.send_message("❌ Member not in server.", ephemeral=True)
+        try:
+            await member.add_roles(role, reason=f"Quarantined by {i.user}: {self.reason.value or 'no reason'}")
+        except discord.Forbidden:
+            return await i.response.send_message("❌ I lack permission to assign the role.", ephemeral=True)
+        c["quarantined_count"] = int(c.get("quarantined_count", 0)) + 1
+        self.parent.save_config(c)
+        await i.response.send_message(f"🚧 Quarantined {member.mention}.", ephemeral=True)
 
 # --- Config Modal for Generic Editing ---
 
@@ -478,6 +962,7 @@ SPECIALIZED_VIEWS = {
     "verification": VerificationConfigView,
     "economy": EconomyConfigView,
     "tickets": TicketsConfigView,
+    "antiraid": AntiRaidConfigView,
 }
 
 def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
@@ -549,6 +1034,10 @@ def register_all_persistent_views(bot: discord.Client):
     bot.add_view(VerificationConfigView(0))
     bot.add_view(EconomyConfigView(0))
     bot.add_view(TicketsConfigView(0))
+    bot.add_view(AntiRaidConfigView(0))
+    # Public-facing persistent ticket buttons
+    bot.add_view(TicketOpenButton())
+    bot.add_view(TicketCloseButton())
 
     # Register generic views for all other systems
     for system_key, fields in SYSTEM_METADATA.items():
