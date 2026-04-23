@@ -225,7 +225,17 @@ class MiroBot(commands.Bot):
         @commands.is_owner()
         async def manual_sync(ctx):
             await self.tree.sync()
-            await ctx.send("[SUCCESS] Slash commands synced.")
+            await ctx.send("[SUCCESS] Slash commands synced globally.")
+
+        # Add /forcesync command for guild-specific syncing
+        @self.tree.command(name="forcesync", description="Force a sync of slash commands for this guild")
+        @app_commands.checks.has_permissions(administrator=True)
+        async def forcesync(interaction: discord.Interaction):
+            await interaction.response.defer(ephemeral=True)
+            # Copy global commands to the guild to force an override of cached global commands
+            self.tree.copy_global_to(guild=interaction.guild)
+            await self.tree.sync(guild=interaction.guild)
+            await interaction.followup.send("✅ Slash commands synced for this guild (global commands copied to guild scope).", ephemeral=True)
 
         # Embed System Example Command
         @self.tree.command(name="create_example_embed", description="Create an example embed with buttons")

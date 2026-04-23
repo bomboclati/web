@@ -106,7 +106,7 @@ class ServerAnalytics:
             
             # Get voice minutes from voice system
             if hasattr(self.bot, 'voice_system'):
-                metrics["voice_minutes"] = await self.bot.voice_system.get_hourly_voice_minutes(guild.id)
+                metrics["voice_minutes"] = self.bot.voice_system.get_hourly_voice_minutes(guild.id)
             
             # Convert set to count for JSON serialization (already an int now)
                 
