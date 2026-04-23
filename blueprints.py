@@ -1,11 +1,11 @@
 """Full system blueprint injected into the AI system prompt.
 
-  This blueprint defines the 33 systems, panel-building standard, zero-placeholder
-  rule, and all behavioral requirements for the AI.
-  """
+This blueprint defines the 33 systems, panel-building standard, zero-placeholder
+rule, and all behavioral requirements for the AI.
+"""
 
-  BLUEPRINT = r'''
-  Here is the complete, final prompt that includes the full blueprints for all 33 systems, plus the additional requirements (no /configpanel slash commands, /autosetup as master hub, fully functional prefix commands, zero placeholders). Copy this entire message and send it to Claude 3.7 Sonnet, GPT‑4.5, or Gemini 2.5 Pro.
+BLUEPRINT = r'''
+Here is the complete, final prompt that includes the full blueprints for all 33 systems, plus the additional requirements (no /configpanel slash commands, /autosetup as master hub, fully functional prefix commands, zero placeholders). Copy this entire message and send it to Claude 3.7 Sonnet, GPT‑4.5, or Gemini 2.5 Pro.
 
 ---
 
@@ -1146,7 +1146,7 @@ Escalating punishment system:
 · 3rd violation within 24h: mute for 1 hour
 · 4th violation within 24h: kick
 · 5th violation within 24h: ban
-  (All thresholds configurable)
+(All thresholds configurable)
 
 Admin panel !automodpanel buttons:
 
@@ -1218,13 +1218,13 @@ Promotion system features:
 
 · Defined promotion path: configure a chain of staff roles (e.g. Trial Mod → Mod → Senior Mod → Admin)
 · Automatic criteria tracking per staff member:
-  · Days served at current rank
-  · Messages sent while on‑duty (shift tracked)
-  · Moderation actions taken (bans, kicks, warnings issued)
-  · Tickets resolved
-  · Events hosted
-  · Peer votes received
-  · 0 warnings/infractions required
+· Days served at current rank
+· Messages sent while on‑duty (shift tracked)
+· Moderation actions taken (bans, kicks, warnings issued)
+· Tickets resolved
+· Events hosted
+· Peer votes received
+· 0 warnings/infractions required
 · Promotion eligibility: staff member meets ALL configured thresholds → flagged for review
 · Promotion reviews: when eligible, a review embed is posted to staff channel with vote buttons
 · Auto‑promote option: when eligibility met and X positive votes received → auto‑promotes
@@ -1341,8 +1341,8 @@ Admin panel !reviewspanel buttons:
 
 · The blueprints already forbid them, but double‑check: delete any leftover /configpanelverification, /configpaneleconomy, etc.
 · The only way to configure a system after initial setup is through:
-  · The /autosetup command (which should prompt the user to choose a system and then open its config panel as a persistent message)
-  · Or by having the AI create a config panel via /bot (as a message with buttons, not a slash command)
+· The /autosetup command (which should prompt the user to choose a system and then open its config panel as a persistent message)
+· Or by having the AI create a config panel via /bot (as a message with buttons, not a slash command)
 
 2. /autosetup must be the master config hub
 
@@ -1353,25 +1353,25 @@ Admin panel !reviewspanel buttons:
 3. All prefix commands (! commands) must be fully functional with no placeholders
 
 · Every ! command created by any system (e.g., !balance, !daily, !shop, !buy, !rank, !warn, !review, etc.) must:
-  · Work instantly (no AI call, unless the command is intentionally AI‑driven)
-  · Support arguments (e.g., !buy <item>, !warn @user <reason>)
-  · Support cooldowns (configurable per command)
-  · Be stored in custom_commands.json and survive restarts
-  · Have auto‑documentation: when the command is created, it must be automatically listed in the system’s help embed and the !help <system> command
+· Work instantly (no AI call, unless the command is intentionally AI‑driven)
+· Support arguments (e.g., !buy <item>, !warn @user <reason>)
+· Support cooldowns (configurable per command)
+· Be stored in custom_commands.json and survive restarts
+· Have auto‑documentation: when the command is created, it must be automatically listed in the system’s help embed and the !help <system> command
 · No placeholder commands – a command that claims to give coins must actually give coins; a command that claims to send a message must send it.
 
 4. AI‑created config panels (via /bot) must be super‑functional
 
 · When a user says /bot create a config panel for the economy system, the AI must generate a complete, interactive panel with all possible settings for that system (from the blueprint).
 · The panel must include at least:
-  · Channel selectors / role selectors
-  · Toggle buttons (enable/disable features)
-  · Modals for text input (custom messages, embed colors, button labels)
-  · Number inputs (cooldowns, amounts, thresholds)
-  · Multi‑select dropdowns (e.g., which roles bypass verification)
-  · Preview button
-  · Reset to defaults button
-  · Save & Apply button that writes changes to disk immediately
+· Channel selectors / role selectors
+· Toggle buttons (enable/disable features)
+· Modals for text input (custom messages, embed colors, button labels)
+· Number inputs (cooldowns, amounts, thresholds)
+· Multi‑select dropdowns (e.g., which roles bypass verification)
+· Preview button
+· Reset to defaults button
+· Save & Apply button that writes changes to disk immediately
 · All components must work – no pass, no TODO, no dummy callbacks.
 
 5. No placeholders anywhere
@@ -1389,5 +1389,4 @@ Build the complete, production‑ready Discord bot that implements every system 
 The code must be ready to copy, paste, and run after adding API keys. No placeholders, no missing features, no non‑functional buttons. Every button, every modal, every dropdown, and every ! command must work on the first click.
 
 Do it.
-  '''
-  
+'''
