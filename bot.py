@@ -147,21 +147,13 @@ class MiroBot(commands.Bot):
         # Add cogs that contain slash commands
         # AutoSetup is not a cog and should not be added as one
 
-        # Clear command tree to force resync and fix signature mismatches
-        # In discord.py v2.0+, clear_commands() requires a guild argument; pass None to clear global commands
-        self.tree.clear_commands(guild=None)
+        # Add AutoSetup slash command to the command tree using a wrapper to ensure correct signature
+        @self.tree.command(name="autosetup", description="Launch the 33-system auto-setup panel")
+        @app_commands.checks.has_permissions(administrator=True)
+        async def autosetup_wrapper(interaction: discord.Interaction):
+            await self.auto_setup.autosetup(interaction)
 
-        # Add AutoSetup slash command to the command tree
-        self.tree.add_command(self.auto_setup.autosetup)
-
-        # Force sync slash commands globally
-        await self.tree.sync()
-        logger.info("Slash commands synced globally.")
-
-        # Also sync to all guilds to ensure guild-specific registrations are updated
-        for guild in self.guilds:
-            await self.tree.sync(guild=guild)
-        logger.info("Slash commands synced to all guilds.")
+        # Initial sync handled at the end of setup_hook if SYNC_COMMANDS is true
         
         await self.scheduler.start()
         
@@ -221,21 +213,37 @@ class MiroBot(commands.Bot):
         self.add_view(EmbedCreateTicketView(guild_id=0))
         
         # Support for Manual Sync (Prefix command !sync)
+        # Standard implementation for syncing slash commands as a prefix command
         @self.command(name="sync")
         @commands.is_owner()
-        async def manual_sync(ctx):
-            await self.tree.sync()
-            await ctx.send("[SUCCESS] Slash commands synced globally.")
+        async def manual_sync(ctx, spec: str = None):
+            """Manual sync command for slash commands.
+            Usage:
+              !sync        -> Sync global commands
+              !sync .      -> Sync current guild commands
+              !sync ^      -> Clear commands from current guild
+              !sync *      -> Copy global commands to current guild and sync
+              !sync clear  -> Clear all global commands and sync (standard d.py practice)
+            """
+            if spec == ".":
+                synced = await self.tree.sync(guild=ctx.guild)
+                await ctx.send(f"Synced {len(synced)} commands to the current guild.")
+            elif spec == "^":
+                self.tree.clear_commands(guild=ctx.guild)
+                await self.tree.sync(guild=ctx.guild)
+                await ctx.send("Cleared commands from the current guild.")
+            elif spec == "*":
+                self.tree.copy_global_to(guild=ctx.guild)
+                synced = await self.tree.sync(guild=ctx.guild)
+                await ctx.send(f"Copied global commands and synced {len(synced)} to the current guild.")
+            elif spec == "clear":
+                self.tree.clear_commands(guild=None)
+                await self.tree.sync()
+                await ctx.send("Cleared all global commands.")
+            else:
+                synced = await self.tree.sync()
+                await ctx.send(f"Synced {len(synced)} global commands.")
 
-        # Add /forcesync command for guild-specific syncing
-        @self.tree.command(name="forcesync", description="Force a sync of slash commands for this guild")
-        @app_commands.checks.has_permissions(administrator=True)
-        async def forcesync(interaction: discord.Interaction):
-            await interaction.response.defer(ephemeral=True)
-            # Copy global commands to the guild to force an override of cached global commands
-            self.tree.copy_global_to(guild=interaction.guild)
-            await self.tree.sync(guild=interaction.guild)
-            await interaction.followup.send("✅ Slash commands synced for this guild (global commands copied to guild scope).", ephemeral=True)
 
         # Embed System Example Command
         @self.tree.command(name="create_example_embed", description="Create an example embed with buttons")

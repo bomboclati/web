@@ -1625,7 +1625,6 @@ class AutoSetup:
     def get_setup_status(self, guild_id: int) -> Optional[ServerSetup]:
         return self._pending_setups.get(guild_id)
 
-    @discord.app_commands.command(name="autosetup", description="Launch the 33-system auto-setup panel")
     async def autosetup(self, interaction: discord.Interaction):
         """Slash command to launch the interactive setup panel."""
         if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
