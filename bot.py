@@ -27,6 +27,7 @@ from modules.economy import Economy
 from modules.leveling import Leveling
 from modules.staff_system import StaffSystem
 from modules.appeals import Appeals
+from modules.modmail import ModmailSystem
 from modules.trigger_roles import TriggerRoles
 from modules.moderation import ContextualModeration
 from modules.events import EventScheduler
@@ -127,6 +128,7 @@ class MiroBot(commands.Bot):
         self.community_health = CommunityHealth(self)
         self.auto_setup = AutoSetup(self)
         self.guardian = GuardianSystem(self)
+        self.modmail = ModmailSystem(self)
         self.analytics = setup_analytics(self)
         self.verification = Verification(self)
         self.embed_system = EmbedSystem(self)
@@ -184,7 +186,9 @@ class MiroBot(commands.Bot):
         from modules.staff_system import StaffApplicationPersistentView, StaffReviewPersistentView
         from modules.tickets import TicketPersistentView, TicketOpenPanel
         from modules.welcome_leave import WelcomeDMView
-        from modules.auto_setup import VerifyButton, AcceptRulesButton, CreateTicketButton, SuggestionButton, ApplyStaffButton, RoleSelectButton, AppealButton
+        from modules.auto_setup import VerifyButton, AcceptRulesButton, CreateTicketButton, SuggestionButton, ApplyStaffButton, RoleSelectButton
+        from modules.appeals import AppealPersistentView, AppealReviewView
+        from modules.modmail import ModmailThreadView
         from modules.verification import VerifyView
         from modules.embed_system import EmbedVerifyView, EmbedApplyStaffView, EmbedCreateTicketView
 
@@ -196,6 +200,9 @@ class MiroBot(commands.Bot):
         self.add_view(TicketOpenPanel())
         self.add_view(WelcomeDMView())
         self.add_view(VerifyView(self.verification))
+        self.add_view(AppealPersistentView())
+        self.add_view(AppealReviewView())
+        self.add_view(ModmailThreadView())
 
         # Register persistent views for auto-setup buttons (these work across restarts)
         # Each view uses a unique custom_id pattern that gets matched when buttons are clicked
@@ -205,7 +212,6 @@ class MiroBot(commands.Bot):
         self.add_view(CreateTicketButton())
         self.add_view(SuggestionButton(guild_id=0))
         self.add_view(ApplyStaffButton(guild_id=0))
-        self.add_view(AppealButton(guild_id=0))
         # Note: RoleSelectButton is a Button, not a View, so it doesn't need to be registered here
         # It gets added dynamically to View instances when role selection embeds are created
 
@@ -849,54 +855,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
     
     async def _handle_modmail(self, message):
         """Handle DM messages - forward to modmail channel."""
-        user = message.author
-        
-        # Find user's shared guilds
-        shared_guilds = [g for g in self.guilds if g.get_member(user.id)]
-        
-        if not shared_guilds:
-            await user.send("? We don't share any servers!")
-            return
-        
-        # Use first shared guild or most active
-        guild = shared_guilds[0]
-        
-        # Get modmail channel
-        modmail_channel_id = dm.get_guild_data(guild.id, "modmail_channel")
-        if not modmail_channel_id:
-            # Try default name
-            modmail_channel = discord.utils.get(guild.text_channels, name="modmail")
-            if modmail_channel:
-                modmail_channel_id = modmail_channel.id
-        
-        if not modmail_channel_id:
-            await user.send(f"? Modmail not set up in {guild.name}. Ask staff to run `/setup`!")
-            return
-        
-        modmail_channel = guild.get_channel(modmail_channel_id)
-        if not modmail_channel:
-            await user.send("? Modmail channel not found.")
-            return
-        
-        # Forward DM to modmail channel
-        embed = discord.Embed(
-            title=f"📬 Modmail from {user}",
-            description=message.content,
-            color=discord.Color.blurple()
-        )
-        embed.set_footer(text=f"User ID: {user.id}")
-        
-        view = discord.ui.View()
-        reply_btn = discord.ui.Button(label="Reply", style=discord.ButtonStyle.primary)
-        
-        async def reply_callback(it: discord.Interaction):
-            await it.response.send_modal(ModmailReplyModal(self, user, guild.id))
-        
-        reply_btn.callback = reply_callback
-        view.add_item(reply_btn)
-        
-        await modmail_channel.send(embed=embed, view=view)
-        await user.send(f"? Message forwarded to {guild.name} staff!")
+        await self.modmail.handle_dm(message)
     
     async def _handle_modmail_reply(self, interaction: discord.Interaction, user_id: int, guild_id: int, reply_text: str):
         """Handle staff reply to modmail."""

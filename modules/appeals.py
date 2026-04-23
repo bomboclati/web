@@ -1,261 +1,382 @@
 import discord
-from discord import ui
+from discord import ui, Interaction, TextStyle, Embed, ButtonStyle
 from data_manager import dm
 import datetime
-import json
 import time
+import json
+from typing import List, Dict, Optional, Any
+from logger import logger
 
-class AppealModal(ui.Modal, title='Moderation Appeal'):
-    reason = ui.TextInput(
-        label='Why should your action be reversed?',
-        style=discord.TextStyle.paragraph,
-        min_length=20,
-        max_length=1000,
-        placeholder="Provide details on why we should reconsider..."
-    )
-    
-    def __init__(self, bot, guild_id, action_id, category: str = "ban"):
-        super().__init__()
-        self.bot = bot
-        self.guild_id = guild_id
-        self.action_id = action_id
-        self.category = category
+class BanAppealModal(ui.Modal, title="Submit Ban Appeal"):
+    q1 = ui.TextInput(label="Why were you banned?", style=TextStyle.paragraph, required=True, max_length=1000)
+    q2 = ui.TextInput(label="Why should you be unbanned?", style=TextStyle.paragraph, required=True, max_length=1000)
+    q3 = ui.TextInput(label="What will you do differently?", style=TextStyle.paragraph, required=True, max_length=1000)
+    q4 = ui.TextInput(label="Any evidence to provide?", style=TextStyle.paragraph, required=False, max_length=1000)
+
+    async def on_submit(self, interaction: Interaction):
+        guild_id = interaction.guild_id
+        config = dm.get_guild_data(guild_id, "appeals_config", {})
         
-        # Dynamic title based on category
-        titles = {
-            "ban": "Ban Appeal",
-            "mute": "Mute Appeal", 
-            "warn": "Warning Appeal"
+        # Save appeal to guild_data
+        appeal_id = f"{interaction.user.id}_{int(time.time())}"
+        appeal_data = {
+            "id": appeal_id,
+            "user_id": interaction.user.id,
+            "username": str(interaction.user),
+            "timestamp": time.time(),
+            "status": "pending",
+            "answers": {
+                "why_banned": self.q1.value,
+                "why_unban": self.q2.value,
+                "different": self.q3.value,
+                "evidence": self.q4.value
+            }
         }
-        self.title = titles.get(category, "Moderation Appeal")
+        
+        appeals = dm.get_guild_data(guild_id, "appeals", {})
+        if str(interaction.user.id) not in appeals:
+            appeals[str(interaction.user.id)] = []
+        appeals[str(interaction.user.id)].append(appeal_data)
+        dm.update_guild_data(guild_id, "appeals", appeals)
+        
+        # Post to #appeals-log
+        log_channel_id = config.get("log_channel_id")
+        log_channel = interaction.guild.get_channel(log_channel_id) if log_channel_id else None
+        
+        if log_channel:
+            embed = Embed(title="⚖️ New Ban Appeal Received", color=discord.Color.orange())
+            embed.set_author(name=f"{interaction.user} ({interaction.user.id})", icon_url=interaction.user.display_avatar.url)
 
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+            embed.add_field(name="Why were you banned?", value=self.q1.value[:1024], inline=False)
+            embed.add_field(name="Why should you be unbanned?", value=self.q2.value[:1024], inline=False)
+            embed.add_field(name="What will you do differently?", value=self.q3.value[:1024], inline=False)
+            embed.add_field(name="Evidence", value=self.q4.value[:1024] or "None provided", inline=False)
 
-        guild = self.bot.get_guild(self.guild_id)
-        if not guild:
-            return await interaction.followup.send("❌ Error: Guild not found.", ephemeral=True)
+            history = appeals.get(str(interaction.user.id), [])
+            embed.add_field(name="Appeal History", value=f"This is appeal #{len(history)} from this user.")
 
-        appeal_channel_id = dm.get_guild_data(self.guild_id, "appeal_channel_id")
-        appeal_channel = guild.get_channel(appeal_channel_id)
+            embed.set_footer(text=f"Appeal ID: {appeal_id}")
+
+            view = AppealReviewView()
+            await log_channel.send(embed=embed, view=view)
+
+            # Ping reviewer role
+            reviewer_role_id = config.get("reviewer_role_id")
+            if reviewer_role_id:
+                await log_channel.send(f"<@&{reviewer_role_id}> New ban appeal submitted!", delete_after=5)
         
-        if not appeal_channel:
-            return await interaction.followup.send("❌ Error: Appeal channel not found. Please contact staff.", ephemeral=True)
+        # DM user
+        try:
+            await interaction.user.send("Your appeal has been received. You will be notified of the decision.")
+        except:
+            pass
+
+        await interaction.response.send_message("✅ Your appeal has been submitted and staff have been notified.", ephemeral=True)
+
+class AppealPersistentView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
         
-        embed = discord.Embed(title=f"New Appeal: {interaction.user.name}", color=discord.Color.orange())
-        embed.add_field(name="User ID", value=interaction.user.id, inline=True)
-        embed.add_field(name="Action ID", value=self.action_id, inline=True)
-        embed.add_field(name="Category", value=self.category.title(), inline=True)
-        embed.add_field(name="Reason", value=self.reason.value, inline=False)
+    @ui.button(label="Submit Appeal", style=ButtonStyle.primary, custom_id="appeal_submit_button")
+    async def submit_appeal(self, interaction: Interaction, button: ui.Button):
+        guild_id = interaction.guild_id
+        config = dm.get_guild_data(guild_id, "appeals_config", {})
         
-        view = ui.View()
-        approve_btn = ui.Button(label="Accept", style=discord.ButtonStyle.success)
-        deny_btn = ui.Button(label="Deny", style=discord.ButtonStyle.danger)
-        evidence_btn = ui.Button(label="Request Evidence", style=discord.ButtonStyle.secondary)
+        # Check blacklist
+        blacklist = dm.get_guild_data(guild_id, "appeals_blacklist", [])
+        if interaction.user.id in blacklist:
+            return await interaction.response.send_message("❌ You are blacklisted from submitting appeals.", ephemeral=True)
+
+        # Enforce cooldown
+        cooldown_days = config.get("cooldown_days", 30)
+        appeals = dm.get_guild_data(guild_id, "appeals", {})
+        user_appeals = appeals.get(str(interaction.user.id), [])
         
-        async def approve_callback(it: discord.Interaction):
-            from modules.appeals import Appeals
-            appeals = Appeals(self.bot)
-            await appeals.resolve_appeal(self.action_id, True, it.user)
-            await interaction.user.send(f"Your {self.category} appeal in {guild.name} has been accepted!")
-            await it.response.edit_message(content=f"✅ Appeal Accepted by {it.user.name}", view=None)
+        if user_appeals:
+            last_appeal = user_appeals[-1]
+            elapsed_days = (time.time() - last_appeal.get("timestamp", 0)) / (24 * 3600)
+            if elapsed_days < cooldown_days:
+                remaining = cooldown_days - elapsed_days
+                return await interaction.response.send_message(f"❌ You must wait {remaining:.1f} more days before appealing again.", ephemeral=True)
         
-        async def deny_callback(it: discord.Interaction):
-            await interaction.user.send(f"Your {self.category} appeal in {guild.name} has been denied.")
-            await it.response.edit_message(content=f"❌ Appeal Denied by {it.user.name}", view=None)
+        await interaction.response.send_modal(BanAppealModal())
+
+class AppealReviewView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    def _get_appeal_info(self, embed: Embed):
+        footer = embed.footer.text
+        if footer and "Appeal ID: " in footer:
+            return footer.replace("Appeal ID: ", "").split("_")
+        return None, None
+
+    async def _update_appeal_status(self, interaction: Interaction, status: str, staff_note: str = None):
+        user_id_str, ts_str = self._get_appeal_info(interaction.message.embeds[0])
+        if not user_id_str:
+            return None
+
+        guild_id = interaction.guild_id
+        appeals = dm.get_guild_data(guild_id, "appeals", {})
+        user_appeals = appeals.get(user_id_str, [])
         
-        async def evidence_callback(it: discord.Interaction):
-            await it.response.send_message("What evidence would you like the user to provide?", ephemeral=True)
+        target_app = None
+        for app in user_appeals:
+            if str(int(app["timestamp"])) == ts_str:
+                app["status"] = status
+                if staff_note:
+                    if "staff_notes" not in app: app["staff_notes"] = []
+                    app["staff_notes"].append(staff_note)
+                target_app = app
+                break
         
-        approve_btn.callback = approve_callback
-        deny_btn.callback = deny_callback
-        evidence_btn.callback = evidence_callback
+        if target_app:
+            dm.update_guild_data(guild_id, "appeals", appeals)
+            return target_app
+        return None
+
+    @ui.button(label="Approve", style=ButtonStyle.success, emoji="✅", custom_id="appeal_review_approve")
+    async def approve(self, interaction: Interaction, button: ui.Button):
+        user_id_str, ts_str = self._get_appeal_info(interaction.message.embeds[0])
+        await interaction.response.send_modal(ApproveModal(user_id_str, ts_str))
+
+    @ui.button(label="Deny", style=ButtonStyle.danger, emoji="❌", custom_id="appeal_review_deny")
+    async def deny(self, interaction: Interaction, button: ui.Button):
+        user_id_str, ts_str = self._get_appeal_info(interaction.message.embeds[0])
+        await interaction.response.send_modal(DenyModal(user_id_str, ts_str))
+
+    @ui.button(label="Escalate", style=ButtonStyle.secondary, emoji="⏸️", custom_id="appeal_review_escalate")
+    async def escalate(self, interaction: Interaction, button: ui.Button):
+        config = dm.get_guild_data(interaction.guild_id, "appeals_config", {})
+        reviewer_role_id = config.get("reviewer_role_id")
         
-        view.add_item(approve_btn)
-        view.add_item(deny_btn)
-        view.add_item(evidence_btn)
+        embed = interaction.message.embeds[0]
+        embed.title = "⚖️ [ESCALATED] Ban Appeal"
+        embed.color = discord.Color.dark_red()
         
-        await appeal_channel.send(embed=embed, view=view)
+        await interaction.message.edit(embed=embed)
         
-        # Save appeal to history
-        self._save_appeal_history(interaction.user.id, self.guild_id, self.action_id, self.category)
+        msg = "⏸️ Appeal escalated to senior staff."
+        if reviewer_role_id:
+            msg += f" <@&{reviewer_role_id}>"
         
-        await interaction.response.send_message("Appeal submitted!", ephemeral=True)
+        await interaction.response.send_message(msg, ephemeral=False)
+
+    @ui.button(label="Check Ban Reason", style=ButtonStyle.secondary, emoji="🔍", custom_id="appeal_review_ban_reason")
+    async def check_ban_reason(self, interaction: Interaction, button: ui.Button):
+        user_id_str, _ = self._get_appeal_info(interaction.message.embeds[0])
+        try:
+            ban_entry = await interaction.guild.fetch_ban(discord.Object(id=int(user_id_str)))
+            await interaction.response.send_message(f"🔍 **Original Ban Reason:** {ban_entry.reason or 'No reason provided.'}", ephemeral=True)
+        except discord.NotFound:
+            await interaction.response.send_message("❌ User is not currently banned.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error fetching ban reason: {e}", ephemeral=True)
+
+    @ui.button(label="View History", style=ButtonStyle.secondary, emoji="📋", custom_id="appeal_review_history")
+    async def view_history(self, interaction: Interaction, button: ui.Button):
+        user_id_str, _ = self._get_appeal_info(interaction.message.embeds[0])
+        appeals = dm.get_guild_data(interaction.guild_id, "appeals", {})
+        user_appeals = appeals.get(user_id_str, [])
+        
+        if not user_appeals:
+            return await interaction.response.send_message("No previous appeals found.", ephemeral=True)
+
+        desc = ""
+        for app in user_appeals:
+            status_emoji = {"accepted": "✅", "denied": "❌", "pending": "⏳", "on_hold": "🕐"}.get(app["status"], "❓")
+            desc += f"{status_emoji} **{app['status'].title()}** - <t:{int(app['timestamp'])}:R> (ID: `{app['id']}`)\n"
+
+        embed = Embed(title=f"Appeal History: {user_id_str}", description=desc, color=discord.Color.blue())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="Request Info", style=ButtonStyle.secondary, emoji="💬", custom_id="appeal_review_info")
+    async def request_info(self, interaction: Interaction, button: ui.Button):
+        user_id_str, ts_str = self._get_appeal_info(interaction.message.embeds[0])
+        await interaction.response.send_modal(RequestInfoModal(user_id_str, ts_str))
+
+    @ui.button(label="Put on Hold", style=ButtonStyle.secondary, emoji="🕐", custom_id="appeal_review_hold")
+    async def hold(self, interaction: Interaction, button: ui.Button):
+        app = await self._update_appeal_status(interaction, "on_hold")
+        if not app: return
+        
+        config = dm.get_guild_data(interaction.guild_id, "appeals_config", {})
+        user = interaction.guild.get_member(int(app["user_id"]))
+        if user:
+            try: await user.send("Your appeal needs more time and has been put on hold.")
+            except: pass
+        
+        embed = interaction.message.embeds[0]
+        embed.color = discord.Color.gold()
+        embed.add_field(name="Status", value=f"🕐 Put on hold by {interaction.user.mention}", inline=False)
+        await interaction.message.edit(embed=embed)
+        await interaction.response.send_message("🕐 Appeal put on hold.", ephemeral=True)
+
+    @ui.button(label="Blacklist", style=ButtonStyle.danger, emoji="🚫", custom_id="appeal_review_blacklist")
+    async def blacklist(self, interaction: Interaction, button: ui.Button):
+        user_id_str, _ = self._get_appeal_info(interaction.message.embeds[0])
+        blacklist = dm.get_guild_data(interaction.guild_id, "appeals_blacklist", [])
+        if int(user_id_str) not in blacklist:
+            blacklist.append(int(user_id_str))
+            dm.update_guild_data(interaction.guild_id, "appeals_blacklist", blacklist)
+            await interaction.response.send_message(f"🚫 User <@{user_id_str}> has been blacklisted from appeals.", ephemeral=True)
+        else:
+            await interaction.response.send_message("User is already blacklisted.", ephemeral=True)
+
+class ApproveModal(ui.Modal, title="Approve Appeal"):
+    note = ui.TextInput(label="Optional note to user", style=TextStyle.paragraph, required=False, max_length=500)
     
-    def _save_appeal_history(self, user_id: int, guild_id: int, action_id: str, category: str):
-        history = dm.get_guild_data(guild_id, "appeal_history", {})
-        
-        if str(user_id) not in history:
-            history[str(user_id)] = []
-        
-        history[str(user_id)].append({
-            "action_id": action_id,
-            "category": category,
-            "submitted_at": time.time(),
-            "status": "pending"
-        })
-        
-        dm.update_guild_data(guild_id, "appeal_history", history)
+    def __init__(self, user_id_str, ts_str):
+        super().__init__()
+        self.user_id_str = user_id_str
+        self.ts_str = ts_str
 
+    async def on_submit(self, interaction: Interaction):
+        guild_id = interaction.guild_id
+        appeals = dm.get_guild_data(guild_id, "appeals", {})
+        user_apps = appeals.get(self.user_id_str, [])
+        
+        target_app = None
+        for app in user_apps:
+            if str(int(app["timestamp"])) == self.ts_str:
+                app["status"] = "accepted"
+                target_app = app
+                break
+        
+        if target_app:
+            dm.update_guild_data(guild_id, "appeals", appeals)
+            
+            # Unban user
+            try:
+                await interaction.guild.unban(discord.Object(id=int(self.user_id_str)), reason=f"Appeal accepted by {interaction.user}")
+            except Exception as e:
+                logger.error(f"Failed to unban user {self.user_id_str}: {e}")
+
+            # DM user
+            config = dm.get_guild_data(guild_id, "appeals_config", {})
+            user = await interaction.client.fetch_user(int(self.user_id_str))
+            if user:
+                invite = ""
+                # Try to generate an invite if configured
+                try:
+                    channels = interaction.guild.text_channels
+                    if channels:
+                        inv = await channels[0].create_invite(max_uses=1, unique=True)
+                        invite = inv.url
+                except: pass
+
+                msg = config.get("approval_dm", "Your appeal has been accepted! You have been unbanned. {invite}").format(
+                    user=user.name, invite=invite
+                )
+                try: await user.send(msg)
+                except: pass
+
+            embed = interaction.message.embeds[0]
+            embed.color = discord.Color.green()
+            embed.add_field(name="Decision", value=f"✅ Approved by {interaction.user.mention}\nNote: {self.note.value or 'None'}")
+            await interaction.message.edit(embed=embed, view=None)
+            await interaction.response.send_message(f"✅ Approved appeal and unbanned <@{self.user_id_str}>.", ephemeral=True)
+
+class DenyModal(ui.Modal, title="Deny Appeal"):
+    reason = ui.TextInput(label="Reason for Denial", style=TextStyle.paragraph, required=True, max_length=1000)
+    
+    def __init__(self, user_id_str, ts_str):
+        super().__init__()
+        self.user_id_str = user_id_str
+        self.ts_str = ts_str
+
+    async def on_submit(self, interaction: Interaction):
+        guild_id = interaction.guild_id
+        appeals = dm.get_guild_data(guild_id, "appeals", {})
+        user_apps = appeals.get(self.user_id_str, [])
+        
+        target_app = None
+        for app in user_apps:
+            if str(int(app["timestamp"])) == self.ts_str:
+                app["status"] = "denied"
+                app["deny_reason"] = self.reason.value
+                target_app = app
+                break
+        
+        if target_app:
+            dm.update_guild_data(guild_id, "appeals", appeals)
+
+            # DM user
+            config = dm.get_guild_data(guild_id, "appeals_config", {})
+            user = await interaction.client.fetch_user(int(self.user_id_str))
+            if user:
+                cooldown_days = config.get("cooldown_days", 30)
+                next_date = (datetime.datetime.now() + datetime.timedelta(days=cooldown_days)).strftime("%Y-%m-%d")
+
+                msg = config.get("denial_dm", "Your appeal was denied. Reason: {reason}\nYou can appeal again after {next_date}.").format(
+                    user=user.name, reason=self.reason.value, next_date=next_date
+                )
+                try: await user.send(msg)
+                except: pass
+
+            embed = interaction.message.embeds[0]
+            embed.color = discord.Color.red()
+            embed.add_field(name="Decision", value=f"❌ Denied by {interaction.user.mention}\nReason: {self.reason.value}")
+            await interaction.message.edit(embed=embed, view=None)
+            await interaction.response.send_message(f"❌ Denied appeal for <@{self.user_id_str}>.", ephemeral=True)
+
+class RequestInfoModal(ui.Modal, title="Request More Info"):
+    question = ui.TextInput(label="Question", style=TextStyle.paragraph, required=True, max_length=1000)
+
+    def __init__(self, user_id_str, ts_str):
+        super().__init__()
+        self.user_id_str = user_id_str
+        self.ts_str = ts_str
+
+    async def on_submit(self, interaction: Interaction):
+        user = await interaction.client.fetch_user(int(self.user_id_str))
+        if user:
+            try: await user.send(f"Staff have requested more information regarding your appeal:\n\n> {self.question.value}")
+            except: pass
+        
+        embed = interaction.message.embeds[0]
+        embed.add_field(name="Info Requested", value=f"By {interaction.user.mention}: {self.question.value}", inline=False)
+        await interaction.message.edit(embed=embed)
+        await interaction.response.send_message("✅ Information requested.", ephemeral=True)
 
 class Appeals:
-    """
-    Handles moderation appeals via DMs.
-    Now includes categories, evidence, history, auto-expire!
-    """
-    
-    APPEAL_CATEGORIES = {
-        "ban": {"label": "Ban", "emoji": "🔨", "color": discord.Color.red()},
-        "mute": {"label": "Mute", "emoji": "🔇", "color": discord.Color.orange()},
-        "warn": {"label": "Warning", "emoji": "⚠️", "color": discord.Color.yellow()}
-    }
-    
     def __init__(self, bot):
         self.bot = bot
-    
-    async def request_appeal(self, user: discord.User, guild_id: int, action_id: str, category: str = "ban"):
-        """Send appeal request to user."""
-        category_info = self.APPEAL_CATEGORIES.get(category, self.APPEAL_CATEGORIES["ban"])
-        
-        embed = discord.Embed(
-            title=f"Your {category_info['label']} Has Been Appealed",
-            description=f"Guild ID: {guild_id}\nAction ID: {action_id}",
-            color=category_info['color']
-        )
-        
-        view = ui.View()
-        appeal_btn = ui.Button(label=f"Appeal {category_info['label']}", style=discord.ButtonStyle.secondary)
-        
-        async def appeal_callback(it: discord.Interaction):
-            await it.response.send_modal(AppealModal(self.bot, guild_id, action_id, category))
-        
-        appeal_btn.callback = appeal_callback
-        view.add_item(appeal_btn)
-        
-        await user.send(embed=embed, view=view)
-    
-    async def resolve_appeal(self, action_id: str, accepted: bool, resolved_by: discord.Member):
-        """Mark appeal as resolved."""
-        appeals = dm.load_json("pending_appeals", default={})
-        
-        if action_id in appeals:
-            appeals[action_id]["status"] = "accepted" if accepted else "denied"
-            appeals[action_id]["resolved_by"] = resolved_by.id
-            appeals[action_id]["resolved_at"] = time.time()
-            dm.save_json("pending_appeals", appeals)
-    
-    def get_appeal_history(self, guild_id: int, user_id: int) -> list:
-        """Get user's appeal history."""
-        history = dm.get_guild_data(guild_id, "appeal_history", {})
-        return history.get(str(user_id), [])
-    
-    async def cleanup_old_appeals(self, guild_id: int, days: int = 30):
-        """Auto-expire old pending appeals."""
-        history = dm.get_guild_data(guild_id, "appeal_history", {})
-        cutoff = time.time() - (days * 86400)
-        
-        cleaned = {}
-        cleaned_count = 0
-        
-        for user_id, appeals in history.items():
-            kept = []
-            for appeal in appeals:
-                if appeal.get("status") == "pending":
-                    submitted = appeal.get("submitted_at", 0)
-                    if submitted < cutoff:
-                        appeal["status"] = "expired"
-                        cleaned_count += 1
-                kept.append(appeal)
-            
-            if kept:
-                cleaned[user_id] = kept
-        
-        if cleaned_count > 0:
-            dm.update_guild_data(guild_id, "appeal_history", cleaned)
-            logger.info(f"Cleaned {cleaned_count} expired appeals for guild {guild_id}")
-        
-        return cleaned_count
-    
-    async def setup(self, interaction: discord.Interaction, category: str = None):
+
+    async def setup(self, interaction: Interaction):
+        """Standard setup for appeals system."""
         guild = interaction.guild
-        appeal_channel = await guild.create_text_channel("appeals-logs", overwrites={
-            guild.default_role: discord.PermissionOverwrite(read_messages=False)
-        })
-        dm.update_guild_data(guild.id, "appeal_channel_id", appeal_channel.id)
         
-        help_embed = discord.Embed(
-            title="Appeals System", 
-            description="Handles moderation appeals via DMs.",
-            color=discord.Color.blue()
-        )
+        # Create category
+        category = await guild.create_category("Appeals")
         
-        fields = [
-            ("!appeal status", "Check your appeal status."),
-            ("!help appeals", "Show this help embed.")
-        ]
+        # Create #appeals
+        appeals_ch = await guild.create_text_channel("appeals", category=category)
         
-        if category:
-            fields.append((f"!appeal {category}", f"Appeal a specific {category}."))
+        # Create #appeals-log (private)
+        log_ch = await guild.create_text_channel("appeals-log", category=category)
+        await log_ch.set_permissions(guild.default_role, read_messages=False)
         
-        for name, value in fields:
-            help_embed.add_field(name=name, value=value, inline=False)
-        
-        await appeal_channel.send(embed=help_embed)
-        
-        custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
-        
-        custom_cmds["appeal"] = json.dumps({
-            "command_type": "appeal_status"
-        })
-        
-        custom_cmds["appeal ban"] = json.dumps({
-            "command_type": "appeal_status"
-        })
-        
-        custom_cmds["appeal mute"] = json.dumps({
-            "command_type": "appeal_status"  
-        })
-        
-        custom_cmds["appeal warn"] = json.dumps({
-            "command_type": "appeal_status"
-        })
-        
-        custom_cmds["help appeals"] = json.dumps({
-            "command_type": "help_embed",
-            "title": "Appeals System",
-            "description": "Handles moderation appeals via DMs.",
-            "fields": [
-                {"name": "!appeal status", "value": "Check your appeal status.", "inline": False},
-                {"name": "!appeal ban", "value": "Appeal a ban.", "inline": False},
-                {"name": "!appeal mute", "value": "Appeal a mute.", "inline": False},
-                {"name": "!appeal warn", "value": "Appeal a warning.", "inline": False},
-                {"name": "!help appeals", "value": "Show this help.", "inline": False}
+        # Initial config
+        config = {
+            "appeals_channel_id": appeals_ch.id,
+            "log_channel_id": log_ch.id,
+            "cooldown_days": 30,
+            "reviewer_role_id": None,
+            "questions": [
+                "Why were you banned?",
+                "Why should you be unbanned?",
+                "What will you do differently?",
+                "Any evidence to provide?"
             ]
-        })
+        }
+        dm.update_guild_data(guild.id, "appeals_config", config)
         
-        dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
+        # Post panel to #appeals
+        embed = Embed(title="⚖️ Moderation Appeals", description="If you have been banned or punished and wish to appeal, click the button below.", color=discord.Color.blue())
+        await appeals_ch.send(embed=embed, view=AppealPersistentView())
+        
         return True
-    
-    async def send_appeal_dm(self, user: discord.User, guild_id: int, action_id: str, category: str = "ban"):
-        """Sends a DM to a penalized user with an appeal button."""
-        category_info = self.APPEAL_CATEGORIES.get(category, self.APPEAL_CATEGORIES["ban"])
-        
-        embed = discord.Embed(
-            title=f"You received a {category_info['label']}",
-            description=f"Guild ID: {guild_id}\nAction ID: {action_id}",
-            color=category_info['color']
-        )
-        
-        view = ui.View()
-        appeal_btn = ui.Button(label=f"Appeal {category_info['label']}", style=discord.ButtonStyle.secondary)
-        
-        async def appeal_callback(it: discord.Interaction):
-            await it.response.send_modal(AppealModal(self.bot, guild_id, action_id, category))
-        
-        appeal_btn.callback = appeal_callback
-        view.add_item(appeal_btn)
-        
-        await user.send(embed=embed, view=view)
 
-
-from logger import logger
+async def setup(bot):
+    pass # Managed by bot.py

@@ -1174,58 +1174,66 @@ class AutoSetup(commands.Cog):
     async def _setup_appeals_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         """Set up fully functional appeals system."""
         try:
-            # Check if appeals system already exists
-            if analysis.existing_channels.get("appeals"):
-                logger.info("Appeals system already exists, skipping setup")
-                return True
-
             # Create appeals category
             appeals_category = analysis.existing_categories.get("appeals") or analysis.existing_categories.get("moderation")
             if not appeals_category:
                 appeals_category = await guild.create_category("Appeals")
 
             # Create appeals channel (public)
-            appeals_channel = await guild.create_text_channel(
-                "appeals",
-                category=appeals_category,
-                topic="Submit ban/unmute appeals"
-            )
+            appeals_channel = analysis.existing_channels.get("appeals")
+            if not appeals_channel:
+                appeals_channel = await guild.create_text_channel(
+                    "appeals",
+                    category=appeals_category,
+                    topic="Submit ban/unmute appeals"
+                )
 
             # Create appeal logs channel (staff only)
-            appeal_logs = await guild.create_text_channel(
-                "appeal-logs",
-                category=appeals_category,
-                topic="Staff appeal reviews"
-            )
+            appeal_logs = analysis.existing_channels.get("appeals-log")
+            if not appeal_logs:
+                appeal_logs = await guild.create_text_channel(
+                    "appeals-log",
+                    category=appeals_category,
+                    topic="Staff appeal reviews"
+                )
 
             # Set permissions for logs channel (staff only)
             staff_roles = [analysis.existing_roles.get("staff"), analysis.existing_roles.get("moderator"), analysis.existing_roles.get("admin")]
             staff_roles = [role for role in staff_roles if role]
 
-            if staff_roles:
-                await appeal_logs.set_permissions(guild.default_role, view_channel=False)
-                for role in staff_roles:
-                    await appeal_logs.set_permissions(role, view_channel=True, send_messages=True)
+            await appeal_logs.set_permissions(guild.default_role, view_channel=False)
+            for role in staff_roles:
+                await appeal_logs.set_permissions(role, view_channel=True, send_messages=True)
+
+            # Initialize appeals_config
+            appeals_config = {
+                "log_channel_id": appeal_logs.id,
+                "cooldown_days": 30,
+                "reviewer_role_id": staff_roles[0].id if staff_roles else None,
+                "appellant_dms_enabled": True,
+                "questions": [
+                    "Why were you banned?",
+                    "Why should you be unbanned?",
+                    "What will you do differently?",
+                    "Any evidence to provide?"
+                ]
+            }
+            dm.update_guild_data(guild.id, "appeals_config", appeals_config)
 
             # Send appeals message
+            from modules.appeals import AppealPersistentView
             embed = discord.Embed(
-                title=":scales: Ban/Mute Appeals",
+                title="⚖️ Moderation Appeals",
                 description="If you've been banned or muted and believe it was unjust, you can appeal the decision here.",
                 color=discord.Color.orange()
             )
             embed.add_field(
-                name=":warning: Important Notes",
+                name="⚠️ Important Notes",
                 value="• Appeals are reviewed by staff members\n• Provide clear reasoning and evidence\n• False appeals may result in further action\n• Be respectful and patient",
                 inline=False
             )
 
-            # Create appeal modal button (reuse staff application modal for now)
-            view = AppealButton(guild.id)
-            await appeals_channel.send(embed=embed, view=view)
-
-            # Store configuration
-            dm.update_guild_data(guild.id, "appeals_channel", appeals_channel.id)
-            dm.update_guild_data(guild.id, "appeal_logs_channel", appeal_logs.id)
+            await appeals_channel.send(embed=embed, view=AppealPersistentView())
 
             return True
         except Exception as e:
@@ -1503,12 +1511,27 @@ class AutoSetup(commands.Cog):
 
     async def _setup_modmail(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            channel = analysis.existing_channels.get("modmail")
+            channel = analysis.existing_channels.get("modmail-log")
             if not channel:
-                category = await guild.create_category("Modmail")
-                channel = await guild.create_text_channel("modmail", category=category)
+                category = analysis.existing_categories.get("modmail") or analysis.existing_categories.get("staff")
+                if not category:
+                    category = await guild.create_category("Modmail")
+                channel = await guild.create_text_channel("modmail-log", category=category)
                 await channel.set_permissions(guild.default_role, read_messages=False)
-            dm.update_guild_data(guild.id, "modmail_channel", channel.id)
+
+            staff_role = analysis.existing_roles.get("staff") or analysis.existing_roles.get("moderator")
+
+            modmail_config = {
+                "enabled": True,
+                "log_channel_id": channel.id,
+                "staff_role_id": staff_role.id if staff_role else None,
+                "auto_reply_message": "Your message has been forwarded to the staff. We'll get back to you soon.",
+                "close_message": "This modmail thread has been closed. If you have more questions, feel free to DM again.",
+                "thread_style": "thread",
+                "new_thread_pings": True,
+                "auto_close_hours": 48
+            }
+            dm.update_guild_data(guild.id, "modmail_config", modmail_config)
             return True
         except Exception as e:
             logger.error(f"Modmail setup failed: {e}")
