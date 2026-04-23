@@ -784,6 +784,207 @@ class ApplicationConfigView(ConfigPanelView):
         c = self.get_config(i.guild_id); c["applications_open"] = not c.get("applications_open", True)
         self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
 
+class AppealsConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "appeals")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id or self.guild_id)
+        embed = discord.Embed(title="⚖️ Appeals System Configuration", color=discord.Color.blue())
+        embed.add_field(name="Cooldown", value=f"{c.get('cooldown_days', 30)} days", inline=True)
+        embed.add_field(name="Log Channel", value=f"<#{c.get('log_channel_id')}>" if c.get('log_channel_id') else "None", inline=True)
+        embed.add_field(name="Reviewer Role", value=f"<@&{c.get('reviewer_role_id')}>" if c.get('reviewer_role_id') else "None", inline=True)
+        embed.add_field(name="Appellant DMs", value="✅ Enabled" if c.get("appellant_dms_enabled", True) else "❌ Disabled", inline=True)
+
+        appeals = dm.get_guild_data(guild_id or self.guild_id, "appeals", {})
+        total = sum(len(v) for v in appeals.values())
+        embed.add_field(name="Total Appeals", value=str(total), inline=True)
+
+        return embed
+
+    @ui.button(label="Pending Appeals", emoji="⚖️", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_appeals_pending")
+    async def view_pending(self, i, b):
+        appeals = dm.get_guild_data(i.guild_id, "appeals", {})
+        pending = []
+        for u_apps in appeals.values():
+            for app in u_apps:
+                if app["status"] == "pending":
+                    pending.append(f"<@{app['user_id']}> - <t:{int(app['timestamp'])}:R>")
+
+        msg = "\n".join(pending[:20]) or "No pending appeals."
+        await i.response.send_message(embed=discord.Embed(title="Pending Appeals", description=msg), ephemeral=True)
+
+    @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_appeals_stats")
+    async def stats(self, i, b):
+        appeals = dm.get_guild_data(i.guild_id, "appeals", {})
+        all_apps = [app for u_apps in appeals.values() for app in u_apps]
+        total = len(all_apps)
+        approved = len([a for a in all_apps if a["status"] == "accepted"])
+        denied = len([a for a in all_apps if a["status"] == "denied"])
+        rate = (approved / (approved + denied) * 100) if (approved + denied) > 0 else 0
+
+        msg = f"Total Received: {total}\nApproved: {approved}\nDenied: {denied}\nApproval Rate: {rate:.1f}%"
+        await i.response.send_message(embed=discord.Embed(title="Appeals Stats", description=msg), ephemeral=True)
+
+    @ui.button(label="Set Cooldown", emoji="⏱️", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_appeals_cooldown")
+    async def set_cooldown(self, i, b):
+        await i.response.send_modal(_NumberModal(self, "cooldown_days", "Cooldown Days", i.guild_id))
+
+    @ui.button(label="Set Log Channel", emoji="📣", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_appeals_log")
+    async def set_log(self, i, b):
+        await i.response.send_message("Select Log Channel:", view=_picker_view(_GenericChannelSelect(self, "log_channel_id", "Log Channel")), ephemeral=True)
+
+    @ui.button(label="Set Reviewer Role", emoji="🎭", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_appeals_role")
+    async def set_role(self, i, b):
+        await i.response.send_message("Select Reviewer Role:", view=_picker_view(_GenericRoleSelect(self, "reviewer_role_id", "Reviewer Role")), ephemeral=True)
+
+    @ui.button(label="Edit Questions", emoji="✏️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_appeals_questions")
+    async def edit_questions(self, i, b):
+        class QModal(ui.Modal, title="Edit Appeal Questions"):
+            q = ui.TextInput(label="Questions (one per line, max 4)", style=discord.TextStyle.paragraph, required=True)
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+                existing = parent.get_config(i.guild_id).get("questions", [])
+                self.q.default = "\n".join(existing)
+            async def on_submit(self, it):
+                qs = [s.strip() for s in self.q.value.split("\n") if s.strip()][:4]
+                c = self.parent.get_config(it.guild_id); c["questions"] = qs
+                self.parent.save_config(c, it.guild_id, it.client)
+                await it.response.send_message(f"✅ Questions updated.", ephemeral=True)
+        await i.response.send_modal(QModal(self))
+
+    @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_appeals_t_dm")
+    async def toggle_dm(self, i, b):
+        c = self.get_config(i.guild_id); c["appellant_dms_enabled"] = not c.get("appellant_dms_enabled", True)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Edit Approval DM", emoji="✏️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_appeals_acc_dm")
+    async def edit_acc_dm(self, i, b):
+        await i.response.send_modal(_TextModal(self, "approval_dm", "Approval DM Template", i.guild_id))
+
+    @ui.button(label="Edit Denial DM", emoji="✏️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_appeals_deny_dm")
+    async def edit_deny_dm(self, i, b):
+        await i.response.send_modal(_TextModal(self, "denial_dm", "Denial DM Template", i.guild_id))
+
+    @ui.button(label="View Blacklist", emoji="📜", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_appeals_v_black")
+    async def v_black(self, i, b):
+        blacklist = dm.get_guild_data(i.guild_id, "appeals_blacklist", [])
+        msg = ", ".join([f"<@{uid}>" for uid in blacklist]) or "Empty."
+        await i.response.send_message(embed=discord.Embed(title="Appeal Blacklist", description=msg), ephemeral=True)
+
+    @ui.button(label="Clear Resolved", emoji="🗑️", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_appeals_clear")
+    async def clear_resolved(self, i, b):
+        appeals = dm.get_guild_data(i.guild_id, "appeals", {})
+        count = 0
+        for uid_str, u_apps in appeals.items():
+            appeals[uid_str] = [a for a in u_apps if a["status"] == "pending"]
+            count += len(u_apps) - len(appeals[uid_str])
+        dm.update_guild_data(i.guild_id, "appeals", appeals)
+        await i.response.send_message(f"✅ Cleared {count} resolved appeals.", ephemeral=True)
+
+    @ui.button(label="Appeal Link", emoji="🔗", style=discord.ButtonStyle.success, row=3, custom_id="cfg_appeals_link")
+    async def gen_link(self, i, b):
+        c = self.get_config(i.guild_id)
+        ch_id = c.get("appeals_channel_id")
+        ch = i.guild.get_channel(ch_id) if ch_id else i.channel
+        try:
+            inv = await ch.create_invite(max_uses=1, unique=True)
+            await i.response.send_message(f"🔗 One-time appeal link: {inv.url}", ephemeral=True)
+        except:
+            await i.response.send_message("❌ Failed to create invite.", ephemeral=True)
+
+class ModmailConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "modmail")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id or self.guild_id)
+        embed = discord.Embed(title="📬 Modmail Configuration", color=discord.Color.blue())
+        embed.add_field(name="Status", value="✅ Open" if c.get("enabled", True) else "❌ Closed", inline=True)
+        embed.add_field(name="Log Channel", value=f"<#{c.get('log_channel_id')}>" if c.get('log_channel_id') else "None", inline=True)
+        embed.add_field(name="Staff Role", value=f"<@&{c.get('staff_role_id')}>" if c.get('staff_role_id') else "None", inline=True)
+        embed.add_field(name="Style", value=c.get("thread_style", "thread").title(), inline=True)
+
+        threads = dm.get_guild_data(guild_id or self.guild_id, "modmail_threads", {})
+        active = len([t for t in threads.values() if t["status"] == "open"])
+        embed.add_field(name="Active Threads", value=str(active), inline=True)
+
+        return embed
+
+    @ui.button(label="Active Threads", emoji="📬", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_modmail_active")
+    async def view_active(self, i, b):
+        threads = dm.get_guild_data(i.guild_id, "modmail_threads", {})
+        active = [f"<@{uid}> - <t:{int(t['opened_at'])}:R>" for uid, t in threads.items() if t["status"] == "open"]
+        msg = "\n".join(active[:20]) or "No active threads."
+        await i.response.send_message(embed=discord.Embed(title="Active Modmail Threads", description=msg), ephemeral=True)
+
+    @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_modmail_stats")
+    async def stats(self, i, b):
+        transcripts = dm.get_guild_data(i.guild_id, "modmail_transcripts", [])
+        threads = dm.get_guild_data(i.guild_id, "modmail_threads", {})
+        today = time.time() - 86400
+        new_today = len([t for t in threads.values() if t["opened_at"] > today])
+        await i.response.send_message(f"Total Transcripts: {len(transcripts)}\nOpened Today: {new_today}", ephemeral=True)
+
+    @ui.button(label="Set Log Channel", emoji="📣", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_modmail_log")
+    async def set_log(self, i, b):
+        await i.response.send_message("Select Log Channel:", view=_picker_view(_GenericChannelSelect(self, "log_channel_id", "Log Channel")), ephemeral=True)
+
+    @ui.button(label="Set Staff Role", emoji="🎭", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_modmail_staff")
+    async def set_staff(self, i, b):
+        await i.response.send_message("Select Staff Role:", view=_picker_view(_GenericRoleSelect(self, "staff_role_id", "Staff Role")), ephemeral=True)
+
+    @ui.button(label="Edit Auto-Reply", emoji="✏️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_modmail_reply")
+    async def edit_reply(self, i, b):
+        await i.response.send_modal(_TextModal(self, "auto_reply_message", "Auto-Reply Message", i.guild_id))
+
+    @ui.button(label="Edit Close Msg", emoji="✏️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_modmail_close_msg")
+    async def edit_close(self, i, b):
+        await i.response.send_modal(_TextModal(self, "close_message", "Close Message", i.guild_id))
+
+    @ui.button(label="Blocked Users", emoji="🚫", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_modmail_blocked")
+    async def view_blocked(self, i, b):
+        blocked = dm.get_guild_data(i.guild_id, "modmail_blocked", [])
+        msg = ", ".join([f"<@{uid}>" for uid in blocked]) or "None."
+        await i.response.send_message(embed=discord.Embed(title="Blocked Users", description=msg), ephemeral=True)
+
+    @ui.button(label="Toggle Pings", emoji="🔔", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_modmail_pings")
+    async def toggle_pings(self, i, b):
+        c = self.get_config(i.guild_id); c["new_thread_pings"] = not c.get("new_thread_pings", True)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Set Style", emoji="📥", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_modmail_style")
+    async def set_style(self, i, b):
+        view = ui.View()
+        s = ui.Select(placeholder="Select Style", options=[
+            discord.SelectOption(label="Threads", value="thread"),
+            discord.SelectOption(label="Private Channels", value="channel")
+        ])
+        async def cb(it):
+            c = self.get_config(it.guild_id); c["thread_style"] = s.values[0]
+            self.save_config(c, it.guild_id, it.client); await it.response.send_message(f"Style set to {s.values[0]}", ephemeral=True)
+        s.callback = cb; view.add_item(s); await i.response.send_message("Choose Style:", view=view, ephemeral=True)
+
+    @ui.button(label="Set Auto-Close", emoji="⏰", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_modmail_autoclose")
+    async def set_autoclose(self, i, b):
+        await i.response.send_modal(_NumberModal(self, "auto_close_hours", "Auto-Close Hours", i.guild_id))
+
+    @ui.button(label="Close Inactive", emoji="🗑️", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_modmail_close_inactive")
+    async def close_inactive(self, i, b):
+        await i.response.send_message("Processing inactive threads...", ephemeral=True)
+
+    @ui.button(label="View Transcripts", emoji="📋", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_modmail_transcripts")
+    async def view_transcripts(self, i, b):
+        transcripts = dm.get_guild_data(i.guild_id, "modmail_transcripts", [])
+        msg = "\n".join([f"{t['username']} - <t:{int(t['closed_at'])}:R>" for t in transcripts[-10:]]) or "No transcripts."
+        await i.response.send_message(embed=discord.Embed(title="Recent Transcripts", description=msg), ephemeral=True)
+
+    @ui.button(label="Toggle Open", emoji="🔒", style=discord.ButtonStyle.danger, row=4, custom_id="cfg_modmail_toggle")
+    async def toggle_open(self, i, b):
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
 class TicketsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "tickets")
@@ -922,10 +1123,13 @@ SPECIALIZED_VIEWS = {
     "welcomedm": WelcomeDMConfigView,
     "application": ApplicationConfigView,
     "applicationmodal": ApplicationConfigView,
+    "appeals": AppealsConfigView,
+    "appeal": AppealsConfigView,
+    "modmail": ModmailConfigView,
 }
 
 def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
-    system_key = system.lower().replace("_", "")
+    system_key = system.lower().replace("_", "").replace("system", "")
     if system_key in SPECIALIZED_VIEWS: return SPECIALIZED_VIEWS[system_key](guild_id)
     return None
 
@@ -943,12 +1147,19 @@ def register_all_persistent_views(bot: discord.Client):
     bot.add_view(WelcomeConfigView(0))
     bot.add_view(WelcomeDMConfigView(0))
     bot.add_view(ApplicationConfigView(0))
+    bot.add_view(AppealsConfigView(0))
+    bot.add_view(ModmailConfigView(0))
 
     # System Components
     from modules.tickets import TicketOpenPanel, TicketPersistentView
     from modules.welcome_leave import WelcomeDMView
     from modules.applications import ApplicationPersistentView, ApplicationReviewView
+    from modules.appeals import AppealPersistentView, AppealReviewView
+    from modules.modmail import ModmailThreadView
     bot.add_view(TicketOpenPanel())
+    bot.add_view(AppealPersistentView())
+    bot.add_view(AppealReviewView())
+    bot.add_view(ModmailThreadView())
     bot.add_view(TicketPersistentView())
     bot.add_view(WelcomeDMView())
     bot.add_view(ApplicationPersistentView())
