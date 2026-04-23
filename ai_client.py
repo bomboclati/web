@@ -9,6 +9,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from history_manager import history_manager
 from vector_memory import vector_memory
 from actions import ActionHandler
+from blueprints import BLUEPRINT
 
 logger = logging.getLogger(__name__)
 
@@ -950,4 +951,12 @@ Schedule automatic actions using cron expressions:
 
 IMMORTAL GUARANTEE:
 Maintain state in data/ JSON files. Never lose information.
+
+================================================================================
+FULL SYSTEM BLUEPRINT — AUTHORITATIVE SPEC FOR ALL 33 SYSTEMS
+================================================================================
+Everything below is a complete, binding blueprint. Every system you build, every
+panel you generate, every command you create MUST follow these specifications
+exactly. Zero placeholders. Zero dummy buttons. Every button works on first click.
+""" + BLUEPRINT + """
 """
