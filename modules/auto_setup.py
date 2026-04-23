@@ -727,9 +727,9 @@ class AutoSetup(commands.Cog):
             "verification": {"title": "🛡️ Verification System", "desc": "Member verification with roles.", "cmds": [("!verify", "Open verification prompt (if not automatic)")]},
             "anti_raid": {"title": "⚔️ Anti-Raid System", "desc": "Protects against mass joins and spam.", "cmds": [("!raidstatus", "Check current security status")]},
             "guardian": {"title": "🛡️ Guardian System", "desc": "AI-powered advanced server protection.", "cmds": [("!guardian stats", "View protection analytics")]},
-            "welcome": {"title": "👋 Welcome System", "desc": "Automated welcome/leave messages.", "cmds": [("!welcome config", "Adjust welcome settings")]},
-            "welcome_dm": {"title": "✉️ Welcome DM Buttons", "desc": "Interactive buttons in member DMs.", "cmds": [("!welcomedm test", "Send a test welcome DM")]},
-            "tickets": {"title": "🎫 Ticket System", "desc": "Private support ticket channels.", "cmds": [("!ticket", "Create a new ticket"), ("!close", "Close current ticket")]},
+            "welcome": {"title": "👋 Welcome System", "desc": "Automated welcome and leave messages.", "cmds": [("!welcomepanel", "Open admin config panel"), ("!help welcome", "Show this guide")]},
+            "welcome_dm": {"title": "✉️ Welcome DM Buttons", "desc": "Interactive buttons in member DMs.", "cmds": [("!welcomedmpanel", "Open admin config panel"), ("!help welcome_dm", "Show this guide")]},
+            "tickets": {"title": "🎫 Ticket System", "desc": "Support ticket system with modals and controls.", "cmds": [("!ticket", "Open a support ticket"), ("!ticketpanel", "Open admin config panel"), ("!help tickets", "Show this guide")]},
             "apps_simple": {"title": "📝 Staff Applications", "desc": "Simple staff application system.", "cmds": [("!apply", "Start staff application")]},
             "apps_modals": {"title": "📑 Advanced Applications", "desc": "Multi-step applications with modals.", "cmds": [("!apply", "Open application modal")]},
             "appeals_simple": {"title": "⚖️ Moderation Appeals", "desc": "Simple appeal system for punishments.", "cmds": [("!appeal", "Start an appeal")]},
@@ -915,34 +915,18 @@ class AutoSetup(commands.Cog):
     async def _setup_welcome_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         """Set up welcome system with channel and message."""
         try:
-            # Check if welcome channel already exists
-            welcome_channel = analysis.existing_channels.get("welcome")
-            if not welcome_channel:
-                # Find or create category
-                category = analysis.existing_categories.get("welcome") or analysis.existing_categories.get("general")
-                if not category:
-                    try:
-                        category = await guild.create_category("Welcome")
-                    except discord.Forbidden:
-                        category = None
+            from modules.welcome_leave import WelcomeLeaveSystem
+            wl = WelcomeLeaveSystem(self.bot)
+            await wl.setup(MockInteraction(self.bot, guild))
 
-                welcome_channel = await guild.create_text_channel("welcome", category=category)
+            # Create documentation
+            guide = discord.utils.get(guild.text_channels, name="welcome-guide") or await guild.create_text_channel("welcome-guide")
+            embed = discord.Embed(title="👋 Welcome System Guide", color=discord.Color.blue())
+            embed.description = "Automated welcome and leave messages with full embed customization."
+            embed.add_field(name="Commands", value="`!welcomepanel` - Open admin panel\n`!help welcome` - Show this guide", inline=False)
+            embed.add_field(name="Variables", value="{user}, {server}, {server.membercount}, {date}, {time}", inline=False)
+            await guide.send(embed=embed)
 
-            # Send welcome message if channel is empty or doesn't have our message
-            if welcome_channel.permissions_for(guild.me).send_messages:
-                embed = discord.Embed(
-                    title=":wave: Welcome to the Server!",
-                    description="We're glad you joined! Please take a moment to read the rules and verify yourself to access all channels.",
-                    color=discord.Color.green()
-                )
-                embed.add_field(
-                    name=":white_check_mark: Get Started",
-                    value="1. Read the #rules channel\n2. Click the verification button\n3. Enjoy the server!",
-                    inline=False
-                )
-                await welcome_channel.send(embed=embed)
-
-            dm.update_guild_data(guild.id, "welcome_channel", welcome_channel.id)
             return True
         except Exception as e:
             logger.error(f"Failed to setup welcome system: {e}")
@@ -1029,69 +1013,17 @@ class AutoSetup(commands.Cog):
     async def _setup_ticket_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         """Set up fully functional ticket system."""
         try:
-            # Check if ticket system already exists
-            if analysis.existing_channels.get("ticket-queue") or analysis.existing_channels.get("tickets"):
-                logger.info("Ticket system already exists, skipping setup")
-                return True
+            from modules.tickets import AdvancedTickets
+            tsys = AdvancedTickets(self.bot)
+            await tsys.setup(MockInteraction(self.bot, guild))
 
-            # Create or get support role
-            support_role = analysis.existing_roles.get("support") or analysis.existing_roles.get("staff") or analysis.existing_roles.get("moderator")
-            if not support_role:
-                support_role = await guild.create_role(
-                    name="Support",
-                    color=discord.Color.blue(),
-                    permissions=discord.Permissions(
-                        view_channel=True,
-                        send_messages=True,
-                        manage_messages=True,
-                        read_message_history=True,
-                        attach_files=True,
-                        embed_links=True,
-                        add_reactions=True,
-                        use_application_commands=True,
-                        connect=True,
-                        speak=True,
-                    ),
-                    hoist=True,
-                    reason="Ticket system setup"
-                )
-
-            # Create tickets category
-            tickets_category = analysis.existing_categories.get("support") or analysis.existing_categories.get("tickets")
-            if not tickets_category:
-                tickets_category = await guild.create_category("Support")
-
-            # Create tickets channel
-            tickets_channel = await guild.create_text_channel(
-                "ticket-queue",
-                category=tickets_category,
-                topic="Create a ticket for support"
-            )
-
-            # Send ticket creation message
-            embed = discord.Embed(
-                title=":ticket: Support Tickets",
-                description="Need help? Click the button below to create a private ticket with our support team!",
-                color=discord.Color.blue()
-            )
-            embed.add_field(
-                name=":question: How it works",
-                value="• Click **Create Ticket** to open a private channel\n• Our support team will respond shortly\n• Use the **Close** button when you're done",
-                inline=False
-            )
-
-            view = CreateTicketButton(guild.id, tickets_channel.id)
-            await tickets_channel.send(embed=embed, view=view)
-
-            # Configure ticket system
-            tickets_config = {
-                "enabled": True,
-                "categories": ["General", "Support", "Billing", "Other"],
-                "support_role": support_role.id,
-                "category": tickets_category.id
-            }
-            dm.update_guild_data(guild.id, "tickets_config", tickets_config)
-            dm.update_guild_data(guild.id, "tickets_channel", tickets_channel.id)
+            # Create documentation
+            guide = discord.utils.get(guild.text_channels, name="tickets-guide") or await guild.create_text_channel("tickets-guide")
+            embed = discord.Embed(title="🎫 Ticket System Guide", color=discord.Color.green())
+            embed.description = "Private support ticket system with modals and control buttons."
+            embed.add_field(name="Commands", value="`!ticketpanel` - Open admin panel\n`!help tickets` - Show this guide", inline=False)
+            embed.add_field(name="Features", value="Claiming, Escalation, Transcripts, and User Management.", inline=False)
+            await guide.send(embed=embed)
 
             return True
         except Exception as e:
@@ -1478,7 +1410,9 @@ class AutoSetup(commands.Cog):
 
     async def _setup_welcome_dm_buttons(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            dm.update_guild_data(guild.id, "welcome_dm_buttons", True)
+            from modules.welcome_dm import WelcomeDMSystem
+            wdm = WelcomeDMSystem(self.bot)
+            await wdm.setup(MockInteraction(self.bot, guild))
             return True
         except Exception as e:
             logger.error(f"Welcome DM buttons setup failed: {e}")

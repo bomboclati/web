@@ -56,6 +56,7 @@ from modules.promotion_service import PromotionService
 from modules.guardian import GuardianSystem
 from modules.server_analytics import setup_analytics, get_analytics
 from modules.verification import Verification
+from modules.welcome_dm import WelcomeDMSystem
 from modules.embed_system import EmbedSystem
 from modules.config_panels import handle_config_panel_command, register_all_persistent_views
 
@@ -129,6 +130,7 @@ class MiroBot(commands.Bot):
         self.guardian = GuardianSystem(self)
         self.analytics = setup_analytics(self)
         self.verification = Verification(self)
+        self.welcome_dm_sys = WelcomeDMSystem(self)
         self.embed_system = EmbedSystem(self)
         
         # Add cogs (important for slash commands)
@@ -2867,6 +2869,10 @@ async def on_member_join(member: discord.Member):
         await bot.welcome_leave.on_member_join(member)
     except Exception as e:
         logger.warning(f"Welcome_leave on_member_join error: {e}")
+    try:
+        await bot.welcome_dm_sys.send_welcome_dm(member)
+    except Exception as e:
+        logger.warning(f"Welcome_dm send error: {e}")
 
 @bot.event  
 async def on_member_remove(member):
