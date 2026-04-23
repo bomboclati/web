@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timezone, timedelta
 from data_manager import dm
 from logger import logger
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 
 def log_panel_action(guild_id: int, user_id: int, action: str):
     """Log an admin panel action to the guild's action logs."""
@@ -592,6 +592,198 @@ class _WDMColorModal(ui.Modal):
         except:
             await interaction.response.send_message("❌ Invalid color.", ephemeral=True)
 
+class ApplicationConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "application")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id or self.guild_id)
+        embed = discord.Embed(title="📋 Application System Configuration", color=discord.Color.blue())
+        embed.add_field(name="Status", value="✅ Open" if c.get("applications_open", True) else "❌ Closed", inline=True)
+        embed.add_field(name="Log Channel", value=f"<#{c.get('log_channel_id')}>" if c.get('log_channel_id') else "_None_", inline=True)
+        embed.add_field(name="Accept Role", value=f"<@&{c.get('role_to_give_on_accept')}>" if c.get('role_to_give_on_accept') else "_None_", inline=True)
+        embed.add_field(name="Cooldown", value=f"{c.get('cooldown_days', 30)} days", inline=True)
+        embed.add_field(name="DMs", value="Enabled" if c.get("applicant_dms_enabled", True) else "Disabled", inline=True)
+        embed.add_field(name="Auto-Ping", value="Enabled" if c.get("auto_ping_enabled") else "Disabled", inline=True)
+
+        q_count = len(c.get("questions", []))
+        embed.add_field(name="Questions", value=f"{q_count} configured", inline=True)
+
+        apps = dm.get_guild_data(guild_id or self.guild_id, "applications", {})
+        total = sum(len(v) for v in apps.values())
+        embed.add_field(name="Total Submissions", value=str(total), inline=True)
+
+        return embed
+
+    @ui.button(label="View All", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_app_view_all")
+    async def view_all(self, i, b):
+        class FilterView(ui.View):
+            def __init__(self, parent):
+                super().__init__(timeout=60)
+                self.parent = parent
+                options = [
+                    discord.SelectOption(label="All", value="all"),
+                    discord.SelectOption(label="Pending", value="pending", emoji="⏳"),
+                    discord.SelectOption(label="Accepted", value="accepted", emoji="✅"),
+                    discord.SelectOption(label="Denied", value="denied", emoji="❌"),
+                    discord.SelectOption(label="On Hold", value="on_hold", emoji="🕐")
+                ]
+                self.select = ui.Select(placeholder="Filter by status...", options=options)
+                self.select.callback = self.filter_callback
+                self.add_item(self.select)
+
+            async def filter_callback(self, it):
+                status = self.select.values[0]
+                apps_data = dm.get_guild_data(it.guild_id, "applications", {})
+                filtered = []
+                for u_apps in apps_data.values():
+                    for app in u_apps:
+                        if status == "all" or app["status"] == status:
+                            filtered.append(app)
+
+                if not filtered:
+                    return await it.response.send_message(f"No {status} applications found.", ephemeral=True)
+
+                msg = ""
+                for app in sorted(filtered, key=lambda x: x["timestamp"], reverse=True)[:20]:
+                    status_emoji = {"accepted": "✅", "denied": "❌", "pending": "⏳", "on_hold": "🕐"}.get(app["status"], "❓")
+                    msg += f"{status_emoji} <@{app['user_id']}> - <t:{int(app['timestamp'])}:R>\n"
+
+                await it.response.send_message(embed=discord.Embed(title=f"{status.title()} Applications", description=msg), ephemeral=True)
+
+        await i.response.send_message("Select status filter:", view=FilterView(self), ephemeral=True)
+
+    @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_app_stats")
+    async def stats(self, i, b):
+        apps_data = dm.get_guild_data(i.guild_id, "applications", {})
+        all_apps = []
+        for u_apps in apps_data.values():
+            all_apps.extend(u_apps)
+
+        total = len(all_apps)
+        pending = len([a for a in all_apps if a["status"] == "pending"])
+        accepted = len([a for a in all_apps if a["status"] == "accepted"])
+
+        one_week_ago = time.time() - (7 * 24 * 3600)
+        accepted_week = len([a for a in all_apps if a["status"] == "accepted" and a["timestamp"] > one_week_ago])
+
+        rate = (accepted / total * 100) if total > 0 else 0
+
+        msg = (f"Total Received: {total}\n"
+               f"Pending: {pending}\n"
+               f"Accepted (This Week): {accepted_week}\n"
+               f"Acceptance Rate: {rate:.1f}%")
+        await i.response.send_message(embed=discord.Embed(title="Application Stats", description=msg), ephemeral=True)
+
+    @ui.button(label="Edit Questions", emoji="✏️", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_app_edit_q")
+    async def edit_q(self, i, b):
+        class QModal(ui.Modal):
+            def __init__(self, parent):
+                super().__init__(title="Edit Questions")
+                self.parent = parent
+                existing = parent.get_config(i.guild_id).get("questions", [])
+                self.input = ui.TextInput(label="Questions (one per line, max 5)", style=discord.TextStyle.paragraph,
+                                        default="\n".join(existing), required=True)
+                self.add_item(self.input)
+            async def on_submit(self, it):
+                qs = [q.strip() for q in self.input.value.split("\n") if q.strip()][:5]
+                c = self.parent.get_config(it.guild_id); c["questions"] = qs
+                self.parent.save_config(c, it.guild_id, it.client)
+                await it.response.send_message(f"✅ Questions updated ({len(qs)} set).", ephemeral=True)
+        await i.response.send_modal(QModal(self))
+
+    @ui.button(label="Set Accept Role", emoji="🎭", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_app_set_role")
+    async def set_role(self, i, b):
+        await i.response.send_message("Select Role:", view=_picker_view(_GenericRoleSelect(self, "role_to_give_on_accept", "Accept Role")), ephemeral=True)
+
+    @ui.button(label="Set Log Channel", emoji="📣", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_app_set_log")
+    async def set_log(self, i, b):
+        await i.response.send_message("Select Channel:", view=_picker_view(_GenericChannelSelect(self, "log_channel_id", "Log Channel")), ephemeral=True)
+
+    @ui.button(label="Set Cooldown", emoji="⏱️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_app_set_cd")
+    async def set_cd(self, i, b):
+        await i.response.send_modal(_NumberModal(self, "cooldown_days", "Cooldown (Days)", i.guild_id))
+
+    @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_app_toggle_dm")
+    async def toggle_dm(self, i, b):
+        c = self.get_config(i.guild_id); c["applicant_dms_enabled"] = not c.get("applicant_dms_enabled", True)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Edit Accept DM", emoji="✏️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_app_edit_acc_dm")
+    async def edit_acc_dm(self, i, b):
+        await i.response.send_modal(_TextModal(self, "acceptance_dm", "Acceptance DM Template", i.guild_id))
+
+    @ui.button(label="Edit Deny DM", emoji="✏️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_app_edit_deny_dm")
+    async def edit_deny_dm(self, i, b):
+        await i.response.send_modal(_TextModal(self, "denial_dm", "Denial DM Template", i.guild_id))
+
+    @ui.button(label="Clear Pending", emoji="🗑️", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_app_clear")
+    async def clear_pending(self, i, b):
+        class Confirm(ui.Modal):
+            def __init__(self, parent):
+                super().__init__(title="Confirm Clear")
+                self.parent = parent
+                self.input = ui.TextInput(label="Type 'CLEAR' to confirm")
+                self.add_item(self.input)
+            async def on_submit(self, it):
+                if self.input.value == "CLEAR":
+                    apps = dm.get_guild_data(it.guild_id, "applications", {})
+                    archived = dm.get_guild_data(it.guild_id, "archived_applications", [])
+                    for u_apps in apps.values():
+                        for app in list(u_apps):
+                            if app["status"] == "pending":
+                                app["status"] = "archived"
+                                archived.append(app)
+                                u_apps.remove(app)
+                    dm.update_guild_data(it.guild_id, "applications", apps)
+                    dm.update_guild_data(it.guild_id, "archived_applications", archived)
+                    await it.response.send_message("✅ Pending applications archived.", ephemeral=True)
+                else:
+                    await it.response.send_message("❌ Cancelled.", ephemeral=True)
+        await i.response.send_modal(Confirm(self))
+
+    @ui.button(label="Export Apps", emoji="📥", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_app_export")
+    async def export(self, i, b):
+        apps = dm.get_guild_data(i.guild_id, "applications", {})
+        import io
+        buf = io.BytesIO(json.dumps(apps, indent=2).encode())
+        await i.response.send_message("Here is the JSON export of all applications:", file=discord.File(buf, filename="applications_export.json"), ephemeral=True)
+
+    @ui.button(label="Toggle Auto-Ping", emoji="🔔", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_app_ping")
+    async def toggle_ping(self, i, b):
+        c = self.get_config(i.guild_id); c["auto_ping_enabled"] = not c.get("auto_ping_enabled", False)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Add App Type", emoji="🏷️", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_app_add_type")
+    async def add_type(self, i, b):
+        class TypeModal(ui.Modal):
+            def __init__(self, parent):
+                super().__init__(title="Add Application Type")
+                self.parent = parent
+                self.input = ui.TextInput(label="Type Name (e.g. Staff, Partner)")
+                self.add_item(self.input)
+            async def on_submit(self, it):
+                c = self.parent.get_config(it.guild_id)
+                types = c.get("application_types", [])
+                if self.input.value not in types:
+                    types.append(self.input.value)
+                    c["application_types"] = types
+                    self.parent.save_config(c, it.guild_id, it.client)
+                    await it.response.send_message(f"✅ Added application type: {self.input.value}", ephemeral=True)
+                else:
+                    await it.response.send_message("❌ Type already exists.", ephemeral=True)
+        await i.response.send_modal(TypeModal(self))
+
+    @ui.button(label="Clear Types", emoji="🗑️", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_app_clear_types")
+    async def clear_types(self, i, b):
+        c = self.get_config(i.guild_id); c["application_types"] = []
+        self.save_config(c, i.guild_id, i.client); await i.response.send_message("✅ Application types cleared.", ephemeral=True)
+
+    @ui.button(label="Open/Close Apps", emoji="🔒", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_app_toggle_open")
+    async def toggle_open(self, i, b):
+        c = self.get_config(i.guild_id); c["applications_open"] = not c.get("applications_open", True)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
 class TicketsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "tickets")
@@ -728,6 +920,8 @@ SPECIALIZED_VIEWS = {
     "tickets": TicketsConfigView,
     "welcome": WelcomeConfigView,
     "welcomedm": WelcomeDMConfigView,
+    "application": ApplicationConfigView,
+    "applicationmodal": ApplicationConfigView,
 }
 
 def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
@@ -748,12 +942,16 @@ def register_all_persistent_views(bot: discord.Client):
     bot.add_view(TicketsConfigView(0))
     bot.add_view(WelcomeConfigView(0))
     bot.add_view(WelcomeDMConfigView(0))
+    bot.add_view(ApplicationConfigView(0))
 
     # System Components
     from modules.tickets import TicketOpenPanel, TicketPersistentView
     from modules.welcome_leave import WelcomeDMView
+    from modules.applications import ApplicationPersistentView, ApplicationReviewView
     bot.add_view(TicketOpenPanel())
     bot.add_view(TicketPersistentView())
     bot.add_view(WelcomeDMView())
+    bot.add_view(ApplicationPersistentView())
+    bot.add_view(ApplicationReviewView())
 
     logger.info("All system persistent views registered.")

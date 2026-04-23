@@ -147,8 +147,10 @@ class ApplyStaffButton(discord.ui.View):
 
     @discord.ui.button(label="Apply Now", style=discord.ButtonStyle.primary, custom_id="staff_apply_persistent")
     async def apply_staff_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = StaffApplicationModal(guild_id=self.guild_id)
-        await interaction.response.send_modal(modal)
+        from modules.applications import ApplicationPersistentView
+        # Delegate to the new unified application system's view logic
+        view = ApplicationPersistentView()
+        await view.apply_now.callback(interaction, view.apply_now)
 
 
 class AppealButton(discord.ui.View):
@@ -1129,6 +1131,26 @@ class AutoSetup(commands.Cog):
                 for role in staff_roles:
                     await application_logs.set_permissions(role, view_channel=True, send_messages=True)
 
+            # Initialize application_config
+            from modules.applications import ApplicationPersistentView
+            application_config = {
+                "applications_open": True,
+                "log_channel_id": application_logs.id,
+                "questions": [
+                    "Why do you want to be staff?",
+                    "What experience do you have?",
+                    "Weekly Activity (hours)?",
+                    "What skills do you bring?",
+                    "Anything else?"
+                ],
+                "cooldown_days": 30,
+                "applicant_dms_enabled": True,
+                "role_to_give_on_accept": staff_roles[0].id if staff_roles else None,
+                "auto_ping_enabled": True,
+                "staff_role_id": staff_roles[0].id if staff_roles else None
+            }
+            dm.update_guild_data(guild.id, "application_config", application_config)
+
             # Send application message
             embed = discord.Embed(
                 title=":memo: Staff Applications",
@@ -1141,12 +1163,8 @@ class AutoSetup(commands.Cog):
                 inline=False
             )
 
-            view = ApplyStaffButton(guild.id)
+            view = ApplicationPersistentView()
             await applications_channel.send(embed=embed, view=view)
-
-            # Store configuration
-            dm.update_guild_data(guild.id, "applications_channel", applications_channel.id)
-            dm.update_guild_data(guild.id, "application_logs_channel", application_logs.id)
 
             return True
         except Exception as e:
