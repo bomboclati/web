@@ -928,21 +928,33 @@ class AutoSetup(commands.Cog):
 
                 welcome_channel = await guild.create_text_channel("welcome", category=category)
 
-            # Send welcome message if channel is empty or doesn't have our message
-            if welcome_channel.permissions_for(guild.me).send_messages:
-                embed = discord.Embed(
-                    title=":wave: Welcome to the Server!",
-                    description="We're glad you joined! Please take a moment to read the rules and verify yourself to access all channels.",
-                    color=discord.Color.green()
-                )
-                embed.add_field(
-                    name=":white_check_mark: Get Started",
-                    value="1. Read the #rules channel\n2. Click the verification button\n3. Enjoy the server!",
-                    inline=False
-                )
-                await welcome_channel.send(embed=embed)
+            # Initialize welcome_config
+            welcome_config = {
+                "enabled": True,
+                "channel_id": welcome_channel.id,
+                "message": "Welcome {user} to {server}! 🎉",
+                "embed_title": "Welcome to {server}!",
+                "embed_color": 0x2ecc71,
+                "thumbnail_enabled": True,
+                "show_member_number": True,
+                "show_account_age": True,
+                "ping_on_welcome": False
+            }
+            dm.update_guild_data(guild.id, "welcome_config", welcome_config)
 
-            dm.update_guild_data(guild.id, "welcome_channel", welcome_channel.id)
+            # Initialize leave_config
+            leave_config = {
+                "enabled": True,
+                "channel_id": welcome_channel.id,
+                "message": "{user} has left {server}. Goodbye! 👋",
+                "embed_title": "Member Left",
+                "embed_color": 0xe74c3c,
+                "show_duration": True,
+                "show_roles": True,
+                "show_reason": True
+            }
+            dm.update_guild_data(guild.id, "leave_config", leave_config)
+
             return True
         except Exception as e:
             logger.error(f"Failed to setup welcome system: {e}")
@@ -1029,29 +1041,12 @@ class AutoSetup(commands.Cog):
     async def _setup_ticket_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         """Set up fully functional ticket system."""
         try:
-            # Check if ticket system already exists
-            if analysis.existing_channels.get("ticket-queue") or analysis.existing_channels.get("tickets"):
-                logger.info("Ticket system already exists, skipping setup")
-                return True
-
             # Create or get support role
             support_role = analysis.existing_roles.get("support") or analysis.existing_roles.get("staff") or analysis.existing_roles.get("moderator")
             if not support_role:
                 support_role = await guild.create_role(
                     name="Support",
                     color=discord.Color.blue(),
-                    permissions=discord.Permissions(
-                        view_channel=True,
-                        send_messages=True,
-                        manage_messages=True,
-                        read_message_history=True,
-                        attach_files=True,
-                        embed_links=True,
-                        add_reactions=True,
-                        use_application_commands=True,
-                        connect=True,
-                        speak=True,
-                    ),
                     hoist=True,
                     reason="Ticket system setup"
                 )
@@ -1062,36 +1057,34 @@ class AutoSetup(commands.Cog):
                 tickets_category = await guild.create_category("Support")
 
             # Create tickets channel
-            tickets_channel = await guild.create_text_channel(
-                "ticket-queue",
-                category=tickets_category,
-                topic="Create a ticket for support"
-            )
+            tickets_channel = analysis.existing_channels.get("ticket-queue")
+            if not tickets_channel:
+                tickets_channel = await guild.create_text_channel(
+                    "ticket-queue",
+                    category=tickets_category,
+                    topic="Create a ticket for support"
+                )
 
-            # Send ticket creation message
-            embed = discord.Embed(
-                title=":ticket: Support Tickets",
-                description="Need help? Click the button below to create a private ticket with our support team!",
-                color=discord.Color.blue()
-            )
-            embed.add_field(
-                name=":question: How it works",
-                value="• Click **Create Ticket** to open a private channel\n• Our support team will respond shortly\n• Use the **Close** button when you're done",
-                inline=False
-            )
-
-            view = CreateTicketButton(guild.id, tickets_channel.id)
-            await tickets_channel.send(embed=embed, view=view)
-
-            # Configure ticket system
+            # Initialize tickets_config
             tickets_config = {
                 "enabled": True,
-                "categories": ["General", "Support", "Billing", "Other"],
-                "support_role": support_role.id,
-                "category": tickets_category.id
+                "staff_role_id": support_role.id,
+                "category_id": tickets_category.id,
+                "log_channel_id": None,
+                "max_per_user": 3,
+                "auto_close_hours": 24,
+                "panel_title": "Support Tickets",
+                "panel_description": "Click below to open a ticket.",
+                "panel_color": 0x3498db,
+                "opener_dm_enabled": True
             }
             dm.update_guild_data(guild.id, "tickets_config", tickets_config)
-            dm.update_guild_data(guild.id, "tickets_channel", tickets_channel.id)
+
+            # Send panel
+            from modules.tickets import TicketOpenPanel, AdvancedTickets
+            at = AdvancedTickets(self.bot)
+            embed = discord.Embed(title=tickets_config["panel_title"], description=tickets_config["panel_description"], color=tickets_config["panel_color"])
+            await tickets_channel.send(embed=embed, view=TicketOpenPanel(at))
 
             return True
         except Exception as e:
@@ -1478,7 +1471,13 @@ class AutoSetup(commands.Cog):
 
     async def _setup_welcome_dm_buttons(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            dm.update_guild_data(guild.id, "welcome_dm_buttons", True)
+            dm_config = {
+                "enabled": True,
+                "message": "Welcome to {server}! We're glad to have you here. Use the buttons below to get started.",
+                "embed_color": 0x3498db,
+                "enabled_buttons": ["verify", "rules", "roles", "ticket", "apply", "help", "info", "optout"]
+            }
+            dm.update_guild_data(guild.id, "welcomedm_config", dm_config)
             return True
         except Exception as e:
             logger.error(f"Welcome DM buttons setup failed: {e}")

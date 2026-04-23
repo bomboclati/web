@@ -415,16 +415,196 @@ class GuardianConfigView(ConfigPanelView):
     async def reset(self, i, b):
         c = self.get_config(i.guild_id); c.clear(); self.save_config(c, i.guild_id, i.client); await i.response.send_message("Rules Reset.", ephemeral=True)
 
+class WelcomeConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "welcome")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        wc = dm.get_guild_data(guild_id or self.guild_id, "welcome_config", {})
+        lc = dm.get_guild_data(guild_id or self.guild_id, "leave_config", {})
+
+        embed = discord.Embed(title="👋 Welcome & Leave Configuration", color=0x2ecc71)
+        embed.add_field(name="Welcome Status", value="✅ ON" if wc.get("enabled") else "❌ OFF", inline=True)
+        embed.add_field(name="Leave Status", value="✅ ON" if lc.get("enabled") else "❌ OFF", inline=True)
+        embed.add_field(name="Welcome Channel", value=f"<#{wc.get('channel_id')}>" if wc.get('channel_id') else "None", inline=True)
+        embed.add_field(name="Leave Channel", value=f"<#{lc.get('channel_id')}>" if lc.get('channel_id') else "None", inline=True)
+
+        from modules.welcome_leave import WelcomeLeaveSystem
+        wl = WelcomeLeaveSystem(None)
+        stats = wl.get_stats(guild_id or self.guild_id)
+        embed.add_field(name="📊 Stats", value=f"Joined: {stats['joins_today']}d / {stats['joins_week']}w\nLeft: {stats['leaves_today']}d / {stats['leaves_week']}w", inline=False)
+        return embed
+
+    @ui.button(label="Toggle Welcome", style=discord.ButtonStyle.success, row=0, custom_id="cfg_wl_toggle_w")
+    async def toggle_w(self, i, b):
+        c = dm.get_guild_data(i.guild_id, "welcome_config", {}); c["enabled"] = not c.get("enabled", False)
+        dm.update_guild_data(i.guild_id, "welcome_config", c); await self.update_panel(i)
+
+    @ui.button(label="Toggle Leave", style=discord.ButtonStyle.success, row=0, custom_id="cfg_wl_toggle_l")
+    async def toggle_l(self, i, b):
+        c = dm.get_guild_data(i.guild_id, "leave_config", {}); c["enabled"] = not c.get("enabled", False)
+        dm.update_guild_data(i.guild_id, "leave_config", c); await self.update_panel(i)
+
+    @ui.button(label="Set Welcome Ch", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_wl_set_wch")
+    async def set_wch(self, i, b):
+        class ChSelect(ui.ChannelSelect):
+            def callback(self, it):
+                c = dm.get_guild_data(it.guild_id, "welcome_config", {}); c["channel_id"] = self.values[0].id
+                dm.update_guild_data(it.guild_id, "welcome_config", c); return it.response.send_message("✅ Welcome channel set.", ephemeral=True)
+        await i.response.send_message("Select channel:", view=_picker_view(ChSelect(placeholder="Welcome Channel")), ephemeral=True)
+
+    @ui.button(label="Set Leave Ch", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_wl_set_lch")
+    async def set_lch(self, i, b):
+        class ChSelect(ui.ChannelSelect):
+            def callback(self, it):
+                c = dm.get_guild_data(it.guild_id, "leave_config", {}); c["channel_id"] = self.values[0].id
+                dm.update_guild_data(it.guild_id, "leave_config", c); return it.response.send_message("✅ Leave channel set.", ephemeral=True)
+        await i.response.send_message("Select channel:", view=_picker_view(ChSelect(placeholder="Leave Channel")), ephemeral=True)
+
+    @ui.button(label="Edit Welcome Msg", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_wl_edit_wmsg")
+    async def edit_wmsg(self, i, b):
+        await i.response.send_modal(_WelcomeTextModal(self, "welcome_config", "message", "Edit Welcome Message"))
+
+    @ui.button(label="Edit Leave Msg", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_wl_edit_lmsg")
+    async def edit_lmsg(self, i, b):
+        await i.response.send_modal(_WelcomeTextModal(self, "leave_config", "message", "Edit Leave Message"))
+
+    @ui.button(label="Set Embed Color", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_wl_color")
+    async def set_color(self, i, b):
+        await i.response.send_modal(_WLColorModal(self))
+
+    @ui.button(label="Toggle Stats", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_wl_stats_toggle")
+    async def toggle_stats(self, i, b):
+        c = dm.get_guild_data(i.guild_id, "welcome_config", {}); c["show_member_number"] = not c.get("show_member_number", True)
+        dm.update_guild_data(i.guild_id, "welcome_config", c); await i.response.send_message(f"Member number toggled to {c['show_member_number']}", ephemeral=True)
+
+    @ui.button(label="Test Welcome", style=discord.ButtonStyle.success, row=3, custom_id="cfg_wl_test_w")
+    async def test_w(self, i, b):
+        from modules.welcome_leave import WelcomeLeaveSystem
+        wl = WelcomeLeaveSystem(i.client); await wl.on_member_join(i.user)
+        await i.response.send_message("🧪 Sent test welcome message.", ephemeral=True)
+
+class _WelcomeTextModal(ui.Modal):
+    def __init__(self, parent, config_key, field, label):
+        super().__init__(title=label)
+        self.parent = parent
+        self.config_key = config_key
+        self.field = field
+        self.input = ui.TextInput(label="Message Content", style=discord.TextStyle.paragraph, required=True, max_length=1500)
+        curr = dm.get_guild_data(parent.guild_id, config_key, {}).get(field, "")
+        if curr: self.input.default = curr
+        self.add_item(self.input)
+
+    async def on_submit(self, interaction: Interaction):
+        c = dm.get_guild_data(interaction.guild_id, self.config_key, {})
+        c[self.field] = self.input.value
+        dm.update_guild_data(interaction.guild_id, self.config_key, c)
+        await interaction.response.send_message("✅ Updated message.", ephemeral=True)
+
+class _WLColorModal(ui.Modal):
+    def __init__(self, parent):
+        super().__init__(title="Set Embed Color")
+        self.parent = parent
+        self.input = ui.TextInput(label="Hex Color (e.g. #2ecc71)", required=True, min_length=7, max_length=7)
+        self.add_item(self.input)
+
+    async def on_submit(self, interaction: Interaction):
+        try:
+            color_int = int(self.input.value.lstrip("#"), 16)
+            c = dm.get_guild_data(interaction.guild_id, "welcome_config", {})
+            c["embed_color"] = color_int
+            dm.update_guild_data(interaction.guild_id, "welcome_config", c)
+            await interaction.response.send_message(f"✅ Color set to {self.input.value}", ephemeral=True)
+        except:
+            await interaction.response.send_message("❌ Invalid hex color.", ephemeral=True)
+
+class WelcomeDMConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "welcomedm")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = dm.get_guild_data(guild_id or self.guild_id, "welcomedm_config", {})
+        embed = discord.Embed(title="✉️ Welcome DM Configuration", color=c.get("embed_color", 0x3498db))
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled") else "❌ Disabled", inline=True)
+        embed.add_field(name="Buttons", value=", ".join(c.get("enabled_buttons", [])) or "None", inline=False)
+
+        stats = dm.get_guild_data(guild_id or self.guild_id, "welcomedm_stats", {"sent": 0, "optout": 0, "verify_clicks": 0})
+        embed.add_field(name="📊 Stats", value=f"Sent: {stats['sent']} | Opt-out: {stats['optout']}", inline=False)
+        return embed
+
+    @ui.button(label="Toggle Welcome DMs", style=discord.ButtonStyle.success, row=0, custom_id="cfg_wdm_toggle")
+    async def toggle(self, i, b):
+        c = dm.get_guild_data(i.guild_id, "welcomedm_config", {}); c["enabled"] = not c.get("enabled", False)
+        dm.update_guild_data(i.guild_id, "welcomedm_config", c); await self.update_panel(i)
+
+    @ui.button(label="Edit DM Message", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_wdm_edit")
+    async def edit_msg(self, i, b):
+        await i.response.send_modal(_WelcomeTextModal(self, "welcomedm_config", "message", "Edit Welcome DM"))
+
+    @ui.button(label="Set DM Color", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_wdm_color")
+    async def set_color(self, i, b):
+        await i.response.send_modal(_WDMColorModal(self))
+
+    @ui.button(label="Configure Buttons", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_wdm_btns")
+    async def config_btns(self, i, b):
+        class BtnSelect(ui.Select):
+            def __init__(self, parent):
+                self.parent = parent
+                options = [
+                    discord.SelectOption(label="Verify", value="verify"),
+                    discord.SelectOption(label="Rules", value="rules"),
+                    discord.SelectOption(label="Roles", value="roles"),
+                    discord.SelectOption(label="Ticket", value="ticket"),
+                    discord.SelectOption(label="Apply", value="apply"),
+                    discord.SelectOption(label="Help", value="help"),
+                    discord.SelectOption(label="Info", value="info"),
+                    discord.SelectOption(label="Opt-out", value="optout")
+                ]
+                super().__init__(placeholder="Select enabled buttons...", min_values=0, max_values=8, options=options)
+            async def callback(self, it):
+                c = dm.get_guild_data(it.guild_id, "welcomedm_config", {})
+                c["enabled_buttons"] = self.values
+                dm.update_guild_data(it.guild_id, "welcomedm_config", c)
+                return await it.response.send_message(f"✅ Buttons updated: {', '.join(self.values)}", ephemeral=True)
+
+        view = ui.View(); view.add_item(BtnSelect(self))
+        await i.response.send_message("Select buttons to show in Welcome DM:", view=view, ephemeral=True)
+
+    @ui.button(label="Test DM", style=discord.ButtonStyle.success, row=2, custom_id="cfg_wdm_test")
+    async def test_dm(self, i, b):
+        from modules.welcome_leave import WelcomeLeaveSystem
+        wl = WelcomeLeaveSystem(i.client); await wl.on_member_join(i.user)
+        await i.response.send_message("🧪 Sent test Welcome DM.", ephemeral=True)
+
+class _WDMColorModal(ui.Modal):
+    def __init__(self, parent):
+        super().__init__(title="Set DM Embed Color")
+        self.parent = parent
+        self.input = ui.TextInput(label="Hex Color", required=True, min_length=7, max_length=7)
+        self.add_item(self.input)
+    async def on_submit(self, interaction: Interaction):
+        try:
+            color_int = int(self.input.value.lstrip("#"), 16)
+            c = dm.get_guild_data(interaction.guild_id, "welcomedm_config", {})
+            c["embed_color"] = color_int
+            dm.update_guild_data(interaction.guild_id, "welcomedm_config", c)
+            await interaction.response.send_message(f"✅ Color set to {self.input.value}", ephemeral=True)
+        except:
+            await interaction.response.send_message("❌ Invalid color.", ephemeral=True)
+
 class TicketsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "tickets")
 
     def create_embed(self, guild_id: int = None) -> discord.Embed:
-        c = self.get_config(guild_id)
+        c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="🎫 Ticket System", color=discord.Color.blue())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
         embed.add_field(name="Category", value=f"<#{c.get('category_id')}>" if c.get('category_id') else "_None_", inline=True)
         embed.add_field(name="Staff Role", value=f"<@&{c.get('staff_role_id')}>" if c.get('staff_role_id') else "_None_", inline=True)
+
+        stats = dm.get_guild_data(guild_id or self.guild_id, "ticket_stats", {"total": 0, "open": 0, "closed": 0})
+        embed.add_field(name="📊 Stats", value=f"Total: {stats['total']} | Open: {stats['open']} | Closed: {stats['closed']}", inline=False)
         return embed
 
     @ui.button(label="Toggle System", style=discord.ButtonStyle.success, row=0, custom_id="cfg_tickets_toggle")
@@ -439,21 +619,105 @@ class TicketsConfigView(ConfigPanelView):
     async def set_staff(self, i, b):
         await i.response.send_message("Select Staff Role:", view=_picker_view(_GenericRoleSelect(self, "staff_role_id", "Staff Role")), ephemeral=True)
 
-    @ui.button(label="Send Public Panel", style=discord.ButtonStyle.success, row=1, custom_id="cfg_tickets_send_panel")
+    @ui.button(label="Set Senior Role", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_tickets_set_senior")
+    async def set_senior(self, i, b):
+        await i.response.send_message("Select Senior Role:", view=_picker_view(_GenericRoleSelect(self, "senior_staff_role_id", "Senior Role")), ephemeral=True)
+
+    @ui.button(label="Set Log Channel", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_tickets_set_log")
+    async def set_log(self, i, b):
+        await i.response.send_message("Select Log Channel:", view=_picker_view(_GenericChannelSelect(self, "log_channel_id", "Log Channel")), ephemeral=True)
+
+    @ui.button(label="Max Tickets", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_tickets_max")
+    async def set_max(self, i, b):
+        await i.response.send_modal(_NumberModal(self, "max_per_user", "Max Tickets Per User", i.guild_id))
+
+    @ui.button(label="Auto-Close", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_tickets_autoclose")
+    async def set_autoclose(self, i, b):
+        await i.response.send_modal(_NumberModal(self, "auto_close_hours", "Auto-Close Inactivity (Hours)", i.guild_id))
+
+    @ui.button(label="Toggle DM", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_tickets_t_dm")
+    async def toggle_dm(self, i, b):
+        c = self.get_config(i.guild_id); c["opener_dm_enabled"] = not c.get("opener_dm_enabled", True)
+        self.save_config(c, i.guild_id, i.client); await i.response.send_message(f"Opener DM set to {c['opener_dm_enabled']}", ephemeral=True)
+
+    @ui.button(label="View Open Tickets", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_tickets_view_open")
+    async def view_open(self, i, b):
+        tickets_data = dm.load_json("tickets", default={})
+        open_list = []
+        for tid, t in tickets_data.items():
+            if t.get("guild_id") == i.guild_id and t.get("status") != "closed":
+                open_list.append(f"#{tid.split('_')[-1]} | <@{t['user_id']}> | {t['title'][:20]}")
+
+        embed = discord.Embed(title="🎫 Open Tickets", description="\n".join(open_list) or "No open tickets.", color=discord.Color.blue())
+        await i.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="Ticket Stats", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_tickets_full_stats")
+    async def full_stats(self, i, b):
+        stats = dm.get_guild_data(i.guild_id, "ticket_stats", {"total": 0, "open": 0, "closed": 0})
+        msg = f"Total Opened: {stats['total']}\nCurrently Open: {stats['open']}\nTotal Closed: {stats['closed']}"
+        await i.response.send_message(f"📊 **Ticket Statistics**\n{msg}", ephemeral=True)
+
+    @ui.button(label="Customize Embed", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_tickets_cust_emb")
+    async def cust_emb(self, i, b):
+        await i.response.send_modal(_TicketEmbedModal(self))
+
+    @ui.button(label="Close All Tickets", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_tickets_close_all")
+    async def close_all(self, i, b):
+        class ConfirmModal(ui.Modal):
+            def __init__(self):
+                super().__init__(title="Confirm Bulk Action")
+                self.input = ui.TextInput(label="Type 'CLOSE ALL' to confirm", required=True)
+                self.add_item(self.input)
+            async def on_submit(self, it):
+                if self.input.value == "CLOSE ALL":
+                    await it.response.send_message("⌛ Closing all open ticket channels...", ephemeral=True)
+                    tickets_data = dm.load_json("tickets", default={})
+                    for tid, t in list(tickets_data.items()):
+                        if t.get("guild_id") == it.guild_id and t.get("status") != "closed":
+                            ch = it.guild.get_channel(t["channel_id"])
+                            if ch:
+                                try: await ch.delete(reason="Admin closed all tickets")
+                                except: pass
+                            t["status"] = "closed"
+                            tickets_data[tid] = t
+                    dm.save_json("tickets", tickets_data)
+                    dm.update_guild_data(it.guild_id, "ticket_stats", {"total": 0, "open": 0, "closed": 0})
+                else:
+                    await it.response.send_message("❌ Cancelled.", ephemeral=True)
+        await i.response.send_modal(ConfirmModal())
+
+    @ui.button(label="Send Public Panel", style=discord.ButtonStyle.success, row=4, custom_id="cfg_tickets_send_panel")
     async def send_panel(self, i, b):
-        embed = discord.Embed(title="🎫 Open a Ticket", description="Click below to speak with staff.", color=discord.Color.green())
-        await i.channel.send(embed=embed, view=TicketOpenButton())
+        from modules.tickets import TicketOpenPanel, AdvancedTickets
+        at = AdvancedTickets(i.client)
+        settings = at.get_guild_settings(i.guild_id)
+        embed = discord.Embed(title=settings.get("panel_title"), description=settings.get("panel_description"), color=settings.get("panel_color"))
+        await i.channel.send(embed=embed, view=TicketOpenPanel())
         await i.response.send_message("Panel Sent.", ephemeral=True)
 
-class TicketOpenButton(ui.View):
-    def __init__(self): super().__init__(timeout=None)
-    @ui.button(label="🎫 Open Ticket", style=discord.ButtonStyle.success, custom_id="ticket_open_v2")
-    async def open(self, i, b): await i.response.send_message("Opening ticket...", ephemeral=True)
+class _TicketEmbedModal(ui.Modal):
+    def __init__(self, parent):
+        super().__init__(title="Customize Ticket Panel")
+        self.parent = parent
+        self.title_in = ui.TextInput(label="Panel Title", required=True)
+        self.desc_in = ui.TextInput(label="Panel Description", style=discord.TextStyle.paragraph, required=True)
+        self.color_in = ui.TextInput(label="Color (Hex)", required=True, min_length=7, max_length=7)
+        self.add_item(self.title_in)
+        self.add_item(self.desc_in)
+        self.add_item(self.color_in)
 
-class TicketCloseButton(ui.View):
-    def __init__(self): super().__init__(timeout=None)
-    @ui.button(label="🔒 Close Ticket", style=discord.ButtonStyle.danger, custom_id="ticket_close_v2")
-    async def close(self, i, b): await i.response.send_message("Closing...", ephemeral=False)
+    async def on_submit(self, interaction: Interaction):
+        try:
+            color = int(self.color_in.value.lstrip("#"), 16)
+            c = self.parent.get_config(interaction.guild_id)
+            c["panel_title"] = self.title_in.value
+            c["panel_description"] = self.desc_in.value
+            c["panel_color"] = color
+            self.parent.save_config(c, interaction.guild_id, interaction.client)
+            await interaction.response.send_message("✅ Ticket panel customized.", ephemeral=True)
+        except:
+            await interaction.response.send_message("❌ Invalid color.", ephemeral=True)
+
 
 # --- Registry ---
 
@@ -462,6 +726,8 @@ SPECIALIZED_VIEWS = {
     "antiraid": AntiRaidConfigView,
     "guardian": GuardianConfigView,
     "tickets": TicketsConfigView,
+    "welcome": WelcomeConfigView,
+    "welcomedm": WelcomeDMConfigView,
 }
 
 def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
@@ -475,10 +741,19 @@ async def handle_config_panel_command(message: discord.Message, system: str):
     await message.channel.send(embed=view.create_embed(), view=view)
 
 def register_all_persistent_views(bot: discord.Client):
+    # Config Panels
     bot.add_view(VerificationConfigView(0))
     bot.add_view(AntiRaidConfigView(0))
     bot.add_view(GuardianConfigView(0))
     bot.add_view(TicketsConfigView(0))
-    bot.add_view(TicketOpenButton())
-    bot.add_view(TicketCloseButton())
-    logger.info("Config panels registered.")
+    bot.add_view(WelcomeConfigView(0))
+    bot.add_view(WelcomeDMConfigView(0))
+
+    # System Components
+    from modules.tickets import TicketOpenPanel, TicketPersistentView
+    from modules.welcome_leave import WelcomeDMView
+    bot.add_view(TicketOpenPanel())
+    bot.add_view(TicketPersistentView())
+    bot.add_view(WelcomeDMView())
+
+    logger.info("All system persistent views registered.")

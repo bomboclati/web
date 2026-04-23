@@ -182,7 +182,8 @@ class MiroBot(commands.Bot):
         
         # Register Persistent Views for long-term button functionality
         from modules.staff_system import StaffApplicationPersistentView, StaffReviewPersistentView
-        from modules.tickets import TicketPersistentView
+        from modules.tickets import TicketPersistentView, TicketOpenPanel
+        from modules.welcome_leave import WelcomeDMView
         from modules.auto_setup import VerifyButton, AcceptRulesButton, CreateTicketButton, SuggestionButton, ApplyStaffButton, RoleSelectButton, AppealButton
         from modules.verification import VerifyView
         from modules.embed_system import EmbedVerifyView, EmbedApplyStaffView, EmbedCreateTicketView
@@ -192,6 +193,8 @@ class MiroBot(commands.Bot):
         self.add_view(StaffApplicationPersistentView(self))
         self.add_view(StaffReviewPersistentView())
         self.add_view(TicketPersistentView())
+        self.add_view(TicketOpenPanel())
+        self.add_view(WelcomeDMView())
         self.add_view(VerifyView(self.verification))
 
         # Register persistent views for auto-setup buttons (these work across restarts)
