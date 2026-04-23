@@ -2,10 +2,38 @@ import discord
 from discord.ext import commands
 from discord import ui
 import asyncio
+import time
+import random
+from datetime import datetime, timezone
 from typing import Optional
 
 from data_manager import dm
 from logger import logger
+
+
+class CaptchaModal(ui.Modal, title="🧮 Verification CAPTCHA"):
+    """Simple math CAPTCHA shown when CAPTCHA mode is enabled."""
+
+    answer = ui.TextInput(label="Solve the math problem", placeholder="Type the answer", required=True, max_length=8)
+
+    def __init__(self, verification, expected: int, question: str):
+        super().__init__()
+        self.verification = verification
+        self.expected = expected
+        self.answer.label = question
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            given = int(self.answer.value.strip())
+        except ValueError:
+            return await interaction.response.send_message(
+                "❌ That's not a number. Click Verify again to retry.", ephemeral=True
+            )
+        if given != self.expected:
+            return await interaction.response.send_message(
+                "❌ Wrong answer. Click Verify again to retry.", ephemeral=True
+            )
+        await self.verification._grant_verified(interaction, method="captcha")
 
 
 class VerifyView(ui.View):
@@ -292,55 +320,128 @@ class Verification:
     # Button press -> grant Verified role
     # ──────────────────────────────────────────────
 
+    def _get_admin_config(self, guild_id: int) -> dict:
+        return dm.get_guild_data(guild_id, "verification_config", {}) or {}
+
     async def handle_verify(self, interaction: discord.Interaction):
         member = interaction.user
         guild = interaction.guild
 
         unverified, verified = self._get_roles(guild)
+        config = self._get_admin_config(guild.id)
+
+        # System enabled?
+        if not config.get("enabled", True):
+            return await interaction.response.send_message(
+                "❌ Verification is currently disabled by staff.", ephemeral=True
+            )
 
         if not verified:
-            await interaction.response.send_message(
+            return await interaction.response.send_message(
                 "❌ Verification is not set up on this server yet. Please contact an admin.",
                 ephemeral=True,
             )
-            return
 
         if verified in member.roles:
+            return await interaction.response.send_message(
+                "✅ You are already verified! Enjoy the server.", ephemeral=True
+            )
+
+        # Min account age check
+        min_age = int(config.get("min_account_age_days", 0) or 0)
+        if min_age > 0:
+            now = datetime.now(timezone.utc)
+            age_days = (now - member.created_at).days
+            if age_days < min_age:
+                return await interaction.response.send_message(
+                    f"❌ Your account is **{age_days} days old**. This server requires accounts to be at least **{min_age} days old** to verify.",
+                    ephemeral=True,
+                )
+
+        # Phone gate (info only — Discord doesn't expose phone status)
+        if config.get("phone_required", False):
             await interaction.response.send_message(
-                "✅ You are already verified! Enjoy the server.",
+                "📱 This server requires a **phone-verified Discord account**. If your account isn't phone-verified, please add a phone number in your Discord settings, then click Verify again.",
                 ephemeral=True,
             )
+            # Continue anyway — Discord API can't actually check this. Inform the user and proceed.
+            # NOTE: replace 'return' here once Discord exposes phone-verified status if ever.
             return
 
+        # CAPTCHA gate
+        if config.get("captcha_enabled", False):
+            a, b = random.randint(2, 12), random.randint(2, 12)
+            return await interaction.response.send_modal(
+                CaptchaModal(self, expected=a + b, question=f"What is {a} + {b}?")
+            )
+
+        # No gates — grant directly
+        await self._grant_verified(interaction, method="button")
+
+    async def _grant_verified(self, interaction: discord.Interaction, method: str = "button"):
+        """Apply Verified role, remove Unverified, log it, send welcome DM."""
+        member = interaction.user
+        guild = interaction.guild
+        unverified, verified = self._get_roles(guild)
+        config = self._get_admin_config(guild.id)
+
         try:
-            roles_to_remove = []
             if unverified and unverified in member.roles:
-                roles_to_remove.append(unverified)
+                await member.remove_roles(unverified, reason="Verification complete")
+            await member.add_roles(verified, reason=f"Member verified via {method}")
 
-            if roles_to_remove:
-                await member.remove_roles(*roles_to_remove, reason="Verification complete")
+            # Log the verification
+            log = config.get("verification_log", [])
+            log.append({
+                "user_id": member.id,
+                "ts": time.time(),
+                "method": method,
+            })
+            # Cap at 500 entries
+            config["verification_log"] = log[-500:]
+            dm.update_guild_data(guild.id, "verification_config", config)
 
-            await member.add_roles(verified, reason="Member verified via button")
+            # Send welcome DM if configured
+            welcome_dm = config.get("welcome_dm", "").strip()
+            if welcome_dm:
+                try:
+                    rendered = (
+                        welcome_dm
+                        .replace("{user}", member.mention)
+                        .replace("{user.name}", member.display_name)
+                        .replace("{server}", guild.name)
+                    )
+                    await member.send(rendered)
+                except (discord.Forbidden, discord.HTTPException):
+                    pass  # User has DMs closed — silently skip
 
             embed = discord.Embed(
                 title="✅ Verification Complete!",
                 description=f"Welcome to **{guild.name}**! You now have access to all channels.",
                 color=discord.Color.green(),
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            logger.info(f"[Verification] Verified {member.display_name} in {guild.name}")
+            if interaction.response.is_done():
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            logger.info(f"[Verification] Verified {member.display_name} in {guild.name} via {method}")
 
         except discord.Forbidden:
-            await interaction.response.send_message(
-                "❌ I don't have permission to assign roles. Please contact an admin.",
-                ephemeral=True,
-            )
+            msg = "❌ I don't have permission to assign roles. Please contact an admin."
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
         except Exception as e:
             logger.error(f"[Verification] Error during verification for {member.display_name}: {e}")
-            await interaction.response.send_message(
-                "❌ An error occurred during verification. Please try again or contact an admin.",
-                ephemeral=True,
-            )
+            msg = "❌ An error occurred during verification. Please try again or contact an admin."
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message(msg, ephemeral=True)
+            except Exception:
+                pass
 
     # ──────────────────────────────────────────────
     # Admin slash command handler

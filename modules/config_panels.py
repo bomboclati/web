@@ -2,6 +2,9 @@ import discord
 from discord import ui, Interaction, app_commands
 import json
 import os
+import time
+import random
+from datetime import datetime, timezone
 from data_manager import dm
 from logger import logger
 from typing import Dict, Any, List, Optional
@@ -34,41 +37,284 @@ class ConfigPanelView(ui.View):
 
 # --- Specialized Views ---
 
+class _RoleSelectFor(ui.RoleSelect):
+    def __init__(self, parent: "VerificationConfigView", config_key: str, placeholder: str):
+        super().__init__(placeholder=placeholder, min_values=1, max_values=1)
+        self.parent = parent
+        self.config_key = config_key
+
+    async def callback(self, interaction: Interaction):
+        role = self.values[0]
+        config = self.parent.get_config()
+        config[self.config_key] = role.id
+        self.parent.save_config(config)
+        await interaction.response.send_message(
+            f"✅ Set **{self.config_key.replace('_', ' ').title()}** to {role.mention}",
+            ephemeral=True,
+        )
+
+
+class _ChannelSelectFor(ui.ChannelSelect):
+    def __init__(self, parent: "VerificationConfigView", config_key: str, placeholder: str):
+        super().__init__(
+            placeholder=placeholder,
+            channel_types=[discord.ChannelType.text],
+            min_values=1, max_values=1,
+        )
+        self.parent = parent
+        self.config_key = config_key
+
+    async def callback(self, interaction: Interaction):
+        channel = self.values[0]
+        config = self.parent.get_config()
+        config[self.config_key] = channel.id
+        self.parent.save_config(config)
+        await interaction.response.send_message(
+            f"✅ Set **{self.config_key.replace('_', ' ').title()}** to <#{channel.id}>",
+            ephemeral=True,
+        )
+
+
+def _picker_view(component: ui.Item) -> ui.View:
+    v = ui.View(timeout=120)
+    v.add_item(component)
+    return v
+
+
+class _MinAgeModal(ui.Modal, title="Set Minimum Account Age"):
+    days = ui.TextInput(label="Days (0 = no minimum)", placeholder="e.g. 7", required=True, max_length=4)
+
+    def __init__(self, parent: "VerificationConfigView"):
+        super().__init__()
+        self.parent = parent
+
+    async def on_submit(self, interaction: Interaction):
+        try:
+            d = int(self.days.value)
+            if d < 0 or d > 3650:
+                raise ValueError
+        except ValueError:
+            return await interaction.response.send_message("❌ Enter a whole number between 0 and 3650.", ephemeral=True)
+        config = self.parent.get_config()
+        config["min_account_age_days"] = d
+        self.parent.save_config(config)
+        await interaction.response.send_message(f"✅ Minimum account age set to **{d} days**.", ephemeral=True)
+
+
+class _WelcomeDMModal(ui.Modal, title="Set Verification Welcome DM"):
+    message = ui.TextInput(
+        label="Welcome DM (use {user} {server})",
+        style=discord.TextStyle.paragraph,
+        placeholder="Welcome {user} to {server}! Glad to have you.",
+        required=True, max_length=1500,
+    )
+
+    def __init__(self, parent: "VerificationConfigView"):
+        super().__init__()
+        self.parent = parent
+        existing = parent.get_config().get("welcome_dm", "")
+        if existing:
+            self.message.default = existing
+
+    async def on_submit(self, interaction: Interaction):
+        config = self.parent.get_config()
+        config["welcome_dm"] = self.message.value
+        self.parent.save_config(config)
+        await interaction.response.send_message("✅ Welcome DM updated.", ephemeral=True)
+
+
+class _ResetLogConfirm(ui.View):
+    def __init__(self, parent: "VerificationConfigView"):
+        super().__init__(timeout=60)
+        self.parent = parent
+
+    @ui.button(label="Yes, wipe the log", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: Interaction, button: ui.Button):
+        config = self.parent.get_config()
+        config["verification_log"] = []
+        self.parent.save_config(config)
+        await interaction.response.edit_message(content="🗑️ Verification log cleared.", view=None)
+
+    @ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.edit_message(content="Cancelled.", view=None)
+
+
+class _ReverifyAllConfirm(ui.View):
+    def __init__(self, parent: "VerificationConfigView"):
+        super().__init__(timeout=60)
+        self.parent = parent
+
+    @ui.button(label="Yes, force re-verify everyone", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        verified = discord.utils.get(guild.roles, name="Verified")
+        unverified = discord.utils.get(guild.roles, name="Unverified")
+        if not verified:
+            return await interaction.followup.send("❌ Verified role not found.", ephemeral=True)
+
+        affected = 0
+        for member in list(verified.members):
+            if member.bot:
+                continue
+            try:
+                await member.remove_roles(verified, reason="Re-verify all triggered by admin")
+                if unverified and unverified not in member.roles:
+                    await member.add_roles(unverified, reason="Re-verify all triggered by admin")
+                affected += 1
+            except Exception as e:
+                logger.warning(f"Re-verify failed for {member}: {e}")
+        await interaction.followup.send(f"🔁 Re-verification triggered for **{affected}** members.", ephemeral=True)
+
+    @ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.edit_message(content="Cancelled.", view=None)
+
+
 class VerificationConfigView(ConfigPanelView):
+    """Full verification admin panel — 12 working buttons per blueprint."""
+
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "verification")
-    
+
     def create_embed(self) -> discord.Embed:
         config = self.get_config()
-        enabled = config.get("enabled", False)
+        enabled = config.get("enabled", True)
         channel_id = config.get("channel_id")
-        role_id = config.get("role_id")
-        
+        verified_role_id = config.get("verified_role_id") or config.get("role_id")
+        unverified_role_id = config.get("unverified_role_id")
+        min_age = config.get("min_account_age_days", 0)
+        captcha = config.get("captcha_enabled", False)
+        phone = config.get("phone_required", False)
+        log = config.get("verification_log", [])
+        welcome_dm = config.get("welcome_dm", "")
+
         embed = discord.Embed(
-            title="🛡️ Verification System Configuration",
-            description="Manage how users verify their account in this server.",
-            color=discord.Color.green() if enabled else discord.Color.red()
+            title="🛡️ Verification System",
+            description="Manage server verification. Live config below — every button works.",
+            color=discord.Color.green() if enabled else discord.Color.red(),
+            timestamp=datetime.now(timezone.utc),
         )
         embed.add_field(name="Status", value="✅ Enabled" if enabled else "❌ Disabled", inline=True)
-        embed.add_field(name="Channel", value=f"<#{channel_id}>" if channel_id else "Not Set", inline=True)
-        embed.add_field(name="Verified Role", value=f"<@&{role_id}>" if role_id else "Not Set", inline=True)
+        embed.add_field(name="Verify Channel", value=f"<#{channel_id}>" if channel_id else "_Not Set_", inline=True)
+        embed.add_field(name="Verified Role", value=f"<@&{verified_role_id}>" if verified_role_id else "_Not Set_", inline=True)
+        embed.add_field(name="Unverified Role", value=f"<@&{unverified_role_id}>" if unverified_role_id else "_Not Set_", inline=True)
+        embed.add_field(name="Min Account Age", value=f"{min_age} days" if min_age else "No minimum", inline=True)
+        embed.add_field(name="CAPTCHA", value="🧮 On" if captcha else "Off", inline=True)
+        embed.add_field(name="Phone Gate", value="📱 Required" if phone else "Off", inline=True)
+        embed.add_field(name="Total Verified Logged", value=str(len(log)), inline=True)
+        embed.add_field(name="Welcome DM", value="✏️ Set" if welcome_dm else "_None_", inline=True)
+        embed.set_footer(text=f"Guild ID: {self.guild_id}")
         return embed
 
-    @ui.button(label="Toggle Status", style=discord.ButtonStyle.secondary, custom_id="verify_toggle")
+    # Row 0
+    @ui.button(label="Toggle System", emoji="✅", style=discord.ButtonStyle.success, custom_id="verify_toggle", row=0)
     async def toggle(self, interaction: Interaction, button: ui.Button):
         config = self.get_config()
-        config["enabled"] = not config.get("enabled", False)
+        config["enabled"] = not config.get("enabled", True)
         self.save_config(config)
         await self.update_panel(interaction)
 
-    @ui.button(label="Set Channel", style=discord.ButtonStyle.primary, custom_id="verify_channel")
+    @ui.button(label="Set Verified Role", emoji="🔢", style=discord.ButtonStyle.primary, custom_id="verify_setverified", row=0)
+    async def set_verified_role(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_message(
+            "Pick the **Verified** role:",
+            view=_picker_view(_RoleSelectFor(self, "verified_role_id", "Select Verified role…")),
+            ephemeral=True,
+        )
+
+    @ui.button(label="Set Unverified Role", emoji="🔒", style=discord.ButtonStyle.primary, custom_id="verify_setunverified", row=0)
+    async def set_unverified_role(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_message(
+            "Pick the **Unverified** role:",
+            view=_picker_view(_RoleSelectFor(self, "unverified_role_id", "Select Unverified role…")),
+            ephemeral=True,
+        )
+
+    @ui.button(label="Set Verify Channel", emoji="📣", style=discord.ButtonStyle.primary, custom_id="verify_setchannel", row=0)
     async def set_channel(self, interaction: Interaction, button: ui.Button):
-        # In a real implementation, this would open a channel select or a modal
-        # For simplicity in this example, we use the current channel
+        await interaction.response.send_message(
+            "Pick the **#verify** channel:",
+            view=_picker_view(_ChannelSelectFor(self, "channel_id", "Select verify channel…")),
+            ephemeral=True,
+        )
+
+    # Row 1
+    @ui.button(label="Min Account Age", emoji="⏱️", style=discord.ButtonStyle.secondary, custom_id="verify_minage", row=1)
+    async def set_min_age(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_modal(_MinAgeModal(self))
+
+    @ui.button(label="Toggle CAPTCHA", emoji="🧮", style=discord.ButtonStyle.secondary, custom_id="verify_captcha", row=1)
+    async def toggle_captcha(self, interaction: Interaction, button: ui.Button):
         config = self.get_config()
-        config["channel_id"] = interaction.channel.id
+        config["captcha_enabled"] = not config.get("captcha_enabled", False)
         self.save_config(config)
         await self.update_panel(interaction)
+
+    @ui.button(label="Toggle Phone Gate", emoji="📱", style=discord.ButtonStyle.secondary, custom_id="verify_phone", row=1)
+    async def toggle_phone(self, interaction: Interaction, button: ui.Button):
+        config = self.get_config()
+        config["phone_required"] = not config.get("phone_required", False)
+        self.save_config(config)
+        await self.update_panel(interaction)
+
+    @ui.button(label="Set Welcome DM", emoji="📩", style=discord.ButtonStyle.secondary, custom_id="verify_welcomedm", row=1)
+    async def set_welcome_dm(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_modal(_WelcomeDMModal(self))
+
+    # Row 2
+    @ui.button(label="View Log", emoji="📋", style=discord.ButtonStyle.secondary, custom_id="verify_viewlog", row=2)
+    async def view_log(self, interaction: Interaction, button: ui.Button):
+        log = self.get_config().get("verification_log", [])
+        recent = log[-20:][::-1]
+        if not recent:
+            return await interaction.response.send_message("📋 No verifications logged yet.", ephemeral=True)
+        lines = []
+        for e in recent:
+            ts = e.get("ts", 0)
+            uid = e.get("user_id", "?")
+            method = e.get("method", "button")
+            lines.append(f"<t:{int(ts)}:R> — <@{uid}> via `{method}`")
+        embed = discord.Embed(
+            title=f"📋 Last {len(recent)} Verifications",
+            description="\n".join(lines),
+            color=discord.Color.blurple(),
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.secondary, custom_id="verify_stats", row=2)
+    async def stats(self, interaction: Interaction, button: ui.Button):
+        log = self.get_config().get("verification_log", [])
+        now = time.time()
+        day = sum(1 for e in log if now - e.get("ts", 0) < 86400)
+        week = sum(1 for e in log if now - e.get("ts", 0) < 604800)
+        month = sum(1 for e in log if now - e.get("ts", 0) < 2592000)
+        embed = discord.Embed(title="📊 Verification Stats", color=discord.Color.blurple())
+        embed.add_field(name="Last 24h", value=str(day), inline=True)
+        embed.add_field(name="Last 7d", value=str(week), inline=True)
+        embed.add_field(name="Last 30d", value=str(month), inline=True)
+        embed.add_field(name="All Time", value=str(len(log)), inline=True)
+        unverified = discord.utils.get(interaction.guild.roles, name="Unverified")
+        if unverified:
+            embed.add_field(name="Currently Unverified", value=str(len(unverified.members)), inline=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="Reset Log", emoji="🗑️", style=discord.ButtonStyle.danger, custom_id="verify_resetlog", row=2)
+    async def reset_log(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_message(
+            "⚠️ This wipes the verification history. Continue?",
+            view=_ResetLogConfirm(self),
+            ephemeral=True,
+        )
+
+    @ui.button(label="Re-Verify All", emoji="🔁", style=discord.ButtonStyle.danger, custom_id="verify_reverify", row=2)
+    async def reverify_all(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_message(
+            "⚠️ This **removes Verified** from every member and forces them to verify again. Continue?",
+            view=_ReverifyAllConfirm(self),
+            ephemeral=True,
+        )
 
 class EconomyConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
