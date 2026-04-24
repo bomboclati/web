@@ -1354,13 +1354,13 @@ class AchievementsConfigView(ConfigPanelView):
                 await it.response.send_message("Custom achievement defined!", ephemeral=True)
         await i.response.send_modal(CreateModal())
 
-    @ui.button(label="Achievements List", emoji="🏆", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_ach_list")
+    @ui.button(label="Achievements List", emoji="🏆", style=discord.ButtonStyle.primary, row=2, custom_id="cfg_ach_list")
     async def ach_list(self, i, b):
         achs = i.client.achievements._achievements
         msg = "\n".join([f"**{a.name}** (`{a.id}`)" for a in list(achs.values())[:15]])
         await i.response.send_message(embed=discord.Embed(title="Achievement Definitions", description=msg), ephemeral=True)
 
-    @ui.button(label="Delete Definition", emoji="🗑️", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_ach_del")
+    @ui.button(label="Delete Definition", emoji="🗑️", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_ach_del")
     async def del_ach(self, i, b):
         class DelModal(ui.Modal, title="Delete Achievement Definition"):
             ach_id = ui.TextInput(label="Achievement ID")
@@ -1372,7 +1372,7 @@ class AchievementsConfigView(ConfigPanelView):
                 else: await it.response.send_message("Not found.", ephemeral=True)
         await i.response.send_modal(DelModal())
 
-    @ui.button(label="View User Achs", emoji="🔍", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_ach_user_view")
+    @ui.button(label="View User Achs", emoji="🔍", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_ach_user_view")
     async def view_user_achs(self, i, b):
         class UserModal(ui.Modal, title="View User Achievements"):
             user_id = ui.TextInput(label="User ID")
@@ -1382,7 +1382,7 @@ class AchievementsConfigView(ConfigPanelView):
                 await it.response.send_message(embed=discord.Embed(title=f"Achievements for {self.user_id.value}", description=text), ephemeral=True)
         await i.response.send_modal(UserModal())
 
-    @ui.button(label="Revoke", emoji="🗑️", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_ach_revoke")
+    @ui.button(label="Revoke", emoji="🗑️", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_ach_revoke")
     async def revoke_ach(self, i, b):
         class RevokeModal(ui.Modal, title="Revoke Achievement"):
             user_id = ui.TextInput(label="User ID")
