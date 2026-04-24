@@ -47,7 +47,8 @@ class StaffShiftSystem:
         self._shifts[guild_id][user_id] = {
             "started_at": time.time(),
             "started_by": str(message.author),
-            "active": True
+            "active": True,
+            "messages": 0
         }
         
         await self.log_action(guild_id, user_id, "shift_start", "")
@@ -65,12 +66,19 @@ class StaffShiftSystem:
             start_time = shift_data.get("started_at", time.time())
             duration = time.time() - start_time
             hours = duration / 3600
+            msgs = shift_data.get("messages", 0)
             
-            await self.log_action(guild_id, user_id, "shift_end", f"{hours:.1f} hours")
+            # Save stats to user data for promotion system
+            udata = dm.get_guild_data(guild_id, f"user_{user_id}", {})
+            udata["on_duty_messages"] = udata.get("on_duty_messages", 0) + msgs
+            udata["on_duty_hours"] = udata.get("on_duty_hours", 0) + hours
+            dm.update_guild_data(guild_id, f"user_{user_id}", udata)
+
+            await self.log_action(guild_id, user_id, "shift_end", f"{hours:.1f} hours, {msgs} msgs")
             
             del self._shifts[guild_id][user_id]
             
-            await message.channel.send(f"✅ Shift ended! Duration: {hours:.1f} hours")
+            await message.channel.send(f"✅ Shift ended! Duration: {hours:.1f} hours. Messages sent: {msgs}")
         else:
             await message.channel.send("You don't have an active shift!")
 
@@ -408,6 +416,13 @@ class StaffShiftSystem:
         embed.add_field(name="Recent Actions", value=log_text or "No actions", inline=False)
         
         await message.channel.send(embed=embed)
+
+    async def track_message(self, message: discord.Message):
+        """Track messages sent while on duty"""
+        if not message.guild or message.author.bot: return
+        gid, uid = message.guild.id, message.author.id
+        if gid in self._shifts and uid in self._shifts[gid]:
+            self._shifts[gid][uid]["messages"] = self._shifts[gid][uid].get("messages", 0) + 1
 
     async def handle_all_activity(self, message):
         guild = message.guild

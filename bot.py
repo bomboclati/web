@@ -45,7 +45,7 @@ from modules.giveaways import GiveawaySystem
 from modules.anti_raid import AntiRaidSystem
 from modules.auto_publisher import AutoPublisher
 from modules.achievements import AchievementSystem
-from modules.staff_promo import StaffPromotionSystem
+from modules.staff_promo import StaffPromotionSystem, PromotionReviewView
 from modules.staff_extras import StaffExtras, StaffExtrasCommands
 from modules.staff_reviews import StaffReviewSystem
 from modules.staff_shift import StaffShiftSystem
@@ -55,6 +55,8 @@ from modules.community_health import CommunityHealth
 from modules.auto_setup import AutoSetup
 from modules.promotion_service import PromotionService
 from modules.guardian import GuardianSystem
+from modules.automod import AutoModSystem
+from modules.warnings import WarningSystem
 from modules.server_analytics import setup_analytics, get_analytics
 from modules.verification import Verification
 from modules.embed_system import EmbedSystem
@@ -133,6 +135,8 @@ class MiroBot(commands.Bot):
         self.community_health = CommunityHealth(self)
         self.auto_setup = AutoSetup(self)
         self.guardian = GuardianSystem(self)
+        self.automod = AutoModSystem(self)
+        self.warnings = WarningSystem(self)
         self.modmail = ModmailSystem(self)
         self.analytics = setup_analytics(self)
         self.verification = Verification(self)
@@ -213,6 +217,7 @@ class MiroBot(commands.Bot):
         self.add_view(AppealPersistentView())
         self.add_view(AppealReviewView())
         self.add_view(ModmailThreadView())
+        self.add_view(PromotionReviewView(self, 0, 0, ""))
 
         # Register persistent views for auto-setup buttons (these work across restarts)
         # Each view uses a unique custom_id pattern that gets matched when buttons are clicked
@@ -608,6 +613,8 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         await self._safe_call(self.leveling.handle_message(message), "leveling")
         await self._safe_call(self.trigger_roles.handle_message(message), "trigger_roles")
         await self._safe_call(self.moderation.analyze_message(message), "moderation")
+        await self._safe_call(self.automod.handle_message(message), "automod")
+        await self._safe_call(self.staff_shift.track_message(message), "staff_shift")
         await self._safe_call(self.intelligence.track_message(message), "intelligence")
         await self._safe_call(self.conflict_resolution.analyze_message(message), "conflict_resolution")
         await self._safe_call(self.community_health.analyze_interaction(message), "community_health")
@@ -665,6 +672,29 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 await self._handle_scheduled_actions(message, cmd_content)
                 return
             
+            if cmd_content.startswith("clearallwarns"):
+                await self.warnings.cmd_clearallwarns(message, cmd_content.split())
+                return
+            if cmd_content.startswith("clearwarn"):
+                await self.warnings.cmd_clearwarn(message, cmd_content.split())
+                return
+            if cmd_content.startswith("warnings"):
+                await self.warnings.cmd_warnings(message, cmd_content.split())
+                return
+            if cmd_content.startswith("warn"):
+                await self.warnings.cmd_warn(message, cmd_content.split())
+                return
+            if cmd_content.startswith("vote"):
+                # Peer voting is for staff members only
+                staff_roles = ["Trial Moderator", "Moderator", "Senior Moderator", "Head Moderator", "Admin"]
+                if not any(r.name in staff_roles for r in message.author.roles):
+                    await message.channel.send("❌ Only staff members can participate in peer voting.")
+                    return
+
+                await self.staff_promo.submit_peer_vote(message.guild.id, message.author.id, message.mentions[0].id if message.mentions else 0)
+                await message.channel.send("✅ Peer vote recorded.")
+                return
+
             if cmd_content.strip() == "help":
                 from actions import ActionHandler
                 handler = ActionHandler(self)

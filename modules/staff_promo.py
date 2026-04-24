@@ -5,9 +5,113 @@ import discord
 from discord.ext import commands, tasks
 from typing import Optional, List
 
+import time
 from data_manager import dm
 from logger import logger
 from modules.promotion_service import PromotionService
+
+
+class PromotionReviewView(discord.ui.View):
+    def __init__(self, bot=None, guild_id=None, user_id=None, tier_name=None):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.tier_name = tier_name
+
+        # Static custom_ids for persistence
+        self.approve_btn.custom_id = "promo_approve_btn"
+        self.deny_btn.custom_id = "promo_deny_btn"
+
+    def _get_review_data(self, message_id: int):
+        return dm.load_json(f"promo_review_{message_id}", default={"upvotes": [], "downvotes": [], "user_id": self.user_id, "tier_name": self.tier_name})
+
+    def _save_review_data(self, message_id: int, data: dict):
+        dm.save_json(f"promo_review_{message_id}", data)
+
+    @discord.ui.button(label="Approve", style=discord.ButtonStyle.success, emoji="✅", custom_id="promo_approve_btn")
+    async def approve_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.manage_guild:
+            return await interaction.response.send_message("Only Senior Staff can vote.", ephemeral=True)
+
+        data = self._get_review_data(interaction.message.id)
+        if interaction.user.id not in data.get("upvotes", []):
+            if "upvotes" not in data: data["upvotes"] = []
+            data["upvotes"].append(interaction.user.id)
+            if interaction.user.id in data.get("downvotes", []):
+                data["downvotes"].remove(interaction.user.id)
+            self._save_review_data(interaction.message.id, data)
+
+        await self._update_message(interaction, data)
+
+    @discord.ui.button(label="Deny", style=discord.ButtonStyle.danger, emoji="❌", custom_id="promo_deny_btn")
+    async def deny_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.manage_guild:
+            return await interaction.response.send_message("Only Senior Staff can vote.", ephemeral=True)
+
+        data = self._get_review_data(interaction.message.id)
+        if interaction.user.id not in data.get("downvotes", []):
+            if "downvotes" not in data: data["downvotes"] = []
+            data["downvotes"].append(interaction.user.id)
+            if interaction.user.id in data.get("upvotes", []):
+                data["upvotes"].remove(interaction.user.id)
+            self._save_review_data(interaction.message.id, data)
+
+        await self._update_message(interaction, data)
+
+    async def _update_message(self, interaction, data):
+        embed = interaction.message.embeds[0]
+
+        user_id = data.get("user_id") or self.user_id
+        tier_name = data.get("tier_name") or self.tier_name
+
+        if not user_id:
+            try: user_id = int(embed.footer.text.split("ID: ")[1])
+            except: pass
+        if not tier_name:
+            try: tier_name = embed.description.split("**")[1]
+            except: pass
+
+        up_count = len(data.get("upvotes", []))
+        down_count = len(data.get("downvotes", []))
+
+        found = False
+        for i, field in enumerate(embed.fields):
+            if field.name == "Votes":
+                embed.set_field_at(i, name="Votes", value=f"✅ {up_count} | ❌ {down_count}", inline=True)
+                found = True
+                break
+        if not found:
+            embed.add_field(name="Votes", value=f"✅ {up_count} | ❌ {down_count}", inline=True)
+
+        if not interaction.response.is_done():
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.message.edit(embed=embed, view=self)
+
+        # Execution logic
+        config = interaction.client.staff_promo._get_full_config(interaction.guild_id)
+        req_votes = config.get("tier_requirements", {}).get(tier_name, {}).get("votes", 3)
+
+        if up_count >= req_votes:
+            # Execute promotion
+            guild = interaction.guild
+            member = guild.get_member(user_id)
+            if member:
+                if data.get("executed"): return
+                data["executed"] = True
+                self._save_review_data(interaction.message.id, data)
+
+                success, msg = await interaction.client.staff_promo.manual_promote(guild, member, tier_name, config)
+                try:
+                    if success:
+                        await interaction.followup.send(f"✅ Threshold met! {member.mention} promoted to **{tier_name}**.", ephemeral=False)
+                    else:
+                        await interaction.followup.send(f"❌ Promotion failed: {msg}", ephemeral=False)
+                except: pass
+                # Disable buttons
+                for child in self.children: child.disabled = True
+                await interaction.message.edit(view=self)
 
 
 class StaffPromotionSystem:
@@ -288,6 +392,34 @@ class StaffPromotionSystem:
         else:
             return "fail"
 
+    async def put_on_probation(self, guild: discord.Guild, member: discord.Member, duration_days: int, reason: str):
+        """Put a staff member on probation."""
+        udata = dm.get_guild_data(guild.id, f"user_{member.id}", {})
+        udata["on_probation"] = True
+        udata["probation_reason"] = reason
+        udata["probation_start_timestamp"] = time.time()
+        udata["probation_end_timestamp"] = time.time() + (duration_days * 24 * 3600)
+        dm.update_guild_data(guild.id, f"user_{member.id}", udata)
+
+        # Log
+        logger.info(f"StaffPromo[{guild.id}] {member} put on probation for {duration_days} days: {reason}")
+
+        try:
+            await member.send(f"⚠️ You have been placed on probation for **{duration_days} days**.\nReason: {reason}\nYour promotion eligibility is paused during this period.")
+        except: pass
+        return True
+
+    async def end_probation(self, guild: discord.Guild, member: discord.Member):
+        """End a staff member's probation early."""
+        udata = dm.get_guild_data(guild.id, f"user_{member.id}", {})
+        udata["on_probation"] = False
+        dm.update_guild_data(guild.id, f"user_{member.id}", udata)
+
+        try:
+            await member.send(f"✅ Your probation has ended. You are now eligible for promotions again.")
+        except: pass
+        return True
+
     async def _handle_trial_revert(self, guild: discord.Guild, member: discord.Member, tiers, role_ids, settings, config):
         """Handle automatic reversion from trial period"""
         # Remove trial moderator role
@@ -516,6 +648,17 @@ class StaffPromotionSystem:
     async def _log_promotion(self, guild: discord.Guild, member: discord.Member, new_tier: str, settings: dict):
         logger.info(f"StaffPromo[{guild.id}] {member} promoted to {new_tier}")
         
+        # Save to history
+        logs = dm.get_guild_data(guild.id, "promotion_logs", [])
+        logs.append({
+            "ts": time.time(),
+            "user": str(member),
+            "user_id": member.id,
+            "to": new_tier,
+            "reason": "Automatic criteria met"
+        })
+        dm.update_guild_data(guild.id, "promotion_logs", logs[-50:])
+
         log_ch_id = settings.get("log_channel")
         if log_ch_id:
             channel = guild.get_channel(int(log_ch_id))
@@ -543,6 +686,17 @@ class StaffPromotionSystem:
     async def _log_demotion(self, guild: discord.Guild, member: discord.Member, new_tier: str, settings: dict):
         logger.info(f"StaffPromo[{guild.id}] {member} demoted to {new_tier}")
         
+        # Save to history
+        logs = dm.get_guild_data(guild.id, "promotion_logs", [])
+        logs.append({
+            "ts": time.time(),
+            "user": str(member),
+            "user_id": member.id,
+            "to": new_tier,
+            "reason": "Criteria no longer met"
+        })
+        dm.update_guild_data(guild.id, "promotion_logs", logs[-50:])
+
         log_ch_id = settings.get("log_channel")
         if log_ch_id:
             channel = guild.get_channel(int(log_ch_id))
@@ -616,6 +770,15 @@ class StaffPromotionSystem:
         self._last_promotion_time[cooldown_key] = discord.utils.utcnow()
         
         return True, f"Promoted to {tier.get('name')}"
+
+    async def submit_peer_vote(self, guild_id, voter_id, target_id):
+        """Submit a peer vote for a staff member."""
+        votes = dm.get_guild_data(guild_id, f"peer_votes_{target_id}", [])
+        if voter_id not in votes:
+            votes.append(voter_id)
+            dm.update_guild_data(guild_id, f"peer_votes_{target_id}", votes)
+            return True
+        return False
 
     async def manual_demote(self, guild: discord.Guild, target_member: discord.Member, tier_name: str, config: dict):
         tiers = config.get("tiers", self._default_tiers)
@@ -745,6 +908,7 @@ class StaffPromotionSystem:
         
         custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
         
+        custom_cmds["vote"] = json.dumps({"command_type": "peer_vote"})
         custom_cmds["staffpromo status"] = json.dumps({"command_type": "staffpromo_status"})
         custom_cmds["staffpromo leaderboard"] = json.dumps({"command_type": "staffpromo_leaderboard"})
         custom_cmds["staffpromo config"] = json.dumps({"command_type": "staffpromo_config"})

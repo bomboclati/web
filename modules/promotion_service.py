@@ -11,17 +11,19 @@ class PromotionService:
     
     def __init__(self):
         self._default_metrics = {
-            "xp": {"weight": 0.15, "max": 5000, "enabled": True},
+            "xp": {"weight": 0.12, "max": 5000, "enabled": True},
             "tenure_days": {"weight": 0.10, "max": 90, "enabled": True},
             "messages": {"weight": 0.10, "max": 1000, "enabled": True},
             "tickets_resolved": {"weight": 0.15, "max": 50, "enabled": True},
-            "achievements": {"weight": 0.10, "max": 20, "enabled": True},
+            "achievements": {"weight": 0.08, "max": 20, "enabled": True},
             "voice_minutes": {"weight": 0.08, "max": 3600, "enabled": True},
             "rep_received": {"weight": 0.08, "max": 100, "enabled": True},
             "rep_given": {"weight": 0.06, "max": 100, "enabled": True},
-            "gamification_score": {"weight": 0.10, "max": 100, "enabled": True},
+            "gamification_score": {"weight": 0.08, "max": 100, "enabled": True},
             "badge_count": {"weight": 0.05, "max": 10, "enabled": True},
-            "level": {"weight": 0.03, "max": 50, "enabled": True}
+            "level": {"weight": 0.02, "max": 50, "enabled": True},
+            "events_hosted": {"weight": 0.10, "max": 10, "enabled": True},
+            "peer_votes": {"weight": 0.05, "max": 20, "enabled": True}
         }
         
         self._default_achievement_bonuses = {
@@ -95,7 +97,7 @@ class PromotionService:
         values = {
             "xp": udata.get("xp", 0),
             "tenure_days": tenure_days,
-            "messages": udata.get("total_messages", 0),
+            "messages": udata.get("on_duty_messages", udata.get("total_messages", 0)),
             "tickets_resolved": dm.get_guild_data(guild_id, f"tickets_resolved_{user_id}", 0),
             "achievements": len(dm.get_guild_data(guild_id, f"achievements_{user_id}", [])),
             "voice_minutes": udata.get("voice_minutes", 0),
@@ -103,7 +105,9 @@ class PromotionService:
             "rep_given": udata.get("rep_given", 0),
             "gamification_score": self._calculate_gamification_score(guild_id, user_id),
             "badge_count": len(dm.get_guild_data(guild_id, f"badges_{user_id}", [])),
-            "level": self._get_user_level(guild_id, user_id)
+            "level": self._get_user_level(guild_id, user_id),
+            "events_hosted": dm.get_guild_data(guild_id, f"events_hosted_{user_id}", 0),
+            "peer_votes": len(dm.get_guild_data(guild_id, f"peer_votes_{user_id}", []))
         }
         
         score = 0.0
@@ -137,15 +141,16 @@ class PromotionService:
     async def _submit_promotion_review(self, guild: discord.Guild, member: discord.Member, target_tier, score: float, config: dict):
         """Submit a promotion for review"""
         pending = config.get("pending_reviews", [])
+        tier_name = target_tier.get("name")
         
         for review in pending:
-            if review.get("user_id") == member.id and review.get("tier_name") == target_tier.get("name"):
+            if review.get("user_id") == member.id and review.get("tier_name") == tier_name:
                 return
         
         review_data = {
             "user_id": member.id,
             "user_name": str(member),
-            "tier_name": target_tier.get("name"),
+            "tier_name": tier_name,
             "score": score,
             "timestamp": discord.utils.utcnow().isoformat(),
         }
@@ -160,16 +165,28 @@ class PromotionService:
             if channel:
                 embed = discord.Embed(
                     title="📋 Promotion Review Request",
-                    description=f"{member.mention} is eligible for promotion to **{target_tier.get('name')}**",
+                    description=f"{member.mention} is eligible for promotion to **{tier_name}**",
                     color=discord.Color.yellow()
                 )
                 embed.add_field(name="Score", value=f"{score*100:.1f}%", inline=True)
                 embed.add_field(name="Member", value=member.mention, inline=True)
-                embed.add_field(name="Actions", value="`!staffpromo approve @user` or `!staffpromo reject @user`", inline=False)
-                await channel.send(embed=embed)
+                embed.set_footer(text=f"User ID: {member.id}")
+
+                from modules.staff_promo import PromotionReviewView
+                view = PromotionReviewView(guild_id=guild.id, user_id=member.id, tier_name=tier_name)
+                msg = await channel.send(embed=embed, view=view)
+
+                # Store review data for persistence
+                dm.save_json(f"promo_review_{msg.id}", {
+                    "upvotes": [],
+                    "downvotes": [],
+                    "user_id": member.id,
+                    "tier_name": tier_name,
+                    "executed": False
+                })
         
         try:
-            await member.send(f"📋 Your promotion to **{target_tier.get('name')}** is pending review.")
+            await member.send(f"📋 Your promotion to **{tier_name}** is pending review.")
         except:
             pass
 
@@ -186,10 +203,24 @@ class PromotionService:
         requirements = config.get("tier_requirements", self._default_tier_requirements)
         tier_reqs = requirements.get(tier_name, {})
         
+        # 0 warnings requirement
+        warnings = dm.get_guild_data(guild_id, f"user_warnings_{member.id}", [])
+        active_warnings = [w for w in warnings if w.get("active") and not w.get("pardoned")]
+        if len(active_warnings) > 0:
+            logger.info(f"StaffPromo[{guild_id}] {member} ineligible for {tier_name} due to active warnings.")
+            return False
+
+        # Probation check
+        udata = dm.get_guild_data(guild_id, f"user_{member.id}", {})
+        if udata.get("on_probation"):
+            probation_end = udata.get("probation_end_timestamp", 0)
+            if time.time() < probation_end:
+                logger.info(f"StaffPromo[{guild_id}] {member} ineligible for {tier_name} - on probation.")
+                return False
+
         if not tier_reqs:
             return True
         
-        udata = dm.get_guild_data(guild_id, f"user_{member.id}", {})
         joined_at = member.joined_at or discord.utils.utcnow()
         tenure_days = (discord.utils.utcnow() - joined_at).days
         user_achievements = dm.get_guild_data(guild_id, f"achievements_{member.id}", [])
@@ -208,6 +239,14 @@ class PromotionService:
             elif req_type == "xp":
                 if udata.get("xp", 0) < req_value:
                     missing.append(f"XP: {udata.get('xp', 0)}/{req_value}")
+            elif req_type == "events":
+                hosted = dm.get_guild_data(guild_id, f"events_hosted_{member.id}", 0)
+                if hosted < req_value:
+                    missing.append(f"events: {hosted}/{req_value}")
+            elif req_type == "votes":
+                votes = len(dm.get_guild_data(guild_id, f"peer_votes_{member.id}", []))
+                if votes < req_value:
+                    missing.append(f"votes: {votes}/{req_value}")
         
         if missing:
             logger.info(f"StaffPromo[{guild_id}] {member} missing requirements for {tier_name}: {', '.join(missing)}")

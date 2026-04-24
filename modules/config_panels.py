@@ -1932,6 +1932,636 @@ class ModLogConfigView(ConfigPanelView):
                 else: await it.response.send_message("Not found.", ephemeral=True)
         await i.response.send_modal(DelModal())
 
+class StaffPromoConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "staff_promo")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id or self.guild_id)
+        embed = discord.Embed(title="🌟 Staff Promotion System Configuration", color=discord.Color.gold())
+
+        settings = c.get("settings", {})
+        embed.add_field(name="Auto-Promote", value="✅ ON" if settings.get("auto_promote", True) else "❌ OFF", inline=True)
+        embed.add_field(name="Review Mode", value="✅ ON" if settings.get("review_mode", False) else "❌ OFF", inline=True)
+        embed.add_field(name="Review Channel", value=f"<#{settings.get('review_channel')}>" if settings.get('review_channel') else "None", inline=True)
+
+        tiers = c.get("tiers", [])
+        embed.add_field(name="Hierarchy", value=" → ".join([t['name'] for t in tiers]) or "None", inline=False)
+
+        return embed
+
+    @ui.button(label="Staff Overview", emoji="📊", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_staff_ov")
+    async def view_overview(self, i, b):
+        guild = i.guild
+        config = self.get_config(i.guild_id)
+        tiers = config.get("tiers", [])
+        staff_roles = [t.get("role_name") for t in tiers]
+        desc = "**Staff Member | Role | Days | Status**\n"
+        now = discord.utils.utcnow()
+        for member in guild.members:
+            if any(r.name in staff_roles for r in member.roles):
+                days = (now - (member.joined_at or now)).days
+
+                # Find current and next tier
+                current_idx = -1
+                for idx, t in enumerate(tiers):
+                    if any(r.name == t.get("role_name") for r in member.roles):
+                        current_idx = idx
+                        break
+
+                status = "Max Rank"
+                if current_idx != -1 and current_idx < len(tiers) - 1:
+                    next_t = tiers[current_idx + 1]
+                    is_elig = i.client.promotion_service._check_tier_requirements(i.guild_id, member, next_t['name'], config)
+                    status = "✅ Eligible" if is_elig else "⏳ Pending"
+
+                desc += f"• {member.mention} | {member.top_role.name} | {days}d | {status}\n"
+
+        await i.response.send_message(embed=discord.Embed(title="📊 Staff Overview", description=desc[:4000]), ephemeral=True)
+
+    @ui.button(label="Leaderboard", emoji="🏆", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_staff_lb")
+    async def view_lb(self, i, b):
+        guild = i.guild
+        staff = []
+        staff_roles = [t.get("role_name") for t in self.get_config(i.guild_id).get("tiers", [])]
+        for member in guild.members:
+            if any(r.name in staff_roles for r in member.roles):
+                udata = dm.get_guild_data(i.guild_id, f"user_{member.id}", {})
+                score = udata.get("on_duty_messages", 0) + (udata.get("on_duty_hours", 0) * 10)
+                staff.append((member, score))
+
+        staff.sort(key=lambda x: x[1], reverse=True)
+        desc = "\n".join([f"{idx+1}. {m.mention} - Score: {s:.1f}" for idx, (m, s) in enumerate(staff[:10])]) or "No staff activity tracked."
+        await i.response.send_message(embed=discord.Embed(title="🏆 Staff Activity Leaderboard", description=desc), ephemeral=True)
+
+    @ui.button(label="Promotion History", emoji="📋", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_staff_hist")
+    async def view_history(self, i, b):
+        logs = dm.get_guild_data(i.guild_id, "promotion_logs", [])
+        if not logs: return await i.response.send_message("No promotion history found.", ephemeral=True)
+        desc = "\n".join([f"• <t:{int(l['ts'])}:d> {l['user']} -> {l['to']} ({l['reason']})" for l in logs[::-1]])
+        await i.response.send_message(embed=discord.Embed(title="📋 Promotion History", description=desc[:4000]), ephemeral=True)
+
+    @ui.button(label="Promote Staff", emoji="⬆️", style=discord.ButtonStyle.success, row=1, custom_id="cfg_staff_promote")
+    async def promote_staff(self, i, b):
+        class PromoteModal(ui.Modal, title="Manual Promotion"):
+            uid = ui.TextInput(label="User ID")
+            tier = ui.TextInput(label="Target Tier Name")
+            reason = ui.TextInput(label="Reason")
+            async def on_submit(self, it):
+                guild = it.guild
+                member = guild.get_member(int(self.uid.value))
+                if not member: return await it.response.send_message("Member not found.", ephemeral=True)
+                success, msg = await it.client.staff_promo.manual_promote(guild, member, self.tier.value, dm.get_guild_data(guild.id, "staff_promo_config", {}))
+                await it.response.send_message(f"Result: {msg}", ephemeral=True)
+        await i.response.send_modal(PromoteModal())
+
+    @ui.button(label="Demote Staff", emoji="⬇️", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_staff_demote")
+    async def demote_staff(self, i, b):
+        class DemoteModal(ui.Modal, title="Manual Demotion"):
+            uid = ui.TextInput(label="User ID")
+            tier = ui.TextInput(label="Target Tier Name (or 'None')")
+            reason = ui.TextInput(label="Reason")
+            async def on_submit(self, it):
+                guild = it.guild
+                member = guild.get_member(int(self.uid.value))
+                if not member: return await it.response.send_message("Member not found.", ephemeral=True)
+                success, msg = await it.client.staff_promo.manual_demote(guild, member, self.tier.value, dm.get_guild_data(guild.id, "staff_promo_config", {}))
+                await it.response.send_message(f"Result: {msg}", ephemeral=True)
+        await i.response.send_modal(DemoteModal())
+
+    @ui.button(label="View Profile", emoji="🔍", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_staff_profile")
+    async def view_profile(self, i, b):
+        class ProfileModal(ui.Modal, title="View Staff Profile"):
+            uid = ui.TextInput(label="User ID")
+            async def on_submit(self, it):
+                uid = int(self.uid.value)
+                udata = dm.get_guild_data(it.guild_id, f"user_{uid}", {})
+                warns = len(dm.get_guild_data(it.guild_id, f"user_warnings_{uid}", []))
+
+                embed = discord.Embed(title=f"Staff Profile: {uid}", color=discord.Color.blue())
+                embed.add_field(name="On-Duty Msgs", value=str(udata.get("on_duty_messages", 0)), inline=True)
+                embed.add_field(name="On-Duty Hours", value=f"{udata.get('on_duty_hours', 0):.1f}", inline=True)
+                embed.add_field(name="Active Warnings", value=str(warns), inline=True)
+                embed.add_field(name="Probation", value="YES" if udata.get("on_probation") else "NO", inline=True)
+
+                await it.response.send_message(embed=embed, ephemeral=True)
+        await i.response.send_modal(ProfileModal())
+
+    @ui.button(label="Promotion Path", emoji="⚙️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staff_path")
+    async def config_path(self, i, b):
+        await i.response.send_message("⚙️ Path Builder: Use `!staffpromo tiers` for interactive hierarchy management.", ephemeral=True)
+
+    @ui.button(label="Requirements", emoji="⚙️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staff_req")
+    async def config_reqs(self, i, b):
+        await i.response.send_message("⚙️ Requirements Editor: Use `!staffpromo requirements` to set per-tier criteria.", ephemeral=True)
+
+    @ui.button(label="Toggle Auto-Promote", emoji="🚀", style=discord.ButtonStyle.success, row=2, custom_id="cfg_staff_auto")
+    async def toggle_auto(self, i, b):
+        c = self.get_config(i.guild_id)
+        c["settings"]["auto_promote"] = not c["settings"].get("auto_promote", True)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Toggle Review Mode", emoji="⚖️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staff_review")
+    async def toggle_review(self, i, b):
+        c = self.get_config(i.guild_id)
+        c["settings"]["review_mode"] = not c["settings"].get("review_mode", False)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staff_dm")
+    async def toggle_dm(self, i, b):
+        c = self.get_config(i.guild_id); c["settings"]["notify_on_promotion"] = not c["settings"].get("notify_on_promotion", True)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Set Review Ch", emoji="🔔", style=discord.ButtonStyle.primary, row=3, custom_id="cfg_staff_rev_ch")
+    async def set_rev_ch(self, i, b):
+        await i.response.send_message("Select Review Channel:", view=_picker_view(_GenericChannelSelect(self, "review_channel", "Review Channel")), ephemeral=True)
+
+    @ui.button(label="Put on Probation", emoji="⏸️", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_staff_prob")
+    async def put_probation(self, i, b):
+        class ProbModal(ui.Modal, title="Staff Probation"):
+            uid = ui.TextInput(label="User ID")
+            days = ui.TextInput(label="Duration (Days)", default="14")
+            reason = ui.TextInput(label="Reason")
+            async def on_submit(self, it):
+                member = it.guild.get_member(int(self.uid.value))
+                if member:
+                    await it.client.staff_promo.put_on_probation(it.guild, member, int(self.days.value), self.reason.value)
+                    await it.response.send_message(f"✅ {member.display_name} put on probation.", ephemeral=True)
+                else: await it.response.send_message("Member not found.", ephemeral=True)
+        await i.response.send_modal(ProbModal())
+
+    @ui.button(label="End Probation", emoji="▶️", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_staff_end_prob")
+    async def end_probation(self, i, b):
+        class EndProbModal(ui.Modal, title="End Probation Early"):
+            uid = ui.TextInput(label="User ID")
+            async def on_submit(self, it):
+                member = it.guild.get_member(int(self.uid.value))
+                if member:
+                    await it.client.staff_promo.end_probation(it.guild, member)
+                    await it.response.send_message(f"✅ {member.display_name} probation ended.", ephemeral=True)
+        await i.response.send_modal(EndProbModal())
+
+    @ui.button(label="Exclude Staff", emoji="🔕", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_staff_excl")
+    async def exclude_staff(self, i, b):
+        await i.response.send_message("Exclude from promotions: Use `!staffpromo exclude add @user`", ephemeral=True)
+
+    @ui.button(label="Eligible Staff", emoji="🔍", style=discord.ButtonStyle.success, row=4, custom_id="cfg_staff_elig")
+    async def view_eligible(self, i, b):
+        guild = i.guild
+        config = self.get_config(i.guild_id)
+        tiers = config.get("tiers", [])
+        eligible = []
+
+        for member in guild.members:
+            # Find current tier
+            current_idx = -1
+            for idx, t in enumerate(tiers):
+                if any(r.name == t.get("role_name") for r in member.roles):
+                    current_idx = idx
+                    break
+
+            if current_idx != -1 and current_idx < len(tiers) - 1:
+                next_tier = tiers[current_idx + 1]
+                if i.client.promotion_service._check_tier_requirements(i.guild_id, member, next_tier['name'], config):
+                    eligible.append(f"• {member.mention} -> **{next_tier['name']}**")
+
+        desc = "\n".join(eligible) or "No staff currently meet ALL requirements for promotion."
+        await i.response.send_message(embed=discord.Embed(title="🔍 Eligible Staff", description=desc), ephemeral=True)
+
+class WarningConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "warning")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id or self.guild_id)
+        embed = discord.Embed(title="⚠️ User Warning System Configuration", color=discord.Color.orange())
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Expiry", value=f"{c.get('expiry_days', 30)} days", inline=True)
+
+        ts = c.get("thresholds", {})
+        ts_text = "\n".join([f"• {k.title()}: {v['count']} -> {v['action'].upper()}" for k, v in ts.items()])
+        embed.add_field(name="Punishment Thresholds", value=ts_text or "None", inline=False)
+
+        return embed
+
+    @ui.button(label="Issue Warning", emoji="⚠️", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_warn_issue")
+    async def issue_warn(self, i, b):
+        class IssueModal(ui.Modal, title="Issue Manual Warning"):
+            uid = ui.TextInput(label="User ID")
+            reason = ui.TextInput(label="Reason", style=discord.TextStyle.paragraph)
+            severity = ui.TextInput(label="Severity (minor/moderate/severe)", default="minor")
+            async def on_submit(self, it):
+                await it.client.warnings.issue_warning(it.guild, int(self.uid.value), it.user.id, self.reason.value, self.severity.value)
+                await it.response.send_message(f"✅ Warning issued to {self.uid.value}", ephemeral=True)
+        await i.response.send_modal(IssueModal())
+
+    @ui.button(label="View Warnings", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_warn_view")
+    async def view_warns(self, i, b):
+        class ViewModal(ui.Modal, title="View User Warnings"):
+            uid = ui.TextInput(label="User ID")
+            async def on_submit(self, it):
+                warns = it.client.warnings.get_warnings(it.guild_id, int(self.uid.value))
+                if not warns: return await it.response.send_message("No warnings found for this user.", ephemeral=True)
+                desc = "\n".join([f"**ID: {w['id']}** | {w['severity']} | {w['reason'][:50]}" for w in warns[-10:]])
+                await it.response.send_message(embed=discord.Embed(title=f"Warnings: {self.uid.value}", description=desc), ephemeral=True)
+        await i.response.send_modal(ViewModal())
+
+    @ui.button(label="Toggle System", emoji="✅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_warn_toggle")
+    async def toggle_system(self, i, b):
+        c = self.get_config(i.guild_id)
+        c["enabled"] = not c.get("enabled", True)
+        self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
+
+    @ui.button(label="Pardon Warning", emoji="✅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_warn_pardon")
+    async def pardon_warn(self, i, b):
+        class PardonModal(ui.Modal, title="Pardon Warning"):
+            uid = ui.TextInput(label="User ID")
+            wid = ui.TextInput(label="Warning ID")
+            reason = ui.TextInput(label="Pardon Reason")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+            async def on_submit(self, it):
+                success = await it.client.warnings.pardon_warning(it.guild, int(self.uid.value), int(self.wid.value), self.reason.value)
+                if success: await it.response.send_message("✅ Warning pardoned.", ephemeral=True)
+                else: await it.response.send_message("❌ Warning not found.", ephemeral=True)
+        await i.response.send_modal(PardonModal(self))
+
+    @ui.button(label="Delete Warning", emoji="🗑️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_warn_delete")
+    async def delete_warn(self, i, b):
+        class DelModal(ui.Modal, title="Delete Warning Entry"):
+            uid = ui.TextInput(label="User ID")
+            wid = ui.TextInput(label="Warning ID")
+            async def on_submit(self, it):
+                success = await it.client.warnings.delete_warning(it.guild, int(self.uid.value), int(self.wid.value))
+                if success: await it.response.send_message("✅ Warning deleted.", ephemeral=True)
+                else: await it.response.send_message("❌ Warning not found.", ephemeral=True)
+        await i.response.send_modal(DelModal())
+
+    @ui.button(label="Clear All", emoji="🗑️", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_warn_clear_all")
+    async def clear_all(self, i, b):
+        class ClearModal(ui.Modal, title="Clear All User Warnings"):
+            uid = ui.TextInput(label="User ID")
+            reason = ui.TextInput(label="Reason for clear")
+            async def on_submit(self, it):
+                count = await it.client.warnings.clear_all_warnings(it.guild, int(self.uid.value), self.reason.value)
+                await it.response.send_message(f"✅ Cleared {count} warnings for {self.uid.value}", ephemeral=True)
+        await i.response.send_modal(ClearModal())
+
+    @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_warn_stats")
+    async def warn_stats(self, i, b):
+        stats = dm.get_guild_data(i.guild_id, "warning_stats", {})
+        embed = discord.Embed(title="📊 Warning Statistics", color=discord.Color.orange())
+        embed.add_field(name="Issued Today", value=str(stats.get("today", 0)), inline=True)
+        embed.add_field(name="Issued This Week", value=str(stats.get("week", 0)), inline=True)
+        embed.add_field(name="Total Pardoned", value=str(stats.get("total_pardoned", 0)), inline=True)
+
+        breakdown = stats.get("severity_breakdown", {})
+        bd_text = "\n".join([f"• {k.title()}: {v}" for k, v in breakdown.items()]) or "None"
+        embed.add_field(name="Severity Breakdown", value=bd_text, inline=False)
+
+        await i.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="Thresholds", emoji="⚙️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_warn_thresh")
+    async def config_thresh(self, i, b):
+        class ThreshModal(ui.Modal, title="Configure Thresholds"):
+            minor = ui.TextInput(label="Minor (Count)", default="2")
+            moderate = ui.TextInput(label="Moderate (Count)", default="3")
+            severe = ui.TextInput(label="Severe (Count)", default="4")
+            critical = ui.TextInput(label="Critical (Count)", default="5")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+            async def on_submit(self, it):
+                c = self.parent.get_config(it.guild_id)
+                c["thresholds"]["minor"]["count"] = int(self.minor.value)
+                c["thresholds"]["moderate"]["count"] = int(self.moderate.value)
+                c["thresholds"]["severe"]["count"] = int(self.severe.value)
+                c["thresholds"]["critical"]["count"] = int(self.critical.value)
+                self.parent.save_config(c, it.guild_id, it.client)
+                await it.response.send_message("✅ Threshold counts updated.", ephemeral=True)
+        await i.response.send_modal(ThreshModal(self))
+
+    @ui.button(label="Expiry", emoji="⏱️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_warn_expiry")
+    async def config_expiry(self, i, b):
+        await i.response.send_modal(_NumberModal(self, "expiry_days", "Warning Expiry (Days, 0=never)", i.guild_id))
+
+    @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_warn_dm")
+    async def toggle_dm(self, i, b):
+        c = self.get_config(i.guild_id); c["dm_enabled"] = not c.get("dm_enabled", True)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Edit DM", emoji="✏️", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_warn_edit_dm")
+    async def edit_dm(self, i, b):
+        await i.response.send_modal(_TextModal(self, "dm_template", "Warning DM Template", i.guild_id))
+
+    @ui.button(label="Most Warned", emoji="🏆", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_warn_top")
+    async def top_warned(self, i, b):
+        # Scan all user_warnings keys
+        guild_data = dm.load_json(f"guild_{i.guild_id}", default={})
+        warn_counts = {}
+        for key, value in guild_data.items():
+            if key.startswith("user_warnings_") and isinstance(value, list):
+                uid = key.replace("user_warnings_", "")
+                active_count = len([w for w in value if w.get("active") and not w.get("pardoned")])
+                if active_count > 0: warn_counts[uid] = active_count
+
+        sorted_warns = sorted(warn_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+        desc = "\n".join([f"**<@{uid}>**: {count} active warnings" for uid, count in sorted_warns]) or "No active warnings."
+        await i.response.send_message(embed=discord.Embed(title="🏆 Most Warned Users", description=desc), ephemeral=True)
+
+    @ui.button(label="Recent Warnings", emoji="📋", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_warn_recent")
+    async def recent_warns(self, i, b):
+        history = dm.get_guild_data(i.guild_id, "warning_history", [])
+        if not history: return await i.response.send_message("No recent warnings.", ephemeral=True)
+
+        desc = ""
+        for entry in history[::-1]:
+            t = f"<t:{int(entry['ts'])}:R>"
+            desc += f"{t} **<@{entry['user_id']}>** - {entry['severity'].upper()}: {entry['reason'][:50]}\n"
+
+        await i.response.send_message(embed=discord.Embed(title="Recent Server Warnings", description=desc[:4000]), ephemeral=True)
+
+class AutoModConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "automod")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id or self.guild_id)
+        embed = discord.Embed(title="🛡️ Auto-Mod System Configuration", color=discord.Color.blue())
+        enabled = c.get("enabled", True)
+        embed.add_field(name="Status", value="✅ Enabled" if enabled else "❌ Disabled", inline=True)
+        embed.add_field(name="Log Channel", value=f"<#{c.get('log_channel_id')}>" if c.get('log_channel_id') else "None", inline=True)
+
+        rules = c.get("rules", {})
+        active_rules = [name for name, r in rules.items() if r.get("enabled")]
+        embed.add_field(name="Active Rules", value=", ".join(active_rules) or "None", inline=False)
+
+        return embed
+
+    @ui.button(label="Toggle System", emoji="✅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_automod_toggle")
+    async def toggle_system(self, i, b):
+        c = self.get_config(i.guild_id)
+        c["enabled"] = not c.get("enabled", True)
+        self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
+
+    @ui.button(label="View All Rules", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_automod_view")
+    async def view_rules(self, i, b):
+        c = self.get_config(i.guild_id)
+        rules = c.get("rules", {})
+        desc = ""
+        for name, r in rules.items():
+            status = "✅" if r.get("enabled") else "❌"
+            action = r.get("action", "warn").upper()
+            desc += f"{status} **{name.replace('_', ' ').title()}** | Action: {action}\n"
+
+        await i.response.send_message(embed=discord.Embed(title="Auto-Mod Rules", description=desc), ephemeral=True)
+
+    @ui.button(label="Configure Spam", emoji="✏️", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_automod_spam")
+    async def config_spam(self, i, b):
+        class SpamModal(ui.Modal, title="Configure Spam Filter"):
+            count = ui.TextInput(label="Max Messages", default="5")
+            window = ui.TextInput(label="Time Window (seconds)", default="5")
+            action = ui.TextInput(label="Action (warn/mute/delete)", default="mute")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+            async def on_submit(self, it):
+                c = self.parent.get_config(it.guild_id)
+                c["rules"]["spam"].update({
+                    "max_messages": int(self.count.value),
+                    "window": int(self.window.value),
+                    "action": self.action.value.lower(),
+                    "enabled": True
+                })
+                self.parent.save_config(c, it.guild_id, it.client)
+                await it.response.send_message("✅ Spam filter updated.", ephemeral=True)
+        await i.response.send_modal(SpamModal(self))
+
+    @ui.button(label="Mention Filter", emoji="✏️", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_automod_ment")
+    async def config_mentions(self, i, b):
+        class MentModal(ui.Modal, title="Configure Mention Filter"):
+            count = ui.TextInput(label="Max Mentions", default="5")
+            window = ui.TextInput(label="Time Window (seconds)", default="10")
+            action = ui.TextInput(label="Action (warn/mute/delete)", default="warn")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+            async def on_submit(self, it):
+                c = self.parent.get_config(it.guild_id)
+                c["rules"]["mentions"].update({
+                    "max_mentions": int(self.count.value),
+                    "window": int(self.window.value),
+                    "action": self.action.value.lower(),
+                    "enabled": True
+                })
+                self.parent.save_config(c, it.guild_id, it.client)
+                await it.response.send_message("✅ Mention filter updated.", ephemeral=True)
+        await i.response.send_modal(MentModal(self))
+
+    @ui.button(label="Caps Filter", emoji="✏️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_automod_caps")
+    async def config_caps(self, i, b):
+        class CapsModal(ui.Modal, title="Configure Caps Filter"):
+            pct = ui.TextInput(label="Caps % Threshold", default="70")
+            min_chars = ui.TextInput(label="Min Message Length", default="20")
+            action = ui.TextInput(label="Action (warn/delete)", default="warn")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+            async def on_submit(self, it):
+                c = self.parent.get_config(it.guild_id)
+                c["rules"]["caps"].update({
+                    "threshold_pct": int(self.pct.value),
+                    "min_chars": int(self.min_chars.value),
+                    "action": self.action.value.lower(),
+                    "enabled": True
+                })
+                self.parent.save_config(c, it.guild_id, it.client)
+                await it.response.send_message("✅ Caps filter updated.", ephemeral=True)
+        await i.response.send_modal(CapsModal(self))
+
+    @ui.button(label="Link Filter", emoji="✏️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_automod_link")
+    async def config_links(self, i, b):
+        class LinkModal(ui.Modal, title="Configure Link Filter"):
+            count = ui.TextInput(label="Max Links", default="3")
+            window = ui.TextInput(label="Time Window (seconds)", default="10")
+            action = ui.TextInput(label="Action (warn/delete)", default="warn")
+            whitelist = ui.TextInput(label="Whitelist Domains (comma sep)", required=False)
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+                existing = parent.get_config(i.guild_id).get("rules", {}).get("links", {}).get("whitelisted_domains", [])
+                self.whitelist.default = ", ".join(existing)
+            async def on_submit(self, it):
+                c = self.parent.get_config(it.guild_id)
+                domains = [d.strip() for d in self.whitelist.value.split(",") if d.strip()]
+                c["rules"]["links"].update({
+                    "max_links": int(self.count.value),
+                    "window": int(self.window.value),
+                    "action": self.action.value.lower(),
+                    "whitelisted_domains": domains,
+                    "enabled": True
+                })
+                self.parent.save_config(c, it.guild_id, it.client)
+                await it.response.send_message("✅ Link filter updated.", ephemeral=True)
+        await i.response.send_modal(LinkModal(self))
+
+    @ui.button(label="Toggle Invites", emoji="✅", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_automod_inv")
+    async def toggle_invites(self, i, b):
+        c = self.get_config(i.guild_id)
+        c["rules"]["invites"]["enabled"] = not c["rules"]["invites"].get("enabled", True)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Manage Banned Words", emoji="📝", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_automod_words")
+    async def config_words(self, i, b):
+        class WordManagementView(discord.ui.View):
+            def __init__(self, parent_view, guild_id):
+                super().__init__(timeout=None)
+                self.parent_view = parent_view
+                self.guild_id = guild_id
+
+            @discord.ui.button(label="Add Word", style=discord.ButtonStyle.success)
+            async def add_word(self, it, btn):
+                class AddWordModal(ui.Modal, title="Add Banned Word"):
+                    word = ui.TextInput(label="Word/Phrase")
+                    async def on_submit(self, it2):
+                        c = dm.get_guild_data(it2.guild_id, "automod_config", {})
+                        words = c.get("rules", {}).get("banned_words", {}).get("words", [])
+                        if self.word.value not in words:
+                            words.append(self.word.value)
+                            c["rules"]["banned_words"]["words"] = words
+                            dm.update_guild_data(it2.guild_id, "automod_config", c)
+                            await it2.response.send_message(f"✅ Added: {self.word.value}", ephemeral=True)
+                        else: await it2.response.send_message("Already in list.", ephemeral=True)
+                await it.response.send_modal(AddWordModal())
+
+            @discord.ui.button(label="Remove Word", style=discord.ButtonStyle.danger)
+            async def remove_word(self, it, btn):
+                c = dm.get_guild_data(it.guild_id, "automod_config", {})
+                words = c.get("rules", {}).get("banned_words", {}).get("words", [])
+                if not words: return await it.response.send_message("List is empty.", ephemeral=True)
+
+                class RemoveSelect(ui.Select):
+                    async def callback(self, it2):
+                        c2 = dm.get_guild_data(it2.guild_id, "automod_config", {})
+                        ws = c2.get("rules", {}).get("banned_words", {}).get("words", [])
+                        if self.values[0] in ws:
+                            ws.remove(self.values[0])
+                            dm.update_guild_data(it2.guild_id, "automod_config", c2)
+                            await it2.response.send_message(f"✅ Removed: {self.values[0]}", ephemeral=True)
+
+                v = ui.View(); v.add_item(RemoveSelect(options=[discord.SelectOption(label=w) for w in words[:25]]))
+                await it.response.send_message("Select word to remove:", view=v, ephemeral=True)
+
+            @discord.ui.button(label="View List", style=discord.ButtonStyle.primary)
+            async def view_list(self, it, btn):
+                c = dm.get_guild_data(it.guild_id, "automod_config", {})
+                words = c.get("rules", {}).get("banned_words", {}).get("words", [])
+                await it.response.send_message(f"📝 **Banned Words:**\n{', '.join(words) or 'None'}", ephemeral=True)
+
+        await i.response.send_message("Banned Words Management:", view=WordManagementView(self, i.guild_id), ephemeral=True)
+
+    @ui.button(label="Escalation", emoji="⚙️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_automod_esc")
+    async def config_escalation(self, i, b):
+        class EscModal(ui.Modal, title="Configure Escalation"):
+            reset = ui.TextInput(label="Reset hours", default="24")
+            p1 = ui.TextInput(label="1st violation", default="warn")
+            p2 = ui.TextInput(label="2nd violation", default="mute_10")
+            p3 = ui.TextInput(label="3rd violation", default="mute_60")
+            p4 = ui.TextInput(label="4th+ violation", default="kick")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+            async def on_submit(self, it):
+                c = self.parent.get_config(it.guild_id)
+                c["escalation"].update({
+                    "reset_hours": int(self.reset.value),
+                    "1": self.p1.value.lower(),
+                    "2": self.p2.value.lower(),
+                    "3": self.p3.value.lower(),
+                    "4": self.p4.value.lower(),
+                    "5": "ban"
+                })
+                self.parent.save_config(c, it.guild_id, it.client)
+                await it.response.send_message("✅ Escalation settings updated.", ephemeral=True)
+        await i.response.send_modal(EscModal(self))
+
+    @ui.button(label="Whitelist Ch", emoji="🔕", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_automod_wl_ch")
+    async def whitelist_ch(self, i, b):
+        await i.response.send_message("Select channel to whitelist:", view=_picker_view(_GenericChannelSelect(self, "whitelist_channels", "Whitelist Channel")), ephemeral=True)
+
+    @ui.button(label="Whitelist Role", emoji="🔕", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_automod_wl_rl")
+    async def whitelist_rl(self, i, b):
+        await i.response.send_message("Select role to whitelist:", view=_picker_view(_GenericRoleSelect(self, "whitelist_roles", "Whitelist Role")), ephemeral=True)
+
+    @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_automod_stats")
+    async def view_stats(self, i, b):
+        stats = dm.get_guild_data(i.guild_id, "automod_stats", {})
+        today = stats.get("today", 0)
+        week = stats.get("week", 0)
+        top_type = max(stats.get("types", {"None": 0}), key=stats.get("types", {"None": 0}).get)
+
+        # Most warned user in automod
+        top_user = "None"
+        if stats.get("users"):
+            uid = max(stats["users"], key=stats["users"].get)
+            top_user = f"<@{uid}> ({stats['users'][uid]} violations)"
+
+        embed = discord.Embed(title="📊 Auto-Mod Statistics", color=discord.Color.blue())
+        embed.add_field(name="Caught Today", value=str(today), inline=True)
+        embed.add_field(name="Caught This Week", value=str(week), inline=True)
+        embed.add_field(name="Top Violation", value=top_type, inline=True)
+        embed.add_field(name="Most Warned User", value=top_user, inline=False)
+
+        actions = stats.get("actions", {})
+        act_text = "\n".join([f"• {k.upper()}: {v}" for k, v in actions.items()]) or "None"
+        embed.add_field(name="Actions Taken (Week)", value=act_text, inline=False)
+
+        await i.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="Clear Violations", emoji="🔄", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_automod_clear")
+    async def clear_violations(self, i, b):
+        class ClearModal(ui.Modal, title="Clear User Violations"):
+            uid = ui.TextInput(label="User ID")
+            async def on_submit(self, it):
+                dm.update_guild_data(it.guild_id, f"automod_violations_{self.uid.value}", {"count": 0, "last_violation": 0})
+                await it.response.send_message(f"✅ Violations cleared for {self.uid.value}", ephemeral=True)
+        await i.response.send_modal(ClearModal())
+
+    @ui.button(label="View Log", emoji="📋", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_automod_vlog")
+    async def view_log(self, i, b):
+        history = dm.get_guild_data(i.guild_id, "automod_history", [])
+        if not history: return await i.response.send_message("No recent auto-mod actions.", ephemeral=True)
+
+        desc = ""
+        for entry in history[::-1]:
+            t = f"<t:{int(entry['ts'])}:R>"
+            desc += f"{t} **{entry['user']}** - {entry['type']} ({entry['action']})\n"
+
+        await i.response.send_message(embed=discord.Embed(title="Auto-Mod Action Log", description=desc[:4000]), ephemeral=True)
+
+    @ui.button(label="Test Rule", emoji="🧪", style=discord.ButtonStyle.success, row=4, custom_id="cfg_automod_test")
+    async def test_rule(self, i, b):
+        class TestModal(ui.Modal, title="Test Auto-Mod Rule"):
+            msg = ui.TextInput(label="Test Message Content", style=discord.TextStyle.paragraph)
+            async def on_submit(self, it):
+                # We could potentially call automod.handle_message here with a mock message
+                # For now, let's just do a basic keyword check as a demonstration
+                content = self.msg.value.lower()
+                c = dm.get_guild_data(it.guild_id, "automod_config", {})
+                banned = c.get("rules", {}).get("banned_words", {}).get("words", [])
+                triggered = []
+                for w in banned:
+                    if w.lower() in content: triggered.append(f"Banned Word: {w}")
+
+                if triggered:
+                    await it.response.send_message(f"🧪 **Test Results:**\n❌ Would trigger: {', '.join(triggered)}", ephemeral=True)
+                else:
+                    await it.response.send_message("🧪 **Test Results:**\n✅ Message would be allowed.", ephemeral=True)
+        await i.response.send_modal(TestModal())
+
 class LoggingConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "logging")
@@ -2203,6 +2833,9 @@ class _TicketEmbedModal(ui.Modal):
 # --- Registry ---
 
 SPECIALIZED_VIEWS = {
+    "automod": "AutoModConfigView",
+    "warning": "WarningConfigView",
+    "staffpromo": "StaffPromoConfigView",
     "verification": "VerificationConfigView",
     "antiraid": "AntiRaidConfigView",
     "guardian": "GuardianConfigView",
@@ -2248,9 +2881,13 @@ def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
             ApplicationConfigView, AppealsConfigView, ModmailConfigView,
             SuggestionsConfigView, GiveawayConfigView, AchievementsConfigView,
             GamificationConfigView, ReactionRolesConfigView, ReactionMenusConfigView,
-            RoleButtonsConfigView, ModLogConfigView, LoggingConfigView
+            RoleButtonsConfigView, ModLogConfigView, LoggingConfigView,
+            AutoModConfigView, WarningConfigView, StaffPromoConfigView
         )
         _view_cache["VerificationConfigView"] = VerificationConfigView
+        _view_cache["AutoModConfigView"] = AutoModConfigView
+        _view_cache["WarningConfigView"] = WarningConfigView
+        _view_cache["StaffPromoConfigView"] = StaffPromoConfigView
         _view_cache["AntiRaidConfigView"] = AntiRaidConfigView
         _view_cache["GuardianConfigView"] = GuardianConfigView
         _view_cache["TicketsConfigView"] = TicketsConfigView
@@ -2288,6 +2925,9 @@ async def handle_config_panel_command(message: discord.Message, system: str):
 
 def register_all_persistent_views(bot: discord.Client):
     # Config Panels
+    bot.add_view(AutoModConfigView(0))
+    bot.add_view(WarningConfigView(0))
+    bot.add_view(StaffPromoConfigView(0))
     bot.add_view(VerificationConfigView(0))
     bot.add_view(AntiRaidConfigView(0))
     bot.add_view(GuardianConfigView(0))
