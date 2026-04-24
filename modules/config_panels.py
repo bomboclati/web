@@ -2562,6 +2562,316 @@ class AutoModConfigView(ConfigPanelView):
                     await it.response.send_message("🧪 **Test Results:**\n✅ Message would be allowed.", ephemeral=True)
         await i.response.send_modal(TestModal())
 
+class StaffReviewsConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "staff_reviews")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id or self.guild_id)
+        embed = discord.Embed(title="📝 Staff Reviews Configuration", color=discord.Color.blue())
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Cycle", value=c.get("cycle", "monthly").title(), inline=True)
+        embed.add_field(name="Review Channel", value=f"<#{c.get('review_channel_id')}>" if c.get('review_channel_id') else "None", inline=True)
+
+        next_cycle = c.get("next_cycle_start", 0)
+        if next_cycle > time.time():
+            embed.add_field(name="Next Cycle", value=f"<t:{int(next_cycle)}:D>", inline=True)
+
+        active = dm.get_guild_data(guild_id or self.guild_id, "staff_active_reviews", {})
+        embed.add_field(name="Active Reviews", value=str(len(active)), inline=True)
+
+        return embed
+
+    @ui.button(label="Start Cycle Now", emoji="▶️", style=discord.ButtonStyle.success, row=0, custom_id="cfg_rev_start")
+    async def start_now(self, i, b):
+        await i.client.staff_reviews.start_review_cycle(i.guild_id)
+        await i.response.send_message("✅ Review cycle triggered manually.", ephemeral=True)
+
+    @ui.button(label="Pause Cycle", emoji="⏸️", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_rev_pause")
+    async def pause_cycle(self, i, b):
+        c = self.get_config(i.guild_id); c["enabled"] = False; self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Active Reviews", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_rev_active")
+    async def v_active(self, i, b):
+        active = dm.get_guild_data(i.guild_id, "staff_active_reviews", {})
+        if not active: return await i.response.send_message("No active reviews.", ephemeral=True)
+        desc = ""
+        for uid, data in active.items():
+            status = []
+            if data.get("self"): status.append("Self ✅")
+            if data.get("peer"): status.append(f"Peer ({len(data['peer'])})")
+            if data.get("admin"): status.append("Admin ✅")
+            desc += f"• <@{uid}>: {', '.join(status) or 'Pending'}\n"
+        await i.response.send_message(embed=discord.Embed(title="Active Reviews Progress", description=desc), ephemeral=True)
+
+    @ui.button(label="Review Results", emoji="📊", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_rev_results")
+    async def v_results(self, i, b):
+        history = dm.get_guild_data(i.guild_id, "staff_reviews_history", [])
+        if not history: return await i.response.send_message("No review history.", ephemeral=True)
+        class ResSelect(ui.Select):
+            async def callback(self, it):
+                uid = int(self.values[0])
+                revs = [r for r in history if r["user_id"] == uid]
+                last = revs[-1]
+                emb = discord.Embed(title=f"Results: {last['username']}", color=discord.Color.blue())
+                emb.add_field(name="Composite Score", value=f"{last['composite_score']:.2f}")
+                for crit, val in last.get("admin_ratings", {}).items():
+                    emb.add_field(name=crit, value=str(val), inline=True)
+                await it.response.send_message(embed=emb, ephemeral=True)
+        # Ensure unique user options in select by picking the latest per user
+        latest_per_user = {}
+        for r in history:
+            latest_per_user[r['user_id']] = r
+        options = [discord.SelectOption(label=r['username'], value=str(r['user_id'])) for r in list(latest_per_user.values())[-25:]]
+        v = ui.View(); v.add_item(ResSelect(options=options))
+        await i.response.send_message("Select staff member:", view=v, ephemeral=True)
+
+    @ui.button(label="View Trends", emoji="📈", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_rev_trends")
+    async def v_trends(self, i, b):
+        class UIDModal(ui.Modal, title="View Staff Trend"):
+            uid = ui.TextInput(label="User ID")
+            async def on_submit(self, it):
+                from modules.auto_setup import MockInteraction
+                fake = MockInteraction(it.client, it.guild, it.guild.get_member(int(self.uid.value)) or it.user)
+                await it.client.staff_reviews.handle_myreview(fake)
+                await it.response.send_message("Trend report generated.", ephemeral=True)
+        await i.response.send_modal(UIDModal())
+
+    @ui.button(label="Admin Review", emoji="✏️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_rev_admin")
+    async def submit_admin(self, i, b):
+        class AdminRevModal(ui.Modal, title="Submit Admin Review"):
+            uid = ui.TextInput(label="Staff User ID")
+            async def on_submit(self, it):
+                m = it.guild.get_member(int(self.uid.value))
+                if m:
+                    from modules.staff_reviews import ReviewModal
+                    await it.response.send_modal(ReviewModal(it.client.staff_reviews, it.guild_id, "admin", m, it.user.id))
+                else: await it.response.send_message("Not found.", ephemeral=True)
+        await i.response.send_modal(AdminRevModal())
+
+    @ui.button(label="Individual Report", emoji="🔍", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_rev_report")
+    async def ind_report(self, i, b):
+        class ReportModal(ui.Modal, title="Staff Individual Report"):
+            uid = ui.TextInput(label="User ID")
+            async def on_submit(self, it):
+                try:
+                    uid = int(self.uid.value)
+                    history = dm.get_guild_data(it.guild_id, "staff_reviews_history", [])
+                    user_revs = [r for r in history if r["user_id"] == uid]
+                    if not user_revs: return await it.response.send_message("No history found for this user.", ephemeral=True)
+                    last = user_revs[-1]
+                    emb = discord.Embed(title=f"Full Report: {last['username']}", color=discord.Color.blue())
+                    emb.add_field(name="Composite Score", value=f"{last['composite_score']:.2f} / 5.0")
+                    if last.get("self_ratings"):
+                        sr = "\n".join([f"{k}: {v}" for k, v in last["self_ratings"].items()])
+                        emb.add_field(name="Self Ratings", value=sr, inline=True)
+                    if last.get("peer_ratings_avg"):
+                        pr = "\n".join([f"{k}: {v:.1f}" for k, v in last["peer_ratings_avg"].items()])
+                        emb.add_field(name="Peer Ratings (Avg)", value=pr, inline=True)
+                    if last.get("admin_ratings"):
+                        ar = "\n".join([f"{k}: {v}" for k, v in last["admin_ratings"].items()])
+                        emb.add_field(name="Admin Ratings", value=ar, inline=True)
+                    emb.set_footer(text=f"Cycle Date: {datetime.fromtimestamp(last['timestamp']).strftime('%Y-%m-%d')}")
+                    await it.response.send_message(embed=emb, ephemeral=True)
+                except ValueError: await it.response.send_message("Invalid ID.", ephemeral=True)
+        await i.response.send_modal(ReportModal())
+
+    @ui.button(label="Configure Criteria", emoji="⚙️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_rev_criteria")
+    async def set_criteria(self, i, b):
+        class CritModal(ui.Modal, title="Configure Review Criteria"):
+            crit = ui.TextInput(label="Criteria (Name:Weight, one per line)", style=discord.TextStyle.paragraph, default="Activity:1.0\nHelpfulness:1.0")
+            async def on_submit(self, it):
+                new_crit = []
+                for line in self.crit.value.split("\n"):
+                    if ":" in line:
+                        name, weight = line.split(":")
+                        new_crit.append({"name": name.strip(), "weight": float(weight.strip())})
+                c = self.parent.get_config(it.guild_id); c["criteria"] = new_crit; self.parent.save_config(c, it.guild_id, it.client)
+                await it.response.send_message("✅ Criteria updated.", ephemeral=True)
+        modal = CritModal(); modal.parent = self; await i.response.send_modal(modal)
+
+    @ui.button(label="Configure Cycle", emoji="⚙️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_rev_cycle")
+    async def set_cycle(self, i, b):
+        class CycleSelect(ui.Select):
+            async def callback(self, it):
+                c = self.parent.get_config(it.guild_id); c["cycle"] = self.values[0]; self.parent.save_config(c, it.guild_id, it.client)
+                await it.response.send_message(f"✅ Cycle set to {self.values[0]}.", ephemeral=True)
+        v = ui.View(); v.add_item(CycleSelect(options=[discord.SelectOption(label="Weekly", value="weekly"), discord.SelectOption(label="Bi-Weekly", value="bi-weekly"), discord.SelectOption(label="Monthly", value="monthly")])); await i.response.send_message("Select cycle frequency:", view=v, ephemeral=True)
+
+    @ui.button(label="Score Thresholds", emoji="⚙️", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_rev_thresh")
+    async def set_thresh(self, i, b):
+        class ThreshModal(ui.Modal, title="Set Score Thresholds"):
+            warn = ui.TextInput(label="Warning Threshold (e.g. 2.5)", default="2.5")
+            promo = ui.TextInput(label="Promotion Threshold (e.g. 4.5)", default="4.5")
+            async def on_submit(self, it):
+                c = self.parent.get_config(it.guild_id); c["thresholds"] = {"warning": float(self.warn.value), "promotion": float(self.promo.value)}; self.parent.save_config(c, it.guild_id, it.client)
+                await it.response.send_message("✅ Thresholds updated.", ephemeral=True)
+        await i.response.send_modal(ThreshModal())
+
+    @ui.button(label="Review Channel", emoji="📣", style=discord.ButtonStyle.primary, row=3, custom_id="cfg_rev_ch")
+    async def set_ch(self, i, b):
+        await i.response.send_message("Select Channel:", view=_picker_view(_GenericChannelSelect(self, "review_channel_id", "Review Log Channel")), ephemeral=True)
+
+    @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_rev_dm")
+    async def t_dm(self, i, b):
+        c = self.get_config(i.guild_id); c["notifications_enabled"] = not c.get("notifications_enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Clear Cycle", emoji="🗑️", style=discord.ButtonStyle.danger, row=4, custom_id="cfg_rev_clear")
+    async def clear_rev(self, i, b):
+        dm.update_guild_data(i.guild_id, "staff_active_reviews", {})
+        await i.response.send_message("✅ Current active reviews cleared.", ephemeral=True)
+
+    @ui.button(label="Export Reviews", emoji="📤", style=discord.ButtonStyle.success, row=4, custom_id="cfg_rev_export")
+    async def export_rev(self, i, b):
+        history = dm.get_guild_data(i.guild_id, "staff_reviews_history", [])
+        import io, json
+        buf = io.BytesIO(json.dumps(history, indent=2).encode())
+        await i.response.send_message("Exporting all review history...", file=discord.File(buf, filename="staff_reviews_history.json"), ephemeral=True)
+
+class StaffShiftsConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "staff_shifts")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id or self.guild_id)
+        embed = discord.Embed(title="🕒 Staff Shifts Configuration", color=discord.Color.blue())
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="On-Duty Role", value=f"<@&{c.get('on_duty_role_id')}>" if c.get('on_duty_role_id') else "None", inline=True)
+        embed.add_field(name="Log Channel", value=f"<#{c.get('shift_channel_id')}>" if c.get('shift_channel_id') else "None", inline=True)
+        embed.add_field(name="Idle Timeout", value=f"{c.get('idle_timeout_minutes', 30)} mins", inline=True)
+
+        # Stats
+        history = dm.get_guild_data(guild_id or self.guild_id, "staff_shifts_history", [])
+        total_hours = sum(s.get("duration_hours", 0) for s in history)
+        embed.add_field(name="Total History Hours", value=f"{total_hours:.1f}h", inline=True)
+
+        active = dm.get_guild_data(guild_id or self.guild_id, "active_staff_shifts", {})
+        embed.add_field(name="Currently Active", value=str(len(active)), inline=True)
+
+        return embed
+
+    @ui.button(label="Active Shifts", emoji="📊", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_shift_active")
+    async def view_active(self, i, b):
+        shifts = dm.get_guild_data(i.guild_id, "active_staff_shifts", {})
+        if not shifts: return await i.response.send_message("No active shifts.", ephemeral=True)
+        desc = "\n".join([f"• <@{uid}> - Started <t:{int(s['start_time'])}:R> ({s['messages']} msgs)" for uid, s in shifts.items()])
+        await i.response.send_message(embed=discord.Embed(title="Active Staff Shifts", description=desc), ephemeral=True)
+
+    @ui.button(label="Shift History", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_shift_history")
+    async def view_history(self, i, b):
+        history = dm.get_guild_data(i.guild_id, "staff_shifts_history", [])
+        if not history: return await i.response.send_message("No shift history.", ephemeral=True)
+        desc = "\n".join([f"• <@{s['user_id']}>: {s['duration_hours']:.1f}h - <t:{int(s['end_time'])}:d>" for s in history[-15:][::-1]])
+        await i.response.send_message(embed=discord.Embed(title="Recent Shift Logs", description=desc), ephemeral=True)
+
+    @ui.button(label="Shift Stats", emoji="⏰", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_shift_stats")
+    async def view_stats(self, i, b):
+        history = dm.get_guild_data(i.guild_id, "staff_shifts_history", [])
+        stats = {}
+        for s in history:
+            uid = s["user_id"]
+            stats[uid] = stats.get(uid, 0) + s["duration_hours"]
+
+        sorted_stats = sorted(stats.items(), key=lambda x: x[1], reverse=True)[:10]
+        desc = "\n".join([f"• <@{uid}>: {hrs:.1f}h" for uid, hrs in sorted_stats])
+        await i.response.send_message(embed=discord.Embed(title="Top Staff Hours (All Time)", description=desc or "No data."), ephemeral=True)
+
+    @ui.button(label="Start for Staff", emoji="⏱️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_shift_start_s")
+    async def start_for(self, i, b):
+        class UIDModal(ui.Modal, title="Start Shift for Staff"):
+            uid = ui.TextInput(label="User ID")
+            async def on_submit(self, it):
+                m = it.guild.get_member(int(self.uid.value))
+                if m:
+                    from modules.auto_setup import MockInteraction
+                    fake = MockInteraction(it.client, it.guild, m)
+                    await it.client.staff_shift.handle_shift_start(fake, [])
+                    await it.response.send_message(f"✅ Started shift for {m.display_name}", ephemeral=True)
+                else: await it.response.send_message("Not found.", ephemeral=True)
+        await i.response.send_modal(UIDModal())
+
+    @ui.button(label="End for Staff", emoji="⏹️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_shift_end_s")
+    async def end_for(self, i, b):
+        class UIDModal(ui.Modal, title="End Shift for Staff"):
+            uid = ui.TextInput(label="User ID")
+            async def on_submit(self, it):
+                m = it.guild.get_member(int(self.uid.value))
+                if m:
+                    await it.client.staff_shift._end_shift(it.guild, m.id, reason="Ended by Admin")
+                    await it.response.send_message(f"✅ Ended shift for {m.display_name}", ephemeral=True)
+                else: await it.response.send_message("Not found.", ephemeral=True)
+        await i.response.send_modal(UIDModal())
+
+    @ui.button(label="Hour Goals", emoji="🎯", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_shift_goals")
+    async def set_goals(self, i, b):
+        class GoalModal(ui.Modal, title="Set Weekly Hour Goal"):
+            uid = ui.TextInput(label="User ID")
+            goal = ui.TextInput(label="Weekly Goal (Hours)", default="10")
+            async def on_submit(self, it):
+                await it.client.staff_shift.set_hour_goal(it.guild_id, int(self.uid.value), float(self.goal.value))
+                await it.response.send_message("✅ Goal set.", ephemeral=True)
+        await i.response.send_modal(GoalModal())
+
+    @ui.button(label="View Schedule", emoji="📋", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_shift_v_sch")
+    async def v_sch(self, i, b):
+        c = self.get_config(i.guild_id)
+        sch = c.get("schedule", [])
+        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        desc = "\n".join([f"• {days[s['day']]}: <@{s['user_id']}> ({s['start']}-{s['end']})" for s in sch])
+        await i.response.send_message(embed=discord.Embed(title="Weekly Staff Schedule", description=desc or "None set."), ephemeral=True)
+
+    @ui.button(label="Add Schedule", emoji="➕", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_shift_a_sch")
+    async def a_sch(self, i, b):
+        class SchModal(ui.Modal, title="Add Schedule Entry"):
+            uid = ui.TextInput(label="User ID")
+            day = ui.TextInput(label="Day (0-6, 0=Mon)", default="0")
+            start = ui.TextInput(label="Start Time (HH:MM)", default="09:00")
+            end = ui.TextInput(label="End Time (HH:MM)", default="17:00")
+            async def on_submit(self, it):
+                await it.client.staff_shift.add_schedule_entry(it.guild_id, int(self.uid.value), int(self.day.value), self.start.value, self.end.value)
+                await it.response.send_message("✅ Added to schedule.", ephemeral=True)
+        await i.response.send_modal(SchModal())
+
+    @ui.button(label="Remove Schedule", emoji="🗑️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_shift_r_sch")
+    async def r_sch(self, i, b):
+        c = self.get_config(i.guild_id)
+        sch = c.get("schedule", [])
+        if not sch: return await i.response.send_message("Schedule is empty.", ephemeral=True)
+        class RMSelect(ui.Select):
+            async def callback(self, it):
+                await it.client.staff_shift.remove_schedule_entry(it.guild_id, int(self.values[0]))
+                await it.response.send_message("✅ Removed.", ephemeral=True)
+        v = ui.View(); v.add_item(RMSelect(options=[discord.SelectOption(label=f"Entry {idx}", value=str(idx)) for idx, _ in enumerate(sch[:25])]))
+        await i.response.send_message("Select entry to remove:", view=v, ephemeral=True)
+
+    @ui.button(label="On-Duty Role", emoji="⚙️", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_shift_role")
+    async def set_role(self, i, b):
+        await i.response.send_message("Select Role:", view=_picker_view(_GenericRoleSelect(self, "on_duty_role_id", "On-Duty Role")), ephemeral=True)
+
+    @ui.button(label="Idle Timeout", emoji="⚙️", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_shift_idle")
+    async def set_idle(self, i, b):
+        await i.response.send_modal(_NumberModal(self, "idle_timeout_minutes", "Idle Timeout (Minutes)", i.guild_id))
+
+    @ui.button(label="Monthly Report", emoji="📊", style=discord.ButtonStyle.success, row=4, custom_id="cfg_shift_report")
+    async def gen_report(self, i, b):
+        history = dm.get_guild_data(i.guild_id, "staff_shifts_history", [])
+        import io, csv
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["User ID", "Username", "Start", "End", "Duration Hours", "Reason", "Notes"])
+        for s in history:
+            writer.writerow([s.get("user_id"), s.get("username"), s.get("start_time"), s.get("end_time"), s.get("duration_hours"), s.get("end_reason"), s.get("notes")])
+        output.seek(0)
+        await i.response.send_message("Exporting shift history...", file=discord.File(io.BytesIO(output.getvalue().encode()), filename="monthly_shifts.csv"), ephemeral=True)
+
+    @ui.button(label="Shift Channel", emoji="🔔", style=discord.ButtonStyle.primary, row=4, custom_id="cfg_shift_ch")
+    async def set_ch(self, i, b):
+        await i.response.send_message("Select Channel:", view=_picker_view(_GenericChannelSelect(self, "shift_channel_id", "Shift Log Channel")), ephemeral=True)
+
+    @ui.button(label="Toggle Notifs", emoji="🔕", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_shift_notif")
+    async def t_notif(self, i, b):
+        c = self.get_config(i.guild_id); c["notifications_enabled"] = not c.get("notifications_enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
 class LoggingConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "logging")
@@ -2833,6 +3143,10 @@ class _TicketEmbedModal(ui.Modal):
 # --- Registry ---
 
 SPECIALIZED_VIEWS = {
+    "staffreview": "StaffReviewsConfigView",
+    "staffreviews": "StaffReviewsConfigView",
+    "staffshift": "StaffShiftsConfigView",
+    "staffshifts": "StaffShiftsConfigView",
     "automod": "AutoModConfigView",
     "warning": "WarningConfigView",
     "staffpromo": "StaffPromoConfigView",
@@ -2882,9 +3196,12 @@ def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
             SuggestionsConfigView, GiveawayConfigView, AchievementsConfigView,
             GamificationConfigView, ReactionRolesConfigView, ReactionMenusConfigView,
             RoleButtonsConfigView, ModLogConfigView, LoggingConfigView,
-            AutoModConfigView, WarningConfigView, StaffPromoConfigView
+            AutoModConfigView, WarningConfigView, StaffPromoConfigView,
+            StaffShiftsConfigView, StaffReviewsConfigView
         )
         _view_cache["VerificationConfigView"] = VerificationConfigView
+        _view_cache["StaffShiftsConfigView"] = StaffShiftsConfigView
+        _view_cache["StaffReviewsConfigView"] = StaffReviewsConfigView
         _view_cache["AutoModConfigView"] = AutoModConfigView
         _view_cache["WarningConfigView"] = WarningConfigView
         _view_cache["StaffPromoConfigView"] = StaffPromoConfigView
@@ -2925,6 +3242,8 @@ async def handle_config_panel_command(message: discord.Message, system: str):
 
 def register_all_persistent_views(bot: discord.Client):
     # Config Panels
+    bot.add_view(StaffReviewsConfigView(0))
+    bot.add_view(StaffShiftsConfigView(0))
     bot.add_view(AutoModConfigView(0))
     bot.add_view(WarningConfigView(0))
     bot.add_view(StaffPromoConfigView(0))

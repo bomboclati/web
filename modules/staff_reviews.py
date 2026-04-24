@@ -1,10 +1,10 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import asyncio
 import json
 import time
-from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Any
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 
 from data_manager import dm
@@ -14,395 +14,377 @@ from logger import logger
 class StaffReviewSystem:
     def __init__(self, bot):
         self.bot = bot
-        self._reviews: Dict[int, Dict[int, dict]] = {}
-        self._probation: Dict[int, Dict[int, dict]] = {}
-        self._votes: Dict[int, List[dict]] = {}
-        self._alerts_sent: Dict[int, float] = {}
+        self._review_monitor.start()
 
-    def _load_guild_data(self, guild_id: int):
-        """Lazy load guild data to ensure multi-server isolation."""
-        if guild_id not in self._reviews:
-            self._reviews[guild_id] = dm.get_guild_data(guild_id, "staff_review_data", {})
-            self._probation[guild_id] = dm.get_guild_data(guild_id, "staff_probation", {})
-            self._votes[guild_id] = dm.get_guild_data(guild_id, "staff_votes", [])
-            self._alerts_sent[guild_id] = dm.get_guild_data(guild_id, "staff_alerts_sent", {})
-
-    def _save_guild_data(self, guild_id: int):
-        """Save guild data immediately for immortality."""
-        dm.update_guild_data(guild_id, "staff_review_data", self._reviews.get(guild_id, {}))
-        dm.update_guild_data(guild_id, "staff_probation", self._probation.get(guild_id, {}))
-        dm.update_guild_data(guild_id, "staff_votes", self._votes.get(guild_id, []))
-        dm.update_guild_data(guild_id, "staff_alerts_sent", self._alerts_sent.get(guild_id, {}))
-
-    def start_review_loop(self):
-        asyncio.create_task(self._review_loop())
-
-    async def _review_loop(self):
-        await self.bot.wait_until_ready()
-        while not self.bot.is_closed:
-            try:
-                await asyncio.sleep(86400)
-                for guild in self.bot.guilds:
-                    await self._run_auto_review(guild)
-            except Exception as e:
-                logger.error(f"Review loop error: {e}")
-            await asyncio.sleep(86400)
-
-    async def _run_auto_review(self, guild: discord.Guild):
-        config = dm.get_guild_data(guild.id, "staff_promo_config", {})
-        
-        if not config.get("auto_review", False):
-            return
-        
-        channel_id = config.get("review_channel")
-        if not channel_id:
-            return
-        
-        channel = guild.get_channel(channel_id)
-        if not channel:
-            return
-        
-        staff_role_ids = config.get("staff_roles", [])
-        
-        for role_id in staff_role_ids:
-            role = guild.get_role(role_id)
-            if not role:
-                continue
-            
-            for member in role.members:
-                if member.bot:
-                    continue
-                
-                await self._generate_staff_report(guild, member, channel)
-
-    async def _generate_staff_report(self, guild: discord.Guild, member: discord.Member, channel):
-        user_id = member.id
-        guild_id = guild.id
-        
-        stats = self._get_staff_stats(guild_id, user_id)
-        
-        messages = stats.get("messages", 0)
-        xp = stats.get("xp", 0)
-        achievements = stats.get("achievements", 0)
-        join_date = member.joined_at
-        
-        days_since_join = (discord.utils.utcnow() - join_date).days
-        
-        embed = discord.Embed(
-            title=f"📊 Staff Review: {member.display_name}",
-            color=discord.Color.blue()
-        )
-        
-        embed.add_field(name="Member", value=member.mention, inline=True)
-        embed.add_field(name="Joined", value=f"{days_since_join} days ago", inline=True)
-        embed.add_field(name="Messages", value=f"{messages:,}", inline=True)
-        embed.add_field(name="XP", value=f"{xp:,}", inline=True)
-        embed.add_field(name="Achievements", value=str(achievements), inline=True)
-        
-        performance_score = min(1.0, (messages / 5000) * 0.3 + (xp / 10000) * 0.4 + (achievements / 20) * 0.3)
-        
-        embed.add_field(
-            name="📈 Performance Score",
-            value=f"{performance_score:.0%}",
-            inline=True
-        )
-        
-        emoji = "🟢" if performance_score >= 0.7 else "🟡" if performance_score >= 0.4 else "🔴"
-        
-        embed.add_field(
-            name="Status",
-            value=f"{emoji} {'Excellent' if performance_score >= 0.7 else 'Needs Improvement' if performance_score >= 0.4 else 'At Risk'}",
-            inline=True
-        )
-        
-        embed.timestamp = discord.utils.utcnow()
-        
-        await channel.send(embed=embed)
-        
-        view = discord.ui.View()
-        
-        approve_btn = discord.ui.Button(label="Approve", style=discord.ButtonStyle.success, custom_id=f"review_approve_{user_id}")
-        improve_btn = discord.ui.Button(label="Needs Improvement", style=discord.ButtonStyle.secondary, custom_id=f"review_improve_{user_id}")
-        hold_btn = discord.ui.Button(label="Hold", style=discord.ButtonStyle.danger, custom_id=f"review_hold_{user_id}")
-        
-        async def approve_callback(interaction):
-            if not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message("Admin only.", ephemeral=True)
-                return
-            await self._process_vote(guild, user_id, interaction.user.id, True)
-            await interaction.response.send_message("✅ Approved!", ephemeral=True)
-        
-        async def improve_callback(interaction):
-            if not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message("Admin only.", ephemeral=True)
-                return
-            await self._process_vote(guild, user_id, interaction.user.id, False)
-            await interaction.response.send_message("✅ Marked for improvement!", ephemeral=True)
-        
-        async def hold_callback(interaction):
-            if not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message("Admin only.", ephemeral=True)
-                return
-            await self._process_vote(guild, user_id, interaction.user.id, None)
-            await interaction.response.send_message("✅ On hold!", ephemeral=True)
-        
-        approve_btn.callback = approve_callback
-        improve_btn.callback = improve_callback
-        hold_btn.callback = hold_callback
-        
-        view.add_item(approve_btn)
-        view.add_item(improve_btn)
-        view.add_item(hold_btn)
-        
-        await channel.send("Vote:", view=view)
-
-    def _get_staff_stats(self, guild_id: int, user_id: int) -> dict:
-        return {
-            "messages": dm.get_guild_data(guild_id, f"messages_{user_id}", 0),
-            "xp": dm.get_guild_data(guild_id, f"xp_{user_id}", 0),
-            "achievements": dm.get_guild_data(guild_id, f"achievements_{user_id}", 0),
-            "tickets": dm.get_guild_data(guild_id, f"tickets_{user_id}", 0),
-            "rep": dm.get_guild_data(guild_id, f"rep_{user_id}", 0),
-        }
-
-    async def _process_vote(self, guild, user_id, voter_id, vote):
-        guild_id = guild.id
-        self._load_guild_data(guild_id)
-        
-        self._votes[guild_id].append({
-            "user_id": user_id,
-            "voter_id": voter_id,
-            "vote": vote,
-            "timestamp": time.time()
+    def _get_config(self, guild_id: int) -> dict:
+        return dm.get_guild_data(guild_id, "staff_reviews_config", {
+            "enabled": True,
+            "cycle": "monthly", # weekly, bi-weekly, monthly
+            "start_day": 0, # 0=Mon
+            "last_cycle_start": 0,
+            "next_cycle_start": 0,
+            "review_channel_id": None,
+            "notifications_enabled": True,
+            "criteria": [
+                {"name": "Responsiveness", "weight": 1.0},
+                {"name": "Helpfulness", "weight": 1.0},
+                {"name": "Professionalism", "weight": 1.0},
+                {"name": "Activity", "weight": 1.0},
+                {"name": "Initiative", "weight": 1.0},
+                {"name": "Rule Knowledge", "weight": 1.0}
+            ],
+            "thresholds": {
+                "warning": 2.5,
+                "promotion": 4.5
+            },
+            "weights": {
+                "admin": 0.5,
+                "peer": 0.3,
+                "self": 0.2
+            },
+            "staff_roles": []
         })
-        
-        self._votes[guild_id] = self._votes[guild_id][-50:]
-        self._save_guild_data(guild_id)
 
-    async def start_probation(self, guild, member, days=14):
-        guild_id = guild.id
-        self._load_guild_data(guild_id)
+    def _save_config(self, guild_id: int, config: dict):
+        dm.update_guild_data(guild_id, "staff_reviews_config", config)
+
+    def _get_active_reviews(self, guild_id: int) -> dict:
+        """Returns { user_id: { self: {}, peer: { voter_id: {} }, admin: {} } }"""
+        return dm.get_guild_data(guild_id, "staff_active_reviews", {})
+
+    def _save_active_reviews(self, guild_id: int, reviews: dict):
+        dm.update_guild_data(guild_id, "staff_active_reviews", reviews)
+
+    def _get_history(self, guild_id: int) -> List[dict]:
+        return dm.get_guild_data(guild_id, "staff_reviews_history", [])
+
+    def _save_history(self, guild_id: int, history: List[dict]):
+        dm.update_guild_data(guild_id, "staff_reviews_history", history[-500:])
+
+    @tasks.loop(hours=24)
+    async def _review_monitor(self):
+        """Monitor and trigger review cycles."""
+        for guild in self.bot.guilds:
+            config = self._get_config(guild.id)
+            if not config.get("enabled"): continue
+
+            now = time.time()
+            if config.get("next_cycle_start", 0) > 0 and config.get("next_cycle_start", 0) <= now:
+                await self.start_review_cycle(guild.id)
+
+    @_review_monitor.before_loop
+    async def before_review_monitor(self):
+        await self.bot.wait_until_ready()
+
+    async def start_review_cycle(self, guild_id: int):
+        guild = self.bot.get_guild(guild_id)
+        if not guild: return
+
+        # 1. Compile existing active reviews before clearing
+        active = self._get_active_reviews(guild_id)
+        if active:
+            await self.compile_reviews(guild_id)
+
+        config = self._get_config(guild_id)
+        config["last_cycle_start"] = time.time()
         
-        self._probation[guild_id][member.id] = {
-            "start_time": time.time(),
-            "duration_days": days,
-            "completed": False,
-            "requirements": {
-                "shadow_hours": 2,
-                "training_completed": False,
-                "introduced": False
+        # Calculate next cycle start
+        days = 30
+        if config["cycle"] == "weekly": days = 7
+        elif config["cycle"] == "bi-weekly": days = 14
+        
+        config["next_cycle_start"] = time.time() + (days * 86400)
+        self._save_config(guild_id, config)
+
+        # Clear active reviews and start fresh
+        self._save_active_reviews(guild_id, {})
+        
+        # Notify staff
+        staff_members = []
+        for role_id in config.get("staff_roles", []):
+            role = guild.get_role(role_id)
+            if role:
+                for m in role.members:
+                    if not m.bot and m not in staff_members:
+                        staff_members.append(m)
+        
+        if not staff_members:
+            # Fallback to members with manage_messages
+            staff_members = [m for m in guild.members if m.guild_permissions.manage_messages and not m.bot]
+
+        for member in staff_members:
+            try:
+                embed = discord.Embed(
+                    title="📝 Staff Review Cycle Started!",
+                    description=f"A new review cycle has started in **{guild.name}**. Please complete your self-review and peer reviews.",
+                    color=discord.Color.blue()
+                )
+                embed.add_field(name="How to complete", value="Use `!review` in the server to open the review menu.")
+                await member.send(embed=embed)
+            except:
+                pass
+
+        if config.get("review_channel_id"):
+            channel = guild.get_channel(config.get("review_channel_id"))
+            if channel:
+                await channel.send("🚀 **A new Staff Review cycle has begun.** Staff members have been notified via DM.")
+
+    async def handle_review_command(self, message, parts=None):
+        """Handle !review command - opens review selection menu"""
+        guild = message.guild
+        if not guild: return
+        
+        config = self._get_config(guild.id)
+        # Check if staff
+        is_staff = False
+        if config.get("staff_roles"):
+            is_staff = any(r.id in config["staff_roles"] for r in message.author.roles)
+        else:
+            is_staff = message.author.guild_permissions.manage_messages
+            
+        if not is_staff and not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ This command is for staff members only.")
+            return
+
+        embed = discord.Embed(title="📝 Staff Review Menu", description="Select what kind of review you'd like to perform.", color=discord.Color.blue())
+        view = ReviewSelectionView(self, guild.id, message.author.id)
+        await message.channel.send(embed=embed, view=view, delete_after=60)
+
+    async def handle_myreview(self, message, parts=None):
+        """Handle !myreview command - shows user's own performance trend"""
+        guild = message.guild
+        if not guild: return
+        
+        history = self._get_history(guild.id)
+        user_reviews = [r for r in history if r.get("user_id") == message.author.id]
+        
+        if not user_reviews:
+            await message.channel.send("You have no completed reviews in history yet.")
+            return
+
+        recent = user_reviews[-6:]
+        scores = [r["composite_score"] for r in recent]
+        
+        embed = discord.Embed(title=f"📈 Performance Trend: {message.author.display_name}", color=discord.Color.green())
+        
+        # Simple text graph
+        graph = ""
+        for score in scores:
+            bar = "█" * int(score * 2)
+            graph += f"`{score:.1f}` {bar}\n"
+        
+        embed.add_field(name="Last 6 Cycles", value=graph or "N/A")
+        embed.add_field(name="Current Status", value="✅ Excellent" if scores[-1] >= 4.0 else "⚠️ Needs Improvement" if scores[-1] < 3.0 else "🟢 Good", inline=False)
+        
+        await message.channel.send(embed=embed)
+
+    async def submit_self_review(self, guild_id: int, user_id: int, ratings: dict):
+        active = self._get_active_reviews(guild_id)
+        uid_str = str(user_id)
+        if uid_str not in active: active[uid_str] = {"self": {}, "peer": {}, "admin": {}}
+        active[uid_str]["self"] = ratings
+        self._save_active_reviews(guild_id, active)
+
+    async def submit_peer_review(self, guild_id: int, voter_id: int, target_id: int, ratings: dict):
+        active = self._get_active_reviews(guild_id)
+        target_str = str(target_id)
+        if target_str not in active: active[target_str] = {"self": {}, "peer": {}, "admin": {}}
+        active[target_str]["peer"][str(voter_id)] = ratings
+        self._save_active_reviews(guild_id, active)
+
+    async def submit_admin_review(self, guild_id: int, admin_id: int, target_id: int, ratings: dict):
+        active = self._get_active_reviews(guild_id)
+        target_str = str(target_id)
+        if target_str not in active: active[target_str] = {"self": {}, "peer": {}, "admin": {}}
+        active[target_str]["admin"] = ratings # Admin review is authoritative
+        self._save_active_reviews(guild_id, active)
+
+    async def compile_reviews(self, guild_id: int):
+        """Compile all active reviews into history and generate report."""
+        guild = self.bot.get_guild(guild_id)
+        if not guild: return
+        
+        config = self._get_config(guild_id)
+        active = self._get_active_reviews(guild_id)
+        history = self._get_history(guild_id)
+        
+        cycle_id = int(time.time())
+        report_data = []
+
+        for uid_str, data in active.items():
+            user_id = int(uid_str)
+            member = guild.get_member(user_id)
+            if not member: continue
+            
+            # Calculate average peer score
+            peer_scores = data.get("peer", {})
+            avg_peer = {}
+            if peer_scores:
+                for criteria in config["criteria"]:
+                    name = criteria["name"]
+                    vals = [p[name] for p in peer_scores.values() if name in p]
+                    if vals: avg_peer[name] = sum(vals) / len(vals)
+            
+            # Composite calculation with configurable weights
+            weights = config.get("weights", {"admin": 0.5, "peer": 0.3, "self": 0.2})
+            composite = 0
+            weights_found = 0
+            
+            def get_avg_rating(ratings):
+                if not ratings: return 0
+                return sum(ratings.values()) / len(ratings)
+
+            admin_score = get_avg_rating(data.get("admin"))
+            peer_score = get_avg_rating(avg_peer)
+            self_score = get_avg_rating(data.get("self"))
+
+            scores = []
+            if admin_score: scores.append(admin_score * weights.get("admin", 0.5)); weights_found += weights.get("admin", 0.5)
+            if peer_score: scores.append(peer_score * weights.get("peer", 0.3)); weights_found += weights.get("peer", 0.3)
+            if self_score: scores.append(self_score * weights.get("self", 0.2)); weights_found += weights.get("self", 0.2)
+
+            final_score = sum(scores) / weights_found if weights_found > 0 else 0
+
+            entry = {
+                "user_id": user_id,
+                "username": str(member),
+                "cycle_id": cycle_id,
+                "timestamp": time.time(),
+                "self_ratings": data.get("self"),
+                "peer_ratings_avg": avg_peer,
+                "admin_ratings": data.get("admin"),
+                "composite_score": final_score
             }
-        }
-        
-        self._save_guild_data(guild_id)
-        
-        try:
-            await member.send(f"🎓 Welcome to your {days}-day probation period!\n\nRequired:\n1. Shadow a senior staff for 2 hours\n2. Complete training modules\n3. Introduce yourself in #staff-chat\n\nGood luck!")
-        except:
-            pass
+            history.append(entry)
+            report_data.append(entry)
 
-    async def check_probation(self, guild, member) -> dict:
-        guild_id = guild.id
-        probation = self._probation.get(guild_id, {}).get(member.id)
-        
-        if not probation:
-            return {"status": "not_on_probation"}
-        
-        start_time = probation.get("start_time")
-        duration = probation.get("duration_days", 14) * 86400
-        elapsed = time.time() - start_time
-        
-        if elapsed >= duration:
-            if not probation.get("completed"):
-                return {"status": "ready_for_review", "days_left": 0}
-            else:
-                return {"status": "passed", "days_left": 0}
-        
-        days_left = int((duration - elapsed) / 86400)
-        return {"status": "active", "days_left": days_left, "requirements": probation.get("requirements", {})}
+            # DM results to staff member
+            if config.get("notifications_enabled"):
+                try:
+                    embed = discord.Embed(title="📊 Your Review Results", color=discord.Color.blue())
+                    embed.add_field(name="Composite Score", value=f"{final_score:.2f} / 5.0")
+                    status = "✅ Promotion Eligible" if final_score >= config["thresholds"]["promotion"] else "⚠️ Warning/Probation" if final_score <= config["thresholds"]["warning"] else "🟢 Satisfactory"
+                    embed.add_field(name="Status", value=status)
+                    await member.send(embed=embed)
+                except: pass
 
-    async def send_performance_alert(self, guild, member, alert_type: str, score: float, next_tier: str):
-        guild_id = guild.id
+        self._save_history(guild_id, history)
+        self._save_active_reviews(guild_id, {}) # Clear active
         
-        last_alert = self._alerts_sent.get(guild_id, {}).get(member.id, 0)
-        
-        if time.time() - last_alert < 86400:
-            return
-        
-        try:
-            if alert_type == "near_promotion":
-                embed = discord.Embed(
-                    title="📈 Near Promotion!",
-                    description=f"You're close to becoming {next_tier}!",
-                    color=discord.Color.green()
-                )
-                embed.add_field(
-                    name="Current Score",
-                    value=f"{score:.0%}",
-                    inline=True
-                )
-                embed.add_field(
-                    name="Need",
-                    value=f"+{(next_tier and 0.1 or 0.05):.0%} more",
-                    inline=True
-                )
-                embed.add_field(
-                    name="Tip",
-                    value="Complete more tasks to reach the next tier!",
-                    inline=False
-                )
-            
-            elif alert_type == "near_demotion":
-                embed = discord.Embed(
-                    title="⚠️ At Risk of Demotion",
-                    description=f"Your performance is dropping!",
-                    color=discord.Color.red()
-                )
-                embed.add_field(
-                    name="Current Score",
-                    value=f"{score:.0%}",
-                    inline=True
-                )
-                embed.add_field(
-                    name="Action Needed",
-                    value="Increase activity to avoid demotion!",
-                    inline=True
-                )
-            
-            await member.send(embed=embed)
-            
-            if guild_id not in self._alerts_sent:
-                self._alerts_sent[guild_id] = {}
-            self._alerts_sent[guild_id][member.id] = time.time()
-            self._save_guild_data(guild_id)
-        
-        except:
-            pass
+        # Post report to channel
+        if config.get("review_channel_id") and report_data:
+            channel = guild.get_channel(config.get("review_channel_id"))
+            if channel:
+                report_data.sort(key=lambda x: x["composite_score"], reverse=True)
+                desc = "\n".join([f"• **{x['username']}**: {x['composite_score']:.2f}" for x in report_data[:10]])
+                embed = discord.Embed(title="📋 Staff Review Report", description=f"Cycle: {datetime.now().strftime('%Y-%m-%d')}\n\n{desc}", color=discord.Color.gold())
+                await channel.send(embed=embed)
 
-    async def get_staff_stats(self, guild, member) -> dict:
-        user_id = member.id
-        guild_id = guild.id
+    async def setup(self, interaction):
+        """Initial setup via autosetup"""
+        guild = interaction.guild
+        config = self._get_config(guild.id)
         
-        stats = self._get_staff_stats(guild_id, user_id)
+        category = discord.utils.get(guild.categories, name="Staff Hub")
+        if not category:
+            category = await guild.create_category("Staff Hub")
         
-        join_date = member.joined_at
-        days_since_join = (discord.utils.utcnow() - join_date).days
+        channel = discord.utils.get(guild.text_channels, name="staff-reviews")
+        if not channel:
+            channel = await guild.create_text_channel("staff-reviews", category=category)
+            await channel.set_permissions(guild.default_role, read_messages=False)
         
-        messages = stats.get("messages", 0)
-        xp = stats.get("xp", 0)
-        achievements = stats.get("achievements", 0)
+        config["review_channel_id"] = channel.id
+        self._save_config(guild.id, config)
         
-        performance_score = min(1.0, (messages / 5000) * 0.3 + (xp / 10000) * 0.4 + (achievements / 20) * 0.3)
-        
-        votes = self._votes.get(guild_id, [])
-        staff_votes = [v for v in votes if v.get("user_id") == user_id]
-        approve_count = sum(1 for v in staff_votes if v.get("vote") == True)
-        reject_count = sum(1 for v in staff_votes if v.get("vote") == False)
-        
-        return {
-            "member": member,
-            "join_date": join_date.strftime("%Y-%m-%d"),
-            "days_active": days_since_join,
-            "messages": messages,
-            "xp": xp,
-            "achievements": achievements,
-            "performance_score": performance_score,
-            "approve_votes": approve_count,
-            "reject_votes": reject_count,
-            "total_votes": len(staff_votes)
-        }
+        return True
 
-    async def handle_peer_vote(self, message):
-        parts = message.content.split()
-        
-        if len(parts) < 2:
-            await message.channel.send("Usage: !vote @user [yes/no]")
-            return
-        
-        guild = message.guild
-        
-        try:
-            user_mention = parts[1]
-            user_id = int(user_mention.replace("<@", "").replace(">", ""))
-        except:
-            await message.channel.send("Invalid user mention!")
-            return
-        
-        vote = parts[2].lower() if len(parts) > 2 else "yes"
-        vote_bool = vote in ["yes", "approve", "y", "true"]
-        
-        await self._process_vote(guild, user_id, message.author.id, vote_bool)
-        
-        await message.channel.send(f"✅ Voted on {message.guild.get_member(user_id).display_name}!")
 
-    async def handle_staff_stats(self, message, parts):
-        guild = message.guild
+class ReviewSelectionView(discord.ui.View):
+    def __init__(self, system, guild_id, user_id):
+        super().__init__(timeout=60)
+        self.system = system
+        self.guild_id = guild_id
+        self.user_id = user_id
+
+    @discord.ui.button(label="Self Review", style=discord.ButtonStyle.primary)
+    async def self_review(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id: return
+        await interaction.response.send_modal(ReviewModal(self.system, self.guild_id, "self", interaction.user))
+
+    @discord.ui.button(label="Peer Review", style=discord.ButtonStyle.secondary)
+    async def peer_review(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id: return
         
-        target = message.author
-        if len(parts) > 1:
-            try:
-                user_mention = parts[1]
-                user_id = int(user_mention.replace("<@", "").replace(">", ""))
-                target = guild.get_member(user_id)
-            except:
-                pass
+        class PeerSelect(discord.ui.UserSelect):
+            def __init__(self, system, guild_id):
+                super().__init__(placeholder="Select staff member to review...", min_values=1, max_values=1)
+                self.system = system
+                self.guild_id = guild_id
+            async def callback(self, it):
+                target = self.values[0]
+                if target.id == it.user.id:
+                    return await it.response.send_message("You cannot peer-review yourself! Use Self Review.", ephemeral=True)
+                from modules.staff_reviews import ReviewModal
+                await it.response.send_modal(ReviewModal(self.system, self.guild_id, "peer", target, it.user.id))
         
-        if not target:
-            await message.channel.send("User not found!")
-            return
+        v = discord.ui.View(); v.add_item(PeerSelect(self.system, self.guild_id))
+        await interaction.response.send_message("Select a staff member to peer review:", view=v, ephemeral=True)
+
+
+class ReviewModal(discord.ui.Modal):
+    def __init__(self, system, guild_id, review_type, target_member, voter_id=None):
+        super().__init__(title=f"{review_type.title()} Review: {target_member.display_name}")
+        self.system = system
+        self.guild_id = guild_id
+        self.review_type = review_type
+        self.target_id = target_member.id
+        self.voter_id = voter_id or target_member.id
         
-        stats = await self.get_staff_stats(guild, target)
+        config = system._get_config(guild_id)
+        # Combine all criteria into one multi-line text input to bypass the 5-field limit
+        self.criteria_names = [c["name"] for c in config["criteria"]]
         
-        embed = discord.Embed(
-            title=f"📊 Stats: {stats['member'].display_name}",
-            color=discord.Color.blue()
+        instruction = ", ".join(self.criteria_names)
+        self.ratings_input = discord.ui.TextInput(
+            label=f"Ratings for: {instruction}",
+            placeholder="Format: 5, 4, 5, 3, 4, 5 (one per criteria)",
+            style=discord.TextStyle.paragraph,
+            default=", ".join(["5"] * len(self.criteria_names)),
+            required=True
         )
+        self.add_item(self.ratings_input)
         
-        embed.add_field(name="Joined", value=stats["join_date"], inline=True)
-        embed.add_field(name="Days Active", value=str(stats["days_active"]), inline=True)
-        embed.add_field(name="Messages", value=f"{stats['messages']:,}", inline=True)
-        embed.add_field(name="XP", value=f"{stats['xp']:,}", inline=True)
-        embed.add_field(name="Achievements", value=str(stats["achievements"]), inline=True)
-        embed.add_field(name="Performance", value=f"{stats['performance_score']:.0%}", inline=True)
-        embed.add_field(name="Votes", value=f"✅ {stats['approve_votes']} | ❌ {stats['reject_votes']}", inline=True)
-        
-        await message.channel.send(embed=embed)
-
-    async def handle_probation_status(self, message, parts):
-        guild = message.guild
-        
-        target = message.author
-        if len(parts) > 1:
-            try:
-                user_mention = parts[1]
-                user_id = int(user_mention.replace("<@", "").replace(">", ""))
-                target = guild.get_member(user_id)
-            except:
-                pass
-        
-        if not target:
-            await message.channel.send("User not found!")
-            return
-        
-        status = await self.check_probation(guild, target)
-        
-        if status.get("status") == "not_on_probation":
-            await message.channel.send(f"{target.display_name} is not on probation.")
-            return
-        
-        embed = discord.Embed(
-            title=f"🎓 Probation: {target.display_name}",
-            color=discord.Color.orange()
+        self.notes_input = discord.ui.TextInput(
+            label="Additional Notes",
+            style=discord.TextStyle.paragraph,
+            required=False,
+            max_length=500
         )
+        self.add_item(self.notes_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        ratings = {}
+        try:
+            scores = [int(s.strip()) for s in self.ratings_input.value.split(",")]
+            if len(scores) < len(self.criteria_names):
+                return await interaction.response.send_message(f"❌ Please provide {len(self.criteria_names)} ratings.", ephemeral=True)
+
+            for i, name in enumerate(self.criteria_names):
+                score = scores[i]
+                if not 1 <= score <= 5: raise ValueError
+                ratings[name] = score
+        except:
+            return await interaction.response.send_message("❌ Invalid ratings. Use comma-separated numbers 1-5.", ephemeral=True)
         
-        embed.add_field(name="Status", value=status.get("status", "unknown").replace("_", " ").title(), inline=True)
-        embed.add_field(name="Days Left", value=str(status.get("days_left", 0)), inline=True)
-        
-        requirements = status.get("requirements", {})
-        req_text = "\n".join([f"□ {k.replace('_', ' ').title()}" for k, v in requirements.items() if not v])
-        embed.add_field(name="Requirements", value=req_text or "All complete!", inline=False)
-        
-        await message.channel.send(embed=embed)
+        if self.review_type == "self":
+            await self.system.submit_self_review(self.guild_id, self.target_id, ratings)
+        elif self.review_type == "peer":
+            await self.system.submit_peer_review(self.guild_id, self.voter_id, self.target_id, ratings)
+        elif self.review_type == "admin":
+            await self.system.submit_admin_review(self.guild_id, self.voter_id, self.target_id, ratings)
+
+        await interaction.response.send_message(f"✅ {self.review_type.title()} review submitted!", ephemeral=True)
 
 
 def setup(bot):

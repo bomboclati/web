@@ -355,6 +355,9 @@ class AdvancedTickets:
         ticket = self.get_ticket_by_channel(interaction.channel_id)
         if not ticket: return
 
+        if hasattr(self.bot, 'staff_shift'):
+            await self.bot.staff_shift.track_ticket_resolved(interaction.guild_id, interaction.user.id)
+
         ticket.status = TicketStatus.RESOLVED
         self._save_ticket(ticket)
         
