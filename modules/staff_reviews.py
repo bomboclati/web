@@ -14,6 +14,8 @@ from logger import logger
 class StaffReviewSystem:
     def __init__(self, bot):
         self.bot = bot
+
+    def start_tasks(self):
         self._review_monitor.start()
 
     def _get_config(self, guild_id: int) -> dict:
