@@ -28,6 +28,7 @@ from modules.leveling import Leveling
 from modules.staff_system import StaffSystem
 from modules.appeals import Appeals
 from modules.modmail import ModmailSystem
+from modules.reaction_roles import ReactionRolesSystem
 from modules.trigger_roles import TriggerRoles
 from modules.moderation import ContextualModeration
 from modules.events import EventScheduler
@@ -129,6 +130,7 @@ class MiroBot(commands.Bot):
         self.auto_setup = AutoSetup(self)
         self.guardian = GuardianSystem(self)
         self.modmail = ModmailSystem(self)
+        self.reaction_roles = ReactionRolesSystem(self)
         self.analytics = setup_analytics(self)
         self.verification = Verification(self)
         self.embed_system = EmbedSystem(self)
@@ -596,6 +598,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         await self._safe_call(self.trigger_roles.handle_message(message), "trigger_roles")
         await self._safe_call(self.moderation.analyze_message(message), "moderation")
         await self._safe_call(self.intelligence.track_message(message), "intelligence")
+        await self._safe_call(self.gamification.update_streak(message.guild.id, message.author.id), "streak")
         await self._safe_call(self.conflict_resolution.analyze_message(message), "conflict_resolution")
         await self._safe_call(self.community_health.analyze_interaction(message), "community_health")
         
@@ -2843,7 +2846,12 @@ async def on_member_remove(member):
 
 @bot.event
 async def on_raw_reaction_add(payload):
-    """Handle reaction add for exit interviews"""
+    """Handle reaction add for systems"""
+    try:
+        await bot.reaction_roles.handle_reaction_add(payload)
+    except Exception as e:
+        logger.warning("RR add error: %s", e)
+
     try:
         channel = bot.get_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
@@ -2852,6 +2860,14 @@ async def on_raw_reaction_add(payload):
             await bot.staff_extras.on_reaction_add(message, user)
     except Exception as e:
         logger.warning("Reaction add error: %s", e)
+
+@bot.event
+async def on_raw_reaction_remove(payload):
+    """Handle reaction remove for systems"""
+    try:
+        await bot.reaction_roles.handle_reaction_remove(payload)
+    except Exception as e:
+        logger.warning("RR remove error: %s", e)
 
 @bot.event
 async def on_command_error(ctx, error):

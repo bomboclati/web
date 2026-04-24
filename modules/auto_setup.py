@@ -1657,6 +1657,7 @@ class AutoSetup(commands.Cog):
     async def _setup_giveaways(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
             if hasattr(self.bot, 'giveaways'):
+                # Ensure we pass the channel and user if it's from a real interaction, or dummy if not
                 return await self.bot.giveaways.setup(MockInteraction(self.bot, guild))
             return False
         except Exception as e:
@@ -1674,21 +1675,18 @@ class AutoSetup(commands.Cog):
 
     async def _setup_gamification(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            dm.update_guild_data(guild.id, "gamification_enabled", True)
-            return True
+            if hasattr(self.bot, 'gamification'):
+                return await self.bot.gamification.setup(MockInteraction(self.bot, guild))
+            return False
         except Exception as e:
             logger.error(f"Gamification setup failed: {e}")
             return False
 
     async def _setup_reaction_roles(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            channel = analysis.existing_channels.get("reaction-roles")
-            if not channel:
-                channel = await guild.create_text_channel("reaction-roles")
-            embed = discord.Embed(title="🎭 Reaction Roles", description="React to gain roles!", color=discord.Color.blue())
-            msg = await channel.send(embed=embed)
-            dm.update_guild_data(guild.id, "reaction_roles_msg", msg.id)
-            return True
+            if hasattr(self.bot, 'reaction_roles'):
+                return await self.bot.reaction_roles.setup(MockInteraction(self.bot, guild))
+            return False
         except Exception as e:
             logger.error(f"Reaction roles setup failed: {e}")
             return False

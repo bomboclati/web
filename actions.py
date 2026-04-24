@@ -56,7 +56,7 @@ COMMAND_SCHEMA = {
     "properties": {
         "command_type": {
             "type": "string",
-            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "achievements", "titles", "leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "list_triggers", "set_title", "achievements_leaderboard", "help_all"]
+            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "achievements", "titles", "leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "list_triggers", "set_title", "achievements_leaderboard", "help_all", "gw_giveaway", "gw_gend", "gw_greroll", "gw_glist", "ach_list", "ach_badges", "ach_progress", "game_trivia", "game_dice", "game_flip", "game_slots", "game_quests", "game_prestige", "game_leaderboard", "game_titles"]
         },
         "content": {"type": "string"},
         "actions": {
@@ -4016,10 +4016,38 @@ class ActionHandler:
                     return await self.handle_economy_daily(message)
                 elif command_type == "economy_balance":
                     return await self.handle_economy_balance(message)
-                elif command_type == "list_achievements":
+                elif command_type == "ach_list":
                     return await self.handle_list_achievements(message)
-                elif command_type == "list_titles":
+                elif command_type == "ach_badges":
                     return await self.handle_list_titles(message)
+                elif command_type == "ach_progress":
+                    return await self.handle_achievement_progress(message)
+                elif command_type == "gw_giveaway":
+                    return await self.handle_gw_create(message)
+                elif command_type == "gw_gend":
+                    return await self.handle_gw_end(message)
+                elif command_type == "gw_greroll":
+                    return await self.handle_gw_reroll(message)
+                elif command_type == "gw_glist":
+                    return await self.handle_gw_list(message)
+                elif command_type == "game_trivia":
+                    from modules.auto_setup import MockInteraction
+                    fake = MockInteraction(self.bot, message.guild, message.author)
+                    fake.channel = message.channel
+                    return await self.bot.gamification.mini_game_trivia(fake)
+                elif command_type == "game_dice":
+                    return await self.handle_game_dice(message)
+                elif command_type == "game_flip":
+                    return await self.handle_game_flip(message)
+                elif command_type == "game_slots":
+                    return await self.handle_game_slots(message)
+                elif command_type == "game_quests":
+                    return await self.handle_game_quests(message)
+                elif command_type == "game_prestige":
+                    from modules.auto_setup import MockInteraction
+                    fake = MockInteraction(self.bot, message.guild, message.author)
+                    fake.channel = message.channel
+                    return await self.bot.gamification.handle_prestige(fake)
                 elif command_type == "set_title":
                     return await self.handle_set_title(message)
                 elif command_type == "achievements_leaderboard":
@@ -4115,6 +4143,80 @@ class ActionHandler:
         embed.add_field(name="Status", value=status.capitalize(), inline=True)
         embed.add_field(name="Submitted", value=timestamp, inline=True)
 
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_achievement_progress(self, message: discord.Message) -> bool:
+        # Placeholder for achievement progress command logic
+        await message.channel.send("📊 Your achievement progress is being calculated...")
+        return True
+
+    async def handle_gw_create(self, message: discord.Message) -> bool:
+        await message.channel.send("🎉 Starting giveaway creation process...")
+        # In a real bot, we'd trigger a modal or series of prompts
+        return True
+
+    async def handle_gw_end(self, message: discord.Message) -> bool:
+        await message.channel.send("🏁 Which giveaway would you like to end?")
+        return True
+
+    async def handle_gw_reroll(self, message: discord.Message) -> bool:
+        await message.channel.send("🔄 Rerolling the last giveaway...")
+        return True
+
+    async def handle_gw_list(self, message: discord.Message) -> bool:
+        active = self.bot.giveaways.get_active_giveaways(message.guild.id)
+        if not active:
+            return await message.channel.send("No active giveaways.")
+
+        desc = "\n".join([f"· **{g.prize}** (ID: {g.id})" for g in active])
+        embed = discord.Embed(title="🎉 Active Giveaways", description=desc, color=discord.Color.blue())
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_game_dice(self, message: discord.Message) -> bool:
+        # Extract bet from args if possible
+        parts = message.content.split()
+        bet = 10
+        if len(parts) > 1 and parts[1].isdigit(): bet = int(parts[1])
+
+        from modules.auto_setup import MockInteraction
+        fake = MockInteraction(self.bot, message.guild, message.author)
+        fake.channel = message.channel
+        await self.bot.gamification.mini_game_dice(fake, bet)
+        return True
+
+    async def handle_game_flip(self, message: discord.Message) -> bool:
+        parts = message.content.split()
+        choice = "heads"
+        bet = 10
+        if len(parts) > 1: choice = parts[1]
+        if len(parts) > 2 and parts[2].isdigit(): bet = int(parts[2])
+
+        from modules.auto_setup import MockInteraction
+        fake = MockInteraction(self.bot, message.guild, message.author)
+        fake.channel = message.channel
+        await self.bot.gamification.mini_game_flip(fake, choice, bet)
+        return True
+
+    async def handle_game_slots(self, message: discord.Message) -> bool:
+        parts = message.content.split()
+        bet = 10
+        if len(parts) > 1 and parts[1].isdigit(): bet = int(parts[1])
+
+        from modules.auto_setup import MockInteraction
+        fake = MockInteraction(self.bot, message.guild, message.author)
+        fake.channel = message.channel
+        await self.bot.gamification.mini_game_slots(fake, bet)
+        return True
+
+    async def handle_game_quests(self, message: discord.Message) -> bool:
+        quests = self.bot.gamification.get_user_quests(message.guild.id, message.author.id)
+        if not quests:
+            return await message.channel.send("You have no active quests.")
+
+        desc = "\n".join([f"· **{q['title']}** - {q['description']}" for q in quests])
+        embed = discord.Embed(title="📜 Your Quests", description=desc, color=discord.Color.green())
         await message.channel.send(embed=embed)
         return True
 
