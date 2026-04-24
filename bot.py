@@ -58,6 +58,7 @@ from modules.guardian import GuardianSystem
 from modules.server_analytics import setup_analytics, get_analytics
 from modules.verification import Verification
 from modules.embed_system import EmbedSystem
+from modules.reaction_roles import ReactionRoles
 from modules.config_panels import handle_config_panel_command, register_all_persistent_views
 
 load_dotenv()
@@ -132,6 +133,7 @@ class MiroBot(commands.Bot):
         self.analytics = setup_analytics(self)
         self.verification = Verification(self)
         self.embed_system = EmbedSystem(self)
+        self.reaction_roles = ReactionRoles(self)
         
         # Add cogs (important for slash commands)
         # Note: We'll add them in setup_hook to ensure async compatibility
@@ -2843,15 +2845,33 @@ async def on_member_remove(member):
 
 @bot.event
 async def on_raw_reaction_add(payload):
-    """Handle reaction add for exit interviews"""
+    """Handle reaction add for systems"""
+    # 1. Reaction Roles
+    try:
+        await bot.reaction_roles.handle_reaction_add(payload)
+    except Exception as e:
+        logger.warning("Reaction Role add error: %s", e)
+
+    # 2. Staff exit interviews - only fetch message if needed
+    if not payload.member or payload.member.bot:
+        return
+
     try:
         channel = bot.get_channel(payload.channel_id)
-        message = await channel.fetch_message(payload.message_id)
-        user = payload.member
-        if user and not user.bot:
-            await bot.staff_extras.on_reaction_add(message, user)
+        if channel:
+            message = await channel.fetch_message(payload.message_id)
+            await bot.staff_extras.on_reaction_add(message, payload.member)
     except Exception as e:
         logger.warning("Reaction add error: %s", e)
+
+@bot.event
+async def on_raw_reaction_remove(payload):
+    """Handle reaction remove for systems"""
+    # 1. Reaction Roles
+    try:
+        await bot.reaction_roles.handle_reaction_remove(payload)
+    except Exception as e:
+        logger.warning("Reaction Role remove error: %s", e)
 
 @bot.event
 async def on_command_error(ctx, error):

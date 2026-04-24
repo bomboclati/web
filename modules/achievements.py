@@ -43,8 +43,6 @@ class AchievementSystem:
         self.bot = bot
         self._achievements: Dict[str, Achievement] = {}
         self._titles: Dict[str, dict] = {}
-        # Notifications are suppressed during startup to prevent restart badge-spam.
-        # bot.py enables this flag 30 s after on_ready via _enable_achievement_notifications().
         self._notifications_enabled = False
         self._load_achievements()
         self._init_default_achievements()
@@ -85,52 +83,37 @@ class AchievementSystem:
 
     def _init_default_achievements(self):
         defaults = [
+            # Community
             Achievement("first_join", "First Steps", "Joined the server", "community", "👋", 
                         {"type": "join"}, {"xp": 10}, 0.95, False),
             Achievement("week_member", "Weekly Member", "Been a member for 7 days", "community", "📅",
                         {"type": "days_member", "count": 7}, {"coins": 50}, 0.7, False),
             Achievement("month_member", "Dedicated Member", "Been a member for 30 days", "community", "⭐",
                         {"type": "days_member", "count": 30}, {"coins": 200}, 0.4, False),
+            Achievement("century_member", "Old Timer", "Been a member for 100 days", "community", "👴",
+                        {"type": "days_member", "count": 100}, {"coins": 500}, 0.2, False),
+
+            # Activity
             Achievement("first_message", "Hello World", "Sent your first message", "activity", "💬",
                         {"type": "messages", "count": 1}, {"xp": 5}, 0.9, False),
             Achievement("chatty", "Chatty", "Sent 100 messages", "activity", "🗣️",
                         {"type": "messages", "count": 100}, {"coins": 100, "xp": 50}, 0.6, False),
-            Achievement("prolific", "Prolific", "Sent 500 messages", "activity", "📣",
-                        {"type": "messages", "count": 500}, {"coins": 300, "xp": 150}, 0.3, False),
-            Achievement("first_command", "Explorer", "Used your first command", "activity", "🔍",
-                        {"type": "commands", "count": 1}, {"xp": 5}, 0.9, False),
-            Achievement("command_user", "Regular User", "Used 50 commands", "activity", "⌨️",
-                        {"type": "commands", "count": 50}, {"coins": 100}, 0.6, False),
-            Achievement("first_quest", "Adventurer", "Completed your first quest", "gamification", "🗺️",
-                        {"type": "quests_completed", "count": 1}, {"xp": 25}, 0.8, False),
-            Achievement("quest_master", "Quest Master", "Completed 25 quests", "gamification", "🎖️",
-                        {"type": "quests_completed", "count": 25}, {"coins": 500, "xp": 250}, 0.3, False),
-            Achievement("first_giveaway", "Lucky", "Won a giveaway", "events", "🎁",
-                        {"type": "giveaways_won", "count": 1}, {"coins": 100}, 0.7, False),
-            Achievement("event_winner", "Champion", "Won 5 events", "events", "🏆",
-                        {"type": "events_won", "count": 5}, {"coins": 500}, 0.3, False),
-            Achievement("first_ticket", "Reporter", "Created your first ticket", "support", "🎫",
-                        {"type": "tickets_created", "count": 1}, {"xp": 10}, 0.8, False),
-            Achievement("helper", "Helper", "Had 10 tickets resolved", "support", "🛠️",
-                        {"type": "tickets_resolved", "count": 10}, {"coins": 200}, 0.5, False),
-            Achievement("first_rep", "Kind", "Received first reputation", "social", "💖",
-                        {"type": "rep_received", "count": 1}, {"xp": 10}, 0.8, False),
-            Achievement("popular", "Popular", "Received 50 reputation", "social", "❤️",
-                        {"type": "rep_received", "count": 50}, {"coins": 300}, 0.4, False),
-            Achievement("generous", "Generous", "Gave 25 reputation", "social", "🎁",
-                        {"type": "rep_given", "count": 25}, {"coins": 150}, 0.5, False),
-            Achievement("first_event", "Party Goer", "Joined your first event", "events", "🎉",
-                        {"type": "events_joined", "count": 1}, {"xp": 25}, 0.7, False),
-            Achievement("tournament_participant", "Competitor", "Joined a tournament", "events", "⚔️",
-                        {"type": "tournaments_joined", "count": 1}, {"xp": 50}, 0.6, False),
-            Achievement("tournament_winner", "Ultimate Champion", "Won a tournament", "events", "👑",
-                        {"type": "tournaments_won", "count": 1}, {"coins": 1000, "xp": 500}, 0.2, True),
-            Achievement("first_star", "Starred", "Got your first star", "content", "⭐",
-                        {"type": "messages_starred", "count": 1}, {"coins": 25}, 0.7, False),
-            Achievement("voice_time", "Voice Active", "Spent 1 hour in voice", "activity", "🎤",
-                        {"type": "voice_minutes", "count": 60}, {"xp": 50}, 0.6, False),
-            Achievement("voice_regular", "Voice Regular", "Spent 10 hours in voice", "activity", "🎧",
-                        {"type": "voice_minutes", "count": 600}, {"coins": 500, "xp": 250}, 0.3, False),
+            Achievement("prolific", "Prolific", "Sent 1000 messages", "activity", "📣",
+                        {"type": "messages", "count": 1000}, {"coins": 500, "xp": 250}, 0.3, False),
+            Achievement("legendary_chatter", "Chat Legend", "Sent 10000 messages", "activity", "👑",
+                        {"type": "messages", "count": 10000}, {"coins": 5000, "xp": 2500}, 0.05, False),
+
+            # Voice
+            Achievement("first_voice", "Mic Check", "Joined voice chat for the first time", "voice", "🎤",
+                        {"type": "voice_minutes", "count": 1}, {"xp": 10}, 0.8, False),
+            Achievement("voice_1hr", "Radio Host", "Spent 1 hour in voice channels", "voice", "🎧",
+                        {"type": "voice_minutes", "count": 60}, {"coins": 100}, 0.5, False),
+            Achievement("voice_10hr", "Podcast Pro", "Spent 10 hours in voice channels", "voice", "📻",
+                        {"type": "voice_minutes", "count": 600}, {"coins": 500}, 0.2, False),
+            Achievement("voice_100hr", "Voice Legend", "Spent 100 hours in voice channels", "voice", "💎",
+                        {"type": "voice_minutes", "count": 6000}, {"coins": 2000}, 0.05, False),
+
+            # Leveling
             Achievement("level_5", "Rising Star", "Reached level 5", "progression", "🌟",
                         {"type": "level", "count": 5}, {"coins": 100}, 0.7, False),
             Achievement("level_10", "Established", "Reached level 10", "progression", "💫",
@@ -139,10 +122,52 @@ class AchievementSystem:
                         {"type": "level", "count": 25}, {"coins": 500, "xp": 250}, 0.3, False),
             Achievement("level_50", "Elite", "Reached level 50", "progression", "👑",
                         {"type": "level", "count": 50}, {"coins": 1000, "xp": 500}, 0.15, False),
-            Achievement("rich", "Wealthy", "Earned 1000 coins total", "economy", "💰",
-                        {"type": "total_coins", "count": 1000}, {"xp": 100}, 0.6, False),
-            Achievement("millionaire", "Millionaire", "Earned 10000 coins total", "economy", "🤑",
-                        {"type": "total_coins", "count": 10000}, {"coins": 500}, 0.25, True),
+            Achievement("level_100", "Immortal", "Reached level 100", "progression", "🔱",
+                        {"type": "level", "count": 100}, {"coins": 5000, "xp": 2500}, 0.02, False),
+
+            # Economy
+            Achievement("first_purchase", "Big Spender", "Made your first purchase in the shop", "economy", "🛒",
+                        {"type": "purchases", "count": 1}, {"xp": 20}, 0.7, False),
+            Achievement("spend_1000", "Investor", "Spent 1000 coins", "economy", "💸",
+                        {"type": "coins_spent", "count": 1000}, {"xp": 100}, 0.4, False),
+            Achievement("earn_10000", "Wealthy", "Earned 10000 coins total", "economy", "💰",
+                        {"type": "total_coins", "count": 10000}, {"xp": 500}, 0.2, False),
+            Achievement("richest", "Capitalist", "Become the richest member in the server", "economy", "🤑",
+                        {"type": "richest_member"}, {"coins": 1000}, 0.01, True),
+
+            # Social
+            Achievement("first_reaction_given", "Expressive", "Gave your first reaction", "social", "👍",
+                        {"type": "reactions_given", "count": 1}, {"xp": 5}, 0.9, False),
+            Achievement("first_reaction_received", "Popular", "Received your first reaction", "social", "❤️",
+                        {"type": "reactions_received", "count": 1}, {"xp": 5}, 0.9, False),
+            Achievement("thread_creator", "Conversationalist", "Created your first thread", "social", "🧵",
+                        {"type": "threads_created", "count": 1}, {"xp": 20}, 0.7, False),
+            Achievement("helper_10", "Good Samaritan", "Helped 10 members via tickets", "social", "🤝",
+                        {"type": "tickets_resolved", "count": 10}, {"coins": 500}, 0.3, False),
+
+            # Events
+            Achievement("first_event", "Party Goer", "Joined your first event", "events", "🎉",
+                        {"type": "events_joined", "count": 1}, {"xp": 25}, 0.7, False),
+            Achievement("attend_10_events", "Regular Attendee", "Attended 10 events", "events", "🎫",
+                        {"type": "events_joined", "count": 10}, {"coins": 500}, 0.3, False),
+            Achievement("attend_50_events", "Event Addict", "Attended 50 events", "events", "🏟️",
+                        {"type": "events_joined", "count": 50}, {"coins": 2000}, 0.1, False),
+
+            # Streaks
+            Achievement("streak_7", "Consistent", "Maintain a 7-day activity streak", "streaks", "🔥",
+                        {"type": "streak", "count": 7}, {"coins": 200}, 0.5, False),
+            Achievement("streak_30", "Dedicated", "Maintain a 30-day activity streak", "streaks", "🌟",
+                        {"type": "streak", "count": 30}, {"coins": 1000}, 0.2, False),
+            Achievement("streak_100", "Unstoppable", "Maintain a 100-day activity streak", "streaks", "🔱",
+                        {"type": "streak", "count": 100}, {"coins": 5000}, 0.05, False),
+
+            # Staff
+            Achievement("first_mod_action", "Justice Begins", "Performed your first moderation action", "staff", "⚖️",
+                        {"type": "mod_actions", "count": 1}, {"xp": 50}, 0.1, False),
+            Achievement("mod_100", "Guardian", "Performed 100 moderation actions", "staff", "🛡️",
+                        {"type": "mod_actions", "count": 100}, {"coins": 1000}, 0.05, False),
+            Achievement("top_mod_month", "Mod of the Month", "Become the top moderator of the month", "staff", "🥇",
+                        {"type": "top_mod_month"}, {"coins": 2000}, 0.01, True),
         ]
         
         for ach in defaults:
@@ -171,13 +196,13 @@ class AchievementSystem:
         return dm.get_guild_data(guild_id, "achievement_settings", {
             "enabled": True,
             "notify_channel": None,
+            "notify_dms": True,
             "show_progress": True
         })
 
     async def check_achievements(self, guild_id: int, user_id: int):
         user_data = dm.get_guild_data(guild_id, f"user_{user_id}", {})
 
-        # Truly immortal check using dedicated awarded_badges.json
         awarded = dm.load_json("awarded_badges", default={})
         gid_str = str(guild_id)
         uid_str = str(user_id)
@@ -213,6 +238,8 @@ class AchievementSystem:
                 earned_now = user_data.get("giveaways_won", 0) >= req["count"]
             elif req["type"] == "events_won":
                 earned_now = user_data.get("events_won", 0) >= req["count"]
+            elif req["type"] == "events_joined":
+                earned_now = user_data.get("events_joined", 0) >= req["count"]
             elif req["type"] == "rep_received":
                 earned_now = user_data.get("rep_received", 0) >= req["count"]
             elif req["type"] == "rep_given":
@@ -225,6 +252,23 @@ class AchievementSystem:
                 earned_now = user_data.get("voice_minutes", 0) >= req["count"]
             elif req["type"] == "messages_starred":
                 earned_now = user_data.get("messages_starred", 0) >= req["count"]
+            elif req["type"] == "purchases":
+                earned_now = user_data.get("total_purchases", 0) >= req["count"]
+            elif req["type"] == "coins_spent":
+                earned_now = user_data.get("total_coins_spent", 0) >= req["count"]
+            elif req["type"] == "reactions_given":
+                earned_now = user_data.get("reactions_given", 0) >= req["count"]
+            elif req["type"] == "reactions_received":
+                earned_now = user_data.get("reactions_received", 0) >= req["count"]
+            elif req["type"] == "threads_created":
+                earned_now = user_data.get("threads_created", 0) >= req["count"]
+            elif req["type"] == "tickets_resolved":
+                earned_now = user_data.get("tickets_resolved", 0) >= req["count"]
+            elif req["type"] == "streak":
+                streak = self.bot.leveling.get_streak(guild_id, user_id)
+                earned_now = streak >= req["count"]
+            elif req["type"] == "mod_actions":
+                earned_now = user_data.get("mod_actions", 0) >= req["count"]
             
             if earned_now:
                 await self._award_achievement(guild_id, user_id, ach, new_earned)
@@ -232,7 +276,6 @@ class AchievementSystem:
         return new_earned
 
     async def _award_achievement(self, guild_id: int, user_id: int, achievement: Achievement, new_earned: list):
-        # Update awarded_badges.json
         awarded = dm.load_json("awarded_badges", default={})
         gid_str = str(guild_id)
         uid_str = str(user_id)
@@ -243,7 +286,6 @@ class AchievementSystem:
             awarded[gid_str][uid_str].append(achievement.id)
             dm.save_json("awarded_badges", awarded)
 
-        # Legacy update for backward compatibility
         earned = dm.get_guild_data(guild_id, f"achievements_{user_id}", [])
         earned.append({
             "achievement_id": achievement.id,
@@ -253,69 +295,70 @@ class AchievementSystem:
         
         reward = achievement.reward
         if reward:
-            user_data = dm.get_guild_data(guild_id, f"user_{user_id}", {})
-            user_data["coins"] = user_data.get("coins", 0) + reward.get("coins", 0)
-            user_data["xp"] = user_data.get("xp", 0) + reward.get("xp", 0)
-            dm.update_guild_data(guild_id, f"user_{user_id}", user_data)
+            if "coins" in reward:
+                self.bot.economy.add_coins(guild_id, user_id, reward["coins"])
+            if "xp" in reward:
+                self.bot.leveling.add_xp(guild_id, user_id, reward["xp"])
+            if "role_id" in reward:
+                guild = self.bot.get_guild(guild_id)
+                member = guild.get_member(user_id) if guild else None
+                if member:
+                    role = guild.get_role(int(reward["role_id"]))
+                    if role:
+                        try: await member.add_roles(role)
+                        except: pass
         
         new_earned.append(achievement)
-        
         await self._notify_achievement(guild_id, user_id, achievement)
-        
         await self._check_title_unlock(guild_id, user_id)
 
     async def _notify_achievement(self, guild_id: int, user_id: int, achievement: Achievement):
-        # Suppress all notifications during startup to prevent restart badge-spam.
-        # The bot enables this flag 30 s after on_ready.
         if not self._notifications_enabled:
-            logger.debug("Achievement '%s' earned by %d (notifications suppressed during startup)",
-                         achievement.id, user_id)
             return
 
         settings = self.get_guild_settings(guild_id)
-
         guild = self.bot.get_guild(guild_id)
-        if not guild:
-            return
+        if not guild: return
         member = guild.get_member(user_id)
-        if not member:
-            return
+        if not member: return
 
         embed = discord.Embed(
             title="🏆 Achievement Unlocked!",
-            description=f"**{achievement.icon} {achievement.name}**",
+            description=f"{member.mention} earned **{achievement.icon} {achievement.name}**!",
             color=discord.Color.gold()
         )
         embed.add_field(name="Description", value=achievement.description, inline=False)
 
         if achievement.reward:
             reward_text = []
-            if achievement.reward.get("coins"):
-                reward_text.append(f"{achievement.reward['coins']} coins")
-            if achievement.reward.get("xp"):
-                reward_text.append(f"{achievement.reward['xp']} XP")
+            if achievement.reward.get("coins"): reward_text.append(f"💰 {achievement.reward['coins']} coins")
+            if achievement.reward.get("xp"): reward_text.append(f"✨ {achievement.reward['xp']} XP")
             if reward_text:
                 embed.add_field(name="Reward", value=", ".join(reward_text), inline=True)
 
-        if settings.get("notify_channel"):
-            channel = guild.get_channel(int(settings["notify_channel"]))
+        # 1. Post to announcement channel
+        notify_ch_id = settings.get("notify_channel")
+        if notify_ch_id:
+            channel = guild.get_channel(int(notify_ch_id))
             if channel:
                 await channel.send(embed=embed)
+        else:
+            # Fallback to system channel
+            if guild.system_channel:
+                await guild.system_channel.send(embed=embed)
 
-        try:
-            await member.send(embed=embed)
-        except Exception:
-            pass
+        # 2. DM user
+        if settings.get("notify_dms"):
+            try:
+                await member.send(embed=embed)
+            except: pass
 
     async def _check_title_unlock(self, guild_id: int, user_id: int):
         user_data = dm.get_guild_data(guild_id, f"user_{user_id}", {})
         
         for title_id, title in self._titles.items():
-            if title_id == "newcomer":
-                continue
-            
+            if title_id == "newcomer": continue
             req = title["requirement"]
-            
             unlocked = False
             
             if req["type"] == "days_member":
@@ -335,7 +378,6 @@ class AchievementSystem:
 
     async def _unlock_title(self, guild_id: int, user_id: int, title_id: str):
         user_titles = dm.get_guild_data(guild_id, f"titles_{user_id}", [])
-
         existing = [t["title_id"] for t in user_titles]
 
         if title_id not in existing:
@@ -344,38 +386,27 @@ class AchievementSystem:
                 "unlocked_at": time.time(),
                 "active": False
             })
-
             dm.update_guild_data(guild_id, f"titles_{user_id}", user_titles)
 
-            # Only send DM notifications after startup is complete
-            if not self._notifications_enabled:
-                logger.debug("Title '%s' unlocked for %d (notifications suppressed during startup)",
-                             title_id, user_id)
-                return
-
-            title = self._titles.get(title_id)
-            if title:
-                guild = self.bot.get_guild(guild_id)
-                member = guild.get_member(user_id) if guild else None
-                if member:
-                    embed = discord.Embed(
-                        title="🎖️ Title Unlocked!",
-                        description=f"You unlocked: **{title['icon']} {title['name']}**",
-                        color=discord.Color.gold()
-                    )
-                    try:
-                        await member.send(embed=embed)
-                    except Exception:
-                        pass
+            if self._notifications_enabled:
+                title = self._titles.get(title_id)
+                if title:
+                    guild = self.bot.get_guild(guild_id)
+                    member = guild.get_member(user_id) if guild else None
+                    if member:
+                        embed = discord.Embed(
+                            title="🎖️ Title Unlocked!",
+                            description=f"You unlocked the title: **{title['icon']} {title['name']}**",
+                            color=discord.Color.gold()
+                        )
+                        try: await member.send(embed=embed)
+                        except: pass
 
     def set_active_title(self, guild_id: int, user_id: int, title_id: str) -> bool:
         user_titles = dm.get_guild_data(guild_id, f"titles_{user_id}", [])
-        
         for title in user_titles:
             title["active"] = (title["title_id"] == title_id)
-        
         dm.update_guild_data(guild_id, f"titles_{user_id}", user_titles)
-        
         return True
 
     def get_user_achievements(self, guild_id: int, user_id: int) -> List[dict]:
@@ -387,223 +418,74 @@ class AchievementSystem:
             ach = self._achievements.get(ach_id)
             if ach:
                 result.append({
-                    "id": ach.id,
-                    "name": ach.name,
-                    "description": ach.description,
-                    "icon": ach.icon,
-                    "category": ach.category,
-                    "earned_at": time.time() # Approximation since original timestamp not in new file
+                    "id": ach.id, "name": ach.name, "description": ach.description,
+                    "icon": ach.icon, "category": ach.category, "earned_at": time.time()
                 })
-        
-        # Fallback to legacy data if needed
-        if not result:
-            earned = dm.get_guild_data(guild_id, f"achievements_{user_id}", [])
-            for e in earned:
-                ach = self._achievements.get(e["achievement_id"])
-                if ach:
-                    result.append({
-                        "id": ach.id,
-                        "name": ach.name,
-                        "description": ach.description,
-                        "icon": ach.icon,
-                        "category": ach.category,
-                        "earned_at": e["earned_at"]
-                    })
-
         return result
 
     def get_user_titles(self, guild_id: int, user_id: int) -> List[dict]:
         user_titles = dm.get_guild_data(guild_id, f"titles_{user_id}", [])
-        
         result = []
         for t in user_titles:
             title = self._titles.get(t["title_id"])
             if title:
                 result.append({
-                    "id": title["id"],
-                    "name": title["name"],
-                    "icon": title["icon"],
-                    "unlocked_at": t["unlocked_at"],
-                    "active": t.get("active", False)
+                    "id": title["id"], "name": title["name"], "icon": title["icon"],
+                    "unlocked_at": t["unlocked_at"], "active": t.get("active", False)
                 })
-        
         return result
 
     def get_active_title(self, guild_id: int, user_id: int) -> Optional[dict]:
         user_titles = dm.get_guild_data(guild_id, f"titles_{user_id}", [])
-        
         for t in user_titles:
             if t.get("active", False):
                 title = self._titles.get(t["title_id"])
-                if title:
-                    return {"name": title["name"], "icon": title["icon"]}
-        
+                if title: return {"name": title["name"], "icon": title["icon"]}
         return None
 
-    def get_leaderboard(self, guild_id: int, category: str = None) -> List[dict]:
+    def get_leaderboard(self, guild_id: int) -> List[dict]:
         all_users = {}
-        
         data_dir = "data"
-        import os
         if os.path.exists(data_dir):
             for filename in os.listdir(data_dir):
                 if filename.startswith("guild_") and filename.endswith(".json"):
                     try:
                         guild_data = dm.load_json(filename[:-5])
-                        if guild_data.get("guild_id") != guild_id:
-                            continue
-                        
+                        if guild_data.get("guild_id") != guild_id: continue
                         for key, value in guild_data.items():
                             if key.startswith("achievements_"):
-                                user_id = int(key[12:])
-                                if user_id not in all_users:
-                                    all_users[user_id] = 0
-                                all_users[user_id] += len(value)
-                    except:
-                        pass
+                                user_id = int(key[13:])
+                                all_users[user_id] = len(value)
+                    except: pass
         
         sorted_users = sorted(all_users.items(), key=lambda x: x[1], reverse=True)[:10]
-        
-        leaderboard = []
-        for i, (user_id, count) in enumerate(sorted_users):
-            leaderboard.append({
-                "rank": i + 1,
-                "user_id": user_id,
-                "achievements": count
-            })
-        
-        return leaderboard
+        return [{"rank": i+1, "user_id": uid, "achievements": count} for i, (uid, count) in enumerate(sorted_users)]
 
     async def setup(self, interaction: discord.Interaction, params: Dict = None):
         guild = interaction.guild
-        
         settings = self.get_guild_settings(guild.id)
         settings["enabled"] = True
+        
+        # Setup channel
+        channel = discord.utils.get(guild.text_channels, name="achievements")
+        if not channel:
+            channel = await guild.create_text_channel("achievements")
+        settings["notify_channel"] = channel.id
         dm.update_guild_data(guild.id, "achievement_settings", settings)
         
-        # Create a documentation channel
-        try:
-            doc_channel = await guild.create_text_channel("achievements-guide", category=None)
-        except:
-            doc_channel = interaction.channel
-        
-        # Post comprehensive documentation
-        doc_embed = discord.Embed(
-            title="🎯 Achievement System Guide",
-            description="Complete guide to earning achievements, unlocking titles, and getting rewards!",
-            color=discord.Color.gold()
-        )
-        doc_embed.add_field(
-            name="📖 How It Works",
-            value="Complete different activities to earn achievements. Each achievement grants coins/XP rewards. Unlock titles based on milestones.",
-            inline=False
-        )
-        doc_embed.add_field(
-            name="🎮 Available Commands",
-            value="**!achievements** - View all your earned achievements\n" +
-                  "**!titles** - View your unlocked titles\n" +
-                  "**!settitle <title>** - Set your active title (use title name or ID)\n" +
-                  "**!achievementsleaderboard** - See top achievement collectors\n" +
-                  "**!help achievements** - Show this guide",
-            inline=False
-        )
-        doc_embed.add_field(
-            name="🏆 Achievement Categories",
-            value="• **Community**: Join milestones (7d, 30d, 100d)\n" +
-                  "• **Activity**: Messages, commands, voice time\n" +
-                  "• **Gamification**: Quests completed\n" +
-                  "• **Events**: Giveaways won, events joined\n" +
-                  "• **Support**: Tickets created/resolved\n" +
-                  "• **Social**: Reputation given/received\n" +
-                  "• **Progression**: Level milestones\n" +
-                  "• **Economy**: Coins earned",
-            inline=False
-        )
-        doc_embed.add_field(
-            name="🎖️ Available Titles",
-            value="• 🌱 Newcomer (1+ day)\n" +
-                  "• ⭐ Regular (7+ days)\n" +
-                  "• 🏅 Veteran (30+ days)\n" +
-                  "• 👑 Legend (100+ days)\n" +
-                  "• 🛠️ Helper (10+ rep received)\n" +
-                  "• 🏆 Champion (1+ event won)\n" +
-                  "• 💎 Elite (Level 25+)",
-            inline=False
-        )
-        doc_embed.add_field(
-            name="💡 Tips",
-            value="• Check your progress with !achievements\n" +
-                  "• Active titles show next to your name\n" +
-                  "• Some achievements are hidden!\n" +
-                  "• Get notified when you unlock achievements",
-            inline=False
-        )
-        doc_embed.set_footer(text="Created by Miro AI • Use !help achievements for more info")
-        
-        await doc_channel.send(embed=doc_embed)
-        await doc_channel.send("💡 **Quick Start:** Try these commands:\n" +
-                              "• `!achievements` - See your achievements\n" +
-                              "• `!titles` - See your titles\n" +
-                              "• `!achievementsleaderboard` - Top collectors")
-        
-        help_embed = discord.Embed(
-            title="🎯 Achievement System",
-            description="Earn achievements for activities, unlock titles, and get rewards.",
-            color=discord.Color.green()
-        )
-        help_embed.add_field(
-            name="How it works",
-            value="Complete activities to earn achievements. Each achievement gives coins/XP rewards. Unlock titles based on milestones.",
-            inline=False
-        )
-        help_embed.add_field(
-            name="!achievements",
-            value="View your achievements.",
-            inline=False
-        )
-        help_embed.add_field(
-            name="!titles",
-            value="View your unlocked titles.",
-            inline=False
-        )
-        help_embed.add_field(
-            name="!settitle <title>",
-            value="Set your active title.",
-            inline=False
-        )
-        
-        await interaction.followup.send(embed=help_embed, ephemeral=True)
-        
+        # Register prefix commands
         custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
-        
-        custom_cmds["achievements"] = json.dumps({
-            "command_type": "list_achievements"
-        })
-        custom_cmds["titles"] = json.dumps({
-            "command_type": "list_titles"
-        })
-        custom_cmds["settitle"] = json.dumps({
-            "command_type": "set_title"
-        })
-        custom_cmds["achievementsleaderboard"] = json.dumps({
-            "command_type": "achievements_leaderboard"
-        })
-        custom_cmds["help achievements"] = json.dumps({
-            "command_type": "help_embed",
-            "title": "🎯 Achievement System",
-            "description": "Earn achievements and unlock titles.",
-            "fields": [
-                {"name": "!achievements", "value": "View your achievements.", "inline": False},
-                {"name": "!titles", "value": "View your titles.", "inline": False},
-                {"name": "!settitle <name>", "value": "Set your active title.", "inline": False},
-                {"name": "!achievementsleaderboard", "value": "Top collectors.", "inline": False},
-                {"name": "!help achievements", "value": "Show this guide.", "inline": False}
-            ]
-        })
-        
+        custom_cmds["achievements"] = json.dumps({"command_type": "list_achievements"})
+        custom_cmds["titles"] = json.dumps({"command_type": "list_titles"})
+        custom_cmds["settitle"] = json.dumps({"command_type": "set_title"})
+        custom_cmds["badges"] = json.dumps({"command_type": "list_achievements"})
+        custom_cmds["progress"] = json.dumps({"command_type": "list_achievements"})
+        custom_cmds["achievementsleaderboard"] = json.dumps({"command_type": "achievements_leaderboard"})
         dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
         
+        doc_embed = discord.Embed(title="🏆 Achievement System Guide", color=discord.Color.gold())
+        doc_embed.add_field(name="Commands", value="`!achievements` - View your earned badges\n`!titles` - View unlocked titles\n`!settitle <name>` - Set your active title\n`!achievementsleaderboard` - See top earners", inline=False)
+        await channel.send(embed=doc_embed)
+
+        await interaction.followup.send(f"Achievement system set up in {channel.mention}!", ephemeral=True)
         return True
-
-
-from discord import app_commands

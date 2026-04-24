@@ -1,0 +1,3 @@
+2026-04-24 10:39:48 | ERROR    | immortal_bot:104 | Failed to add reaction role 101 to user <MagicMock name='mock.member.id' id='140393939019360'>: object MagicMock can't be used in 'await' expression
+2026-04-24 10:40:35 | ERROR    | immortal_bot:104 | Failed to add reaction role 101 to user <MagicMock name='mock.member.id' id='140176601349824'>: Object of type MagicMock is not JSON serializable
+2026-04-24 10:44:34 | ERROR    | immortal_bot:104 | Failed to add reaction role 101 to user <MagicMock name='mock.member.id' id='139641176583168'>: Object of type MagicMock is not JSON serializable

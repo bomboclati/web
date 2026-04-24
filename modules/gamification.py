@@ -17,6 +17,7 @@ import os
 class QuestType(Enum):
     DAILY = "daily"
     WEEKLY = "weekly"
+    MONTHLY = "monthly"
     PERSONAL = "personal"
     SOCIAL = "social"
     CHALLENGE = "challenge"
@@ -37,6 +38,7 @@ class BadgeCategory(Enum):
     SPECIAL = "special"
     SEASONAL = "seasonal"
     CHALLENGE = "challenge"
+    PRESTIGE = "prestige"
 
 
 @dataclass
@@ -89,6 +91,7 @@ class AdaptiveGamification:
         self._badge_definitions: Dict[str, Badge] = {}
         self._user_skills: Dict[int, Dict[int, Dict[str, Skill]]] = {}
         self._seasonal_events: Dict[int, dict] = {}
+        self._server_challenges: Dict[int, List[dict]] = {}
         self.awarded_badges: Dict[str, Dict[str, List[str]]] = {}
         self._load_data()
         self._load_awarded_badges()
@@ -190,6 +193,7 @@ class AdaptiveGamification:
             Badge("event_winner", "Event Winner", "Won an event", BadgeCategory.EVENT, "🏆", {"events_won": 1}, 0.3, "event_participant"),
             Badge("first_quest", "Adventurer", "Completed first quest", BadgeCategory.CHALLENGE, "🗺️", {"quests_completed": 1}, 0.8, None),
             Badge("quest_master", "Quest Master", "Completed 25 quests", BadgeCategory.CHALLENGE, "🎖️", {"quests_completed": 25}, 0.3, "first_quest"),
+            Badge("prestige_1", "Prestige I", "Reached max level and reset", BadgeCategory.PRESTIGE, "💎", {"prestige": 1}, 0.05, None),
         ]
         
         for badge in default_badges:
@@ -204,12 +208,25 @@ class AdaptiveGamification:
         while not self.bot.is_closed():
             try:
                 await self._refresh_daily_quests()
+                await self._refresh_server_challenges()
                 await self._check_quest_progress()
                 await self._check_badge_awards()
+                await self._update_ranking_titles()
             except Exception as e:
                 logger.error(f"Quest refresh error: {e}")
             
             await asyncio.sleep(60)
+
+    async def _refresh_server_challenges(self):
+        for guild in self.bot.guilds:
+            challenges = dm.get_guild_data(guild.id, "server_challenges", [])
+            if not challenges:
+                # Generate new set
+                new_challenges = [
+                    {"id": "daily_msg", "name": "Chat Fever", "desc": "Send 1000 messages collectively", "target": 1000, "progress": 0, "type": "daily", "reward": {"coins": 500}},
+                    {"id": "weekly_voice", "name": "Talkative Community", "desc": "Spend 100 hours in voice collectively", "target": 6000, "progress": 0, "type": "weekly", "reward": {"coins": 2000}}
+                ]
+                dm.update_guild_data(guild.id, "server_challenges", new_challenges)
 
     async def _refresh_daily_quests(self):
         for guild in self.bot.guilds:
@@ -334,8 +351,6 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
 
     async def _check_and_award_badges(self, guild_id: int, user_id: int):
         user_badges = dm.get_guild_data(guild_id, f"badges_{user_id}", [])
-        earned_ids = {b["badge_id"] for b in user_badges}
-
         user_data = dm.get_guild_data(guild_id, f"user_{user_id}", {})
 
         for badge_id, badge_def in self._badge_definitions.items():
@@ -343,7 +358,6 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
                 continue
             
             req = badge_def.requirements
-            
             earned = False
             
             if "days_member" in req:
@@ -375,18 +389,19 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
             if "quests_completed" in req and not earned:
                 quests = user_data.get("quests_completed", 0)
                 earned = quests >= req["quests_completed"]
+
+            if "prestige" in req and not earned:
+                prestige = user_data.get("prestige", 0)
+                earned = prestige >= req["prestige"]
             
             if earned:
                 await self._award_badge(guild_id, user_id, badge_id)
 
     async def _award_badge(self, guild_id: int, user_id: int, badge_id: str):
-        # Check if already awarded to prevent duplicates
         if self._is_badge_awarded(guild_id, user_id, badge_id):
             return
 
         user_badges = dm.get_guild_data(guild_id, f"badges_{user_id}", [])
-
-        # Check if badge already in user's badges
         if any(b["badge_id"] == badge_id for b in user_badges):
             return
         
@@ -400,7 +415,8 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
         
         badge = self._badge_definitions.get(badge_id)
         if badge:
-            member = self.bot.get_guild(guild_id).get_member(user_id)
+            guild = self.bot.get_guild(guild_id)
+            member = guild.get_member(user_id) if guild else None
             if member:
                 embed = discord.Embed(
                     title=f"🎖️ Badge Earned!",
@@ -410,11 +426,128 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
                 embed.add_field(name="Description", value=badge.description, inline=False)
                 embed.add_field(name="Category", value=badge.category.value.title(), inline=True)
                 
-                channel = self.bot.get_guild(guild_id).system_channel
+                channel = guild.system_channel or guild.text_channels[0]
                 if channel:
                     await channel.send(embed=embed)
 
         self._mark_badge_awarded(guild_id, user_id, badge_id)
+
+    async def _update_ranking_titles(self):
+        for guild in self.bot.guilds:
+            for member in guild.members:
+                if member.bot: continue
+
+                xp = self.bot.leveling.get_xp(guild.id, member.id)
+                level = self.bot.leveling.get_level_from_xp(xp)
+
+                title_name = None
+                if level >= 100: title_name = "Legend"
+                elif level >= 50: title_name = "Elite"
+                elif level >= 25: title_name = "Veteran"
+                elif level >= 10: title_name = "Regular"
+                else: title_name = "Newcomer"
+
+                current_title = dm.get_guild_data(guild.id, f"ranking_title_{member.id}")
+                if title_name != current_title:
+                    dm.update_guild_data(guild.id, f"ranking_title_{member.id}", title_name)
+                    # Optionally assign role
+                    role = discord.utils.get(guild.roles, name=title_name)
+                    if role:
+                        try: await member.add_roles(role)
+                        except: pass
+
+    async def prestige(self, interaction: discord.Interaction):
+        guild_id = interaction.guild.id
+        user_id = interaction.user.id
+
+        xp = self.bot.leveling.get_xp(guild_id, user_id)
+        level = self.bot.leveling.get_level_from_xp(xp)
+
+        prestige_config = dm.get_guild_data(guild_id, "gamification_config", {}).get("prestige_level", 100)
+
+        if level < prestige_config:
+            return await interaction.response.send_message(f"You must reach level {prestige_config} to prestige!", ephemeral=True)
+
+        # Reset XP/Level
+        xp_data = dm.get_guild_data(guild_id, "leveling_xp", {})
+        xp_data[str(user_id)] = 0
+        dm.update_guild_data(guild_id, "leveling_xp", xp_data)
+
+        # Increase Prestige Level
+        user_data = dm.get_guild_data(guild_id, f"user_{user_id}", {})
+        current_prestige = user_data.get("prestige", 0)
+        user_data["prestige"] = current_prestige + 1
+        dm.update_guild_data(guild_id, f"user_{user_id}", user_data)
+
+        await interaction.response.send_message(f"🔱 **PRESTIGE!** You have reset to level 1 and reached Prestige **{current_prestige + 1}**!")
+        await self._check_and_award_badges(guild_id, user_id)
+
+    async def mini_game_dice(self, interaction: discord.Interaction, bet: int):
+        if bet <= 0: return await interaction.response.send_message("Bet must be positive!", ephemeral=True)
+        coins = self.bot.economy.get_coins(interaction.guild.id, interaction.user.id)
+        if coins < bet: return await interaction.response.send_message("Insufficient coins!", ephemeral=True)
+        user_roll, bot_roll = random.randint(1, 6), random.randint(1, 6)
+        if user_roll > bot_roll:
+            self.bot.economy.add_coins(interaction.guild.id, interaction.user.id, bet)
+            result = f"You rolled {user_roll}, I rolled {bot_roll}. **You win {bet} coins!**"
+        elif bot_roll > user_roll:
+            self.bot.economy.add_coins(interaction.guild.id, interaction.user.id, -bet)
+            result = f"You rolled {user_roll}, I rolled {bot_roll}. **You lost {bet} coins.**"
+        else: result = f"Both rolled {user_roll}. **It's a draw!**"
+        await interaction.response.send_message(f"🎲 {result}")
+
+    async def mini_game_flip(self, interaction: discord.Interaction, side: str, bet: int):
+        if bet <= 0: return await interaction.response.send_message("Bet must be positive!", ephemeral=True)
+        coins = self.bot.economy.get_coins(interaction.guild.id, interaction.user.id)
+        if coins < bet: return await interaction.response.send_message("Insufficient coins!", ephemeral=True)
+        result_side = random.choice(["heads", "tails"])
+        if side.lower() == result_side:
+            self.bot.economy.add_coins(interaction.guild.id, interaction.user.id, bet)
+            res_text = f"It was **{result_side}**! **You win {bet} coins!**"
+        else:
+            self.bot.economy.add_coins(interaction.guild.id, interaction.user.id, -bet)
+            res_text = f"It was **{result_side}**... **You lost {bet} coins.**"
+        await interaction.response.send_message(f"🪙 {res_text}")
+
+    async def mini_game_slots(self, interaction: discord.Interaction, bet: int):
+        if bet <= 0: return await interaction.response.send_message("Bet must be positive!", ephemeral=True)
+        coins = self.bot.economy.get_coins(interaction.guild.id, interaction.user.id)
+        if coins < bet: return await interaction.response.send_message("Insufficient coins!", ephemeral=True)
+        emojis = ["🍒", "🍋", "🍇", "🍊", "🍎", "💎", "7️⃣"]
+        res = [random.choice(emojis) for _ in range(3)]
+        slot_str = " | ".join(res)
+        if res[0] == res[1] == res[2]:
+            mult = 10 if res[0] == "7️⃣" else 5
+            win = bet * mult
+            self.bot.economy.add_coins(interaction.guild.id, interaction.user.id, win)
+            res_text = f"**JACKPOT!** {slot_str}\n**You win {win} coins!**"
+        elif res[0] == res[1] or res[1] == res[2] or res[0] == res[2]:
+            self.bot.economy.add_coins(interaction.guild.id, interaction.user.id, bet)
+            res_text = f"**Match!** {slot_str}\n**You win {bet} coins!**"
+        else:
+            self.bot.economy.add_coins(interaction.guild.id, interaction.user.id, -bet)
+            res_text = f"{slot_str}\n**You lost {bet} coins.**"
+        await interaction.response.send_message(f"🎰 {res_text}")
+
+    async def mini_game_trivia(self, interaction: discord.Interaction):
+        # Sample trivia questions
+        questions = [
+            {"q": "What is the capital of France?", "a": "Paris"},
+            {"q": "Who wrote 'Romeo and Juliet'?", "a": "Shakespeare"},
+            {"q": "What is the largest planet in our solar system?", "a": "Jupiter"}
+        ]
+        q_data = random.choice(questions)
+        await interaction.response.send_message(f"❓ **Trivia:** {q_data['q']}\n(Reply with the answer in 15s)")
+        def check(m): return m.author == interaction.user and m.channel == interaction.channel
+        try:
+            msg = await self.bot.wait_for("message", check=check, timeout=15.0)
+            if msg.content.lower() == q_data['a'].lower():
+                self.bot.economy.add_coins(interaction.guild.id, interaction.user.id, 50)
+                await interaction.channel.send(f"✅ Correct! **+50 coins**")
+            else:
+                await interaction.channel.send(f"❌ Wrong! The answer was **{q_data['a']}**.")
+        except asyncio.TimeoutError:
+            await interaction.channel.send(f"⏰ Time's up! The answer was **{q_data['a']}**.")
 
     async def _notify_quest_complete(self, quest: Quest):
         member = self.bot.get_guild(quest.guild_id).get_member(quest.user_id)
@@ -428,7 +561,7 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
         )
         embed.add_field(
             name="Rewards",
-            value=f"💰 {quest.rewards.get('coins', 0)} coins, XP {quest.rewards.get('xp', 0)}",
+            value=f"💰 {quest.rewards.get('coins', 0)} coins, ✨ {quest.rewards.get('xp', 0)} XP",
             inline=False
         )
         
@@ -449,11 +582,11 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
         if quest.status != QuestStatus.COMPLETED:
             return False
         
+        self.bot.economy.add_coins(guild_id, user_id, quest.rewards.get("coins", 0))
+        self.bot.leveling.add_xp(guild_id, user_id, quest.rewards.get("xp", 0))
+
         user_data = dm.get_guild_data(guild_id, f"user_{user_id}", {})
-        user_data["coins"] = user_data.get("coins", 0) + quest.rewards.get("coins", 0)
-        user_data["xp"] = user_data.get("xp", 0) + quest.rewards.get("xp", 0)
         user_data["quests_completed"] = user_data.get("quests_completed", 0) + 1
-        
         dm.update_guild_data(guild_id, f"user_{user_id}", user_data)
         
         quest.status = QuestStatus.CLAIMED
@@ -463,197 +596,43 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
 
     def get_user_quests(self, guild_id: int, user_id: int) -> List[dict]:
         user_quests = []
-        
         for quest in self._active_quests.values():
             if quest.guild_id == guild_id and quest.user_id == user_id and quest.status in [QuestStatus.ACTIVE, QuestStatus.COMPLETED]:
                 user_quests.append({
-                    "id": quest.id,
-                    "title": quest.title,
-                    "description": quest.description,
-                    "type": quest.quest_type.value,
-                    "progress": quest.progress,
-                    "requirements": quest.requirements,
-                    "rewards": quest.rewards,
-                    "status": quest.status.value,
-                    "expires_at": quest.expires_at
+                    "id": quest.id, "title": quest.title, "description": quest.description,
+                    "type": quest.quest_type.value, "progress": quest.progress,
+                    "requirements": quest.requirements, "rewards": quest.rewards,
+                    "status": quest.status.value, "expires_at": quest.expires_at
                 })
-        
         return user_quests
 
     def get_user_badges(self, guild_id: int, user_id: int) -> List[dict]:
         user_badges = dm.get_guild_data(guild_id, f"badges_{user_id}", [])
-        
         result = []
         for ub in user_badges:
             badge_def = self._badge_definitions.get(ub["badge_id"])
             if badge_def:
                 result.append({
-                    "id": ub["badge_id"],
-                    "name": badge_def.name,
-                    "description": badge_def.description,
-                    "icon": badge_def.icon,
-                    "category": badge_def.category.value,
-                    "earned_at": ub["earned_at"],
-                    "evolved_level": ub.get("evolved_level", 1)
+                    "id": ub["badge_id"], "name": badge_def.name, "description": badge_def.description,
+                    "icon": badge_def.icon, "category": badge_def.category.value,
+                    "earned_at": ub["earned_at"], "evolved_level": ub.get("evolved_level", 1)
                 })
-        
         return result
-
-    def get_user_skills(self, guild_id: int, user_id: int) -> Dict[str, dict]:
-        skills = {}
-        
-        skill_data = dm.get_guild_data(guild_id, f"skills_{user_id}", {})
-        
-        for skill_name, data in skill_data.items():
-            skills[skill_name] = {
-                "name": skill_name,
-                "level": data.get("level", 1),
-                "xp": data.get("xp", 0),
-                "xp_to_next": data.get("xp_to_next", 100)
-            }
-        
-        return skills
-
-    async def generate_ai_quest(self, guild_id: int, user_id: int, request: str) -> Optional[Quest]:
-        prompt = f"""Create a personalized quest based on this request: "{request}"
-
-Respond with JSON only:
-{{
-    "title": "Quest name",
-    "description": "What to do",
-    "type": "personal",
-    "requirements": {{"type": "specific_action", "detail": "..."}},
-    "rewards": {{"coins": 100, "xp": 50}},
-    "duration_hours": 48
-}}"""
-
-        try:
-            result = await self.bot.ai.chat(
-                guild_id=guild_id,
-                user_id=user_id,
-                user_input=prompt,
-                system_prompt="You create personalized quests for Discord users. Make them fun and engaging."
-            )
-            
-            quest_id = f"quest_{guild_id}_{user_id}_{int(time.time())}"
-            
-            quest = Quest(
-                id=quest_id,
-                guild_id=guild_id,
-                user_id=user_id,
-                quest_type=QuestType.PERSONAL,
-                title=result.get("title", "Custom Quest"),
-                description=result.get("description", "Complete this challenge!"),
-                requirements=result.get("requirements", {}),
-                rewards=result.get("rewards", {"coins": 100, "xp": 50}),
-                expires_at=time.time() + (result.get("duration_hours", 48) * 3600),
-                status=QuestStatus.ACTIVE,
-                progress=0,
-                created_at=time.time()
-            )
-            
-            self._active_quests[quest_id] = quest
-            self._save_quests(quest)
-            
-            return quest
-            
-        except Exception as e:
-            logger.error(f"Failed to generate AI quest: {e}")
-            return None
-
-    async def create_collaborative_challenge(self, guild_id: int, channel_id: int, created_by: int, params: dict) -> dict:
-        challenge_id = f"challenge_{guild_id}_{int(time.time())}"
-        
-        challenge = {
-            "id": challenge_id,
-            "guild_id": guild_id,
-            "channel_id": channel_id,
-            "created_by": created_by,
-            "title": params.get("title", "Group Challenge"),
-            "description": params.get("description", "Work together!"),
-            "goal": params.get("goal", 100),
-            "participants": [],
-            "current_progress": 0,
-            "rewards": params.get("rewards", {"coins": 500, "xp": 250}),
-            "created_at": time.time(),
-            "expires_at": time.time() + params.get("duration_hours", 24) * 3600,
-            "status": "active"
-        }
-        
-        challenges = dm.get_guild_data(guild_id, "collaborative_challenges", {})
-        challenges[challenge_id] = challenge
-        dm.update_guild_data(guild_id, "collaborative_challenges", challenges)
-        
-        return challenge
 
     async def setup(self, interaction: discord.Interaction, params: Dict = None):
         guild = interaction.guild
         
-        help_embed = discord.Embed(
-            title="🎮 Adaptive Gamification System",
-            description="Personalized quests, dynamic badges, and skill progression.",
-            color=discord.Color.green()
-        )
-        help_embed.add_field(
-            name="How it works",
-            value="AI generates daily quests based on your interests. Earn badges, track skills, and complete challenges for rewards.",
-            inline=False
-        )
-        help_embed.add_field(
-            name="!quests",
-            value="View your active and completed quests.",
-            inline=False
-        )
-        help_embed.add_field(
-            name="!badges",
-            value="View your earned badges.",
-            inline=False
-        )
-        help_embed.add_field(
-            name="!skills",
-            value="View your skill progression.",
-            inline=False
-        )
-        help_embed.add_field(
-            name="!claim <quest_id>",
-            value="Claim completed quest rewards.",
-            inline=False
-        )
-        
-        await interaction.followup.send(embed=help_embed, ephemeral=True)
-        
+        # Register prefix commands
         custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
-        
-        custom_cmds["quests"] = json.dumps({
-            "command_type": "list_quests"
-        })
-        custom_cmds["badges"] = json.dumps({
-            "command_type": "list_badges"
-        })
-        custom_cmds["skills"] = json.dumps({
-            "command_type": "list_skills"
-        })
-        custom_cmds["claim"] = json.dumps({
-            "command_type": "claim_quest"
-        })
-        custom_cmds["help gamification"] = json.dumps({
-            "command_type": "help_embed",
-            "title": "🎮 Adaptive Gamification System",
-            "description": "Personalized quests, dynamic badges, and skill progression.",
-            "fields": [
-                {"name": "!quests", "value": "View your active and completed quests.", "inline": False},
-                {"name": "!badges", "value": "View your earned badges.", "inline": False},
-                {"name": "!skills", "value": "View your skill progression.", "inline": False},
-                {"name": "!claim <quest_id>", "value": "Claim completed quest rewards.", "inline": False}
-            ]
-        })
-        
+        custom_cmds["quests"] = json.dumps({"command_type": "list_quests"})
+        custom_cmds["badges"] = json.dumps({"command_type": "list_badges"})
+        custom_cmds["prestige"] = json.dumps({"command_type": "prestige"})
+        custom_cmds["dice"] = json.dumps({"command_type": "dice"})
+        custom_cmds["flip"] = json.dumps({"command_type": "flip"})
+        custom_cmds["slots"] = json.dumps({"command_type": "slots"})
+        custom_cmds["trivia"] = json.dumps({"command_type": "trivia"})
+        custom_cmds["gamificationpanel"] = "configpanel gamification"
         dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
 
+        await interaction.followup.send("Gamification system set up! Try `!quests`, `!badges`, or `!dice <bet>`.", ephemeral=True)
         return True
-
-    async def setup_hook(self):
-        self._load_awarded_badges()
-
-
-from discord import app_commands
