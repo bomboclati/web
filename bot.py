@@ -1096,7 +1096,9 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         shift_commands = {
             "shift start": self.staff_shift.handle_shift_start,
             "shift end": self.staff_shift.handle_shift_end,
+            "endshift": self.staff_shift.handle_shift_end,
             "show shifts": self.staff_shift.handle_show_shifts,
+            "myshifts": self.staff_shift.handle_myshifts,
         }
         
         # Check for multi-word shift commands first
@@ -1156,6 +1158,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         warning_commands = {
             "warn": self.staff_shift.handle_warn,
             "warnings": self.staff_shift.handle_warnings,
+            "myshifts": self.staff_shift.handle_myshifts,
         }
         
         if command in ["warn", "warnings"]:
@@ -1170,14 +1173,20 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             "promotionhistory": self.staff_extras.handle_promotion_history,
             "trainingtasks": self.staff_extras.handle_training_tasks,
             "appeal": self.staff_extras.handle_appeal,
-            "staffstats": self.staff_reviews.handle_staff_stats,
-            "probation": self.staff_reviews.handle_probation_status,
-            "vote": self.staff_reviews.handle_peer_vote,
+            "staffstats": self.staff_reviews.handle_myreview,
+            "probation": self.staff_reviews.handle_myreview,
+            "review": self.staff_reviews.handle_review_command,
+            "myreview": self.staff_reviews.handle_myreview,
         }
         
         if command in staff_commands:
             cmd_func = staff_commands[command]
             await cmd_func(message, parts)
+            return
+
+        if command == "myshifts":
+            await self.staff_shift.handle_myshifts(message, parts)
+            return
     
     async def analyze_command_usage_and_suggest_improvements(self):
         """Periodically analyze command usage and suggest improvements."""

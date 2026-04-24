@@ -1,10 +1,10 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import asyncio
 import json
 import time
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from data_manager import dm
 from logger import logger
@@ -13,80 +13,160 @@ from logger import logger
 class StaffShiftSystem:
     def __init__(self, bot):
         self.bot = bot
+        # self._shifts[guild_id][user_id] = { ... active shift data ... }
         self._shifts: Dict[int, Dict[int, dict]] = {}
-        self._tasks: Dict[int, Dict[int, dict]] = {}
-        self._warnings: Dict[int, Dict[int, dict]] = {}
-        self._activity_logs: Dict[int, List[dict]] = {}
-        self._load_data()
+        self._idle_monitor.start()
 
-    def _load_data(self):
-        data = dm.load_json("staff_shifts_tasks", default={})
-        self._shifts = data.get("shifts", {})
-        self._tasks = data.get("tasks", {})
-        self._warnings = data.get("warnings", {})
-        self._activity_logs = data.get("activity_logs", {})
+    def _load_active_shifts(self, guild_id: int):
+        if guild_id not in self._shifts:
+            self._shifts[guild_id] = dm.get_guild_data(guild_id, "active_staff_shifts", {})
 
-    def _save_data(self):
-        data = {
-            "shifts": self._shifts,
-            "tasks": self._tasks,
-            "warnings": self._warnings,
-            "activity_logs": self._activity_logs
-        }
-        dm.save_json("staff_shifts_tasks", data)
+    def _save_active_shifts(self, guild_id: int):
+        dm.update_guild_data(guild_id, "active_staff_shifts", self._shifts.get(guild_id, {}))
 
-    async def handle_shift_start(self, message, parts):
+    def _get_config(self, guild_id: int) -> dict:
+        return dm.get_guild_data(guild_id, "staff_shifts_config", {
+            "enabled": True,
+            "on_duty_role_id": None,
+            "idle_timeout_minutes": 30,
+            "shift_channel_id": None,
+            "notifications_enabled": True,
+            "goals": {}, # user_id -> {"weekly_hours": X}
+            "schedule": [] # list of {"user_id": X, "day": 0-6, "start": "HH:MM", "end": "HH:MM"}
+        })
+
+    def _save_config(self, guild_id: int, config: dict):
+        dm.update_guild_data(guild_id, "staff_shifts_config", config)
+
+    def _get_history(self, guild_id: int) -> List[dict]:
+        return dm.get_guild_data(guild_id, "staff_shifts_history", [])
+
+    def _save_history(self, guild_id: int, history: List[dict]):
+        dm.update_guild_data(guild_id, "staff_shifts_history", history[-1000:]) # Keep last 1000 shifts
+
+    async def handle_shift_start(self, message, parts=None):
         """Handle !shift start command"""
         guild = message.guild
-        guild_id = guild.id
-        user_id = message.author.id
+        if not guild: return
         
-        if guild_id not in self._shifts:
-            self._shifts[guild_id] = {}
+        self._load_active_shifts(guild.id)
+        # Check if already on shift
+        if message.author.id in self._shifts[guild.id]:
+            await message.channel.send("❌ You are already on a shift!")
+            return
+
+        config = self._get_config(guild.id)
         
-        self._shifts[guild_id][user_id] = {
-            "started_at": time.time(),
-            "started_by": str(message.author),
-            "active": True,
-            "messages": 0
+        # Assign on-duty role if configured
+        role_id = config.get("on_duty_role_id")
+        if role_id:
+            role = guild.get_role(role_id)
+            if role:
+                try:
+                    await message.author.add_roles(role, reason="Staff clocked in")
+                except Exception as e:
+                    logger.error(f"Failed to add on-duty role: {e}")
+
+        # Initialize shift data
+        if guild.id not in self._shifts:
+            self._shifts[guild.id] = {}
+        
+        self._shifts[guild.id][message.author.id] = {
+            "user_id": message.author.id,
+            "username": str(message.author),
+            "start_time": time.time(),
+            "last_activity": time.time(),
+            "messages": 0,
+            "mod_actions": 0,
+            "voice_minutes": 0,
+            "tickets_resolved": 0,
+            "notes": ""
         }
-        
-        await self.log_action(guild_id, user_id, "shift_start", "")
-        
-        await message.channel.send(f"✅ Shift started!")
+        self._save_active_shifts(guild.id)
 
-    async def handle_shift_end(self, message):
-        """Handle !shift end command"""
+        # Notification
+        if config.get("notifications_enabled") and config.get("shift_channel_id"):
+            channel = guild.get_channel(config.get("shift_channel_id"))
+            if channel:
+                await channel.send(f"🟢 **{message.author.display_name}** clocked in.")
+
+        await message.channel.send(f"✅ Shift started! Good luck, {message.author.display_name}.")
+
+    async def handle_shift_end(self, message, parts=None):
+        """Handle !shift end or !endshift command"""
         guild = message.guild
-        guild_id = guild.id
-        user_id = message.author.id
-        
-        if guild_id in self._shifts and user_id in self._shifts[guild_id]:
-            shift_data = self._shifts[guild_id][user_id]
-            start_time = shift_data.get("started_at", time.time())
-            duration = time.time() - start_time
-            hours = duration / 3600
-            msgs = shift_data.get("messages", 0)
-            
-            # Save stats to user data for promotion system
-            udata = dm.get_guild_data(guild_id, f"user_{user_id}", {})
-            udata["on_duty_messages"] = udata.get("on_duty_messages", 0) + msgs
-            udata["on_duty_hours"] = udata.get("on_duty_hours", 0) + hours
-            dm.update_guild_data(guild_id, f"user_{user_id}", udata)
+        if not guild: return
+        self._load_active_shifts(guild.id)
+        if message.author.id not in self._shifts[guild.id]:
+            await message.channel.send("❌ You don't have an active shift!")
+            return
 
-            await self.log_action(guild_id, user_id, "shift_end", f"{hours:.1f} hours, {msgs} msgs")
-            
-            del self._shifts[guild_id][user_id]
-            
-            await message.channel.send(f"✅ Shift ended! Duration: {hours:.1f} hours. Messages sent: {msgs}")
-        else:
-            await message.channel.send("You don't have an active shift!")
+        # Extract notes if provided
+        # Parts can be ['shift', 'end', 'note', ...] or ['endshift', 'note', ...]
+        notes = ""
+        if parts:
+            if parts[0].lower() == "shift" and len(parts) > 2:
+                notes = " ".join(parts[2:])
+            elif parts[0].lower() == "endshift" and len(parts) > 1:
+                notes = " ".join(parts[1:])
 
-    async def handle_show_shifts(self, message):
+        await self._end_shift(guild, message.author.id, notes=notes)
+        await message.channel.send(f"✅ Shift ended and recorded. Thanks for your work!")
+
+    async def _end_shift(self, guild: discord.Guild, user_id: int, reason: str = "Clocked out", notes: str = ""):
+        self._load_active_shifts(guild.id)
+        if user_id not in self._shifts[guild.id]:
+            return
+
+        shift_data = self._shifts[guild.id].pop(user_id)
+        self._save_active_shifts(guild.id)
+        end_time = time.time()
+        duration_seconds = end_time - shift_data["start_time"]
+        duration_hours = duration_seconds / 3600
+
+        shift_data.update({
+            "end_time": end_time,
+            "duration_hours": duration_hours,
+            "end_reason": reason,
+            "notes": notes or shift_data.get("notes", "")
+        })
+
+        # Remove on-duty role
+        config = self._get_config(guild.id)
+        role_id = config.get("on_duty_role_id")
+        if role_id:
+            role = guild.get_role(role_id)
+            member = guild.get_member(user_id)
+            if role and member:
+                try:
+                    await member.remove_roles(role, reason="Staff clocked out")
+                except Exception as e:
+                    logger.error(f"Failed to remove on-duty role: {e}")
+
+        # Save to history
+        history = self._get_history(guild.id)
+        history.append(shift_data)
+        self._save_history(guild.id, history)
+
+        # Update user stats for promotion system
+        udata = dm.get_guild_data(guild.id, f"user_{user_id}", {})
+        udata["on_duty_hours"] = udata.get("on_duty_hours", 0) + duration_hours
+        udata["on_duty_messages"] = udata.get("on_duty_messages", 0) + shift_data["messages"]
+        dm.update_guild_data(guild.id, f"user_{user_id}", udata)
+
+        # Notification
+        if config.get("notifications_enabled") and config.get("shift_channel_id"):
+            channel = guild.get_channel(config.get("shift_channel_id"))
+            if channel:
+                duration_str = f"{int(duration_hours)}h {int((duration_seconds % 3600) / 60)}m"
+                await channel.send(f"🔴 **{shift_data['username']}** clocked out. Duration: {duration_str}. Reason: {reason}")
+
+    async def handle_show_shifts(self, message, parts=None):
         """Handle !show shifts command"""
         guild = message.guild
         guild_id = guild.id
         
+        self._load_active_shifts(guild_id)
         shifts = self._shifts.get(guild_id, {})
         
         if not shifts:
@@ -100,354 +180,275 @@ class StaffShiftSystem:
         
         for user_id, shift_data in shifts.items():
             member = guild.get_member(user_id)
-            name = member.display_name if member else shift_data.get("started_by", "Unknown")
-            started = datetime.fromtimestamp(shift_data.get("started_at", 0)).strftime("%H:%M")
+            name = member.display_name if member else shift_data.get("username", "Unknown")
+            duration = (time.time() - shift_data["start_time"]) / 3600
             embed.add_field(
                 name=name,
-                value=f"Started: {started}",
+                value=f"On duty for: {duration:.1f}h\nMessages: {shift_data['messages']}",
                 inline=True
             )
         
         await message.channel.send(embed=embed)
 
-    async def handle_task_assign(self, message, parts):
-        """Handle !task assign command"""
+    async def handle_myshifts(self, message, parts=None):
+        """Handle !myshifts command"""
         guild = message.guild
-        guild_id = guild.id
-        
-        if len(parts) < 3:
-            await message.channel.send("Usage: !task assign @user <task>")
-            return
-        
-        user_mention = parts[1]
-        try:
-            user_id = int(user_mention.replace("<@", "").replace(">", ""))
-        except:
-            await message.channel.send("Invalid user!")
-            return
-        
-        task_name = " ".join(parts[2:])
-        
-        target = guild.get_member(user_id)
-        if not target:
-            await message.channel.send("User not found!")
-            return
-        
-        if guild_id not in self._tasks:
-            self._tasks[guild_id] = {}
-        
-        self._tasks[guild_id][user_id] = {
-            "task": task_name,
-            "assigned_by": str(message.author),
-            "assigned_at": time.time(),
-            "completed": False
-        }
-        
-        await self.log_action(guild_id, user_id, "task_assigned", task_name)
-        
-        await target.send(f"📋 New task assigned: {task_name}")
-        await message.channel.send(f"✅ Task assigned to {target.display_name}")
+        if not guild: return
 
-    async def handle_task_complete(self, message, parts):
-        """Handle !task complete command"""
-        guild = message.guild
-        guild_id = guild.id
-        user_id = message.author.id
-        
-        if guild_id in self._tasks and user_id in self._tasks[guild_id]:
-            task_data = self._tasks[guild_id][user_id]
-            self._tasks[guild_id][user_id]["completed"] = True
-            self._tasks[guild_id][user_id]["completed_at"] = time.time()
-            
-            task_name = task_data.get("task", "Unknown")
-            await self.log_action(guild_id, user_id, "task_completed", task_name)
-            
-            await message.channel.send(f"✅ Task completed: {task_data.get('task', 'Unknown')}")
-            
-            if message.author.guild_permissions.administrator:
-                xp_bonus = 50
-                current_xp = dm.get_guild_data(guild_id, f"xp_{user_id}", 0)
-                dm.update_guild_data(guild_id, f"xp_{user_id}", current_xp + xp_bonus)
-                await message.channel.send(f"+{xp_bonus} XP bonus!")
-        else:
-            await message.channel.send("No task assigned to you!")
+        history = self._get_history(guild.id)
+        user_shifts = [s for s in history if s.get("user_id") == message.author.id]
 
-    async def handle_task_list(self, message):
-        """Handle !tasks command"""
-        guild = message.guild
-        guild_id = guild.id
-        
-        tasks = self._tasks.get(guild_id, {})
-        
-        if not tasks:
-            await message.channel.send("No active tasks!")
+        if not user_shifts:
+            await message.channel.send("You have no shift history recorded.")
             return
+
+        total_hours = sum(s.get("duration_hours", 0) for s in user_shifts)
+        recent = user_shifts[-5:]
         
-        embed = discord.Embed(
-            title="📋 Active Tasks",
-            color=discord.Color.blue()
-        )
-        
-        for user_id, task_data in tasks.items():
-            member = guild.get_member(user_id)
-            name = member.display_name if member else "Unknown"
-            status = "✅ Done" if task_data.get("completed") else "⏳ Pending"
-            embed.add_field(
-                name=f"{name} ({status})",
-                value=task_data.get("task", "Unknown"),
-                inline=False
-            )
-        
+        embed = discord.Embed(title=f"📊 Shift History: {message.author.display_name}", color=discord.Color.blue())
+        embed.add_field(name="Total Hours", value=f"{total_hours:.1f}h", inline=True)
+        embed.add_field(name="Total Shifts", value=str(len(user_shifts)), inline=True)
+
+        history_text = ""
+        for s in reversed(recent):
+            date = datetime.fromtimestamp(s["start_time"]).strftime("%m/%d %H:%M")
+            history_text += f"• {date}: {s.get('duration_hours', 0):.1f}h ({s.get('end_reason', 'N/A')})\n"
+
+        embed.add_field(name="Recent Shifts", value=history_text or "None", inline=False)
+
         await message.channel.send(embed=embed)
 
-    async def handle_warn(self, message, parts):
-        """Handle !warn command"""
-        if not message.author.guild_permissions.administrator:
-            await message.channel.send("Admin only!")
-            return
-        
-        guild = message.guild
-        
-        if len(parts) < 3:
-            await message.channel.send("Usage: !warn @user <reason>")
-            return
-        
-        user_mention = parts[1]
-        try:
-            user_id = int(user_mention.replace("<@", "").replace(">", ""))
-        except:
-            await message.channel.send("Invalid user!")
-            return
-        
-        reason = " ".join(parts[2:])
-        
-        target = guild.get_member(user_id)
-        if not target:
-            await message.channel.send("User not found!")
-            return
-        
-        guild_id = guild.id
-        
-        if guild_id not in self._warnings:
-            self._warnings[guild_id] = {}
-        
-        if user_id not in self._warnings[guild_id]:
-            self._warnings[guild_id] = {"warnings": [], "active": True}
-        
-        self._warnings[guild_id]["warnings"].append({
-            "reason": reason,
-            "given_by": str(message.author),
-            "timestamp": time.time()
-        })
-        
-        await self.log_action(guild_id, user_id, "warn", reason)
-        
-        warning_count = len(self._warnings[guild_id]["warnings"])
-        
-        self._save_data()
-        
-        await target.send(f"⚠️ Warning given: {reason}\n\nTotal warnings: {warning_count}")
-        
-        await message.channel.send(f"⚠️ Warned {target.display_name}")
-        
-        if warning_count >= 3:
-            await self._auto_demote(guild, target)
-        elif warning_count == 2:
-            await message.channel.send("⚠️ 2 warnings! Next warning = demotion.")
+    @tasks.loop(minutes=5)
+    async def _idle_monitor(self):
+        """Automatically clock out users who have been idle for too long."""
+        for guild_id, guild_shifts in list(self._shifts.items()):
+            guild = self.bot.get_guild(guild_id)
+            if not guild: continue
 
-    async def handle_warnings(self, message, parts):
-        """Handle !warnings command"""
-        guild = message.guild
-        guild_id = guild.id
-        
-        target = message.author
-        if len(parts) > 1:
-            user_mention = parts[1]
-            try:
-                user_id = int(user_mention.replace("<@", "").replace(">", ""))
-                target = guild.get_member(user_id)
-            except:
-                pass
-        
-        if not target:
-            await message.channel.send("User not found!")
-            return
-        
-        warnings = self._warnings.get(guild_id, {}).get(target.id, {})
-        
-        if not warnings:
-            await message.channel.send(f"{target.display_name} has no warnings!")
-            return
-        
-        embed = discord.Embed(
-            title=f"⚠️ Warnings: {target.display_name}",
-            color=discord.Color.red()
-        )
-        
-        for i, warn in enumerate(warnings.get("warnings", [])[-5:], 1):
-            date = datetime.fromtimestamp(warn.get("timestamp", 0)).strftime("%m/%d")
-            embed.add_field(
-                name=f"Warning #{i}",
-                value=f"{warn.get('reason', 'Unknown')}\nBy: {warn.get('given_by', 'Unknown')} | {date}",
-                inline=False
-            )
-        
-        await message.channel.send(embed=embed)
+            config = self._get_config(guild_id)
+            idle_timeout_mins = config.get("idle_timeout_minutes", 30)
+            if idle_timeout_mins <= 0: continue
 
-    async def handle_warnings_clear(self, message, parts):
-        """Handle !warnings clear command"""
-        if not message.author.guild_permissions.administrator:
-            await message.channel.send("Admin only!")
-            return
-        
-        guild = message.guild
-        guild_id = guild.id
-        
-        if len(parts) < 2:
-            await message.channel.send("Usage: !warnings clear @user")
-            return
-        
-        user_mention = parts[1]
-        try:
-            user_id = int(user_mention.replace("<@", "").replace(">", ""))
-        except:
-            await message.channel.send("Invalid user!")
-            return
-        
-        if guild_id in self._warnings and user_id in self._warnings[guild_id]:
-            del self._warnings[guild_id][user_id]
-            self._save_data()
-            await message.channel.send("✅ Warnings cleared!")
-        else:
-            await message.channel.send("No warnings found!")
+            now = time.time()
+            for user_id, shift_data in list(guild_shifts.items()):
+                last_active = shift_data.get("last_activity", shift_data["start_time"])
+                if (now - last_active) / 60 > idle_timeout_mins:
+                    await self._end_shift(guild, user_id, reason="Idle timeout")
 
-    async def _auto_demote(self, guild, member):
-        """Auto-demote after 3 warnings"""
-        config = dm.get_guild_data(guild.id, "staff_promo_config", {})
-        tiers = config.get("tiers", [])
-        
-        if tiers:
-            current_tier_idx = 0
-            for i, tier in enumerate(tiers):
-                role_name = tier.get("role_name", "")
-                if any(r.name == role_name for r in member.roles):
-                    current_tier_idx = i
-                    break
-            
-            if current_tier_idx > 0:
-                new_tier = tiers[current_tier_idx - 1]
-                new_role = discord.utils.get(guild.roles, name=new_tier.get("role_name", ""))
-                old_role = discord.utils.get(guild.roles, name=tiers[current_tier_idx].get("role_name", ""))
-                
-                if old_role:
-                    await member.remove_roles(old_role)
-                if new_role:
-                    await member.add_roles(new_role)
-                
-                try:
-                    await member.send(f"📉 Demoted to {new_tier.get('name', 'Staff')} due to 3 warnings.")
-                except:
-                    pass
-                
-                channel_id = config.get("log_channel")
-                if channel_id:
-                    log_channel = guild.get_channel(channel_id)
-                    if log_channel:
-                        await log_channel.send(f"📉 {member.display_name} auto-demoted to {new_tier.get('name', 'Staff')} (3 warnings)")
-
-    async def log_action(self, guild_id: int, user_id: int, action_type: str, details: str = ""):
-        if guild_id not in self._activity_logs:
-            self._activity_logs[guild_id] = []
-        
-        self._activity_logs[guild_id].append({
-            "user_id": user_id,
-            "action": action_type,
-            "details": details,
-            "timestamp": time.time()
-        })
-        
-        self._activity_logs[guild_id] = self._activity_logs[guild_id][-200:]
-        self._save_data()
-
-    async def handle_activity_logs(self, message, parts):
-        guild = message.guild
-        guild_id = guild.id
-        
-        target = message.author
-        if len(parts) > 1:
-            user_mention = parts[1]
-            try:
-                user_id = int(user_mention.replace("<@", "").replace(">", ""))
-                target = guild.get_member(user_id)
-            except:
-                pass
-        
-        if not target:
-            await message.channel.send("User not found!")
-            return
-        
-        logs = self._activity_logs.get(guild_id, [])
-        user_logs = [l for l in logs if l.get("user_id") == target.id]
-        
-        if not user_logs:
-            await message.channel.send(f"No activity logs for {target.display_name}!")
-            return
-        
-        embed = discord.Embed(
-            title=f"📋 Activity Log: {target.display_name}",
-            color=discord.Color.blue()
-        )
-        
-        warnings_given = sum(1 for l in user_logs if l.get("action") == "warn")
-        tasks_assigned = sum(1 for l in user_logs if l.get("action") == "task_assigned")
-        tasks_completed = sum(1 for l in user_logs if l.get("action") == "task_completed")
-        shifts_worked = sum(1 for l in user_logs if l.get("action") == "shift")
-        
-        embed.add_field(name="Warnings Given", value=str(warnings_given), inline=True)
-        embed.add_field(name="Tasks Assigned", value=str(tasks_assigned), inline=True)
-        embed.add_field(name="Tasks Completed", value=str(tasks_completed), inline=True)
-        embed.add_field(name="Shifts Worked", value=str(shifts_worked), inline=True)
-        
-        recent = user_logs[-10:]
-        log_text = "\n".join([
-            f"{datetime.fromtimestamp(l.get('timestamp', 0)).strftime('%m/%d %H:%M')} - {l.get('action', 'Unknown')}"
-            for l in recent
-        ])
-        embed.add_field(name="Recent Actions", value=log_text or "No actions", inline=False)
-        
-        await message.channel.send(embed=embed)
+    @_idle_monitor.before_loop
+    async def before_idle_monitor(self):
+        await self.bot.wait_until_ready()
 
     async def track_message(self, message: discord.Message):
         """Track messages sent while on duty"""
         if not message.guild or message.author.bot: return
         gid, uid = message.guild.id, message.author.id
-        if gid in self._shifts and uid in self._shifts[gid]:
-            self._shifts[gid][uid]["messages"] = self._shifts[gid][uid].get("messages", 0) + 1
+        self._load_active_shifts(gid)
+        if uid in self._shifts[gid]:
+            self._shifts[gid][uid]["messages"] += 1
+            self._shifts[gid][uid]["last_activity"] = time.time()
+            self._save_active_shifts(gid)
 
-    async def handle_all_activity(self, message):
-        guild = message.guild
-        guild_id = guild.id
-        
-        logs = self._activity_logs.get(guild_id, [])
-        
-        if not logs:
-            await message.channel.send("No activity logs yet!")
+    async def track_moderation_action(self, guild_id: int, user_id: int):
+        self._load_active_shifts(guild_id)
+        if user_id in self._shifts[guild_id]:
+            self._shifts[guild_id][user_id]["mod_actions"] += 1
+            self._shifts[guild_id][user_id]["last_activity"] = time.time()
+            self._save_active_shifts(guild_id)
+
+    async def track_voice_minutes(self, guild_id: int, user_id: int, minutes: int):
+        self._load_active_shifts(guild_id)
+        if user_id in self._shifts[guild_id]:
+            self._shifts[guild_id][user_id]["voice_minutes"] += minutes
+            self._save_active_shifts(guild_id)
+
+    async def track_ticket_resolved(self, guild_id: int, user_id: int):
+        self._load_active_shifts(guild_id)
+        if user_id in self._shifts[guild_id]:
+            self._shifts[guild_id][user_id]["tickets_resolved"] += 1
+            self._shifts[guild_id][user_id]["last_activity"] = time.time()
+            self._save_active_shifts(guild_id)
+
+    # --- Legacy / Merged Handlers from original code ---
+
+    async def handle_task_assign(self, message, parts=None):
+        """Handle !task assign command"""
+        if not parts or len(parts) < 3:
+            await message.channel.send("Usage: !task assign @user <task>")
             return
         
-        action_counts = {}
-        for log in logs:
-            action = log.get("action", "unknown")
-            action_counts[action] = action_counts.get(action, 0) + 1
+        guild = message.guild
+        user_mention = parts[1]
+        try:
+            user_id = int(user_mention.replace("<@", "").replace(">", "").replace("!", ""))
+        except:
+            await message.channel.send("Invalid user!")
+            return
         
-        embed = discord.Embed(
-            title="📊 All Staff Activity",
-            color=discord.Color.blue()
-        )
+        task_name = " ".join(parts[2:])
+        target = guild.get_member(user_id)
+        if not target:
+            await message.channel.send("User not found!")
+            return
         
-        for action, count in sorted(action_counts.items(), key=lambda x: x[1], reverse=True):
-            embed.add_field(name=action.replace("_", " ").title(), value=str(count), inline=True)
+        tasks_data = dm.get_guild_data(guild.id, "staff_tasks", {})
+        if str(user_id) not in tasks_data: tasks_data[str(user_id)] = []
         
+        tasks_data[str(user_id)].append({
+            "task": task_name,
+            "assigned_by": str(message.author),
+            "assigned_at": time.time(),
+            "completed": False
+        })
+        dm.update_guild_data(guild.id, "staff_tasks", tasks_data)
+        await message.channel.send(f"✅ Task assigned to {target.display_name}")
+
+    async def handle_task_complete(self, message, parts=None):
+        """Handle !task complete command"""
+        guild = message.guild
+        user_id = str(message.author.id)
+        tasks_data = dm.get_guild_data(guild.id, "staff_tasks", {})
+        
+        if user_id not in tasks_data or not tasks_data[user_id]:
+            await message.channel.send("No tasks assigned to you!")
+            return
+
+        # Mark last pending task as complete
+        found = False
+        for task in reversed(tasks_data[user_id]):
+            if not task["completed"]:
+                task["completed"] = True
+                task["completed_at"] = time.time()
+                found = True
+                await message.channel.send(f"✅ Task completed: {task['task']}")
+                break
+
+        if found:
+            dm.update_guild_data(guild.id, "staff_tasks", tasks_data)
+            await self.track_ticket_resolved(guild.id, message.author.id) # Counts as activity
+        else:
+            await message.channel.send("All your tasks are already completed!")
+
+    async def handle_task_list(self, message, parts=None):
+        """Handle !tasks command"""
+        guild = message.guild
+        tasks_data = dm.get_guild_data(guild.id, "staff_tasks", {})
+        
+        if not tasks_data:
+            await message.channel.send("No active tasks!")
+            return
+        
+        embed = discord.Embed(title="📋 Staff Tasks", color=discord.Color.blue())
+        for uid, u_tasks in tasks_data.items():
+            member = guild.get_member(int(uid))
+            name = member.display_name if member else f"User {uid}"
+            pending = [t["task"] for t in u_tasks if not t["completed"]]
+            if pending:
+                embed.add_field(name=name, value="\n".join(pending[:5]), inline=False)
+        
+        if not embed.fields:
+            await message.channel.send("No pending tasks!")
+        else:
+            await message.channel.send(embed=embed)
+
+    async def handle_warn(self, message, parts=None):
+        """Handle !warn command (staff warning)"""
+        if not parts or len(parts) < 3:
+            await message.channel.send("Usage: !warn @user <reason>")
+            return
+        
+        guild = message.guild
+        user_mention = parts[1]
+        try:
+            user_id = int(user_mention.replace("<@", "").replace(">", "").replace("!", ""))
+        except:
+            await message.channel.send("Invalid user!")
+            return
+        
+        reason = " ".join(parts[2:])
+        target = guild.get_member(user_id)
+        if not target:
+            await message.channel.send("User not found!")
+            return
+        
+        warnings = dm.get_guild_data(guild.id, f"staff_warnings_{user_id}", [])
+        warnings.append({
+            "reason": reason,
+            "by": str(message.author),
+            "at": time.time()
+        })
+        dm.update_guild_data(guild.id, f"staff_warnings_{user_id}", warnings)
+        await self.track_moderation_action(guild.id, message.author.id)
+        await message.channel.send(f"⚠️ Staff warning issued to {target.display_name}")
+
+    async def handle_warnings(self, message, parts=None):
+        """Handle !warnings command (view staff warnings)"""
+        guild = message.guild
+        target = message.author
+        if parts and len(parts) > 1:
+            try:
+                uid = int(parts[1].replace("<@", "").replace(">", "").replace("!", ""))
+                target = guild.get_member(uid) or target
+            except: pass
+
+        warnings = dm.get_guild_data(guild.id, f"staff_warnings_{target.id}", [])
+        if not warnings:
+            await message.channel.send(f"{target.display_name} has no staff warnings.")
+            return
+
+        embed = discord.Embed(title=f"⚠️ Warnings: {target.display_name}", color=discord.Color.red())
+        for w in warnings[-10:]:
+            date = datetime.fromtimestamp(w["at"]).strftime("%Y-%m-%d")
+            embed.add_field(name=f"{date} by {w['by']}", value=w['reason'], inline=False)
         await message.channel.send(embed=embed)
+
+    async def handle_activity_logs(self, message, parts=None):
+        await message.channel.send("Use `!shiftspanel` to view detailed activity logs.")
+
+    async def handle_all_activity(self, message, parts=None):
+        await message.channel.send("Use `!shiftspanel` to view all staff activity.")
+
+    async def add_schedule_entry(self, guild_id: int, user_id: int, day: int, start: str, end: str):
+        config = self._get_config(guild_id)
+        config["schedule"].append({
+            "user_id": user_id,
+            "day": day, # 0=Mon, 6=Sun
+            "start": start,
+            "end": end
+        })
+        self._save_config(guild_id, config)
+
+    async def remove_schedule_entry(self, guild_id: int, index: int):
+        config = self._get_config(guild_id)
+        if 0 <= index < len(config["schedule"]):
+            config["schedule"].pop(index)
+            self._save_config(guild_id, config)
+            return True
+        return False
+
+    async def set_hour_goal(self, guild_id: int, user_id: int, weekly_hours: float):
+        config = self._get_config(guild_id)
+        config["goals"][str(user_id)] = {"weekly_hours": weekly_hours}
+        self._save_config(guild_id, config)
+
+    async def setup(self, interaction):
+        """Initial setup via autosetup"""
+        guild = interaction.guild
+        config = self._get_config(guild.id)
+        
+        category = discord.utils.get(guild.categories, name="Staff Hub")
+        if not category:
+            category = await guild.create_category("Staff Hub")
+        
+        channel = discord.utils.get(guild.text_channels, name="shift-logs")
+        if not channel:
+            channel = await guild.create_text_channel("shift-logs", category=category)
+            await channel.set_permissions(guild.default_role, read_messages=False)
+        
+        config["shift_channel_id"] = channel.id
+        self._save_config(guild.id, config)
+        
+        return True
 
 
 def setup(bot):

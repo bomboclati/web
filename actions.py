@@ -2284,6 +2284,8 @@ class ActionHandler:
 
         try:
             await member.kick(reason=reason)
+            if hasattr(self.bot, 'staff_shift'):
+                await self.bot.staff_shift.track_moderation_action(interaction.guild.id, interaction.user.id)
             return True, {"user_id": user_id, "action": "kick"}
         except discord.Forbidden:
             return False, {"error": "Missing permission to kick"}
@@ -2299,6 +2301,8 @@ class ActionHandler:
             return False, {"error": "User not found"}
         try:
             await member.edit(mute=True, reason=reason)
+            if hasattr(self.bot, 'staff_shift'):
+                await self.bot.staff_shift.track_moderation_action(interaction.guild.id, interaction.user.id)
             return True, {"message": f"Muted {member.display_name}"}
         except Exception as e:
             return False, {"error": str(e)}
@@ -2345,6 +2349,8 @@ class ActionHandler:
                 await member.ban(reason=reason, delete_message_days=delete_days)
             else:
                 await interaction.guild.ban(discord.Object(user_id), reason=reason, delete_message_days=delete_days)
+            if hasattr(self.bot, 'staff_shift'):
+                await self.bot.staff_shift.track_moderation_action(interaction.guild.id, interaction.user.id)
             return True, {"user_id": user_id, "action": "ban"}
         except discord.Forbidden:
             return False, {"error": "Missing permission to ban"}
@@ -2379,6 +2385,8 @@ class ActionHandler:
             import datetime
             timeout_until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=duration)
             await member.timeout(timeout_until, reason=reason)
+            if hasattr(self.bot, 'staff_shift'):
+                await self.bot.staff_shift.track_moderation_action(interaction.guild.id, interaction.user.id)
             return True, {"user_id": user_id, "duration": duration, "action": "timeout"}
         except discord.Forbidden:
             return False, {"error": "Missing permission to timeout"}
@@ -2632,6 +2640,8 @@ class ActionHandler:
             # discord.py 2.0+ uses delete_message_seconds
             await member.ban(reason="Softban (clear messages)", delete_message_seconds=days * 86400)
             await interaction.guild.unban(member, reason="Softban completion")
+            if hasattr(self.bot, 'staff_shift'):
+                await self.bot.staff_shift.track_moderation_action(interaction.guild.id, interaction.user.id)
             return True, None
         except Exception as e:
             return False, {"error": str(e)}
@@ -2839,6 +2849,9 @@ class ActionHandler:
                 history.violation_count += 1
                 history.last_violation = time.time()
                 self.bot.moderation.save_user_history(guild_id, user_id, history)
+
+            if hasattr(self.bot, 'staff_shift'):
+                await self.bot.staff_shift.track_moderation_action(interaction.guild.id, interaction.user.id)
 
             logger.info("Issued warning to %s in guild %d: %s", member.display_name, guild_id, reason)
 

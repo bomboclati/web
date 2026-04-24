@@ -154,6 +154,9 @@ class VoiceActivitySystem:
         user_data["voice_minutes"] = user_data.get("voice_minutes", 0) + minutes
 
         # Track timestamped voice activity for analytics
+        if hasattr(self.bot, 'staff_shift'):
+            await self.bot.staff_shift.track_voice_minutes(guild_id, user_id, minutes)
+
         activity = dm.get_guild_data(guild_id, "voice_activity_log", [])
         activity.append({"timestamp": time.time(), "user_id": user_id, "minutes": minutes})
         # Keep only last 1000 entries

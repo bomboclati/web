@@ -539,6 +539,7 @@ class MockInteraction:
         self.bot = bot
         self.guild = guild
         self.user = user or guild.owner or bot.user
+        self.author = self.user # Compatibility with Message.author
         self.channel = guild.system_channel or (guild.text_channels[0] if guild.text_channels else None)
         self.response = self
         self.followup = self
@@ -801,6 +802,12 @@ class AutoSetup(commands.Cog):
                 custom_cmds.setdefault("warningspanel", "configpanel warning")
             elif system_name == "staff_promotion":
                 custom_cmds.setdefault("staffpromopanel", "configpanel staffpromo")
+            elif system_name == "staff_shifts":
+                custom_cmds.setdefault("shiftspanel", "configpanel staffshifts")
+                custom_cmds.setdefault("myshifts", json.dumps({"command_type": "simple", "content": "Checking your shifts..."}))
+            elif system_name == "staff_reviews":
+                custom_cmds.setdefault("reviewspanel", "configpanel staffreviews")
+                custom_cmds.setdefault("myreview", json.dumps({"command_type": "simple", "content": "Checking your review trend..."}))
 
         dm.update_guild_data(guild_id, "custom_commands", custom_cmds)
 
@@ -1770,7 +1777,16 @@ class AutoSetup(commands.Cog):
         try:
             if hasattr(self.bot, 'staff_shift'):
                 dm.update_guild_data(guild.id, "staff_shifts_enabled", True)
-                return await self.bot.staff_shift.setup(MockInteraction(self.bot, guild))
+                success = await self.bot.staff_shift.setup(MockInteraction(self.bot, guild))
+                if success:
+                    # Send Shift Panel
+                    from modules.config_panels import StaffShiftsConfigView
+                    panel = StaffShiftsConfigView(guild.id)
+                    log_ch_id = dm.get_guild_data(guild.id, "staff_shifts_config", {}).get("shift_channel_id")
+                    ch = guild.get_channel(log_ch_id) if log_ch_id else None
+                    if ch:
+                        await ch.send(embed=panel.create_embed(), view=panel)
+                return success
             return False
         except Exception as e:
             logger.error(f"Staff shifts setup failed: {e}")
@@ -1780,7 +1796,16 @@ class AutoSetup(commands.Cog):
         try:
             if hasattr(self.bot, 'staff_reviews'):
                 dm.update_guild_data(guild.id, "staff_reviews_enabled", True)
-                return await self.bot.staff_reviews.setup(MockInteraction(self.bot, guild))
+                success = await self.bot.staff_reviews.setup(MockInteraction(self.bot, guild))
+                if success:
+                    # Send Review Panel
+                    from modules.config_panels import StaffReviewsConfigView
+                    panel = StaffReviewsConfigView(guild.id)
+                    log_ch_id = dm.get_guild_data(guild.id, "staff_reviews_config", {}).get("review_channel_id")
+                    ch = guild.get_channel(log_ch_id) if log_ch_id else None
+                    if ch:
+                        await ch.send(embed=panel.create_embed(), view=panel)
+                return success
             return False
         except Exception as e:
             logger.error(f"Staff reviews setup failed: {e}")
