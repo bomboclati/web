@@ -782,8 +782,19 @@ class AutoSetup(commands.Cog):
                 custom_cmds.setdefault("leaderboard", json.dumps({"command_type": "leveling_leaderboard"}))
             elif system_name == "tickets":
                 custom_cmds.setdefault("ticket", json.dumps({"command_type": "ticket_create"}))
+                custom_cmds.setdefault("ticketpanel", "configpanel tickets")
             elif system_name == "apps_simple" or system_name == "apps_modals":
                 custom_cmds.setdefault("apply", json.dumps({"command_type": "application_status"}))
+                custom_cmds.setdefault("applicationpanel", "configpanel application")
+            elif system_name == "reaction_menus":
+                custom_cmds.setdefault("reactionmenuspanel", "configpanel reactionmenus")
+                custom_cmds.setdefault("menupanel", "configpanel reactionmenus")
+            elif system_name == "role_buttons":
+                custom_cmds.setdefault("rolebuttonspanel", "configpanel rolebuttons")
+            elif system_name == "mod_logging":
+                custom_cmds.setdefault("modlogpanel", "configpanel modlog")
+            elif system_name == "logging":
+                custom_cmds.setdefault("loggingpanel", "configpanel logging")
 
         dm.update_guild_data(guild_id, "custom_commands", custom_cmds)
 
@@ -1407,6 +1418,9 @@ class AutoSetup(commands.Cog):
     async def _setup_moderation_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         """Set up moderation logging system."""
         try:
+            if hasattr(self.bot, 'mod_logging'):
+                return await self.bot.mod_logging.setup(MockInteraction(self.bot, guild))
+
             # Create moderation category
             mod_category = analysis.existing_categories.get("moderation") or analysis.existing_categories.get("logs")
             if not mod_category:
@@ -1415,7 +1429,11 @@ class AutoSetup(commands.Cog):
             # Create mod logs channel
             mod_logs = analysis.existing_channels.get("mod-logs") or analysis.existing_channels.get("moderation-logs")
             if not mod_logs:
-                mod_logs = await guild.create_text_channel("mod-logs", category=mod_category)
+                overwrites = {
+                    guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                    guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+                }
+                mod_logs = await guild.create_text_channel("mod-logs", category=mod_category, overwrites=overwrites)
 
             # Create moderator role if it doesn't exist
             mod_role = analysis.existing_roles.get("moderator") or analysis.existing_roles.get("mod")
@@ -1444,15 +1462,15 @@ class AutoSetup(commands.Cog):
                 )
 
             # Configure moderation system
-            moderation_config = {
+            mod_log_config = {
                 "enabled": True,
-                "ai_enabled": True,
-                "sensitivity": "medium",
-                "auto_moderation": True,
-                "mod_role": mod_role.id,
-                "logs_channel": mod_logs.id
+                "log_channel_id": mod_logs.id,
+                "next_case_number": 1,
+                "enabled_logs": {k: True for k in ["ban", "unban", "kick", "mute", "warn", "role", "nickname", "message_delete", "message_edit", "channel", "role_mgmt", "invite"]},
+                "ignored_channels": [],
+                "ignored_roles": []
             }
-            dm.update_guild_data(guild.id, "moderation_config", moderation_config)
+            dm.update_guild_data(guild.id, "mod_log_config", mod_log_config)
 
             return True
         except Exception as e:
@@ -1494,11 +1512,23 @@ class AutoSetup(commands.Cog):
 
     async def _setup_logging_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            log_channel = analysis.existing_channels.get("logs") or analysis.existing_channels.get("bot-logs")
+            if hasattr(self.bot, 'logging_system'):
+                return await self.bot.logging_system.setup(MockInteraction(self.bot, guild))
+
+            log_channel = analysis.existing_channels.get("server-logs") or analysis.existing_channels.get("logs")
             if not log_channel:
-                log_channel = await guild.create_text_channel("bot-logs")
-            dm.update_guild_data(guild.id, "log_channel", log_channel.id)
-            dm.update_guild_data(guild.id, "logging_enabled", True)
+                log_channel = await guild.create_text_channel("server-logs")
+
+            config = {
+                "enabled": True,
+                "log_channel_id": log_channel.id,
+                "category_channels": {},
+                "enabled_events": {k: True for k in ["message_edit", "message_delete", "member_join", "member_leave", "voice_state", "channel_update", "role_update", "server_update", "invite_update", "thread_update"]},
+                "ignored_channels": [],
+                "ignored_roles": [],
+                "ignored_users": []
+            }
+            dm.update_guild_data(guild.id, "logging_config", config)
             return True
         except Exception as e:
             logger.error(f"Logging setup failed: {e}")
@@ -1700,7 +1730,9 @@ class AutoSetup(commands.Cog):
 
     async def _setup_reaction_menus(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            dm.update_guild_data(guild.id, "reaction_menus", [])
+            if hasattr(self.bot, 'reaction_menus'):
+                return await self.bot.reaction_menus.setup(MockInteraction(self.bot, guild))
+            dm.update_guild_data(guild.id, "reaction_menus_config", {})
             return True
         except Exception as e:
             logger.error(f"Reaction menus setup failed: {e}")
@@ -1708,7 +1740,9 @@ class AutoSetup(commands.Cog):
 
     async def _setup_role_buttons(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            dm.update_guild_data(guild.id, "role_buttons", [])
+            if hasattr(self.bot, 'role_buttons'):
+                return await self.bot.role_buttons.setup(MockInteraction(self.bot, guild))
+            dm.update_guild_data(guild.id, "role_buttons_config", {})
             return True
         except Exception as e:
             logger.error(f"Role buttons setup failed: {e}")
