@@ -1574,6 +1574,453 @@ class ReactionRolesConfigView(ConfigPanelView):
         logs = dm.get_guild_data(i.guild_id, "reaction_role_log", [])
         await i.response.send_message(f"📊 **Reaction Role Stats**\nTotal Assignments (Log): {len(logs)}", ephemeral=True)
 
+class ReactionMenusConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "reaction_menus")
+
+    def get_config(self, guild_id: int = None) -> Dict[str, Any]:
+        target_guild = guild_id or self.guild_id
+        return dm.get_guild_data(target_guild, "reaction_menus_config", {})
+
+    def save_config(self, config: Dict[str, Any], guild_id: int = None, bot: discord.Client = None):
+        target_guild = guild_id or self.guild_id
+        dm.update_guild_data(target_guild, "reaction_menus_config", config)
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id)
+        embed = discord.Embed(title="📋 Reaction Role Menus", color=discord.Color.blue())
+        embed.add_field(name="Active Menus", value=str(len(c)), inline=True)
+        return embed
+
+    @ui.button(label="Create New Menu", emoji="➕", style=discord.ButtonStyle.success, row=0, custom_id="cfg_rm_create")
+    async def create_menu(self, i, b):
+        class MenuModal(ui.Modal, title="Create Reaction Menu"):
+            name = ui.TextInput(label="Internal Name")
+            title = ui.TextInput(label="Embed Title")
+            desc = ui.TextInput(label="Embed Description", style=discord.TextStyle.paragraph)
+            roles = ui.TextInput(label="Roles (RoleID, Emoji, Label|...)", placeholder="123, 🍎, Apple|456, 🍌, Banana")
+            async def on_submit(self, it):
+                roles_list = []
+                for entry in self.roles.value.split("|"):
+                    parts = [p.strip() for p in entry.split(",")]
+                    if len(parts) >= 3:
+                        roles_list.append({"role_id": int(parts[0]), "emoji": parts[1], "label": parts[2]})
+
+                menu_id = await it.client.reaction_menus.create_menu(it, self.name.value, "button_grid", roles_list, it.channel, self.title.value, self.desc.value)
+                if menu_id: await it.response.send_message(f"✅ Menu created: {self.name.value}", ephemeral=True)
+                else: await it.response.send_message("❌ Failed to create menu.", ephemeral=True)
+        await i.response.send_modal(MenuModal())
+
+    @ui.button(label="View All Menus", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_rm_view")
+    async def view_all(self, i, b):
+        c = self.get_config(i.guild_id)
+        msg = "\n".join([f"**{m['name']}** ({m['type']}) - {len(m['roles'])} roles" for m in c.values()]) or "No menus."
+        await i.response.send_message(embed=discord.Embed(title="Reaction Menus", description=msg), ephemeral=True)
+
+    @ui.button(label="Assignment Log", emoji="📋", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_rm_log")
+    async def view_log(self, i, b):
+        log = dm.get_guild_data(i.guild_id, "reaction_menu_log", [])[-20:][::-1]
+        msg = "\n".join([f"<t:{int(e['ts'])}:R> <@{e['user_id']}>: {e['action']} role from {e['menu_name']}" for e in log]) or "No logs."
+        await i.response.send_message(embed=discord.Embed(title="Menu Assignment Log", description=msg), ephemeral=True)
+
+    @ui.button(label="Enable Menu", emoji="▶️", style=discord.ButtonStyle.success, row=1, custom_id="cfg_rm_enable")
+    async def enable_menu(self, i, b):
+        c = self.get_config(i.guild_id)
+        options = [discord.SelectOption(label=m["name"], value=mid) for mid, m in c.items() if not m.get("enabled", True)][:25]
+        if not options: return await i.response.send_message("No disabled menus.", ephemeral=True)
+        class EnSelect(ui.Select):
+            async def callback(self, it):
+                menus = it.client.reaction_menus.get_menus(it.guild_id); menus[self.values[0]]["enabled"] = True
+                it.client.reaction_menus.save_menus(it.guild_id, menus); await it.response.send_message("✅ Menu enabled.", ephemeral=True)
+        v = ui.View(); v.add_item(EnSelect(options=options)); await i.response.send_message("Select menu:", view=v, ephemeral=True)
+
+    @ui.button(label="Disable Menu", emoji="⏸️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_rm_disable")
+    async def disable_menu(self, i, b):
+        c = self.get_config(i.guild_id)
+        options = [discord.SelectOption(label=m["name"], value=mid) for mid, m in c.items() if m.get("enabled", True)][:25]
+        if not options: return await i.response.send_message("No active menus.", ephemeral=True)
+        class DisSelect(ui.Select):
+            async def callback(self, it):
+                menus = it.client.reaction_menus.get_menus(it.guild_id); menus[self.values[0]]["enabled"] = False
+                it.client.reaction_menus.save_menus(it.guild_id, menus); await it.response.send_message("✅ Menu disabled.", ephemeral=True)
+        v = ui.View(); v.add_item(DisSelect(options=options)); await i.response.send_message("Select menu:", view=v, ephemeral=True)
+
+    @ui.button(label="Delete Menu", emoji="🗑️", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_rm_delete")
+    async def delete_menu(self, i, b):
+        c = self.get_config(i.guild_id)
+        if not c: return await i.response.send_message("No menus.", ephemeral=True)
+        options = [discord.SelectOption(label=m["name"], value=mid) for mid, m in c.items()][:25]
+        class DelSelect(ui.Select):
+            async def callback(self, it):
+                menus = it.client.reaction_menus.get_menus(it.guild_id)
+                m = menus.pop(self.values[0], None)
+                if m:
+                    try:
+                        ch = it.guild.get_channel(m["channel_id"])
+                        msg = await ch.fetch_message(m["message_id"]); await msg.delete()
+                    except: pass
+                it.client.reaction_menus.save_menus(it.guild_id, menus)
+                await it.response.send_message("✅ Menu deleted.", ephemeral=True)
+        v = ui.View(); v.add_item(DelSelect(options=options)); await i.response.send_message("Select menu to delete:", view=v, ephemeral=True)
+
+    @ui.button(label="Refresh Menu", emoji="🔄", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_rm_refresh")
+    async def refresh_menu(self, i, b):
+        c = self.get_config(i.guild_id)
+        if not c: return await i.response.send_message("No menus.", ephemeral=True)
+        options = [discord.SelectOption(label=m["name"], value=mid) for mid, m in c.items()][:25]
+        class RefSelect(ui.Select):
+            async def callback(self, it):
+                menus = it.client.reaction_menus.get_menus(it.guild_id); m = menus.get(self.values[0])
+                view = it.client.reaction_menus.build_view(self.values[0], m["type"], m["roles"])
+                ch = it.guild.get_channel(m["channel_id"]); msg = await ch.fetch_message(m["message_id"])
+                await msg.edit(view=view); await it.response.send_message("✅ Menu refreshed.", ephemeral=True)
+        v = ui.View(); v.add_item(RefSelect(options=options)); await i.response.send_message("Select menu:", view=v, ephemeral=True)
+
+    @ui.button(label="Menu Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_rm_stats")
+    async def menu_stats(self, i, b):
+        log = dm.get_guild_data(i.guild_id, "reaction_menu_log", [])
+        await i.response.send_message(f"📊 Total assignments tracked in log: {len(log)}", ephemeral=True)
+
+    @ui.button(label="Move Menu", emoji="📁", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_rm_move")
+    async def move_menu(self, i, b):
+        c = self.get_config(i.guild_id)
+        if not c: return await i.response.send_message("No menus.", ephemeral=True)
+        options = [discord.SelectOption(label=m["name"], value=mid) for mid, m in c.items()][:25]
+        class MoveSelect(ui.Select):
+            async def callback(self, it):
+                mid = self.values[0]
+                class ChSelect(ui.ChannelSelect):
+                    async def callback(self, it2):
+                        target_ch = self.values[0]
+                        menus = it2.client.reaction_menus.get_menus(it2.guild_id); m = menus[mid]
+                        # Delete old
+                        try:
+                            old_ch = it2.guild.get_channel(m["channel_id"]); old_msg = await old_ch.fetch_message(m["message_id"]); await old_msg.delete()
+                        except: pass
+                        # Send new
+                        view = it2.client.reaction_menus.build_view(mid, m["type"], m["roles"])
+                        embed = discord.Embed(title=m["title"], description=m["description"], color=discord.Color.blue())
+                        new_msg = await target_ch.send(embed=embed, view=view)
+                        m["channel_id"] = target_ch.id; m["message_id"] = new_msg.id; menus[mid] = m
+                        it2.client.reaction_menus.save_menus(it2.guild_id, menus)
+                        await it2.response.send_message("✅ Menu moved.", ephemeral=True)
+                v = ui.View(); v.add_item(ChSelect(placeholder="Select new channel...")); await it.response.send_message("Select channel:", view=v, ephemeral=True)
+        v = ui.View(); v.add_item(MoveSelect(options=options)); await i.response.send_message("Select menu to move:", view=v, ephemeral=True)
+
+class RoleButtonsConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "role_buttons")
+
+    def get_config(self, guild_id: int = None) -> Dict[str, Any]:
+        target_guild = guild_id or self.guild_id
+        return dm.get_guild_data(target_guild, "role_buttons_config", {})
+
+    def save_config(self, config: Dict[str, Any], guild_id: int = None, bot: discord.Client = None):
+        target_guild = guild_id or self.guild_id
+        dm.update_guild_data(target_guild, "role_buttons_config", config)
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id)
+        embed = discord.Embed(title="🔘 Role Button Panels", color=discord.Color.blue())
+        embed.add_field(name="Active Panels", value=str(len(c)), inline=True)
+        return embed
+
+    @ui.button(label="Create Panel", emoji="➕", style=discord.ButtonStyle.success, row=0, custom_id="cfg_rb_create")
+    async def create_panel(self, i, b):
+        class PanelModal(ui.Modal, title="Create Role Button Panel"):
+            title = ui.TextInput(label="Panel Title")
+            desc = ui.TextInput(label="Panel Description", style=discord.TextStyle.paragraph)
+            async def on_submit(self, it):
+                pid = await it.client.role_buttons.create_panel(it, self.title.value, self.desc.value, it.channel)
+                await it.response.send_message(f"✅ Panel created! Use `!rolebuttonspanel` to add buttons to it.", ephemeral=True)
+        await i.response.send_modal(PanelModal())
+
+    @ui.button(label="Add Button", emoji="🔘", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_rb_add_btn")
+    async def add_btn(self, i, b):
+        c = self.get_config(i.guild_id)
+        if not c: return await i.response.send_message("Create a panel first.", ephemeral=True)
+        options = [discord.SelectOption(label=p["title"], value=pid) for pid, p in c.items()][:25]
+        class PanSelect(ui.Select):
+            async def callback(self, it):
+                pid = self.values[0]
+                class BtnModal(ui.Modal, title="Add Button"):
+                    label = ui.TextInput(label="Button Label")
+                    role = ui.TextInput(label="Role ID to Assign")
+                    emoji = ui.TextInput(label="Emoji", required=False)
+                    async def on_submit(self, it2):
+                        panels = it2.client.role_buttons.get_panels(it2.guild_id)
+                        bid = f"btn_{int(time.time())}"
+                        panels[pid]["buttons"][bid] = {"label": self.label.value, "role_id": int(self.role.value), "emoji": self.emoji.value}
+                        it2.client.role_buttons.save_panels(it2.guild_id, panels)
+                        # Refresh message
+                        ch = it2.guild.get_channel(panels[pid]["channel_id"])
+                        msg = await ch.fetch_message(panels[pid]["message_id"])
+                        await msg.edit(view=it2.client.role_buttons.build_view(pid, panels[pid]["buttons"]))
+                        await it2.response.send_message("✅ Button added.", ephemeral=True)
+                await it.response.send_modal(BtnModal())
+        v = ui.View(); v.add_item(PanSelect(options=options)); await i.response.send_message("Select panel:", view=v, ephemeral=True)
+
+    @ui.button(label="Click Log", emoji="📋", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_rb_log")
+    async def view_log(self, i, b):
+        log = dm.get_guild_data(i.guild_id, "role_button_log", [])[-20:][::-1]
+        msg = "\n".join([f"<t:{int(e['ts'])}:R> <@{e['user_id']}> clicked {e['button_label']} in {e['panel_name']}" for e in log]) or "No logs."
+        await i.response.send_message(embed=discord.Embed(title="Role Button Log", description=msg), ephemeral=True)
+
+    @ui.button(label="Disable Panel", emoji="⏸️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_rb_disable")
+    async def disable_panel(self, i, b):
+        c = self.get_config(i.guild_id)
+        opts = [discord.SelectOption(label=p["title"], value=pid) for pid, p in c.items() if p.get("enabled", True)][:25]
+        if not opts: return await i.response.send_message("No active panels.", ephemeral=True)
+        class DisSelect(ui.Select):
+            async def callback(self, it):
+                panels = it.client.role_buttons.get_panels(it.guild_id); panels[self.values[0]]["enabled"] = False
+                it.client.role_buttons.save_panels(it.guild_id, panels); await it.response.send_message("✅ Panel disabled.", ephemeral=True)
+        v = ui.View(); v.add_item(DisSelect(options=opts)); await i.response.send_message("Select panel:", view=v, ephemeral=True)
+
+    @ui.button(label="Enable Panel", emoji="▶️", style=discord.ButtonStyle.success, row=1, custom_id="cfg_rb_enable")
+    async def enable_panel(self, i, b):
+        c = self.get_config(i.guild_id)
+        opts = [discord.SelectOption(label=p["title"], value=pid) for pid, p in c.items() if not p.get("enabled", True)][:25]
+        if not opts: return await i.response.send_message("No disabled panels.", ephemeral=True)
+        class EnSelect(ui.Select):
+            async def callback(self, it):
+                panels = it.client.role_buttons.get_panels(it.guild_id); panels[self.values[0]]["enabled"] = True
+                it.client.role_buttons.save_panels(it.guild_id, panels); await it.response.send_message("✅ Panel enabled.", ephemeral=True)
+        v = ui.View(); v.add_item(EnSelect(options=opts)); await i.response.send_message("Select panel:", view=v, ephemeral=True)
+
+    @ui.button(label="Delete Panel", emoji="🗑️", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_rb_delete")
+    async def delete_panel(self, i, b):
+        c = self.get_config(i.guild_id)
+        if not c: return await i.response.send_message("No panels.", ephemeral=True)
+        options = [discord.SelectOption(label=p["title"], value=pid) for pid, p in c.items()][:25]
+        class DelSelect(ui.Select):
+            async def callback(self, it):
+                panels = it.client.role_buttons.get_panels(it.guild_id)
+                p = panels.pop(self.values[0], None)
+                if p:
+                    try:
+                        ch = it.guild.get_channel(p["channel_id"])
+                        msg = await ch.fetch_message(p["message_id"]); await msg.delete()
+                    except: pass
+                it.client.role_buttons.save_panels(it.guild_id, panels)
+                await it.response.send_message("✅ Panel deleted.", ephemeral=True)
+        v = ui.View(); v.add_item(DelSelect(options=options)); await i.response.send_message("Select panel:", view=v, ephemeral=True)
+
+    @ui.button(label="Refresh Panel", emoji="🔄", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_rb_refresh")
+    async def refresh_panel(self, i, b):
+        c = self.get_config(i.guild_id)
+        if not c: return await i.response.send_message("No panels.", ephemeral=True)
+        options = [discord.SelectOption(label=p["title"], value=pid) for pid, p in c.items()][:25]
+        class RefSelect(ui.Select):
+            async def callback(self, it):
+                panels = it.client.role_buttons.get_panels(it.guild_id); p = panels.get(self.values[0])
+                view = it.client.role_buttons.build_view(self.values[0], p["buttons"])
+                ch = it.guild.get_channel(p["channel_id"]); msg = await ch.fetch_message(p["message_id"])
+                await msg.edit(view=view); await it.response.send_message("✅ Panel refreshed.", ephemeral=True)
+        v = ui.View(); v.add_item(RefSelect(options=options)); await i.response.send_message("Select panel:", view=v, ephemeral=True)
+
+    @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_rb_stats")
+    async def rb_stats(self, i, b):
+        c = self.get_config(i.guild_id); total = sum(p.get("total_clicks", 0) for p in c.values())
+        await i.response.send_message(f"📊 Total clicks across all panels: {total}", ephemeral=True)
+
+class ModLogConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "mod_log")
+
+    def get_config(self, guild_id: int = None) -> Dict[str, Any]:
+        target_guild = guild_id or self.guild_id
+        return dm.get_guild_data(target_guild, "mod_log_config", {})
+
+    def save_config(self, config: Dict[str, Any], guild_id: int = None, bot: discord.Client = None):
+        target_guild = guild_id or self.guild_id
+        dm.update_guild_data(target_guild, "mod_log_config", config)
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id)
+        embed = discord.Embed(title="📝 Moderation Logging", color=discord.Color.red() if c.get("enabled") else discord.Color.greyple())
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled") else "❌ Disabled", inline=True)
+        embed.add_field(name="Log Channel", value=f"<#{c.get('log_channel_id')}>" if c.get('log_channel_id') else "None", inline=True)
+        embed.add_field(name="Next Case", value=f"#{c.get('next_case_number', 1)}", inline=True)
+        return embed
+
+    @ui.button(label="Toggle System", emoji="✅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_ml_toggle")
+    async def toggle(self, i, b):
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Set Log Channel", emoji="📣", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_ml_set_ch")
+    async def set_ch(self, i, b):
+        await i.response.send_message("Select Channel:", view=_picker_view(_GenericChannelSelect(self, "log_channel_id", "Log Channel")), ephemeral=True)
+
+    @ui.button(label="View Case", emoji="🔍", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_ml_view_case")
+    async def view_case(self, i, b):
+        class CaseModal(ui.Modal, title="View Case"):
+            num = ui.TextInput(label="Case Number")
+            async def on_submit(self, it):
+                cases = dm.get_guild_data(it.guild_id, "mod_cases", {})
+                c = cases.get(self.num.value)
+                if not c: return await it.response.send_message("Case not found.", ephemeral=True)
+                emb = discord.Embed(title=f"Case #{c['case_number']}", description=c["reason"], color=discord.Color.blue())
+                emb.add_field(name="Action", value=c["action_type"], inline=True)
+                emb.add_field(name="Target ID", value=str(c["target_id"]), inline=True)
+                if c.get("jump_url"): emb.description += f"\n\n[Jump to Log]({c['jump_url']})"
+                await it.response.send_message(embed=emb, ephemeral=True)
+        await i.response.send_modal(CaseModal())
+
+    @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_ml_stats")
+    async def stats(self, i, b):
+        cases = dm.get_guild_data(i.guild_id, "mod_cases", {})
+        await i.response.send_message(f"📊 Total Cases: {len(cases)}", ephemeral=True)
+
+    @ui.button(label="Configure Logs", emoji="⚙️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_ml_config")
+    async def config_logs(self, i, b):
+        class LogSelect(ui.Select):
+            def __init__(self, current):
+                opts = [discord.SelectOption(label=k.title(), value=k, default=v) for k, v in current.items()]
+                super().__init__(placeholder="Toggle log types...", min_values=0, max_values=len(opts), options=opts)
+            async def callback(self, it):
+                c = it.client.mod_logging.get_config(it.guild_id)
+                for k in c["enabled_logs"]: c["enabled_logs"][k] = (k in self.values)
+                it.client.mod_logging.save_config(it.guild_id, c)
+                await it.response.send_message("✅ Log types updated.", ephemeral=True)
+        c = i.client.mod_logging.get_config(i.guild_id)
+        v = ui.View(); v.add_item(LogSelect(c["enabled_logs"])); await i.response.send_message("Select logs to enable:", view=v, ephemeral=True)
+
+    @ui.button(label="Edit Case", emoji="✏️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_ml_edit")
+    async def edit_case(self, i, b):
+        class EditModal(ui.Modal, title="Edit Case Reason"):
+            num = ui.TextInput(label="Case Number")
+            reason = ui.TextInput(label="New Reason", style=discord.TextStyle.paragraph)
+            async def on_submit(self, it):
+                cases = dm.get_guild_data(it.guild_id, "mod_cases", {})
+                if self.num.value not in cases: return await it.response.send_message("Not found.", ephemeral=True)
+                cases[self.num.value]["reason"] = self.reason.value; dm.update_guild_data(it.guild_id, "mod_cases", cases)
+                await it.response.send_message("✅ Case updated.", ephemeral=True)
+        await i.response.send_modal(EditModal())
+
+    @ui.button(label="Ignore Channel", emoji="🔕", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_ml_ign_ch")
+    async def ign_ch(self, i, b):
+        await i.response.send_message("Select channel to ignore:", view=_picker_view(_GenericChannelSelect(self, "ignored_channels", "Ignore Channel")), ephemeral=True)
+
+    @ui.button(label="Ignore Role", emoji="🔕", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_ml_ign_rl")
+    async def ign_rl(self, i, b):
+        await i.response.send_message("Select role to ignore:", view=_picker_view(_GenericRoleSelect(self, "ignored_roles", "Ignore Role")), ephemeral=True)
+
+    @ui.button(label="Export Cases", emoji="📤", style=discord.ButtonStyle.success, row=3, custom_id="cfg_ml_export")
+    async def export_cases(self, i, b):
+        cases = dm.get_guild_data(i.guild_id, "mod_cases", {})
+        import io, json
+        buf = io.BytesIO(json.dumps(cases, indent=2).encode())
+        await i.response.send_message("Exported Cases:", file=discord.File(buf, filename="mod_cases.json"), ephemeral=True)
+
+    @ui.button(label="View Cases", emoji="📋", style=discord.ButtonStyle.primary, row=3, custom_id="cfg_ml_view_all")
+    async def view_all(self, i, b):
+        cases = dm.get_guild_data(i.guild_id, "mod_cases", {})
+        if not cases: return await i.response.send_message("No cases found.", ephemeral=True)
+        msg = "\n".join([f"**#{c['case_number']}** {c['action_type']} - {c['reason'][:30]}" for c in sorted(cases.values(), key=lambda x: x["case_number"], reverse=True)[:15]])
+        await i.response.send_message(embed=discord.Embed(title="Recent Cases", description=msg), ephemeral=True)
+
+    @ui.button(label="Delete Case", emoji="🗑️", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_ml_delete")
+    async def delete_case(self, i, b):
+        class DelModal(ui.Modal, title="Delete Case (Mark Deleted)"):
+            num = ui.TextInput(label="Case Number")
+            async def on_submit(self, it):
+                cases = dm.get_guild_data(it.guild_id, "mod_cases", {})
+                if self.num.value in cases:
+                    cases[self.num.value]["deleted"] = True; dm.update_guild_data(it.guild_id, "mod_cases", cases)
+                    await it.response.send_message("✅ Case marked as deleted.", ephemeral=True)
+                else: await it.response.send_message("Not found.", ephemeral=True)
+        await i.response.send_modal(DelModal())
+
+class LoggingConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "logging")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id)
+        embed = discord.Embed(title="📊 General Server Logging", color=discord.Color.green() if c.get("enabled") else discord.Color.greyple())
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled") else "❌ Disabled", inline=True)
+        embed.add_field(name="Main Channel", value=f"<#{c.get('log_channel_id')}>" if c.get('log_channel_id') else "None", inline=True)
+        return embed
+
+    @ui.button(label="Toggle System", emoji="✅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_lg_toggle")
+    async def toggle(self, i, b):
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Set Main Channel", emoji="📣", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_lg_set_ch")
+    async def set_ch(self, i, b):
+        await i.response.send_message("Select Channel:", view=_picker_view(_GenericChannelSelect(self, "log_channel_id", "Log Channel")), ephemeral=True)
+
+    @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_lg_stats")
+    async def stats(self, i, b):
+        await i.response.send_message("Logging active for: Messages, Members, Channels, Roles, Voice.", ephemeral=True)
+
+    @ui.button(label="Pause Logging", emoji="⏸️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_lg_pause")
+    async def pause_lg(self, i, b):
+        class PauseModal(ui.Modal, title="Pause Logging"):
+            mins = ui.TextInput(label="Duration (minutes)", default="60")
+            async def on_submit(self, it):
+                it.client.logging_system._paused_until[it.guild_id] = time.time() + (int(self.mins.value) * 60)
+                await it.response.send_message(f"✅ Logging paused for {self.mins.value} minutes.", ephemeral=True)
+        await i.response.send_modal(PauseModal())
+
+    @ui.button(label="Resume Logging", emoji="▶️", style=discord.ButtonStyle.success, row=1, custom_id="cfg_lg_resume")
+    async def resume_lg(self, i, b):
+        i.client.logging_system._paused_until[i.guild_id] = 0
+        await i.response.send_message("✅ Logging resumed.", ephemeral=True)
+
+    @ui.button(label="Test Logging", emoji="🧪", style=discord.ButtonStyle.success, row=2, custom_id="cfg_lg_test")
+    async def test_lg(self, i, b):
+        emb = discord.Embed(title="🧪 Test Log", description="Logging system verification.", color=discord.Color.blue())
+        await i.client.logging_system._send_log(i.guild, "test", emb)
+        await i.response.send_message("✅ Test log sent to configured channel.", ephemeral=True)
+
+    @ui.button(label="Ignore User", emoji="🔕", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_lg_ign_u")
+    async def ign_u(self, i, b):
+        class UserModal(ui.Modal, title="Ignore User"):
+            uid = ui.TextInput(label="User ID")
+            async def on_submit(self, it):
+                c = it.client.logging_system.get_config(it.guild_id)
+                uid = int(self.uid.value)
+                if uid not in c["ignored_users"]:
+                    c["ignored_users"].append(uid)
+                    it.client.logging_system.save_config(it.guild_id, c)
+                    await it.response.send_message(f"✅ User {uid} ignored.", ephemeral=True)
+                else: await it.response.send_message("Already ignored.", ephemeral=True)
+        await i.response.send_modal(UserModal())
+
+    @ui.button(label="Ignore Channel", emoji="🔕", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_lg_ign_ch")
+    async def ign_ch(self, i, b):
+        await i.response.send_message("Select channel to ignore:", view=_picker_view(_GenericChannelSelect(self, "ignored_channels", "Ignore Channel")), ephemeral=True)
+
+    @ui.button(label="Ignore Role", emoji="🔕", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_lg_ign_rl")
+    async def ign_rl(self, i, b):
+        await i.response.send_message("Select role to ignore:", view=_picker_view(_GenericRoleSelect(self, "ignored_roles", "Ignore Role")), ephemeral=True)
+
+    @ui.button(label="View Ignore Lists", emoji="📜", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_lg_view_ign")
+    async def view_ign(self, i, b):
+        c = i.client.logging_system.get_config(i.guild_id)
+        msg = f"Channels: {c.get('ignored_channels', [])}\nRoles: {c.get('ignored_roles', [])}\nUsers: {c.get('ignored_users', [])}"
+        await i.response.send_message(embed=discord.Embed(title="Logging Ignore Lists", description=msg), ephemeral=True)
+
+    @ui.button(label="Set Category Channels", emoji="📣", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_lg_cats")
+    async def set_cats(self, i, b):
+        await i.response.send_message("Individual category channel setup coming soon (use main channel for now).", ephemeral=True)
+
+    @ui.button(label="Configure Event Types", emoji="⚙️", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_lg_config")
+    async def config_events(self, i, b):
+        class EventSelect(ui.Select):
+            def __init__(self, current):
+                opts = [discord.SelectOption(label=k.replace('_',' ').title(), value=k, default=v) for k, v in current.items()]
+                super().__init__(placeholder="Toggle event logs...", min_values=0, max_values=len(opts), options=opts)
+            async def callback(self, it):
+                c = it.client.logging_system.get_config(it.guild_id)
+                for k in c["enabled_events"]: c["enabled_events"][k] = (k in self.values)
+                it.client.logging_system.save_config(it.guild_id, c)
+                await it.response.send_message("✅ Event logs updated.", ephemeral=True)
+        c = i.client.logging_system.get_config(i.guild_id)
+        v = ui.View(); v.add_item(EventSelect(c["enabled_events"])); await i.response.send_message("Select events to log:", view=v, ephemeral=True)
+
 
 class SuggestionsConfigView(ConfigPanelView):
     """Admin configuration panel for the Suggestions system"""
@@ -1775,6 +2222,13 @@ SPECIALIZED_VIEWS = {
     "gamification": "GamificationConfigView",
     "reactionroles": "ReactionRolesConfigView",
     "reactionrole": "ReactionRolesConfigView",
+    "reactionmenus": "ReactionMenusConfigView",
+    "reactionmenu": "ReactionMenusConfigView",
+    "rolebuttons": "RoleButtonsConfigView",
+    "rolebutton": "RoleButtonsConfigView",
+    "modlog": "ModLogConfigView",
+    "modlogging": "ModLogConfigView",
+    "logging": "LoggingConfigView",
     "reminders": "RemindersPanelView",
     "scheduled": "ScheduledPanelView",
     "announcements": "AnnouncementsPanelView",
@@ -1793,7 +2247,8 @@ def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
             TicketsConfigView, WelcomeConfigView, WelcomeDMConfigView,
             ApplicationConfigView, AppealsConfigView, ModmailConfigView,
             SuggestionsConfigView, GiveawayConfigView, AchievementsConfigView,
-            GamificationConfigView, ReactionRolesConfigView
+            GamificationConfigView, ReactionRolesConfigView, ReactionMenusConfigView,
+            RoleButtonsConfigView, ModLogConfigView, LoggingConfigView
         )
         _view_cache["VerificationConfigView"] = VerificationConfigView
         _view_cache["AntiRaidConfigView"] = AntiRaidConfigView
@@ -1809,6 +2264,10 @@ def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
         _view_cache["AchievementsConfigView"] = AchievementsConfigView
         _view_cache["GamificationConfigView"] = GamificationConfigView
         _view_cache["ReactionRolesConfigView"] = ReactionRolesConfigView
+        _view_cache["ReactionMenusConfigView"] = ReactionMenusConfigView
+        _view_cache["RoleButtonsConfigView"] = RoleButtonsConfigView
+        _view_cache["ModLogConfigView"] = ModLogConfigView
+        _view_cache["LoggingConfigView"] = LoggingConfigView
     
     if "RemindersPanelView" not in _view_cache:
         from modules.reminders import RemindersPanelView, ScheduledPanelView, AnnouncementsPanelView
@@ -1843,6 +2302,10 @@ def register_all_persistent_views(bot: discord.Client):
     bot.add_view(AchievementsConfigView(0))
     bot.add_view(GamificationConfigView(0))
     bot.add_view(ReactionRolesConfigView(0))
+    bot.add_view(ReactionMenusConfigView(0))
+    bot.add_view(RoleButtonsConfigView(0))
+    bot.add_view(ModLogConfigView(0))
+    bot.add_view(LoggingConfigView(0))
     from modules.reminders import RemindersPanelView, ScheduledPanelView, AnnouncementsPanelView
     bot.add_view(RemindersPanelView(0))
     bot.add_view(ScheduledPanelView(0))
@@ -1856,6 +2319,25 @@ def register_all_persistent_views(bot: discord.Client):
     from modules.appeals import AppealPersistentView, AppealReviewView
     from modules.modmail import ModmailThreadView
     from modules.suggestions import SuggestionVoteView, SuggestionReviewView
+    from modules.reaction_menus import ReactionMenuPersistentView
+    from modules.role_buttons import RoleButtonPersistentView
+
+    # Reload all existing menus and button panels for persistence
+    data_dir = "data"
+    if os.path.exists(data_dir):
+        for filename in os.listdir(data_dir):
+            if filename.startswith("guild_") and filename.endswith(".json"):
+                try:
+                    guild_id = int(filename[6:-5])
+                    # Reaction Menus
+                    menus = dm.get_guild_data(guild_id, "reaction_menus_config", {})
+                    for mid in menus:
+                        bot.add_view(ReactionMenuPersistentView(mid))
+                    # Role Button Panels
+                    panels = dm.get_guild_data(guild_id, "role_buttons_config", {})
+                    for pid in panels:
+                        bot.add_view(RoleButtonPersistentView(pid))
+                except: continue
     bot.add_view(TicketOpenPanel())
     bot.add_view(AppealPersistentView())
     bot.add_view(AppealReviewView())

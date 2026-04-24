@@ -59,6 +59,10 @@ from modules.server_analytics import setup_analytics, get_analytics
 from modules.verification import Verification
 from modules.embed_system import EmbedSystem
 from modules.reaction_roles import ReactionRoles
+from modules.logging import LoggingSystem
+from modules.mod_logging import ModLogging
+from modules.reaction_menus import ReactionMenus
+from modules.role_buttons import RoleButtons
 from modules.config_panels import handle_config_panel_command, register_all_persistent_views
 
 load_dotenv()
@@ -134,6 +138,10 @@ class MiroBot(commands.Bot):
         self.verification = Verification(self)
         self.embed_system = EmbedSystem(self)
         self.reaction_roles = ReactionRoles(self)
+        self.logging_system = LoggingSystem(self)
+        self.mod_logging = ModLogging(self)
+        self.reaction_menus = ReactionMenus(self)
+        self.role_buttons = RoleButtons(self)
         
         # Add cogs (important for slash commands)
         # Note: We'll add them in setup_hook to ensure async compatibility
@@ -573,6 +581,9 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
     async def on_message(self, message):
         if message.author.bot:
             return
+
+        # 0. General Logging - Message Delete is handled in its own event, but edit/delete can be here too
+        # However, it's better to use the specific events for logging.
 
         # Check for creator questions
         content_lower = message.content.lower().strip()
@@ -2814,15 +2825,36 @@ async def on_guild_remove(guild: discord.Guild):
 @bot.event
 async def on_guild_channel_create(channel):
     """Auto-lock any new channel/category if verification is active in the guild."""
+    # Logging
+    try:
+        await bot.logging_system.on_guild_channel_create(channel)
+    except Exception as e:
+        logger.warning(f"Logging on_guild_channel_create error: {e}")
+
     try:
         await bot.verification.on_guild_channel_create(channel)
     except Exception as e:
         logger.warning(f"Verification auto-lock on channel create error: {e}")
 
 @bot.event
+async def on_guild_channel_delete(channel):
+    # Logging
+    try:
+        await bot.logging_system.on_guild_channel_delete(channel)
+    except Exception as e:
+        logger.warning(f"Logging on_guild_channel_delete error: {e}")
+
+@bot.event
 async def on_member_join(member: discord.Member):
     if member.bot:
         return
+
+    # Logging
+    try:
+        await bot.logging_system.on_member_join(member)
+    except Exception as e:
+        logger.warning(f"Logging on_member_join error: {e}")
+
     try:
         await bot.verification.on_member_join(member)
     except Exception as e:
@@ -2832,13 +2864,136 @@ async def on_member_join(member: discord.Member):
     except Exception as e:
         logger.warning(f"Welcome_leave on_member_join error: {e}")
 
+@bot.event
+async def on_member_ban(guild, user):
+    # Mod Logging
+    try:
+        moderator = None
+        reason = "No reason provided"
+        async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.ban):
+            if entry.target.id == user.id:
+                moderator = entry.user
+                reason = entry.reason or reason
+                break
+        await bot.mod_logging.log_ban(guild, moderator, user, reason)
+    except Exception as e:
+        logger.warning(f"Mod Logging on_member_ban error: {e}")
+
+@bot.event
+async def on_member_unban(guild, user):
+    # Mod Logging
+    try:
+        moderator = None
+        reason = "No reason provided"
+        async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.unban):
+            if entry.target.id == user.id:
+                moderator = entry.user
+                reason = entry.reason or reason
+                break
+        await bot.mod_logging.log_unban(guild, moderator, user, reason)
+    except Exception as e:
+        logger.warning(f"Mod Logging on_member_unban error: {e}")
+
 @bot.event  
 async def on_member_remove(member):
     """Handle exit interviews when staff leave"""
+    if member.bot:
+        return
+
+    # Logging
+    try:
+        await bot.logging_system.on_member_remove(member)
+    except Exception as e:
+        logger.warning(f"Logging on_member_remove error: {e}")
+
     try:
         await bot.staff_extras.on_member_remove(member)
     except Exception as e:
         logger.warning("Exit interview error: %s", e)
+
+@bot.event
+async def on_message_edit(before, after):
+    if before.author.bot: return
+    # Logging
+    try:
+        await bot.logging_system.on_message_edit(before, after)
+    except Exception as e:
+        logger.warning(f"Logging on_message_edit error: {e}")
+
+@bot.event
+async def on_message_delete(message):
+    if message.author.bot: return
+    # Logging
+    try:
+        await bot.logging_system.on_message_delete(message)
+    except Exception as e:
+        logger.warning(f"Logging on_message_delete error: {e}")
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    # Logging
+    try:
+        await bot.logging_system.on_voice_state_update(member, before, after)
+    except Exception as e:
+        logger.warning(f"Logging on_voice_state_update error: {e}")
+
+@bot.event
+async def on_member_update(before, after):
+    # Logging
+    try:
+        await bot.logging_system.on_member_update(before, after)
+    except Exception as e:
+        logger.warning(f"Logging on_member_update error: {e}")
+
+@bot.event
+async def on_guild_role_create(role):
+    # Logging
+    try:
+        emb = discord.Embed(title="🆕 Role Created", description=f"Role {role.mention} was created.", color=discord.Color.green(), timestamp=discord.utils.utcnow())
+        await bot.logging_system._send_log(role.guild, "role_update", emb)
+    except Exception as e:
+        logger.warning(f"Logging on_guild_role_create error: {e}")
+
+@bot.event
+async def on_guild_role_delete(role):
+    # Logging
+    try:
+        emb = discord.Embed(title="🚫 Role Deleted", description=f"Role @{role.name} was deleted.", color=discord.Color.red(), timestamp=discord.utils.utcnow())
+        await bot.logging_system._send_log(role.guild, "role_update", emb)
+    except Exception as e:
+        logger.warning(f"Logging on_guild_role_delete error: {e}")
+
+@bot.event
+async def on_guild_role_update(before, after):
+    # Logging
+    try:
+        await bot.logging_system.on_guild_role_update(before, after)
+    except Exception as e:
+        logger.warning(f"Logging on_guild_role_update error: {e}")
+
+@bot.event
+async def on_guild_channel_update(before, after):
+    # Logging
+    try:
+        await bot.logging_system.on_guild_channel_update(before, after)
+    except Exception as e:
+        logger.warning(f"Logging on_guild_channel_update error: {e}")
+
+@bot.event
+async def on_bulk_message_delete(messages):
+    # Logging
+    try:
+        await bot.logging_system.on_bulk_message_delete(messages)
+    except Exception as e:
+        logger.warning(f"Logging on_bulk_message_delete error: {e}")
+
+@bot.event
+async def on_guild_update(before, after):
+    # Logging
+    try:
+        await bot.logging_system.on_guild_update(before, after)
+    except Exception as e:
+        logger.warning(f"Logging on_guild_update error: {e}")
 
 
 
