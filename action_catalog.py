@@ -932,6 +932,31 @@ ACTION_CATALOG = {
         },
         "keywords": ["recent messages", "fetch history"]
     },
+    "giveaway_end": {
+        "name": "giveaway_end",
+        "description": "Ends a giveaway immediately and picks winners",
+        "category": "Giveaways",
+        "parameters": {
+            "giveaway_id": {"type": "string", "required": True, "description": "ID of the giveaway to end"}
+        },
+        "keywords": ["end giveaway", "gend"]
+    },
+    "giveaway_reroll": {
+        "name": "giveaway_reroll",
+        "description": "Rerolls winners for an ended giveaway",
+        "category": "Giveaways",
+        "parameters": {
+            "giveaway_id": {"type": "string", "required": True, "description": "ID of the giveaway to reroll"}
+        },
+        "keywords": ["reroll giveaway", "greroll"]
+    },
+    "giveaway_list": {
+        "name": "giveaway_list",
+        "description": "Lists all active giveaways in the server",
+        "category": "Giveaways",
+        "parameters": {},
+        "keywords": ["list giveaways", "active giveaways", "glist"]
+    },
     "send_notification": {
         "name": "send_notification",
         "description": "Send a notification message to a channel",
@@ -994,6 +1019,8 @@ CATEGORY_GROUPS = {
                      "deny_all_channels_for_role", "deny_category_for_role", "edit_channel_permissions"],
     "Events": ["create_scheduled_event"],
     "Meta": ["analyze_server_state"],
+    "Giveaways": ["giveaway_end", "giveaway_reroll", "giveaway_list"],
+    "Gamification": ["prestige", "dice", "flip", "slots", "trivia"],
     "Server Query": ["extract_online_users", "query_server_info", "query_channels", "query_roles", "query_members", "query_member_details", "query_economy_leaderboard", "query_xp_leaderboard", "query_pending_applications", "query_active_shifts", "query_recent_messages"]
 }
 

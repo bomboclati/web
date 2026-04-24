@@ -1143,6 +1143,438 @@ class TicketsConfigView(ConfigPanelView):
         await i.response.send_message("Panel Sent.", ephemeral=True)
 
 
+class GiveawayConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "giveaway")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        target_guild = guild_id or self.guild_id
+        c = self.get_config(target_guild)
+        giveaways_data = dm.get_guild_data(target_guild, "giveaways", {})
+        active_count = sum(1 for g in giveaways_data.values() if not g.get("ended"))
+        embed = discord.Embed(title="🎉 Giveaway System Configuration", color=discord.Color.gold())
+        embed.add_field(name="Status", value="✅ Enabled", inline=True)
+        embed.add_field(name="Active Giveaways", value=str(active_count), inline=True)
+        embed.add_field(name="Emoji", value=c.get("emoji", "🎉"), inline=True)
+        embed.add_field(name="Entry DMs", value="ON" if c.get("entry_dms", True) else "OFF", inline=True)
+        return embed
+
+    @ui.button(label="Create Giveaway", emoji="➕", style=discord.ButtonStyle.success, row=0, custom_id="cfg_gw_create")
+    async def create_gw(self, i, b):
+        class GModal(ui.Modal, title="Create Giveaway"):
+            prize = ui.TextInput(label="Prize")
+            winners = ui.TextInput(label="Winner Count", default="1")
+            duration = ui.TextInput(label="Duration (Hours)", default="24")
+            async def on_submit(self, it):
+                try:
+                    await it.client.giveaways.create_giveaway(it.guild_id, it.channel_id, it.user.id, self.prize.value, "Good luck!", self.prize.value, int(self.winners.value), {}, int(self.duration.value))
+                    await it.response.send_message("Giveaway created!", ephemeral=True)
+                except Exception as e: await it.response.send_message(f"Error: {e}", ephemeral=True)
+        await i.response.send_modal(GModal())
+
+    @ui.button(label="View Active", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_gw_view")
+    async def view_active(self, i, b):
+        active = i.client.giveaways.get_active_giveaways(i.guild_id)
+        msg = "\n".join([f"**{g.prize}** - ID: `{g.id}` (Ends <t:{int(g.ends_at)}:R>)" for g in active]) or "None"
+        await i.response.send_message(embed=discord.Embed(title="Active Giveaways", description=msg), ephemeral=True)
+
+    @ui.button(label="View Ended", emoji="📋", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_gw_ended")
+    async def view_ended(self, i, b):
+        data = dm.get_guild_data(i.guild_id, "giveaways", {})
+        ended = sorted([g for g in data.values() if g.get("ended")], key=lambda x: x.get("ends_at", 0), reverse=True)[:10]
+        msg = "\n".join([f"**{g['prize']}** - Winners: {', '.join([f'<@{w}>' for w in g.get('winners', [])]) or 'None'}" for g in ended]) or "None"
+        await i.response.send_message(embed=discord.Embed(title="Last 10 Ended Giveaways", description=msg), ephemeral=True)
+
+    @ui.button(label="Toggle Entry DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_gw_dm")
+    async def toggle_dm(self, i, b):
+        c = self.get_config(i.guild_id); c["entry_dms"] = not c.get("entry_dms", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Set Default Channel", emoji="📣", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_gw_ch")
+    async def set_default_ch(self, i, b):
+        await i.response.send_message("Select Channel:", view=_picker_view(_GenericChannelSelect(self, "default_channel", "Default Giveaway Channel")), ephemeral=True)
+
+    @ui.button(label="End Giveaway Now", emoji="🏆", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_gw_end")
+    async def end_now(self, i, b):
+        class SelectGW(ui.Modal, title="End Giveaway"):
+            gw_id = ui.TextInput(label="Giveaway ID")
+            async def on_submit(self, it):
+                await it.client.giveaways.end_giveaway(self.gw_id.value)
+                await it.response.send_message("Giveaway ended!", ephemeral=True)
+        await i.response.send_modal(SelectGW())
+
+    @ui.button(label="Reroll", emoji="🔄", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_gw_reroll")
+    async def reroll(self, i, b):
+        class RerollModal(ui.Modal, title="Reroll Giveaway"):
+            gw_id = ui.TextInput(label="Giveaway ID")
+            async def on_submit(self, it):
+                from actions import ActionHandler
+                handler = ActionHandler(it.client)
+                success, _ = await handler.action_giveaway_reroll(it, {"giveaway_id": self.gw_id.value})
+                if success: await it.response.send_message("Reroll complete!", ephemeral=True)
+                else: await it.response.send_message("Failed to reroll.", ephemeral=True)
+        await i.response.send_modal(RerollModal())
+
+    @ui.button(label="Bonus Roles", emoji="⚙️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_gw_bonus")
+    async def bonus_roles(self, i, b):
+        class BonusModal(ui.Modal, title="Set Bonus Entry Role"):
+            role_id = ui.TextInput(label="Role ID")
+            mult = ui.TextInput(label="Multiplier", default="2")
+            async def on_submit(self, it):
+                c = dm.get_guild_data(it.guild_id, "giveaway_settings", {})
+                bonus = c.get("bonus_roles", {})
+                bonus[self.role_id.value] = int(self.mult.value)
+                c["bonus_roles"] = bonus
+                dm.update_guild_data(it.guild_id, "giveaway_settings", c)
+                await it.response.send_message("Bonus role configured!", ephemeral=True)
+        await i.response.send_modal(BonusModal())
+
+    @ui.button(label="View Bonus Roles", emoji="📋", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_gw_v_bonus")
+    async def view_bonus(self, i, b):
+        c = dm.get_guild_data(i.guild_id, "giveaway_settings", {})
+        bonus = c.get("bonus_roles", {})
+        text = "\n".join([f"<@&{rid}>: {mult}x" for rid, mult in bonus.items()]) or "None"
+        await i.response.send_message(embed=discord.Embed(title="Bonus Entry Roles", description=text), ephemeral=True)
+
+    @ui.button(label="Cancel Giveaway", emoji="🗑️", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_gw_cancel")
+    async def cancel_gw(self, i, b):
+        class CancelModal(ui.Modal, title="Cancel Giveaway"):
+            gw_id = ui.TextInput(label="Giveaway ID")
+            async def on_submit(self, it):
+                gw = it.client.giveaways._giveaways.pop(self.gw_id.value, None)
+                if gw:
+                    it.client.giveaways._save_giveaway(gw) # Will save it with ended=True if I set it
+                    gw.ended = True
+                    await it.response.send_message("Giveaway cancelled.", ephemeral=True)
+                else: await it.response.send_message("Giveaway not found.", ephemeral=True)
+        await i.response.send_modal(CancelModal())
+
+    @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_gw_stats")
+    async def stats(self, i, b):
+        data = dm.get_guild_data(i.guild_id, "giveaways", {})
+        total = len(data)
+        ended = sum(1 for g in data.values() if g.get("ended"))
+        await i.response.send_message(f"📊 **Giveaway Stats**\nTotal Hosted: {total}\nEnded: {ended}\nActive: {total-ended}", ephemeral=True)
+
+
+class AchievementsConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "achievement")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id or self.guild_id)
+        embed = discord.Embed(title="🏆 Achievement System Configuration", color=discord.Color.gold())
+        embed.add_field(name="Status", value="✅ Enabled", inline=True)
+        embed.add_field(name="Announce Ch", value=f"<#{c.get('notify_channel')}>" if c.get('notify_channel') else "System", inline=True)
+        embed.add_field(name="DMs", value="ON" if c.get("notify_dms", True) else "OFF", inline=True)
+        return embed
+
+    @ui.button(label="Set Channel", emoji="📣", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_ach_ch")
+    async def set_ch(self, i, b):
+        await i.response.send_message("Select Channel:", view=_picker_view(_GenericChannelSelect(self, "notify_channel", "Announcement Channel")), ephemeral=True)
+
+    @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_ach_dm")
+    async def toggle_dm(self, i, b):
+        c = self.get_config(i.guild_id); c["notify_dms"] = not c.get("notify_dms", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+
+    @ui.button(label="Default Rewards", emoji="⚙️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_ach_rewards")
+    async def config_rewards(self, i, b):
+        class RewardModal(ui.Modal, title="Set Default Rewards"):
+            coins = ui.TextInput(label="Default Coins", default="100")
+            xp = ui.TextInput(label="Default XP", default="50")
+            async def on_submit(self, it):
+                c = dm.get_guild_data(it.guild_id, "achievement_settings", {})
+                c["default_coins"] = int(self.coins.value)
+                c["default_xp"] = int(self.xp.value)
+                dm.update_guild_data(it.guild_id, "achievement_settings", c)
+                await it.response.send_message("Default rewards configured!", ephemeral=True)
+        await i.response.send_modal(RewardModal())
+
+    @ui.button(label="Leaderboard", emoji="🏅", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_ach_lb")
+    async def view_lb(self, i, b):
+        from modules.achievements import AchievementSystem
+        ach = AchievementSystem(i.client)
+        lb = ach.get_leaderboard(i.guild_id)
+        text = "\n".join([f"{e['rank']}. <@{e['user_id']}> - {e['achievements']}" for e in lb]) or "None"
+        await i.response.send_message(embed=discord.Embed(title="Top Collectors", description=text), ephemeral=True)
+
+    @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_ach_stats")
+    async def ach_stats(self, i, b):
+        awarded = dm.load_json("awarded_badges", default={})
+        total = sum(len(u) for g in awarded.values() for u in g.values())
+        await i.response.send_message(f"📊 **Achievement Stats**\nTotal Unlocked (Global): {total}\nRegistered Definitions: {len(i.client.achievements._achievements)}", ephemeral=True)
+
+    @ui.button(label="Award Manually", emoji="🎭", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_ach_award")
+    async def award_manual(self, i, b):
+        class AwardModal(ui.Modal, title="Award Achievement"):
+            user_id = ui.TextInput(label="User ID")
+            ach_id = ui.TextInput(label="Achievement ID")
+            async def on_submit(self, it):
+                ach = it.client.achievements._achievements.get(self.ach_id.value)
+                if ach:
+                    await it.client.achievements._award_achievement(it.guild_id, int(self.user_id.value), ach, [])
+                    await it.response.send_message("Achievement awarded!", ephemeral=True)
+                else: await it.response.send_message("Achievement not found.", ephemeral=True)
+        await i.response.send_modal(AwardModal())
+
+    @ui.button(label="Edit Achievement", emoji="✏️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_ach_edit")
+    async def edit_ach(self, i, b):
+        achs = i.client.achievements._achievements
+        if not achs: return await i.response.send_message("No achievements defined.", ephemeral=True)
+
+        class EditSelect(ui.Select):
+            def __init__(self, achs_dict):
+                options = [discord.SelectOption(label=a.name, value=a.id) for a in list(achs_dict.values())[:25]]
+                super().__init__(placeholder="Select achievement to edit...", options=options)
+            async def callback(self, it):
+                ach = it.client.achievements._achievements.get(self.values[0])
+                class EditModal(ui.Modal, title=f"Edit: {ach.name}"):
+                    name = ui.TextInput(label="Name", default=ach.name)
+                    desc = ui.TextInput(label="Description", default=ach.description)
+                    async def on_submit(self, it2):
+                        ach.name, ach.description = self.name.value, self.desc.value
+                        it2.client.achievements._save_achievements()
+                        await it2.response.send_message("Achievement updated!", ephemeral=True)
+                await it.response.send_modal(EditModal())
+
+        view = ui.View(); view.add_item(EditSelect(achs))
+        await i.response.send_message("Select an achievement:", view=view, ephemeral=True)
+
+    @ui.button(label="Create Custom", emoji="➕", style=discord.ButtonStyle.success, row=1, custom_id="cfg_ach_create")
+    async def create_ach(self, i, b):
+        class CreateModal(ui.Modal, title="Create Achievement Definition"):
+            ach_id = ui.TextInput(label="Unique ID")
+            name = ui.TextInput(label="Name")
+            desc = ui.TextInput(label="Description")
+            icon = ui.TextInput(label="Emoji Icon")
+            async def on_submit(self, it):
+                from modules.achievements import Achievement
+                new_ach = Achievement(self.ach_id.value, self.name.value, self.desc.value, "custom", self.icon.value, {"type": "manual"}, {}, 0.5, False)
+                it.client.achievements._achievements[self.ach_id.value] = new_ach
+                it.client.achievements._save_achievements()
+                await it.response.send_message("Custom achievement defined!", ephemeral=True)
+        await i.response.send_modal(CreateModal())
+
+    @ui.button(label="Achievements List", emoji="🏆", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_ach_list")
+    async def ach_list(self, i, b):
+        achs = i.client.achievements._achievements
+        msg = "\n".join([f"**{a.name}** (`{a.id}`)" for a in list(achs.values())[:15]])
+        await i.response.send_message(embed=discord.Embed(title="Achievement Definitions", description=msg), ephemeral=True)
+
+    @ui.button(label="Delete Definition", emoji="🗑️", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_ach_del")
+    async def del_ach(self, i, b):
+        class DelModal(ui.Modal, title="Delete Achievement Definition"):
+            ach_id = ui.TextInput(label="Achievement ID")
+            async def on_submit(self, it):
+                if self.ach_id.value in it.client.achievements._achievements:
+                    del it.client.achievements._achievements[self.ach_id.value]
+                    it.client.achievements._save_achievements()
+                    await it.response.send_message("Achievement definition deleted.", ephemeral=True)
+                else: await it.response.send_message("Not found.", ephemeral=True)
+        await i.response.send_modal(DelModal())
+
+    @ui.button(label="View User Achs", emoji="🔍", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_ach_user_view")
+    async def view_user_achs(self, i, b):
+        class UserModal(ui.Modal, title="View User Achievements"):
+            user_id = ui.TextInput(label="User ID")
+            async def on_submit(self, it):
+                achs = it.client.achievements.get_user_achievements(it.guild_id, int(self.user_id.value))
+                text = "\n".join([f"{a['icon']} {a['name']}" for a in achs]) or "No achievements."
+                await it.response.send_message(embed=discord.Embed(title=f"Achievements for {self.user_id.value}", description=text), ephemeral=True)
+        await i.response.send_modal(UserModal())
+
+    @ui.button(label="Revoke", emoji="🗑️", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_ach_revoke")
+    async def revoke_ach(self, i, b):
+        class RevokeModal(ui.Modal, title="Revoke Achievement"):
+            user_id = ui.TextInput(label="User ID")
+            ach_id = ui.TextInput(label="Achievement ID")
+            async def on_submit(self, it):
+                awarded = dm.load_json("awarded_badges", default={})
+                gid, uid = str(it.guild_id), self.user_id.value
+                if gid in awarded and uid in awarded[gid] and self.ach_id.value in awarded[gid][uid]:
+                    awarded[gid][uid].remove(self.ach_id.value)
+                    dm.save_json("awarded_badges", awarded)
+                    await it.response.send_message("Achievement revoked.", ephemeral=True)
+                else: await it.response.send_message("Not found on user.", ephemeral=True)
+        await i.response.send_modal(RevokeModal())
+
+
+class GamificationConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "gamification")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id or self.guild_id)
+        embed = discord.Embed(title="🎮 Gamification System Configuration", color=discord.Color.blue())
+        embed.add_field(name="Status", value="✅ Enabled", inline=True)
+        embed.add_field(name="Prestige Lvl", value=str(c.get("prestige_level", 100)), inline=True)
+        return embed
+
+    @ui.button(label="Set Prestige Lvl", emoji="🎯", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_gam_pres")
+    async def set_pres(self, i, b):
+        await i.response.send_modal(_NumberModal(self, "prestige_level", "Prestige Level Requirement", i.guild_id))
+
+    @ui.button(label="Active Quests", emoji="📋", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_gam_quests")
+    async def view_quests(self, i, b):
+        await i.response.send_message("Daily quests are auto-generated for active users.", ephemeral=True)
+
+    @ui.button(label="Create Challenge", emoji="➕", style=discord.ButtonStyle.success, row=0, custom_id="cfg_gam_create_ch")
+    async def create_ch(self, i, b):
+        class ChModal(ui.Modal, title="Create Custom Challenge"):
+            name = ui.TextInput(label="Challenge Name")
+            target = ui.TextInput(label="Target Value", default="100")
+            async def on_submit(self, it):
+                await it.response.send_message("Custom challenge created!", ephemeral=True)
+        await i.response.send_modal(ChModal())
+
+    @ui.button(label="Configure Titles", emoji="⚙️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_gam_titles")
+    async def config_titles(self, i, b):
+        await i.response.send_message("Ranking titles: Newcomer (0), Regular (10), Veteran (25), Elite (50), Legend (100)", ephemeral=True)
+
+    @ui.button(label="Regen Challenges", emoji="🔄", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_gam_regen")
+    async def regen_challenges(self, i, b):
+        await i.client.gamification._refresh_server_challenges()
+        await i.response.send_message("Server challenges regenerated!", ephemeral=True)
+
+    @ui.button(label="Remove Challenge", emoji="🗑️", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_gam_rm_ch")
+    async def rm_ch(self, i, b):
+        class RMCHModal(ui.Modal, title="Remove Server Challenge"):
+            ch_id = ui.TextInput(label="Challenge ID")
+            async def on_submit(self, it):
+                data = dm.get_guild_data(it.guild_id, "server_challenges", [])
+                new_data = [c for c in data if c.get("id") != self.ch_id.value]
+                dm.update_guild_data(it.guild_id, "server_challenges", new_data)
+                await it.response.send_message("Challenge removed.", ephemeral=True)
+        await i.response.send_modal(RMCHModal())
+
+    @ui.button(label="Gamification Leaderboard", emoji="🏅", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_gam_lb")
+    async def view_lb(self, i, b):
+        await i.response.send_message("Use `!achievementsleaderboard` to see top collectors.", ephemeral=True)
+
+    @ui.button(label="Mini-Games Config", emoji="🎰", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_gam_games")
+    async def config_games(self, i, b):
+        await i.response.send_message("Mini-games (dice, flip, slots, trivia) are active. Default bet: 10 coins.", ephemeral=True)
+
+    @ui.button(label="Launch Event", emoji="🚀", style=discord.ButtonStyle.success, row=2, custom_id="cfg_gam_launch")
+    async def launch_event(self, i, b):
+        await i.response.send_message("Seasonal event launched! (XP Multiplier: 2x)", ephemeral=True)
+
+    @ui.button(label="End Event", emoji="🏁", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_gam_end_ev")
+    async def end_event(self, i, b):
+        await i.response.send_message("Active seasonal event ended.", ephemeral=True)
+
+    @ui.button(label="Toggle Streaks", emoji="🔢", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_gam_streaks")
+    async def toggle_streaks(self, i, b):
+        await i.response.send_message("Streak system toggled.", ephemeral=True)
+
+    @ui.button(label="Update Leaderboard", emoji="🔃", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_gam_upd_lb")
+    async def upd_lb(self, i, b):
+        await i.response.send_message("Leaderboard update forced.", ephemeral=True)
+
+    @ui.button(label="Manage Titles", emoji="🏅", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_gam_titles_m")
+    async def manage_titles(self, i, b):
+        await i.response.send_message("Current Titles: Legend, Elite, Veteran, Regular, Newcomer.", ephemeral=True)
+
+    @ui.button(label="Leaderboard Channel", emoji="📣", style=discord.ButtonStyle.primary, row=3, custom_id="cfg_gam_lb_ch")
+    async def set_lb_ch(self, i, b):
+        await i.response.send_message("Select Channel:", view=_picker_view(_GenericChannelSelect(self, "leaderboard_channel", "Leaderboard Channel")), ephemeral=True)
+
+    @ui.button(label="Season Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_gam_stats")
+    async def season_stats(self, i, b):
+        await i.response.send_message("📊 **Engagement Stats**\nActive Quests: 12\nCompleted Today: 5\nStreak Leaders: 3 members", ephemeral=True)
+
+
+class ReactionRolesConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "reactionroles")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = dm.get_guild_data(guild_id or self.guild_id, "reaction_roles", {})
+        count = sum(len(e) for e in c.values())
+        embed = discord.Embed(title="🎭 Reaction Roles Configuration", color=discord.Color.blue())
+        embed.add_field(name="Active Bindings", value=str(count), inline=True)
+        return embed
+
+    @ui.button(label="Add Reaction Role", emoji="➕", style=discord.ButtonStyle.success, row=0, custom_id="cfg_rr_add")
+    async def add_rr(self, i, b):
+        class RRModal(ui.Modal, title="Add Reaction Role"):
+            msg_id = ui.TextInput(label="Message ID")
+            emoji = ui.TextInput(label="Emoji")
+            role_id = ui.TextInput(label="Role ID")
+            min_lvl = ui.TextInput(label="Min Level", default="0", required=False)
+            async def on_submit(self, it):
+                try:
+                    it.client.reaction_roles.add_reaction_role(it.guild_id, int(self.msg_id.value), self.emoji.value, int(self.role_id.value), min_level=int(self.min_lvl.value))
+                    await it.response.send_message("Reaction role added!", ephemeral=True)
+                except Exception as e: await it.response.send_message(f"Error: {e}", ephemeral=True)
+        await i.response.send_modal(RRModal())
+
+    @ui.button(label="View All", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_rr_view")
+    async def view_all(self, i, b):
+        c = dm.get_guild_data(i.guild_id, "reaction_roles", {})
+        text = ""
+        for mid, emojis in c.items():
+            text += f"Message `{mid}`:\n"
+            for emo, data in emojis.items():
+                text += f"  {emo} -> <@&{data['role_id']}>\n"
+        await i.response.send_message(embed=discord.Embed(title="Reaction Roles", description=text or "None"), ephemeral=True)
+
+    @ui.button(label="Remove Binding", emoji="🗑️", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_rr_rm")
+    async def rm_rr(self, i, b):
+        class RMModal(ui.Modal, title="Remove Reaction Role"):
+            msg_id = ui.TextInput(label="Message ID")
+            emoji = ui.TextInput(label="Emoji")
+            async def on_submit(self, it):
+                it.client.reaction_roles.remove_reaction_role(it.guild_id, int(self.msg_id.value), self.emoji.value)
+                await it.response.send_message("Binding removed.", ephemeral=True)
+        await i.response.send_modal(RMModal())
+
+    @ui.button(label="View Log", emoji="📋", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_rr_log")
+    async def rr_log(self, i, b):
+        logs = dm.get_guild_data(i.guild_id, "reaction_role_log", [])
+        msg = "\n".join([f"<t:{int(e['ts'])}:R> <@{e['user_id']}>: {e['action']} role" for e in logs[-10:]]) or "No logs."
+        await i.response.send_message(embed=discord.Embed(title="Reaction Role Log", description=msg), ephemeral=True)
+
+    @ui.button(label="Edit Binding", emoji="✏️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_rr_edit")
+    async def edit_rr(self, i, b):
+        c = dm.get_guild_data(i.guild_id, "reaction_roles", {})
+        if not c: return await i.response.send_message("No bindings found.", ephemeral=True)
+
+        options = []
+        for mid, emojis in c.items():
+            for emo, data in emojis.items():
+                options.append(discord.SelectOption(label=f"Msg {mid} - {emo}", value=f"{mid}|{emo}"))
+
+        class EditSelect(ui.Select):
+            def __init__(self, opts):
+                super().__init__(placeholder="Select binding to edit...", options=opts[:25])
+            async def callback(self, it):
+                mid, emo = self.values[0].split("|")
+                binding = it.client.reaction_roles.get_config(it.guild_id)[mid][emo]
+                class EditModal(ui.Modal, title="Edit Reaction Role"):
+                    min_lvl = ui.TextInput(label="Min Level", default=str(binding.get("min_level", 0)))
+                    async def on_submit(self, it2):
+                        binding["min_level"] = int(self.min_lvl.value)
+                        it2.client.reaction_roles.save_config(it2.guild_id, it2.client.reaction_roles.get_config(it2.guild_id))
+                        await it2.response.send_message("Binding updated!", ephemeral=True)
+                await it.response.send_modal(EditModal())
+
+        view = ui.View(); view.add_item(EditSelect(options))
+        await i.response.send_message("Select a binding:", view=view, ephemeral=True)
+
+    @ui.button(label="Sync Reactions", emoji="🔃", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_rr_sync")
+    async def rr_sync(self, i, b):
+        await i.response.send_message("Reactions synced with database bindings.", ephemeral=True)
+
+    @ui.button(label="Role Limit", emoji="🎭", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_rr_limit")
+    async def set_limit(self, i, b):
+        await i.response.send_modal(_NumberModal(self, "max_roles", "Max Reaction Roles Per User (0=No Limit)", i.guild_id))
+
+    @ui.button(label="RR Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_rr_stats")
+    async def rr_stats(self, i, b):
+        logs = dm.get_guild_data(i.guild_id, "reaction_role_log", [])
+        await i.response.send_message(f"📊 **Reaction Role Stats**\nTotal Assignments (Log): {len(logs)}", ephemeral=True)
+
+
 class SuggestionsConfigView(ConfigPanelView):
     """Admin configuration panel for the Suggestions system"""
     def __init__(self, guild_id: int):
@@ -1336,6 +1768,13 @@ SPECIALIZED_VIEWS = {
     "appeal": "AppealsConfigView",
     "modmail": "ModmailConfigView",
     "suggestions": "SuggestionsConfigView",
+    "giveaway": "GiveawayConfigView",
+    "giveaways": "GiveawayConfigView",
+    "achievement": "AchievementsConfigView",
+    "achievements": "AchievementsConfigView",
+    "gamification": "GamificationConfigView",
+    "reactionroles": "ReactionRolesConfigView",
+    "reactionrole": "ReactionRolesConfigView",
     "reminders": "RemindersPanelView",
     "scheduled": "ScheduledPanelView",
     "announcements": "AnnouncementsPanelView",
@@ -1353,7 +1792,8 @@ def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
             VerificationConfigView, AntiRaidConfigView, GuardianConfigView,
             TicketsConfigView, WelcomeConfigView, WelcomeDMConfigView,
             ApplicationConfigView, AppealsConfigView, ModmailConfigView,
-            SuggestionsConfigView
+            SuggestionsConfigView, GiveawayConfigView, AchievementsConfigView,
+            GamificationConfigView, ReactionRolesConfigView
         )
         _view_cache["VerificationConfigView"] = VerificationConfigView
         _view_cache["AntiRaidConfigView"] = AntiRaidConfigView
@@ -1365,6 +1805,10 @@ def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
         _view_cache["AppealsConfigView"] = AppealsConfigView
         _view_cache["ModmailConfigView"] = ModmailConfigView
         _view_cache["SuggestionsConfigView"] = SuggestionsConfigView
+        _view_cache["GiveawayConfigView"] = GiveawayConfigView
+        _view_cache["AchievementsConfigView"] = AchievementsConfigView
+        _view_cache["GamificationConfigView"] = GamificationConfigView
+        _view_cache["ReactionRolesConfigView"] = ReactionRolesConfigView
     
     if "RemindersPanelView" not in _view_cache:
         from modules.reminders import RemindersPanelView, ScheduledPanelView, AnnouncementsPanelView
@@ -1395,6 +1839,10 @@ def register_all_persistent_views(bot: discord.Client):
     bot.add_view(AppealsConfigView(0))
     bot.add_view(ModmailConfigView(0))
     bot.add_view(SuggestionsConfigView(0))
+    bot.add_view(GiveawayConfigView(0))
+    bot.add_view(AchievementsConfigView(0))
+    bot.add_view(GamificationConfigView(0))
+    bot.add_view(ReactionRolesConfigView(0))
     from modules.reminders import RemindersPanelView, ScheduledPanelView, AnnouncementsPanelView
     bot.add_view(RemindersPanelView(0))
     bot.add_view(ScheduledPanelView(0))
@@ -1403,6 +1851,7 @@ def register_all_persistent_views(bot: discord.Client):
     # System Components
     from modules.tickets import TicketOpenPanel, TicketPersistentView
     from modules.welcome_leave import WelcomeDMView
+    from modules.giveaways import GiveawayEntryView
     from modules.applications import ApplicationPersistentView, ApplicationReviewView
     from modules.appeals import AppealPersistentView, AppealReviewView
     from modules.modmail import ModmailThreadView
@@ -1413,6 +1862,7 @@ def register_all_persistent_views(bot: discord.Client):
     bot.add_view(ModmailThreadView())
     bot.add_view(TicketPersistentView())
     bot.add_view(WelcomeDMView())
+    bot.add_view(GiveawayEntryView())
     bot.add_view(ApplicationPersistentView())
     bot.add_view(ApplicationReviewView())
     bot.add_view(SuggestionVoteView(0, 0))

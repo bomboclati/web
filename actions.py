@@ -2,6 +2,7 @@ import discord
 import json
 import asyncio
 import time
+import random
 import difflib
 from datetime import datetime, timezone
 import datetime as dt
@@ -168,6 +169,10 @@ class ActionHandler:
         "connect_systems",
         # System move actions
         "move_system",
+        # Giveaway actions
+        "giveaway_end", "giveaway_reroll", "giveaway_list",
+        # Gamification actions
+        "prestige", "dice", "flip", "slots", "trivia",
         # Additional actions from action_catalog
         "post_documentation", "setup_trigger_role"
     }
@@ -2745,6 +2750,58 @@ class ActionHandler:
         msgs = await self.bot.server_query.query_recent_messages(int(cid), params.get("limit", 10))
         text = "\n".join([f"**{m['author']}:** {m['content'][:100]}" for m in msgs])
         await self._send_query_result(interaction, "Recent Messages", text or "No messages found")
+        return True, None
+
+    async def action_giveaway_end(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        gw_id = params.get("giveaway_id")
+        if not gw_id: return False, {"error": "Missing giveaway_id"}
+        winners = await self.bot.giveaways.end_giveaway(gw_id)
+        if winners is None: return False, {"error": "Giveaway not found"}
+        return True, None
+
+    async def action_giveaway_reroll(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        gw_id = params.get("giveaway_id")
+        if not gw_id: return False, {"error": "Missing giveaway_id"}
+        winners = await self.bot.giveaways.reroll_giveaway(gw_id)
+        if winners is None: return False, {"error": "Giveaway not found or ineligible for reroll"}
+        return True, None
+
+    async def action_giveaway_list(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        active = self.bot.giveaways.get_active_giveaways(interaction.guild.id)
+        if not active:
+            await interaction.channel.send("No active giveaways.")
+            return True, None
+
+        lines = []
+        for g in active:
+            lines.append(f"**{g.prize}** (ID: `{g.id}`) - Ends <t:{int(g.ends_at)}:R>")
+
+        embed = discord.Embed(title="🎁 Active Giveaways", description="\n".join(lines), color=discord.Color.gold())
+        await interaction.channel.send(embed=embed)
+        return True, None
+
+    async def action_prestige(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        await self.bot.gamification.prestige(interaction)
+        return True, None
+
+    async def action_dice(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        bet = params.get("bet", 10)
+        await self.bot.gamification.mini_game_dice(interaction, int(bet))
+        return True, None
+
+    async def action_flip(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        bet = params.get("bet", 10)
+        side = params.get("side", "heads")
+        await self.bot.gamification.mini_game_flip(interaction, side, int(bet))
+        return True, None
+
+    async def action_slots(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        bet = params.get("bet", 10)
+        await self.bot.gamification.mini_game_slots(interaction, int(bet))
+        return True, None
+
+    async def action_trivia(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        await self.bot.gamification.mini_game_trivia(interaction)
         return True, None
     async def action_warn_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Warns a user (moderation)."""
