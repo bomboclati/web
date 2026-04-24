@@ -15,6 +15,9 @@ class StaffShiftSystem:
         self.bot = bot
         # self._shifts[guild_id][user_id] = { ... active shift data ... }
         self._shifts: Dict[int, Dict[int, dict]] = {}
+
+    def start_tasks(self):
+        """Start all background tasks. Call this after the event loop is running."""
         self._idle_monitor.start()
 
     def _load_active_shifts(self, guild_id: int):
