@@ -4,6 +4,9 @@ __pycache__/
 *$py.class
 *.so
 .Python
+*.pyc
+*.pyo
+*.pyd
 
 # Virtual environments
 venv/
@@ -18,23 +21,25 @@ ENV/
 *.swo
 *~
 
+# Dependencies
+node_modules/
+
 # Data files (keep structure, ignore content)
 data/*.json
 !data/.gitkeep
 
-# Logs
+# Logs and temp files
 *.log
 logs/
+*.tmp
+tmp/
+temp/
 
 # Environment variables
 .env
 .env.local
+*.env.*
 
 # OS files
 .DS_Store
 Thumbs.db
-
-# Temporary files
-tmp/
-temp/
-*.tmp
