@@ -183,6 +183,7 @@ class MiroBot(commands.Bot):
             self.giveaways.start_giveaway_monitor()
             self.reminders.start_reminder_loop()
             self.staff_reviews.start_tasks()
+            self.staff_shift.start_tasks()
             self.voice_system.start_voice_monitoring()
             if hasattr(self, 'analytics') and self.analytics:
                 self.analytics.start_monitoring_loop()
