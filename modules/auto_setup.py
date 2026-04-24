@@ -754,9 +754,9 @@ class AutoSetup(commands.Cog):
             "role_buttons": {"title": "🔘 Role Buttons", "desc": "One-click role assignment buttons.", "cmds": [("!buttons setup", "Add role buttons to channel")]},
             "mod_logging": {"title": "📝 Moderation Logging", "desc": "Track staff actions and violations.", "cmds": [("!modlogs @user", "View user history")]},
             "logging": {"title": "📁 Logging System", "desc": "Comprehensive server event tracking.", "cmds": [("!logs channel", "Set log destination")]},
-            "auto_mod": {"title": "🛡️ Auto-Mod", "desc": "Filter spam and prohibited content.", "cmds": [("!automod status", "View filter settings")]},
-            "warning_system": {"title": "⚠️ Warning System", "desc": "Track and manage user warnings.", "cmds": [("!warn @user <reason>", "Issue a warning"), ("!warnings @user", "Check user history")]},
-            "staff_promotion": {"title": "📈 Staff Promotion", "desc": "Automatic staff activity tracking.", "cmds": [("!staffprogress", "Check your promotion path")]},
+            "auto_mod": {"title": "🛡️ Auto-Mod", "desc": "Filter spam and prohibited content.", "cmds": [("!automod status", "View filter settings"), ("!automodpanel", "Admin control panel")]},
+            "warning_system": {"title": "⚠️ Warning System", "desc": "Track and manage user warnings.", "cmds": [("!warn @user <reason>", "Issue a warning"), ("!warnings @user", "Check user history"), ("!warningspanel", "Admin control panel")]},
+            "staff_promotion": {"title": "📈 Staff Promotion", "desc": "Automatic staff activity tracking.", "cmds": [("!staffprogress", "Check your promotion path"), ("!staffpromopanel", "Admin control panel")]},
             "staff_shifts": {"title": "🕒 Staff Shifts", "desc": "Track moderator active hours.", "cmds": [("!shift start/end", "Manage your shift")]},
             "staff_reviews": {"title": "📋 Staff Reviews", "desc": "Peer and admin staff evaluation.", "cmds": [("!review @staff", "Submit a review")]}
         }
@@ -795,6 +795,12 @@ class AutoSetup(commands.Cog):
                 custom_cmds.setdefault("modlogpanel", "configpanel modlog")
             elif system_name == "logging":
                 custom_cmds.setdefault("loggingpanel", "configpanel logging")
+            elif system_name == "auto_mod":
+                custom_cmds.setdefault("automodpanel", "configpanel automod")
+            elif system_name == "warning_system":
+                custom_cmds.setdefault("warningspanel", "configpanel warning")
+            elif system_name == "staff_promotion":
+                custom_cmds.setdefault("staffpromopanel", "configpanel staffpromo")
 
         dm.update_guild_data(guild_id, "custom_commands", custom_cmds)
 
@@ -1536,27 +1542,18 @@ class AutoSetup(commands.Cog):
 
     async def _setup_auto_mod(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            config = dm.get_guild_data(guild.id, "moderation_config", {})
-            config["auto_moderation"] = True
-            config["enabled"] = True
-            config["keywords"] = {
-                "critical": ["scam", "nazi", "hitler"],
-                "high": ["fuck", "shit", "asshole"],
-                "medium": ["dumb", "idiot"],
-                "low": []
-            }
-            dm.update_guild_data(guild.id, "moderation_config", config)
-            return True
+            if hasattr(self.bot, 'automod'):
+                return await self.bot.automod.setup(MockInteraction(self.bot, guild))
+            return False
         except Exception as e:
             logger.error(f"Auto-mod setup failed: {e}")
             return False
 
     async def _setup_warning_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            dm.update_guild_data(guild.id, "warnings_enabled", True)
-            # Register warning system commands
-            self._register_system_commands(guild.id, "warning")
-            return True
+            if hasattr(self.bot, 'warnings'):
+                return await self.bot.warnings.setup(MockInteraction(self.bot, guild))
+            return False
         except Exception as e:
             logger.error(f"Warning system setup failed: {e}")
             return False
