@@ -27,18 +27,35 @@ def log_panel_action(guild_id: int, user_id: int, action: str):
 
 class ConfigPanelView(ui.View):
     """Base class for all persistent system configuration panels."""
+    # Subclasses can override _config_key to use a different storage key than f"{system_name}_config"
+    _config_key: Optional[str] = None
+
     def __init__(self, guild_id: int, system_name: str):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.system_name = system_name
 
+    def _storage_key(self) -> str:
+        return self._config_key or f"{self.system_name}_config"
+
     def get_config(self, guild_id: int = None) -> Dict[str, Any]:
         target_guild = guild_id or self.guild_id
-        return dm.get_guild_data(target_guild, f"{self.system_name}_config", {})
+        try:
+            data = dm.get_guild_data(target_guild, self._storage_key(), {})
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            from logger import logger
+            logger.warning(f"get_config failed for {self.system_name}: {e}")
+            return {}
 
     def save_config(self, config: Dict[str, Any], guild_id: int = None, bot: discord.Client = None):
         target_guild = guild_id or self.guild_id
-        dm.update_guild_data(target_guild, f"{self.system_name}_config", config)
+        try:
+            dm.update_guild_data(target_guild, self._storage_key(), config)
+        except Exception as e:
+            from logger import logger
+            logger.error(f"save_config: write failed for {self.system_name}: {e}")
+            return
         # Re-register custom commands for this system using the EXISTING cog instance
         # NEVER instantiate AutoSetup() here — that creates a new Cog with its own state and
         # triggers file I/O on every button click (root cause of "interaction failed").
@@ -52,6 +69,27 @@ class ConfigPanelView(ui.View):
         except Exception as e:
             from logger import logger
             logger.warning(f"save_config: command re-registration failed for {self.system_name}: {e}")
+
+    def _get_subsystem(self, bot, attr_name: str):
+        """Safely fetch a bot subsystem (returns None if missing).
+        Use this instead of bot.X.method() directly to prevent AttributeError."""
+        return getattr(bot, attr_name, None) if bot is not None else None
+
+    async def _require_subsystem(self, interaction: Interaction, attr_name: str, friendly_name: str = None):
+        """Get a subsystem and reply with a clear error if it isn't loaded.
+        Returns the subsystem instance, or None (in which case the caller should return)."""
+        sub = self._get_subsystem(interaction.client, attr_name)
+        if sub is None:
+            label = friendly_name or attr_name
+            try:
+                msg = f"⚠️ The **{label}** subsystem is not loaded on this bot. Action skipped."
+                if interaction.response.is_done():
+                    await interaction.followup.send(msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message(msg, ephemeral=True)
+            except Exception:
+                pass
+        return sub
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         """Global permission check for all configuration panels."""
@@ -76,8 +114,18 @@ class ConfigPanelView(ui.View):
     async def on_error(self, interaction: Interaction, error: Exception, item) -> None:
         """Catch-all so a callback failure NEVER shows the user 'interaction failed'."""
         from logger import logger
-        logger.exception(f"ConfigPanelView error in {self.system_name}: {error}")
-        msg = f"⚠️ Something went wrong while updating **{self.system_name}** config: `{type(error).__name__}`. The change may not have been saved."
+        import traceback
+        item_label = getattr(item, "label", None) or getattr(item, "custom_id", None) or type(item).__name__
+        logger.exception(f"ConfigPanelView error in {self.system_name} (item={item_label}): {error}")
+        # Build a useful diagnostic for the user (errors are admin-only, so showing the trace is OK).
+        tb = traceback.format_exc().strip().splitlines()
+        last_frame = tb[-3] if len(tb) >= 3 else (tb[-1] if tb else "")
+        err_str = str(error)[:200] or type(error).__name__
+        msg = (
+            f"⚠️ The **{item_label}** button in **{self.system_name}** failed.\n"
+            f"`{type(error).__name__}`: {err_str}\n"
+            f"-# {last_frame[-180:]}"
+        )
         try:
             if interaction.response.is_done():
                 await interaction.followup.send(msg, ephemeral=True)
@@ -335,6 +383,7 @@ class VerificationConfigView(ConfigPanelView):
         await i.followup.send(f"✅ Re-verification triggered for {count} members.")
 
 class AntiRaidConfigView(ConfigPanelView):
+    _config_key = "anti_raid_config"  # auto_setup writes here
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "antiraid")
 
@@ -428,9 +477,14 @@ class AntiRaidConfigView(ConfigPanelView):
         log = self.get_config(i.guild_id).get("raid_log", [])
         await i.response.send_message(f"Total Raids: {len(log)}", ephemeral=True)
 
-    @ui.button(label="Silence Raid Alerts", emoji="🔕", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_antiraid_silence")
+    @ui.button(label="Toggle Raid Alerts", emoji="🔕", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_antiraid_silence")
     async def silence(self, i, b):
-        await i.response.send_message("🔕 Notifications Silenced (Simulated).", ephemeral=True)
+        c = self.get_config(i.guild_id)
+        c["alerts_silenced"] = not c.get("alerts_silenced", False)
+        self.save_config(c, i.guild_id, i.client)
+        log_panel_action(i.guild_id, i.user.id, f"Anti-raid alerts silenced={c['alerts_silenced']}")
+        state = "silenced" if c["alerts_silenced"] else "active"
+        await i.response.send_message(f"🔕 Raid alerts are now **{state}**.", ephemeral=True)
 
 class GuardianConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
@@ -1206,6 +1260,7 @@ class TicketsConfigView(ConfigPanelView):
 
 
 class GiveawayConfigView(ConfigPanelView):
+    _config_key = "giveaways_config"  # auto_setup writes here
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "giveaway")
 
@@ -1692,16 +1747,9 @@ class RoleButtonsConfigView(ConfigPanelView):
         await i.response.send_message(f"📊 Total clicks across all panels: {total}", ephemeral=True)
 
 class ModLogConfigView(ConfigPanelView):
+    _config_key = "mod_logging_config"  # auto_setup writes here
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "mod_log")
-
-    def get_config(self, guild_id: int = None) -> Dict[str, Any]:
-        target_guild = guild_id or self.guild_id
-        return dm.get_guild_data(target_guild, "mod_log_config", {})
-
-    def save_config(self, config: Dict[str, Any], guild_id: int = None, bot: discord.Client = None):
-        target_guild = guild_id or self.guild_id
-        dm.update_guild_data(target_guild, "mod_log_config", config)
 
     def create_embed(self, guild_id: int = None) -> discord.Embed:
         c = self.get_config(guild_id)
