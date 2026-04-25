@@ -39,24 +39,79 @@ class ConfigPanelView(ui.View):
     def save_config(self, config: Dict[str, Any], guild_id: int = None, bot: discord.Client = None):
         target_guild = guild_id or self.guild_id
         dm.update_guild_data(target_guild, f"{self.system_name}_config", config)
-        # Register commands
-        from modules.auto_setup import AutoSetup
-        setup_helper = AutoSetup(bot)
-        setup_helper._register_system_commands(target_guild, self.system_name)
+        # Re-register custom commands for this system using the EXISTING cog instance
+        # NEVER instantiate AutoSetup() here — that creates a new Cog with its own state and
+        # triggers file I/O on every button click (root cause of "interaction failed").
+        try:
+            if bot is not None:
+                cog = None
+                if hasattr(bot, "get_cog"):
+                    cog = bot.get_cog("AutoSetup")
+                if cog is not None and hasattr(cog, "_register_system_commands"):
+                    cog._register_system_commands(target_guild, self.system_name)
+        except Exception as e:
+            from logger import logger
+            logger.warning(f"save_config: command re-registration failed for {self.system_name}: {e}")
 
     async def interaction_check(self, interaction: Interaction) -> bool:
         """Global permission check for all configuration panels."""
-        if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
-            await interaction.response.send_message("❌ This panel is restricted to Administrators only.", ephemeral=True)
+        try:
+            if interaction.guild is None:
+                await interaction.response.send_message("❌ This panel only works inside a server.", ephemeral=True)
+                return False
+            member = interaction.user
+            is_admin = getattr(getattr(member, "guild_permissions", None), "administrator", False)
+            is_owner = (interaction.guild.owner_id == member.id)
+            if not (is_admin or is_owner):
+                await interaction.response.send_message("❌ This panel is restricted to Administrators only.", ephemeral=True)
+                return False
+            return True
+        except Exception:
+            try:
+                await interaction.response.send_message("❌ Permission check failed. Try again.", ephemeral=True)
+            except Exception:
+                pass
             return False
-        return True
+
+    async def on_error(self, interaction: Interaction, error: Exception, item) -> None:
+        """Catch-all so a callback failure NEVER shows the user 'interaction failed'."""
+        from logger import logger
+        logger.exception(f"ConfigPanelView error in {self.system_name}: {error}")
+        msg = f"⚠️ Something went wrong while updating **{self.system_name}** config: `{type(error).__name__}`. The change may not have been saved."
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except Exception:
+            pass
 
     async def update_panel(self, interaction: Interaction):
         embed = self.create_embed(interaction.guild_id)
-        await interaction.response.edit_message(embed=embed, view=self)
+        try:
+            if interaction.response.is_done():
+                await interaction.edit_original_response(embed=embed, view=self)
+            else:
+                await interaction.response.edit_message(embed=embed, view=self)
+        except Exception:
+            try:
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            except Exception:
+                pass
 
     def create_embed(self, guild_id: int = None) -> discord.Embed:
-        return discord.Embed(title=f"Config: {self.system_name.title()}")
+        cfg = self.get_config(guild_id or self.guild_id)
+        embed = discord.Embed(
+            title=f"⚙️ Config: {self.system_name.replace('_',' ').title()}",
+            description="Use the controls below to configure this system.",
+            color=discord.Color.blurple(),
+        )
+        if cfg:
+            preview = "\n".join(f"**{k}:** `{str(v)[:80]}`" for k, v in list(cfg.items())[:10])
+            embed.add_field(name="Current Settings", value=preview or "_(empty)_", inline=False)
+        else:
+            embed.add_field(name="Current Settings", value="_No configuration set yet._", inline=False)
+        return embed
 
 # --- Reusable Components ---
 
