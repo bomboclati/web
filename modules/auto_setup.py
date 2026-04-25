@@ -177,7 +177,7 @@ class CategorySelect(discord.ui.Select):
         
         # Show system selection for this category
         view = SystemSelectView(self.view.auto_setup, interaction.guild.id, category_data, self.view.selected_systems)
-        embed = self.view.create_category_embed(category_data)
+        embed = self.view.auto_setup.create_category_embed(category_data)
         
         await interaction.response.edit_message(embed=embed, view=view)
 
