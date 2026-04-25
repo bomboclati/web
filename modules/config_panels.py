@@ -2966,6 +2966,74 @@ class _TicketEmbedModal(ui.Modal):
             await interaction.response.send_message("❌ Invalid color.", ephemeral=True)
 
 
+class GamificationConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "gamification")
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id or self.guild_id)
+        embed = discord.Embed(title="🎮 Gamification System Configuration", color=discord.Color.purple())
+        enabled = c.get("enabled", True)
+        embed.add_field(name="Status", value="✅ Enabled" if enabled else "❌ Disabled", inline=True)
+        embed.add_field(name="Prestige Level", value=str(c.get("prestige_level", 100)), inline=True)
+        embed.add_field(name="XP Multiplier", value=str(c.get("xp_multiplier", 1.0)), inline=True)
+
+        quests_enabled = c.get("quests_enabled", True)
+        skills_enabled = c.get("skills_enabled", True)
+        embed.add_field(name="Quests", value="✅ ON" if quests_enabled else "❌ OFF", inline=True)
+        embed.add_field(name="Skills", value="✅ ON" if skills_enabled else "❌ OFF", inline=True)
+        return embed
+
+    @ui.button(label="Toggle System", emoji="✅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_gam_toggle")
+    async def toggle_system(self, i, b):
+        c = self.get_config(i.guild_id)
+        c["enabled"] = not c.get("enabled", True)
+        self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
+
+    @ui.button(label="Set Prestige Level", emoji="⭐", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_gam_prestige")
+    async def set_prestige(self, i, b):
+        class PrestigeModal(ui.Modal, title="Set Prestige Level"):
+            level = ui.TextInput(label="Prestige Level (minimum level to prestige)", default="100")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+            async def on_submit(self, it):
+                c = self.parent.get_config(it.guild_id)
+                c["prestige_level"] = int(self.level.value)
+                self.parent.save_config(c, it.guild_id, it.client)
+                await it.response.send_message("✅ Prestige level updated.", ephemeral=True)
+        await i.response.send_modal(PrestigeModal(self))
+
+    @ui.button(label="Set XP Multiplier", emoji="✏️", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_gam_xp")
+    async def set_xp_mult(self, i, b):
+        class XPModal(ui.Modal, title="Set XP Multiplier"):
+            mult = ui.TextInput(label="XP Multiplier", default="1.0")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+            async def on_submit(self, it):
+                c = self.parent.get_config(it.guild_id)
+                c["xp_multiplier"] = float(self.mult.value)
+                self.parent.save_config(c, it.guild_id, it.client)
+                await it.response.send_message("✅ XP multiplier updated.", ephemeral=True)
+        await i.response.send_modal(XPModal(self))
+
+    @ui.button(label="Toggle Quests", emoji="📋", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_gam_quests")
+    async def toggle_quests(self, i, b):
+        c = self.get_config(i.guild_id)
+        c["quests_enabled"] = not c.get("quests_enabled", True)
+        self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
+
+    @ui.button(label="Toggle Skills", emoji="🎯", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_gam_skills")
+    async def toggle_skills(self, i, b):
+        c = self.get_config(i.guild_id)
+        c["skills_enabled"] = not c.get("skills_enabled", True)
+        self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
+
+
 # --- Registry ---
 
 SPECIALIZED_VIEWS = {
