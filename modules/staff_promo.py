@@ -133,17 +133,15 @@ class StaffPromotionSystem:
         }
         
         self._default_metrics = {
-            "xp": {"weight": 0.15, "max": 5000, "enabled": True},
-            "tenure_days": {"weight": 0.10, "max": 90, "enabled": True},
-            "messages": {"weight": 0.10, "max": 1000, "enabled": True},
-            "tickets_resolved": {"weight": 0.15, "max": 50, "enabled": True},
-            "achievements": {"weight": 0.10, "max": 20, "enabled": True},
-            "voice_minutes": {"weight": 0.08, "max": 3600, "enabled": True},
+            "xp": {"weight": 0.20, "max": 5000, "enabled": True},
+            "tenure_days": {"weight": 0.15, "max": 90, "enabled": True},
+            "messages": {"weight": 0.15, "max": 1000, "enabled": True},
+            "tickets_resolved": {"weight": 0.20, "max": 50, "enabled": True},
+            "voice_minutes": {"weight": 0.10, "max": 3600, "enabled": True},
             "rep_received": {"weight": 0.08, "max": 100, "enabled": True},
             "rep_given": {"weight": 0.06, "max": 100, "enabled": True},
             "gamification_score": {"weight": 0.10, "max": 100, "enabled": True},
-            "badge_count": {"weight": 0.05, "max": 10, "enabled": True},
-            "level": {"weight": 0.03, "max": 50, "enabled": True}
+            "level": {"weight": 0.06, "max": 50, "enabled": True}
         }
         
         self._default_settings = {
@@ -168,13 +166,6 @@ class StaffPromotionSystem:
         
         self._default_tier_requirements = {}
         
-        self._default_achievement_bonuses = {
-            "Helper": 1.2,
-            "Event Organizer": 1.15,
-            "Problem Solver": 1.1,
-            "Active Contributor": 1.1,
-            "Trusted": 1.05,
-        }
         
         self._default_rewards = {
             "promotion_reward_coins": 500,
@@ -242,7 +233,6 @@ class StaffPromotionSystem:
         cfg.setdefault("rewards", self._default_rewards)
         cfg.setdefault("roles_by_tier", {})
         cfg.setdefault("tier_requirements", {})
-        cfg.setdefault("achievement_bonuses", self._default_achievement_bonuses)
         cfg.setdefault("pending_reviews", [])
         cfg.setdefault("trial_settings", self._default_trial_settings)
         cfg.setdefault("staff_applications", {})
@@ -934,7 +924,6 @@ class StaffPromotionSystem:
                 {"name": "!staffpromo leaderboard", "value": "View top staff members by score.", "inline": False},
                 {"name": "!staffpromo progress", "value": "See progress to next tier.", "inline": False},
                 {"name": "!staffpromo requirements", "value": "View tier requirements.", "inline": False},
-                {"name": "!staffpromo bonuses", "value": "View achievement score bonuses.", "inline": False},
                 {"name": "!staffpromo config", "value": "View configuration (admin).", "inline": False},
                 {"name": "!staffpromo promote @user <tier>", "value": "Manually promote user (admin).", "inline": False},
                 {"name": "!staffpromo demote @user <tier>", "value": "Manually demote user (admin).", "inline": False},

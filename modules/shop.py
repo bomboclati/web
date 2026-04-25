@@ -19,7 +19,6 @@ class Shop:
             "VIP Role": {"price": 1000, "currency": "coins", "type": "role", "role_id": 0, "stock": -1},
             "Gem Master": {"price": 50, "currency": "gems", "type": "role", "role_id": 0, "stock": -1},
             "Custom Color": {"price": 500, "currency": "coins", "type": "color", "stock": -1},
-            "Profile Badge": {"price": 250, "currency": "coins", "type": "badge", "stock": 100},
             "Server Banner": {"price": 1000, "currency": "coins", "type": "banner", "stock": 10},
             "Private Channel": {"price": 2000, "currency": "coins", "type": "channel", "stock": 5}
         }
@@ -108,7 +107,6 @@ class Shop:
     """Item Categories"""
     ITEM_CATEGORIES = {
         "roles": {"emoji": "🎭", "description": "Server roles"},
-        "badges": {"emoji": "🏅", "description": "Profile badges"},
         "colors": {"emoji": "🎨", "description": "Custom colors"},
         "channels": {"emoji": "#️⃣", "description": "Private channels"},
         "banners": {"emoji": "🖼️", "description": "Server banners"},

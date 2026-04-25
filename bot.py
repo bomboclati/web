@@ -44,7 +44,6 @@ from modules.welcome_leave import WelcomeLeaveSystem
 from modules.giveaways import GiveawaySystem
 from modules.anti_raid import AntiRaidSystem
 from modules.auto_publisher import AutoPublisher
-from modules.achievements import AchievementSystem
 from modules.staff_promo import StaffPromotionSystem, PromotionReviewView
 from modules.staff_extras import StaffExtras, StaffExtrasCommands
 from modules.staff_reviews import StaffReviewSystem
@@ -124,7 +123,6 @@ class MiroBot(commands.Bot):
         self.giveaways = GiveawaySystem(self)
         self.anti_raid = AntiRaidSystem(self)
         self.auto_publisher = AutoPublisher(self)
-        self.achievements = AchievementSystem(self)
         self.promotion_service = PromotionService()
         self.staff_promo = StaffPromotionSystem(self)
         self.staff_extras = StaffExtras(self)
@@ -164,6 +162,7 @@ class MiroBot(commands.Bot):
         try:
             await self.load_extension('cogs.core_commands')
             await self.load_extension('modules.auto_setup')
+            await self.load_extension('modules.proactive_assist')
             logger.info("Core extensions loaded successfully.")
         except Exception as e:
             logger.error(f"Failed to load extensions: {e}")
@@ -321,19 +320,9 @@ class MiroBot(commands.Bot):
         await self._setup_crash_recovery()
         self._setup_signal_handlers()
         self.loop.create_task(self._check_new_guilds())
+        self.loop.create_task(self._resume_pending_setups())
 
-        # Enable achievement/title notifications only after startup is fully complete
-        # This prevents badge-spam when the bot restarts and re-evaluates existing state
-        self.loop.create_task(self._enable_achievement_notifications())
 
-    async def _enable_achievement_notifications(self):
-        """Delay enabling achievement DMs/channel posts until the bot is fully settled
-        after a restart.  Without this, every restart would re-award and spam all badges
-        that were already earned by members who happen to be checked during boot."""
-        await asyncio.sleep(30)  # Give all startup checks 30 s to complete quietly
-        if hasattr(self, 'achievements'):
-            self.achievements._notifications_enabled = True
-        logger.info("Achievement notifications enabled (post-startup guard lifted)")
 
 
     async def _check_new_guilds(self):
@@ -345,6 +334,33 @@ class MiroBot(commands.Bot):
                 # Instead of auto-triggering on_guild_join (which sends DMs),
                 # just initialize data if needed. DMs should only be sent on actual guild join event.
                 await self.auto_setup._initialize_server_data(guild)
+
+    async def _resume_pending_setups(self):
+        """Resume any auto-setups that were interrupted by a restart."""
+        await asyncio.sleep(15) # Wait for cache to stabilize
+        setups = dm.get_resumable_setups()
+        if not setups:
+            return
+
+        logger.info(f"Found {len(setups)} pending setups to resume.")
+        for guild_id_str, data in setups.items():
+            try:
+                guild_id = int(guild_id_str)
+                guild = self.get_guild(guild_id)
+                if not guild:
+                    continue
+
+                user_id = data.get("user_id")
+                user = guild.get_member(user_id) or await guild.fetch_member(user_id)
+                selected = data.get("selected_systems", [])
+                channel_id = data.get("channel_id")
+
+                if selected and user:
+                    logger.info(f"Resuming setup for guild {guild.name} requested by {user}")
+                    # We pass the channel_id to ensure updates go to the right place
+                    await self.auto_setup.resume_setup(guild, user, selected, channel_id)
+            except Exception as e:
+                logger.error(f"Failed to resume setup for guild {guild_id_str}: {e}")
 
     async def _cleanup_expired_sessions(self):
         """Remove expired AI conversation sessions."""
@@ -666,6 +682,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                     if not message.author.guild_permissions.administrator and message.author.id != message.guild.owner_id:
                         await message.channel.send("❌ Only administrators can use this command.")
                         return
+                    from modules.config_panels import handle_config_panel_command
                     await handle_config_panel_command(message, system)
                     return
             
@@ -3047,7 +3064,13 @@ async def on_raw_reaction_add(payload):
     except Exception as e:
         logger.warning("Reaction Role add error: %s", e)
 
-    # 2. Staff exit interviews - only fetch message if needed
+    # 2. Starboard
+    try:
+        await bot.starboard.on_raw_reaction_add(payload)
+    except Exception as e:
+        logger.warning("Starboard reaction add error: %s", e)
+
+    # 3. Staff exit interviews - only fetch message if needed
     if not payload.member or payload.member.bot:
         return
 
@@ -3067,6 +3090,12 @@ async def on_raw_reaction_remove(payload):
         await bot.reaction_roles.handle_reaction_remove(payload)
     except Exception as e:
         logger.warning("Reaction Role remove error: %s", e)
+
+    # 2. Starboard
+    try:
+        await bot.starboard.on_raw_reaction_remove(payload)
+    except Exception as e:
+        logger.warning("Starboard reaction remove error: %s", e)
 
 @bot.event
 async def on_command_error(ctx, error):

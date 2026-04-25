@@ -76,15 +76,29 @@ class WelcomeDMView(discord.ui.View):
 
         if action == "ticket":
             # Direct ticket creation from DM
-            tickets_sys = getattr(interaction.client, "tickets", None)
-            if tickets_sys:
-                from modules.tickets import TicketModal
-                await interaction.response.send_modal(TicketModal())
-            else:
-                await interaction.response.send_message("Ticket system not available.", ephemeral=True)
+            from modules.tickets import TicketModal
+            await interaction.response.send_modal(TicketModal())
             return
 
-        await interaction.response.send_message(f"Button '{action}' clicked! Functionality coming soon or check server channels.", ephemeral=True)
+        if action == "apply":
+            from modules.applications import ApplicationPersistentView
+            view = ApplicationPersistentView()
+            await view.apply_now.callback(interaction, view.apply_now)
+            return
+
+        if action == "roles":
+            await interaction.response.send_message("Please visit the #roles channel in the server to pick your roles!", ephemeral=True)
+            return
+
+        if action == "help":
+            await interaction.response.send_message("Use `!help` in the server to see all available commands!", ephemeral=True)
+            return
+
+        if action == "info":
+            await interaction.response.send_message(f"Welcome to **{guild.name}**! We use Miro AI for automation and engagement.", ephemeral=True)
+            return
+
+        await interaction.response.send_message(f"Action '{action}' processed.", ephemeral=True)
 
 class WelcomeLeaveSystem:
     def __init__(self, bot):

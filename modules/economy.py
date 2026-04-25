@@ -11,7 +11,7 @@ class Economy:
     """
     Coins per user. Earn per message, daily, transfers.
     Zero Data Loss with immediate writes.
-    Now includes daily challenges and achievements!
+    Now includes daily challenges!
     """
     
     """Daily Challenges System"""
@@ -132,72 +132,6 @@ class Economy:
             "completed": completed
         }
     
-    """Economy Achievements System"""
-    ECONOMY_ACHIEVEMENTS = [
-        {"id": "first_earn", "name": "First Coin", "desc": "Earn your first coin", "threshold": 1, "icon": "🪙"},
-        {"id": "rich_1000", "name": "Getting Rich", "desc": "Have 1,000 coins", "threshold": 1000, "icon": "💰"},
-        {"id": "rich_10000", "name": "Wealthy", "desc": "Have 10,000 coins", "threshold": 10000, "icon": "💎"},
-        {"id": "millionaire", "name": "Millionaire", "desc": "Have 1,000,000 coins", "threshold": 1000000, "icon": "👑"},
-        {"id": "daily_7", "name": "Dedicated", "desc": "Claim daily 7 times", "threshold": 7, "icon": "📅"},
-        {"id": "daily_30", "name": "Loyal", "desc": "Claim daily 30 times", "threshold": 30, "icon": "🏆"},
-        {"id": "giver", "name": "Generous", "desc": "Give 1,000 coins to others", "threshold": 1000, "icon": "🎁"},
-        {"id": "shopper", "name": "Shopaholic", "desc": "Buy 10 items from shop", "threshold": 10, "icon": "🛒"},
-    ]
-    
-    def get_achievements(self, guild_id: int, user_id: int) -> list:
-        """Get user's earned achievements."""
-        achievement_data = dm.get_guild_data(guild_id, "economy_achievements", {})
-        return achievement_data.get(str(user_id), [])
-    
-    def check_achievements(self, guild_id: int, user_id: int) -> list:
-        """Check and award new achievements."""
-        new_achievements = []
-        coins = self.get_coins(guild_id, user_id)
-        current = self.get_achievements(guild_id, user_id)
-        earned_ids = [a["id"] for a in current]
-        
-        # Check coin achievements
-        for achievement in self.ECONOMY_ACHIEVEMENTS:
-            if achievement["id"] in earned_ids:
-                continue
-            
-            if achievement["id"].startswith("rich_"):
-                threshold = achievement["threshold"]
-                if coins >= threshold:
-                    new_achievements.append(achievement)
-                    current.append(achievement)
-        
-        if new_achievements:
-            achievement_data = dm.get_guild_data(guild_id, "economy_achievements", {})
-            achievement_data[str(user_id)] = current
-            dm.update_guild_data(guild_id, "economy_achievements", achievement_data)
-        
-        return new_achievements
-    
-    def show_achievements(self, guild_id: int, user_id: int) -> discord.Embed:
-        """Show user's achievements."""
-        earned = self.get_achievements(guild_id, user_id)
-        coins = self.get_coins(guild_id, user_id)
-        
-        embed = discord.Embed(title="🏆 Economy Achievements", color=discord.Color.gold())
-        
-        if not earned:
-            embed.description = "No achievements yet! Keep playing to earn some."
-            return embed
-        
-        earned_ids = [a["id"] for a in earned]
-        for achievement in self.ECONOMY_ACHIEVEMENTS:
-            earned = achievement["id"] in earned_ids
-            icon = achievement.get("icon", "🔒")
-            status = "✅" if earned else "❌"
-            embed.add_field(
-                name=f"{status} {icon} {achievement['name']}",
-                value=f"{achievement['desc']}",
-                inline=False
-            )
-        
-        embed.set_footer(text=f"Coins: {coins:,}")
-        return embed
     
     async def daily(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
@@ -233,12 +167,6 @@ class Economy:
         msg = f"💰 You claimed your daily **{reward} coins**!"
         if bonus:
             msg += f"\n🎉 **Streak bonus: +{bonus} coins!** (day {streak})"
-        
-        # Check achievements
-        new_achievements = self.check_achievements(guild_id, user_id)
-        if new_achievements:
-            for a in new_achievements:
-                msg += f"\n🏆 **{a['icon']} Achievement Unlocked: {a['name']}!**"
         
         await interaction.response.send_message(msg, ephemeral=True)
     
@@ -282,8 +210,7 @@ class Economy:
                 {"name": "!balance", "value": "Check your coin balance.", "inline": False},
                 {"name": "!transfer <user> <amount>", "value": "Send coins to another user.", "inline": False},
                 {"name": "!help economy", "value": "Show this help message.", "inline": False},
-                {"name": "!challenge", "value": "View today's daily challenge.", "inline": False},
-                {"name": "!achievements", "value": "View your economy achievements.", "inline": False}
+                {"name": "!challenge", "value": "View today's daily challenge.", "inline": False}
             ]
         })
         
@@ -293,15 +220,6 @@ class Economy:
             "description": "Complete daily challenges to earn bonus coins!",
             "fields": [
                 {"name": "!challenge", "value": "View today's challenge progress.", "inline": False}
-            ]
-        })
-        
-        custom_cmds["achievements"] = json.dumps({
-            "command_type": "help_embed",
-            "title": "Economy Achievements",
-            "description": "Earn achievements for economy activities!",
-            "fields": [
-                {"name": "!achievements", "value": "View your achievements.", "inline": False}
             ]
         })
         

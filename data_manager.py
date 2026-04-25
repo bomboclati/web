@@ -106,7 +106,8 @@ class DataManager:
         """Initialize SQLite database for history storage"""
         self.db_path = os.path.join(self.data_dir, "conversation_history.db")
         with self._lock:
-            conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            conn = sqlite3.connect(self.db_path, check_same_thread=False, isolation_level=None)
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS exchanges (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -194,7 +195,9 @@ class DataManager:
         """Save a single exchange to SQLite database"""
         if not self.use_sqlite:
             return False
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, isolation_level=None) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA synchronous=NORMAL")
             await db.execute(
                 "INSERT INTO exchanges (guild_id, user_id, role, content, timestamp, importance_score) VALUES (?, ?, ?, ?, ?, ?)",
                 (guild_id, user_id, role, content, time.time(), importance_score)
@@ -207,7 +210,9 @@ class DataManager:
         """Load exchanges from SQLite with optional filtering"""
         if not self.use_sqlite:
             return []
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, isolation_level=None) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA synchronous=NORMAL")
             db.row_factory = aiosqlite.Row
             query = "SELECT role, content, timestamp, importance_score FROM exchanges WHERE guild_id=? AND user_id=?"
             params = [guild_id, user_id]
@@ -233,7 +238,9 @@ class DataManager:
         """Save a conversation summary"""
         if not self.use_sqlite:
             return False
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, isolation_level=None) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA synchronous=NORMAL")
             await db.execute(
                 """INSERT INTO conversation_summaries 
                    (guild_id, user_id, start_timestamp, end_timestamp, summary_text, message_count, created_at) 
@@ -249,7 +256,9 @@ class DataManager:
         """Load conversation summaries"""
         if not self.use_sqlite:
             return []
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, isolation_level=None) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA synchronous=NORMAL")
             db.row_factory = aiosqlite.Row
             query = "SELECT start_timestamp, end_timestamp, summary_text, message_count, created_at FROM conversation_summaries WHERE guild_id=? AND user_id=?"
             params = [guild_id, user_id]
@@ -279,6 +288,23 @@ class DataManager:
         filename = f"guild_{guild_id}.json"
         data = self.load_json(filename)
         return data.get(key, default)
+
+    def save_resumable_setup(self, guild_id: int, data: Dict[str, Any]):
+        """Save a setup task that can be resumed after restart."""
+        setups = self.load_json("resumable_setups", default={})
+        setups[str(guild_id)] = data
+        self.save_json("resumable_setups", setups)
+
+    def get_resumable_setups(self) -> Dict[str, Any]:
+        """Get all pending setups that need to be resumed."""
+        return self.load_json("resumable_setups", default={})
+
+    def remove_resumable_setup(self, guild_id: int):
+        """Remove a completed or cancelled resumable setup."""
+        setups = self.load_json("resumable_setups", default={})
+        if str(guild_id) in setups:
+            del setups[str(guild_id)]
+            self.save_json("resumable_setups", setups)
 
     def _get_encryption_key(self) -> bytes:
         """Get or create encryption key from environment or generate one"""
@@ -443,7 +469,9 @@ class DataManager:
         cutoff_time = time.time() - (days_to_keep * 24 * 60 * 60)
         
         if self.use_sqlite:
-            async with aiosqlite.connect(self.db_path) as db:
+            async with aiosqlite.connect(self.db_path, isolation_level=None) as db:
+                await db.execute("PRAGMA journal_mode=WAL")
+                await db.execute("PRAGMA synchronous=NORMAL")
                 await db.execute("DELETE FROM exchanges WHERE timestamp < ?", (cutoff_time,))
                 await db.execute("DELETE FROM conversation_summaries WHERE created_at < ?", (cutoff_time,))
                 await db.commit()
@@ -468,7 +496,9 @@ class DataManager:
         export_data = {"version": "1.0", "exported_at": datetime.now().isoformat(), "guilds": {}}
         
         if self.use_sqlite:
-            async with aiosqlite.connect(self.db_path) as db:
+            async with aiosqlite.connect(self.db_path, isolation_level=None) as db:
+                await db.execute("PRAGMA journal_mode=WAL")
+                await db.execute("PRAGMA synchronous=NORMAL")
                 db.row_factory = aiosqlite.Row
                 if guild_id:
                     guild_ids = [guild_id]
@@ -511,7 +541,9 @@ class DataManager:
             return result
         
         guilds = import_data.get("guilds", {})
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, isolation_level=None) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA synchronous=NORMAL")
             for gid_str, guild_data in guilds.items():
                 try:
                     gid = int(gid_str)

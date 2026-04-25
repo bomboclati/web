@@ -27,10 +27,10 @@ A world-class, self-improving Discord bot built with `discord.py` 2.4+. Designed
 - **Leveling:** XP with streak bonuses (up to 2x at 30+ day streaks)
 - **XP Multipliers:** Weekend 2x, VIP 1.5x, Event 3x
 - **Daily Challenges:** Complete challenges for bonus coins
-- **Economy Achievements:** 8 achievements to unlock
+- **Economy:** Coins, challenges, and rewards
 
 ### Shop System
-- **Premium Shop:** Roles, badges, colors, channels, banners
+- **Premium Shop:** Roles, colors, channels, banners
 - **Limited Stock:** Individual item quantities
 - **Discounts:** Flash sales (50% off), weekend deals (25% off)
 - **Canned Responses:** Auto-replies to common issues
@@ -54,7 +54,6 @@ A world-class, self-improving Discord bot built with `discord.py` 2.4+. Designed
 
 ### Community
 - **Leveling:** XP and leveling up with role rewards
-- **Achievements:** Unlock badges for activities
 - **Community Health:** AI-analyzes server engagement
 - **Welcome/Leave:** Customizable embeds
 
@@ -123,7 +122,7 @@ When you use `/bot`, the AI will:
 - `actions.py`: Bridge between AI JSON and Discord API.
 - `modules/`: Specialized logic for each system.
   - `leveling.py`: XP, streaks, multipliers
-  - `economy.py`: Coins, challenges, achievements
+  - `economy.py`: Coins and challenges
   - `shop.py`: Limited items, discounts
   - `tickets.py`: Advanced tickets with templates
   - `appeals.py`: DM-based appeals

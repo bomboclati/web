@@ -30,17 +30,6 @@ class QuestStatus(Enum):
     CLAIMED = "claimed"
 
 
-class BadgeCategory(Enum):
-    COMMUNITY = "community"
-    ACTIVITY = "activity"
-    SKILL = "skill"
-    EVENT = "event"
-    SPECIAL = "special"
-    SEASONAL = "seasonal"
-    CHALLENGE = "challenge"
-    PRESTIGE = "prestige"
-
-
 @dataclass
 class Quest:
     id: str
@@ -58,25 +47,6 @@ class Quest:
 
 
 @dataclass
-class Badge:
-    id: str
-    name: str
-    description: str
-    category: BadgeCategory
-    icon: str
-    requirements: dict
-    rarity: float
-    evolves_from: Optional[str]
-
-
-@dataclass
-class UserBadge:
-    badge_id: str
-    earned_at: float
-    evolved_level: int
-
-
-@dataclass
 class Skill:
     name: str
     level: int
@@ -88,14 +58,10 @@ class AdaptiveGamification:
     def __init__(self, bot):
         self.bot = bot
         self._active_quests: Dict[str, Quest] = {}
-        self._badge_definitions: Dict[str, Badge] = {}
         self._user_skills: Dict[int, Dict[int, Dict[str, Skill]]] = {}
         self._seasonal_events: Dict[int, dict] = {}
         self._server_challenges: Dict[int, List[dict]] = {}
-        self.awarded_badges: Dict[str, Dict[str, List[str]]] = {}
         self._load_data()
-        self._load_awarded_badges()
-        self._init_default_badges()
 
     def _load_data(self):
         """Load quests and events from guild-specific files."""
@@ -159,45 +125,6 @@ class AdaptiveGamification:
         }
         dm.update_guild_data(guild_id, "quests", quests)
 
-    def _load_awarded_badges(self):
-        self.awarded_badges = dm.load_json("awarded_badges", default={})
-
-    def _save_awarded_badges(self):
-        dm.save_json("awarded_badges", self.awarded_badges)
-
-    def _is_badge_awarded(self, guild_id: int, user_id: int, badge_id: str) -> bool:
-        guild_badges = self.awarded_badges.get(str(guild_id), {})
-        user_badges = guild_badges.get(str(user_id), [])
-        return badge_id in user_badges
-
-    def _mark_badge_awarded(self, guild_id: int, user_id: int, badge_id: str):
-        str_guild = str(guild_id)
-        str_user = str(user_id)
-        if str_guild not in self.awarded_badges:
-            self.awarded_badges[str_guild] = {}
-        if str_user not in self.awarded_badges[str_guild]:
-            self.awarded_badges[str_guild][str_user] = []
-        if badge_id not in self.awarded_badges[str_guild][str_user]:
-            self.awarded_badges[str_guild][str_user].append(badge_id)
-            self._save_awarded_badges()
-
-    def _init_default_badges(self):
-        default_badges = [
-            Badge("newcomer", "Newcomer", "Joined the server", BadgeCategory.COMMUNITY, "👋", {"days_member": 1}, 0.9, None),
-            Badge("regular", "Regular", "Active for 7 days", BadgeCategory.ACTIVITY, "📅", {"days_active": 7}, 0.7, "newcomer"),
-            Badge("veteran", "Veteran", "Active for 30 days", BadgeCategory.ACTIVITY, "⭐", {"days_active": 30}, 0.5, "regular"),
-            Badge("chatterbox", "Chatterbox", "Sent 100 messages", BadgeCategory.ACTIVITY, "💬", {"messages": 100}, 0.6, None),
-            Badge("socialite", "Socialite", "Sent 500 messages", BadgeCategory.ACTIVITY, "🗣️", {"messages": 500}, 0.4, "chatterbox"),
-            Badge("helper", "Helper", "Used 50 commands", BadgeCategory.SKILL, "🛠️", {"commands": 50}, 0.5, None),
-            Badge("event_participant", "Event Participant", "Joined an event", BadgeCategory.EVENT, "🎮", {"events_joined": 1}, 0.8, None),
-            Badge("event_winner", "Event Winner", "Won an event", BadgeCategory.EVENT, "🏆", {"events_won": 1}, 0.3, "event_participant"),
-            Badge("first_quest", "Adventurer", "Completed first quest", BadgeCategory.CHALLENGE, "🗺️", {"quests_completed": 1}, 0.8, None),
-            Badge("quest_master", "Quest Master", "Completed 25 quests", BadgeCategory.CHALLENGE, "🎖️", {"quests_completed": 25}, 0.3, "first_quest"),
-            Badge("prestige_1", "Prestige I", "Reached max level and reset", BadgeCategory.PRESTIGE, "💎", {"prestige": 1}, 0.05, None),
-        ]
-        
-        for badge in default_badges:
-            self._badge_definitions[badge.id] = badge
 
     def start_quest_refresh(self):
         asyncio.create_task(self._quest_refresh_loop())
@@ -210,7 +137,6 @@ class AdaptiveGamification:
                 await self._refresh_daily_quests()
                 await self._refresh_server_challenges()
                 await self._check_quest_progress()
-                await self._check_badge_awards()
                 await self._update_ranking_titles()
             except Exception as e:
                 logger.error(f"Quest refresh error: {e}")
@@ -341,96 +267,6 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
                 
                 self._save_quests(quest)
 
-    async def _check_badge_awards(self):
-        for guild in self.bot.guilds:
-            for member in guild.members:
-                if member.bot:
-                    continue
-                
-                await self._check_and_award_badges(guild.id, member.id)
-
-    async def _check_and_award_badges(self, guild_id: int, user_id: int):
-        user_badges = dm.get_guild_data(guild_id, f"badges_{user_id}", [])
-        user_data = dm.get_guild_data(guild_id, f"user_{user_id}", {})
-
-        for badge_id, badge_def in self._badge_definitions.items():
-            if self._is_badge_awarded(guild_id, user_id, badge_id):
-                continue
-            
-            req = badge_def.requirements
-            earned = False
-            
-            if "days_member" in req:
-                member = self.bot.get_guild(guild_id).get_member(user_id)
-                if member and member.joined_at:
-                    days = (discord.utils.utcnow() - member.joined_at).days
-                    earned = days >= req["days_member"]
-            
-            if "days_active" in req and not earned:
-                days_active = user_data.get("days_active", 0)
-                earned = days_active >= req["days_active"]
-            
-            if "messages" in req and not earned:
-                messages = user_data.get("total_messages", 0)
-                earned = messages >= req["messages"]
-            
-            if "commands" in req and not earned:
-                commands = user_data.get("total_commands", 0)
-                earned = commands >= req["commands"]
-            
-            if "events_joined" in req and not earned:
-                events = user_data.get("events_joined", 0)
-                earned = events >= req["events_joined"]
-            
-            if "events_won" in req and not earned:
-                events_won = user_data.get("events_won", 0)
-                earned = events_won >= req["events_won"]
-            
-            if "quests_completed" in req and not earned:
-                quests = user_data.get("quests_completed", 0)
-                earned = quests >= req["quests_completed"]
-
-            if "prestige" in req and not earned:
-                prestige = user_data.get("prestige", 0)
-                earned = prestige >= req["prestige"]
-            
-            if earned:
-                await self._award_badge(guild_id, user_id, badge_id)
-
-    async def _award_badge(self, guild_id: int, user_id: int, badge_id: str):
-        if self._is_badge_awarded(guild_id, user_id, badge_id):
-            return
-
-        user_badges = dm.get_guild_data(guild_id, f"badges_{user_id}", [])
-        if any(b["badge_id"] == badge_id for b in user_badges):
-            return
-        
-        user_badges.append({
-            "badge_id": badge_id,
-            "earned_at": time.time(),
-            "evolved_level": 1
-        })
-        
-        dm.update_guild_data(guild_id, f"badges_{user_id}", user_badges)
-        
-        badge = self._badge_definitions.get(badge_id)
-        if badge:
-            guild = self.bot.get_guild(guild_id)
-            member = guild.get_member(user_id) if guild else None
-            if member:
-                embed = discord.Embed(
-                    title=f"🎖️ Badge Earned!",
-                    description=f"{member.mention} earned the **{badge.name}** badge!",
-                    color=discord.Color.gold()
-                )
-                embed.add_field(name="Description", value=badge.description, inline=False)
-                embed.add_field(name="Category", value=badge.category.value.title(), inline=True)
-                
-                channel = guild.system_channel or guild.text_channels[0]
-                if channel:
-                    await channel.send(embed=embed)
-
-        self._mark_badge_awarded(guild_id, user_id, badge_id)
 
     async def _update_ranking_titles(self):
         for guild in self.bot.guilds:
@@ -480,7 +316,6 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
         dm.update_guild_data(guild_id, f"user_{user_id}", user_data)
 
         await interaction.response.send_message(f"🔱 **PRESTIGE!** You have reset to level 1 and reached Prestige **{current_prestige + 1}**!")
-        await self._check_and_award_badges(guild_id, user_id)
 
     async def mini_game_dice(self, interaction: discord.Interaction, bet: int):
         if bet <= 0: return await interaction.response.send_message("Bet must be positive!", ephemeral=True)
@@ -606,26 +441,12 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
                 })
         return user_quests
 
-    def get_user_badges(self, guild_id: int, user_id: int) -> List[dict]:
-        user_badges = dm.get_guild_data(guild_id, f"badges_{user_id}", [])
-        result = []
-        for ub in user_badges:
-            badge_def = self._badge_definitions.get(ub["badge_id"])
-            if badge_def:
-                result.append({
-                    "id": ub["badge_id"], "name": badge_def.name, "description": badge_def.description,
-                    "icon": badge_def.icon, "category": badge_def.category.value,
-                    "earned_at": ub["earned_at"], "evolved_level": ub.get("evolved_level", 1)
-                })
-        return result
-
     async def setup(self, interaction: discord.Interaction, params: Dict = None):
         guild = interaction.guild
         
         # Register prefix commands
         custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
         custom_cmds["quests"] = json.dumps({"command_type": "list_quests"})
-        custom_cmds["badges"] = json.dumps({"command_type": "list_badges"})
         custom_cmds["prestige"] = json.dumps({"command_type": "prestige"})
         custom_cmds["dice"] = json.dumps({"command_type": "dice"})
         custom_cmds["flip"] = json.dumps({"command_type": "flip"})
@@ -634,5 +455,5 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
         custom_cmds["gamificationpanel"] = "configpanel gamification"
         dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
 
-        await interaction.followup.send("Gamification system set up! Try `!quests`, `!badges`, or `!dice <bet>`.", ephemeral=True)
+        await interaction.followup.send("Gamification system set up! Try `!quests`, `!dice`, or `!flip <bet>`.", ephemeral=True)
         return True

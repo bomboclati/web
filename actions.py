@@ -57,7 +57,7 @@ COMMAND_SCHEMA = {
     "properties": {
         "command_type": {
             "type": "string",
-            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "achievements", "titles", "leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "list_triggers", "set_title", "achievements_leaderboard", "help_all"]
+            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "list_triggers", "help_all", "config_panel"]
         },
         "content": {"type": "string"},
         "actions": {
@@ -174,7 +174,9 @@ class ActionHandler:
         # Gamification actions
         "prestige", "dice", "flip", "slots", "trivia",
         # Additional actions from action_catalog
-        "post_documentation", "setup_trigger_role"
+        "post_documentation", "setup_trigger_role",
+        # Personalized Memory actions
+        "update_user_preference"
     }
 
     def __init__(self, bot):
@@ -217,13 +219,20 @@ class ActionHandler:
                     created_commands.append(cmd_name)
                     logger.info(f"Created missing command: !{cmd_name} for system: {system_type}")
 
-            # Create help command for the system
+            # Create help command for the system using help_embed type
             help_cmd_name = f"help {system_type}"
             if help_cmd_name not in custom_cmds:
-                custom_cmds[help_cmd_name] = {
-                    "command_type": "simple",
-                    "content": f"Help for {system_type} system. Use !help {system_type} for more info."
-                }
+                fields = []
+                for c_name, c_data in commands.items():
+                    desc = c_data.get("content", "No description available.")
+                    fields.append({"name": f"!{c_name}", "value": desc, "inline": False})
+
+                custom_cmds[help_cmd_name] = json.dumps({
+                    "command_type": "help_embed",
+                    "title": f"🛡️ {system_type.replace('_', ' ').title()} System",
+                    "description": f"Documentation for the {system_type} system.",
+                    "fields": fields
+                })
                 created_commands.append(help_cmd_name)
                 logger.info(f"Created help command: !{help_cmd_name}")
 
@@ -236,23 +245,31 @@ class ActionHandler:
                     # Find or create help channel
                     help_channel = None
                     for channel in guild.text_channels:
-                        if channel.name in ["help", "commands", "bot-help"]:
+                        if channel.name in ["help", "commands", "bot-help", "system-guide"]:
                             help_channel = channel
                             break
                     if not help_channel:
-                        # Try to create one
                         try:
-                            help_channel = await guild.create_text_channel("help")
+                            # Use the Cog's creation method if possible to track it
+                            if hasattr(self.bot, 'auto_setup'):
+                                help_channel = await self.bot.auto_setup._create_setup_channel(guild, "system-guide")
+                            else:
+                                help_channel = await guild.create_text_channel("system-guide")
                         except discord.Forbidden:
                             logger.warning("Cannot create help channel due to permissions")
                             return
 
                     if help_channel:
                         embed = discord.Embed(
-                            title=f"{system_type.capitalize()} System Setup Complete",
-                            description=f"Created the following commands: {', '.join(f'!{c}' for c in created_commands)}\n\nUse `!help {system_type}` for more info.",
-                            color=0x00ff00
+                            title=f"✅ {system_type.replace('_', ' ').title()} System Deployed",
+                            description=(
+                                f"The {system_type} system has been successfully built and documented. "
+                                f"New commands available: {', '.join(f'`!{c}`' for c in created_commands if not c.startswith('help'))}\n\n"
+                                f"Type `!help {system_type}` to see detailed usage instructions."
+                            ),
+                            color=discord.Color.green()
                         )
+                        embed.set_footer(text="Miro AI • Infrastructure as Code")
                         await help_channel.send(embed=embed)
         except Exception as e:
             logger.error(f"Error in _auto_document_system: {e}")
@@ -1427,6 +1444,13 @@ class ActionHandler:
         existing = cmds.get(cmd_name)
         cmds[cmd_name] = cmd_code
         dm.update_guild_data(guild_id, "custom_commands", cmds)
+
+        # Log to analytics
+        usage = dm.get_guild_data(guild_id, "command_usage", {})
+        if cmd_name not in usage:
+            usage[cmd_name] = {"count": 0, "last_used": 0, "created_at": time.time()}
+            dm.update_guild_data(guild_id, "command_usage", usage)
+
         return True, {"action": "delete_prefix_command", "cmd_name": cmd_name, "previous_code": existing}
 
     async def action_create_command(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
@@ -2615,16 +2639,59 @@ class ActionHandler:
         return True, {"message": f"Task {name} scheduled"}
 
     async def action_update_profile(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        user_id = params.get("user_id")
+        user_id = params.get("user_id") or interaction.user.id
         field = params.get("field")
         value = params.get("value")
-        # Simplified profile update for demonstration
+
+        # Consistent multi-server isolation
         profiles = dm.get_guild_data(interaction.guild.id, "user_profiles", {})
         if str(user_id) not in profiles:
             profiles[str(user_id)] = {}
         profiles[str(user_id)][field] = value
         dm.update_guild_data(interaction.guild.id, "user_profiles", profiles)
+
+        # Also store in vector memory if it's a preference
+        if "preference" in field.lower() or "like" in field.lower() or "dislike" in field.lower():
+            await self.bot.vector_memory.store_conversation(
+                guild_id=interaction.guild.id,
+                user_id=user_id,
+                user_message=f"I want you to remember that {field} is {value}",
+                bot_response=f"I've noted that {field} is {value}. I'll remember this for our future interactions.",
+                importance_score=0.8
+            )
+
         return True, {"message": f"Updated {field} for user {user_id}"}
+
+    async def action_update_user_preference(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """AI Action to store a user preference for personalized memory."""
+        user_id = params.get("user_id") or interaction.user.id
+        preference_key = params.get("key")
+        preference_value = params.get("value")
+
+        if not preference_key or preference_value is None:
+            return False, {"error": "Missing key or value for preference."}
+
+        # Store in guild-specific user profiles
+        profiles = dm.get_guild_data(interaction.guild.id, "user_profiles", {})
+        if str(user_id) not in profiles:
+            profiles[str(user_id)] = {}
+
+        if "preferences" not in profiles[str(user_id)]:
+            profiles[str(user_id)]["preferences"] = {}
+
+        profiles[str(user_id)]["preferences"][preference_key] = preference_value
+        dm.update_guild_data(interaction.guild.id, "user_profiles", profiles)
+
+        # Store in vector memory for semantic retrieval
+        await self.bot.vector_memory.store_conversation(
+            guild_id=interaction.guild.id,
+            user_id=user_id,
+            user_message=f"Remember my preference for {preference_key}: {preference_value}",
+            bot_response=f"I've updated your preferences. I'll now remember that your {preference_key} is {preference_value}.",
+            importance_score=0.9
+        )
+
+        return True, {"message": f"Saved preference: {preference_key} = {preference_value}"}
 
     async def action_softban_user(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Bans then immediately unbans a user to clear their messages."""
@@ -4086,14 +4153,8 @@ class ActionHandler:
                     return await self.handle_economy_daily(message)
                 elif command_type == "economy_balance":
                     return await self.handle_economy_balance(message)
-                elif command_type == "list_achievements":
-                    return await self.handle_list_achievements(message)
-                elif command_type == "list_titles":
-                    return await self.handle_list_titles(message)
-                elif command_type == "set_title":
-                    return await self.handle_set_title(message)
-                elif command_type == "achievements_leaderboard":
-                    return await self.handle_achievements_leaderboard(message)
+                elif command_type == "config_panel":
+                    return await self.handle_config_panel_redirect(message, data)
                 elif command_type == "help_all":
                     return await self.handle_help_all(message)
                 elif command_type == "staffpromo_status":
@@ -4302,141 +4363,6 @@ class ActionHandler:
         await message.channel.send(embed=embed)
         return True
 
-    async def handle_list_achievements(self, message: discord.Message) -> bool:
-        """Handle !achievements command"""
-        from modules.achievements import AchievementSystem
-        achievements = AchievementSystem(self.bot)
-
-        user_achievements = achievements.get_user_achievements(message.guild.id, message.author.id)
-
-        if not user_achievements:
-            embed = discord.Embed(
-                title="🏆 Your Achievements",
-                description="No achievements yet! Keep being active to earn some.",
-                color=discord.Color.gold()
-            )
-        else:
-            embed = discord.Embed(
-                title=f"🏆 {message.author.display_name}'s Achievements",
-                description=f"**{len(user_achievements)} achievements earned**",
-                color=discord.Color.gold()
-            )
-
-            # Group by category
-            by_category = {}
-            for ach in user_achievements:
-                cat = ach.get("category", "other")
-                if cat not in by_category:
-                    by_category[cat] = []
-                by_category[cat].append(ach)
-
-            for category, achs in by_category.items():
-                ach_list = "\n".join([f"{a['icon']} **{a['name']}** - {a['description']}" for a in achs[:5]])
-                if ach_list:
-                    embed.add_field(
-                        name=f"{category.title()} ({len(achs)})",
-                        value=ach_list,
-                        inline=False
-                    )
-
-        await message.channel.send(embed=embed)
-        return True
-
-    async def handle_list_titles(self, message: discord.Message) -> bool:
-        """Handle !titles command"""
-        from modules.achievements import AchievementSystem
-        achievements = AchievementSystem(self.bot)
-
-        user_titles = achievements.get_user_titles(message.guild.id, message.author.id)
-        active_title = achievements.get_active_title(message.guild.id, message.author.id)
-
-        if not user_titles:
-            embed = discord.Embed(
-                title="👑 Your Titles",
-                description="No titles yet! Keep being active to unlock titles.",
-                color=discord.Color.gold()
-            )
-        else:
-            active_name = f"{active_title['icon']} {active_title['name']}" if active_title else "None"
-
-            embed = discord.Embed(
-                title=f"👑 {message.author.display_name}'s Titles",
-                description=f"Active: **{active_name}**\n" +
-                           f"Total unlocked: **{len(user_titles)}**",
-                color=discord.Color.gold()
-            )
-
-            titles_list = "\n".join([f"{t['icon']} **{t['name']}**" for t in user_titles])
-            embed.add_field(name="Unlocked Titles", value=titles_list, inline=False)
-
-        await message.channel.send(embed=embed)
-        return True
-
-    async def handle_set_title(self, message: discord.Message) -> bool:
-        """Handle !settitle command"""
-        from modules.achievements import AchievementSystem
-        achievements = AchievementSystem(self.bot)
-
-        # Parse command - get title from message content
-        content = message.content.split(" ", 1)
-        title_input = content[1].strip() if len(content) > 1 else None
-
-        if not title_input:
-            user_titles = achievements.get_user_titles(message.guild.id, message.author.id)
-
-            if not user_titles:
-                await message.channel.send("You don't have any titles yet!")
-                return True
-
-            titles_list = "\n".join([f". {t['icon']} **{t['name']}**" for t in user_titles])
-            await message.channel.send(f"Available titles:\n{titles_list}\n\nUse `!settitle <name>` to set one.")
-            return True
-
-        # Find matching title
-        user_titles = achievements.get_user_titles(message.guild.id, message.author.id)
-
-        matched_title = None
-        for t in user_titles:
-            if title_input.lower() in t['name'].lower() or title_input.lower() == t['id'].lower():
-                matched_title = t
-                break
-
-        if not matched_title:
-            await message.channel.send(f"No title matching '{title_input}' found. Use `!titles` to see your titles.")
-            return True
-
-        # Set active title
-        achievements.set_active_title(message.guild.id, message.author.id, matched_title['id'])
-
-        await message.channel.send(f"✅ Title set to **{matched_title['icon']} {matched_title['name']}**!")
-        return True
-
-    async def handle_achievements_leaderboard(self, message: discord.Message) -> bool:
-        """Handle !achievementsleaderboard command"""
-        from modules.achievements import AchievementSystem
-        achievements = AchievementSystem(self.bot)
-
-        leaderboard = achievements.get_leaderboard(message.guild.id)
-
-        if not leaderboard:
-            await message.channel.send("No achievements recorded yet!")
-            return True
-
-        embed = discord.Embed(
-            title="🏆 Achievement Leaderboard",
-            description="Top achievement collectors in this server:",
-            color=discord.Color.gold()
-        )
-
-        lb_text = "\n".join([
-            f"**{entry['rank']}.** <@{entry['user_id']}> - {entry['achievements']} achievements"
-            for entry in leaderboard
-        ])
-
-        embed.add_field(name="Rankings", value=lb_text, inline=False)
-
-        await message.channel.send(embed=embed)
-        return True
 
     async def undo_last_actions(self, interaction: discord.Interaction, count: int = 1) -> List[Tuple[str, bool]]:
         """Undo the last N action groups for the guild."""
@@ -4550,57 +4476,90 @@ class ActionHandler:
             logger.error("System Undo Error (%s): %s", undo_action, e)
             return False
 
+    async def handle_config_panel_redirect(self, message: discord.Message, data: dict) -> bool:
+        """Handle custom commands that open config panels, with permission check."""
+        if not message.author.guild_permissions.administrator and message.author.id != message.guild.owner_id:
+            await message.channel.send("❌ Only administrators can access configuration panels.")
+            return True
+
+        system = data.get("system")
+        if not system:
+            return False
+
+        from modules.config_panels import handle_config_panel_command
+        await handle_config_panel_command(message, system)
+        return True
+
     async def handle_help_all(self, message: discord.Message) -> bool:
-        """Handle !help command - shows interactive embed for all non-system commands (no help <system>)"""
+        """Handle !help command - dynamically lists all systems and custom commands."""
         guild_id = message.guild.id
         custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
 
-        non_help_commands = {}
+        systems = []
+        commands = {}
         for cmd_name, cmd_code in custom_cmds.items():
-            if not cmd_name.startswith("help "):
-                non_help_commands[cmd_name] = cmd_code
+            if cmd_name.startswith("help ") and cmd_name != "help all":
+                systems.append(cmd_name[5:])
+            elif not cmd_name.startswith("help "):
+                commands[cmd_name] = cmd_code
 
-        if not non_help_commands:
-            await message.channel.send("No custom commands yet! Use /bot to create systems.")
-            return True
-
-        command_groups = {}
-        for cmd_name in non_help_commands.keys():
-            parts = cmd_name.split()
-            if len(parts) > 1:
-                parent = parts[0]
-                if parent not in command_groups:
-                    command_groups[parent] = []
-                command_groups[parent].append(cmd_name)
-            else:
-                if cmd_name not in command_groups:
-                    command_groups[cmd_name] = []
+        # Add built-in help systems if not present but config exists
+        check_systems = ["verification", "anti_raid", "guardian", "welcome", "tickets", "modmail", "economy", "leveling", "giveaways", "starboard", "suggestions"]
+        for s in check_systems:
+            if s not in systems:
+                if dm.get_guild_data(guild_id, f"{s}_config") or dm.get_guild_data(guild_id, f"{s}_settings"):
+                    systems.append(s)
 
         embed = discord.Embed(
-            title="📋 All Custom Commands",
-            description=f"Total: {len(non_help_commands)} commands\n\nClick a command to view/edit its subcommands.",
+            title="📚 Miro AI - Server Help Manual",
+            description=(
+                "I'm an AI-powered system designed to manage and grow your community. "
+                "Below are the installed systems and custom commands available."
+            ),
             color=discord.Color.blue()
         )
+        embed.set_thumbnail(url=self.bot.user.display_avatar.url)
 
-        parent_list = []
-        for parent in sorted(command_groups.keys()):
-            subcount = len(command_groups[parent])
-            if subcount > 0:
-                parent_list.append(f"**!{parent}** ({subcount} subcommands)")
+        if systems:
+            # Format systems nicely with emojis
+            sys_emojis = {"verification": "🛡️", "anti_raid": "⚔️", "guardian": "👁️", "welcome": "👋", "tickets": "🎫", "modmail": "📬", "economy": "💰", "leveling": "⬆️", "giveaways": "🎁", "starboard": "⭐", "suggestions": "💡"}
+            sys_text = "\n".join([f"{sys_emojis.get(s, '⚙️')} `!help {s}`" for s in sorted(list(set(systems)))])
+            embed.add_field(name="🛡️ Installed Systems", value=sys_text, inline=False)
+
+        if commands:
+            cmd_groups = {}
+            for c in commands:
+                parent = c.split()[0]
+                cmd_groups[parent] = cmd_groups.get(parent, 0) + 1
+
+            cmd_list = []
+            for parent, count in sorted(cmd_groups.items()):
+                if count > 1:
+                    cmd_list.append(f"**!{parent}** ({count} subs)")
+                else:
+                    cmd_list.append(f"**!{parent}**")
+
+            embed.add_field(name="⌨️ Custom Commands", value="\n".join(cmd_list[:25]), inline=False)
+
+        if not systems and not commands:
+            embed.description = "No systems or commands installed yet. Use `/bot` or `/autosetup` to get started!"
+
+        embed.add_field(name="🛠️ Admin Tools", value="`/autosetup` - Bulk install systems\n`/bot` - Build something new\n`!configpanel <system>` - Configure settings", inline=False)
+
+        embed.set_footer(text="Type !help <system> for specific info | Use /bot for AI assistance")
+
+        # Interactive view for editing/viewing custom commands
+        command_groups = {}
+        for cmd_name in commands:
+            parts = cmd_name.split()
+            if len(parts) > 1:
+                p = parts[0]
+                if p not in command_groups: command_groups[p] = []
+                command_groups[p].append(cmd_name)
             else:
-                parent_list.append(f"**!{parent}**")
+                if cmd_name not in command_groups: command_groups[cmd_name] = []
 
-        embed.add_field(
-            name="📋 Commands",
-            value="\n".join(parent_list[:25]),
-            inline=False
-        )
-        if len(parent_list) > 25:
-            embed.add_field(name="", value="\n".join(parent_list[25:]), inline=False)
-
-        embed.set_footer(text="Click to edit . Back to close")
-
-        view = CommandsListView(non_help_commands, command_groups, message.author.id)
+        view = CommandsListView(commands, command_groups, message.author.id)
         await message.channel.send(embed=embed, view=view)
         return True
 
@@ -4843,8 +4802,6 @@ class CommandsListView(discord.ui.View):
             weight = cfg.get("weight", 0)
             if metric_name == "tenure_days":
                 val = (discord.utils.utcnow() - (member.joined_at or discord.utils.utcnow())).days
-            elif metric_name == "achievements":
-                val = len(dm.get_guild_data(guild.id, f"achievements_{member.id}", []))
             else:
                 val = udata.get(metric_name, 0)
             normalized = max(0, min(1, val / max_val)) if max_val > 0 else 0
@@ -5462,25 +5419,6 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         await message.channel.send(embed=embed)
         return True
 
-    async def handle_staffpromo_bonuses(self, message: discord.Message) -> bool:
-        guild = message.guild
-        staff_promo = self.bot.staff_promo
-
-        config = staff_promo._get_full_config(guild.id)
-        bonuses = config.get("achievement_bonuses", staff_promo._default_achievement_bonuses)
-
-        embed = discord.Embed(title="?? Achievement Score Bonuses", color=discord.Color.gold())
-
-        total_bonus = 1.0
-        for ach_name, multiplier in bonuses.items():
-            bonus_pct = (multiplier - 1) * 100
-            embed.add_field(name=ach_name, value=f"+{bonus_pct:.0f}% score multiplier", inline=True)
-            total_bonus += (multiplier - 1)
-
-        embed.add_field(name="Total Max Bonus", value=f"{((total_bonus - 1) * 100):.0f}%", inline=False)
-
-        await message.channel.send(embed=embed)
-        return True
 
     def _resolve_channel(self, channel_identifier):
         """Resolve a channel from the guild by name, ID, or mention format."""
