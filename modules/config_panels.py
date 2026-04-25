@@ -3163,7 +3163,7 @@ def register_all_persistent_views(bot: discord.Client):
     # System Components
     from modules.tickets import TicketOpenPanel, TicketPersistentView
     from modules.welcome_leave import WelcomeDMView
-    from modules.auto_setup import SystemSelectionView
+    from modules.auto_setup import CategorySelectionView
     from modules.giveaways import GiveawayEntryView
     from modules.applications import ApplicationPersistentView, ApplicationReviewView
     from modules.appeals import AppealPersistentView, AppealReviewView
@@ -3194,7 +3194,7 @@ def register_all_persistent_views(bot: discord.Client):
     bot.add_view(ModmailThreadView())
     bot.add_view(TicketPersistentView())
     bot.add_view(WelcomeDMView())
-    bot.add_view(SystemSelectionView(None, 0))
+    bot.add_view(CategorySelectionView(None, 0))
     bot.add_view(GiveawayEntryView())
     bot.add_view(ApplicationPersistentView())
     bot.add_view(ApplicationReviewView())
