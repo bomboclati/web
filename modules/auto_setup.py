@@ -313,6 +313,52 @@ class CategorySelectionView(discord.ui.View):
     def selected_systems(self, value):
         self._selected_systems = value
 
+    def create_category_embed(self, category: dict) -> discord.Embed:
+        """Build an embed for a chosen category. Delegates to the cog when available
+        so the same render logic is used everywhere; otherwise renders a sane fallback.
+        This prevents `AttributeError: 'CategorySelectionView' object has no attribute
+        'create_category_embed'` when older code calls the method on the view itself."""
+        if self.auto_setup is not None and hasattr(self.auto_setup, "create_category_embed"):
+            try:
+                return self.auto_setup.create_category_embed(category)
+            except Exception:
+                pass
+        # Fallback inline implementation
+        try:
+            recommended = SystemCategory.get_recommended_systems()
+        except Exception:
+            recommended = set()
+        embed = discord.Embed(
+            title=f"{category.get('emoji', '📂')} {category.get('name', 'Category')} Systems",
+            description=f"Select the systems you want to install from the **{category.get('name','')}** category.",
+            color=discord.Color.green(),
+        )
+        for sys in category.get("systems", []):
+            is_rec = sys in recommended
+            embed.add_field(
+                name=sys.replace("_", " ").title(),
+                value="⭐ **[Recommended]**" if is_rec else "• Available",
+                inline=True,
+            )
+        embed.set_footer(text="Use the dropdown above to select systems | Click 'Confirm & Install' when ready")
+        return embed
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item):
+        """Never let the user see 'interaction failed' from the auto-setup wizard."""
+        try:
+            from logger import logger
+            logger.exception(f"CategorySelectionView error: {error}")
+        except Exception:
+            pass
+        msg = f"⚠️ Auto-Setup hit an error: `{type(error).__name__}`. Please try again or run /autosetup."
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except Exception:
+            pass
+
 
 class ViewSelectedButton(discord.ui.Button):
     def __init__(self, auto_setup, guild_id: int, selected_systems: List[str]):
@@ -358,19 +404,121 @@ class BulkInstallButton(discord.ui.Button):
         self.auto_setup = auto_setup
         self.guild_id = guild_id
         self.selected_systems = selected_systems or []
-    
+
     async def callback(self, interaction: discord.Interaction):
-        if not self.selected_systems:
-            return await interaction.response.send_message("❌ Please select at least one system first!", ephemeral=True)
-        
-        # Start the setup process
-        guild = interaction.guild
-        auto_setup = self.auto_setup or interaction.client.get_cog("AutoSetup")
-        if not auto_setup:
-            return await interaction.response.send_message("❌ Setup system not initialized.", ephemeral=True)
-        
-        await interaction.response.edit_message(content="⚙️ Starting setup of selected systems...", embed=None, view=None)
-        await auto_setup._run_selected_setup(guild.id, interaction.user, self.selected_systems, interaction.channel_id)
+        # Always acknowledge fast — installation may take >3 seconds.
+        try:
+            if not self.selected_systems:
+                return await interaction.response.send_message(
+                    "❌ Please select at least one system first using the category dropdown above.",
+                    ephemeral=True,
+                )
+
+            guild = interaction.guild
+            if guild is None:
+                return await interaction.response.send_message("❌ This must be used inside a server.", ephemeral=True)
+
+            auto_setup = self.auto_setup or interaction.client.get_cog("AutoSetup")
+            if not auto_setup:
+                return await interaction.response.send_message(
+                    "❌ Setup system not initialized. Please ask an admin to restart the bot.",
+                    ephemeral=True,
+                )
+
+            # Edit the original message immediately so the user sees something happen
+            try:
+                await interaction.response.edit_message(
+                    content=f"⚙️ Starting setup of **{len(self.selected_systems)}** systems...",
+                    embed=None,
+                    view=None,
+                )
+            except Exception:
+                # If edit fails (e.g. ephemeral interaction), defer instead
+                try:
+                    await interaction.response.defer(ephemeral=True)
+                except Exception:
+                    pass
+
+            # Kick off the install — wrap so we never bubble up to "interaction failed"
+            try:
+                await auto_setup._run_selected_setup(
+                    guild.id, interaction.user, self.selected_systems, interaction.channel_id
+                )
+            except Exception as e:
+                logger.exception(f"BulkInstallButton: install failed: {e}")
+                try:
+                    await interaction.followup.send(
+                        f"⚠️ Install hit a snag: `{type(e).__name__}`. Some systems may have been installed. Check the channel for the progress message.",
+                        ephemeral=True,
+                    )
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.exception(f"BulkInstallButton outer error: {e}")
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(f"⚠️ {type(e).__name__}: {e}", ephemeral=True)
+                else:
+                    await interaction.response.send_message(f"⚠️ {type(e).__name__}: {e}", ephemeral=True)
+            except Exception:
+                pass
+
+
+class OpenConfigPanelButton(discord.ui.Button):
+    """Button shown after install that opens a system's config panel right in the channel."""
+    def __init__(self, system_name: str, label: Optional[str] = None):
+        # Stable custom_id so the view stays interactive across restarts
+        super().__init__(
+            label=label or f"⚙️ Configure {system_name.replace('_',' ').title()}",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"open_cfg_panel_{system_name}",
+        )
+        self.system_name = system_name
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            from modules.config_panels import get_config_panel
+            view = get_config_panel(interaction.guild.id, self.system_name)
+            if view is None:
+                return await interaction.response.send_message(
+                    f"❌ No config panel exists for **{self.system_name}**.",
+                    ephemeral=True,
+                )
+            embed = view.create_embed(interaction.guild.id) if hasattr(view, "create_embed") else discord.Embed(
+                title=f"⚙️ {self.system_name.replace('_',' ').title()} Config"
+            )
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        except Exception as e:
+            try:
+                from logger import logger
+                logger.exception(f"OpenConfigPanelButton error: {e}")
+            except Exception:
+                pass
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        f"⚠️ Could not open the **{self.system_name}** config panel: `{type(e).__name__}`. Try `!configpanel {self.system_name}`.",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"⚠️ Could not open the **{self.system_name}** config panel: `{type(e).__name__}`. Try `!configpanel {self.system_name}`.",
+                        ephemeral=True,
+                    )
+            except Exception:
+                pass
+
+
+class PostInstallView(discord.ui.View):
+    """View shown in the celebratory embed after install — one button per installed system."""
+    def __init__(self, installed_systems: List[str]):
+        super().__init__(timeout=None)
+        # Discord allows max 25 components per view (5 rows × 5 buttons). Cap at 20 to be safe.
+        for s in installed_systems[:20]:
+            try:
+                self.add_item(OpenConfigPanelButton(s))
+            except Exception:
+                continue
 
 
 class CancelSetupButton(discord.ui.Button):
@@ -576,14 +724,20 @@ class AutoSetup(commands.Cog):
                     logger.info(f"Setting up {name} for {guild.name}")
                     result = await func(guild, analysis)
                     if result:
-                        self._register_system_commands(guild.id, system)
-                    results.append((name, result, None))
+                        try:
+                            self._register_system_commands(guild.id, system)
+                        except Exception as reg_err:
+                            logger.warning(f"{name}: command registration failed (system still installed): {reg_err}")
+                    results.append((name, bool(result), None))
                     setup.steps_completed.append(system)
-                    self._save_pending_setups()
+                    try:
+                        self._save_pending_setups()
+                    except Exception:
+                        pass
                     await asyncio.sleep(0.3)  # Small delay for visual effect
                 except Exception as e:
-                    logger.error(f"{name} setup failed: {e}")
-                    results.append((name, False, str(e)))
+                    logger.exception(f"{name} setup failed: {e}")
+                    results.append((name, False, type(e).__name__))
         
         # Final progress update (100%)
         if progress_msg:
@@ -674,24 +828,50 @@ class AutoSetup(commands.Cog):
         )
         
         embed.set_footer(text="Need help? Type !help | Enjoy your new systems! 🎮")
-        
+
+        # Build a PostInstallView with one Configure button per installed system,
+        # so users can jump straight into each config panel from the success embed.
+        installed_keys: List[str] = []
+        try:
+            display_to_key = {display: key for key, (display, _func) in self._get_system_map().items()}
+            for display in success_systems:
+                key = display_to_key.get(display)
+                if key:
+                    installed_keys.append(key)
+        except Exception as e:
+            logger.debug(f"Could not build PostInstallView mapping: {e}")
+
+        view: Optional[discord.ui.View] = PostInstallView(installed_keys) if installed_keys else None
+
         sent = False
         if channel_id:
             target_channel = guild.get_channel(channel_id)
             if target_channel:
                 try:
-                    await target_channel.send(f"{user.mention}", embed=embed)
+                    if view is not None:
+                        await target_channel.send(f"{user.mention}", embed=embed, view=view)
+                    else:
+                        await target_channel.send(f"{user.mention}", embed=embed)
                     sent = True
-                except:
-                    pass
-        
+                except Exception as e:
+                    logger.warning(f"Failed to send celebratory embed to channel: {e}")
+
         if not sent:
             try:
-                await user.send(embed=embed)
+                if view is not None:
+                    await user.send(embed=embed, view=view)
+                else:
+                    await user.send(embed=embed)
             except discord.Forbidden:
                 system_channel = guild.system_channel
                 if system_channel:
-                    await system_channel.send(f"{user.mention}", embed=embed)
+                    try:
+                        if view is not None:
+                            await system_channel.send(f"{user.mention}", embed=embed, view=view)
+                        else:
+                            await system_channel.send(f"{user.mention}", embed=embed)
+                    except Exception as e:
+                        logger.warning(f"Failed to send celebratory embed to system channel: {e}")
     
     def _get_example_commands(self, installed_systems: List[str]) -> List[str]:
         """Get example commands for installed systems"""
