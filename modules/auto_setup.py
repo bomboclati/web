@@ -435,7 +435,9 @@ class CategorySelectionView(discord.ui.View):
         if self.selected_systems:
             self.add_item(ViewSelectedButton(auto_setup, guild_id, selected_systems))
         
-        self.add_item(BulkInstallButton(auto_setup, guild_id, selected_systems))
+        # Use ConfirmSelectionButton (the only install button now). It reads
+        # `self.view.selected_systems` at click-time, so it always sees the latest picks.
+        self.add_item(ConfirmSelectionButton(auto_setup, guild_id))
         self.add_item(CancelSetupButton(guild_id))
     
     @property
@@ -529,72 +531,6 @@ class ViewSelectedButton(discord.ui.Button):
             )
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
-class BulkInstallButton(discord.ui.Button):
-    def __init__(self, auto_setup, guild_id: int, selected_systems: List[str] = None):
-        super().__init__(label="🚀 Bulk Install Selected", style=discord.ButtonStyle.success, custom_id=f"bulk_install_{guild_id}", row=1)
-        self.auto_setup = auto_setup
-        self.guild_id = guild_id
-        self.selected_systems = selected_systems or []
-
-    async def callback(self, interaction: discord.Interaction):
-        # Always acknowledge fast — installation may take >3 seconds.
-        try:
-            if not self.selected_systems:
-                return await interaction.response.send_message(
-                    "❌ Please select at least one system first using the category dropdown above.",
-                    ephemeral=True,
-                )
-
-            guild = interaction.guild
-            if guild is None:
-                return await interaction.response.send_message("❌ This must be used inside a server.", ephemeral=True)
-
-            auto_setup = self.auto_setup or interaction.client.get_cog("AutoSetup")
-            if not auto_setup:
-                return await interaction.response.send_message(
-                    "❌ Setup system not initialized. Please ask an admin to restart the bot.",
-                    ephemeral=True,
-                )
-
-            # Edit the original message immediately so the user sees something happen
-            try:
-                await interaction.response.edit_message(
-                    content=f"⚙️ Starting setup of **{len(self.selected_systems)}** systems...",
-                    embed=None,
-                    view=None,
-                )
-            except Exception:
-                # If edit fails (e.g. ephemeral interaction), defer instead
-                try:
-                    await interaction.response.defer(ephemeral=True)
-                except Exception:
-                    pass
-
-            # Kick off the install — wrap so we never bubble up to "interaction failed"
-            try:
-                await auto_setup._run_selected_setup(
-                    guild.id, interaction.user, self.selected_systems, interaction.channel_id
-                )
-            except Exception as e:
-                logger.exception(f"BulkInstallButton: install failed: {e}")
-                try:
-                    await interaction.followup.send(
-                        f"⚠️ Install hit a snag: `{type(e).__name__}`. Some systems may have been installed. Check the channel for the progress message.",
-                        ephemeral=True,
-                    )
-                except Exception:
-                    pass
-        except Exception as e:
-            logger.exception(f"BulkInstallButton outer error: {e}")
-            try:
-                if interaction.response.is_done():
-                    await interaction.followup.send(f"⚠️ {type(e).__name__}: {e}", ephemeral=True)
-                else:
-                    await interaction.response.send_message(f"⚠️ {type(e).__name__}: {e}", ephemeral=True)
-            except Exception:
-                pass
 
 
 class OpenConfigPanelButton(discord.ui.Button):
@@ -1286,6 +1222,205 @@ class AutoSetup(commands.Cog):
             return True
         except Exception as e:
             logger.error(f"Failed to setup starboard: {e}")
+            return False
+
+    # ===== Setup methods previously referenced but missing (caused AttributeError) =====
+
+    async def _setup_verification_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        """Set up the verification channel + persistent button + verified role."""
+        try:
+            # Ensure a 'Verified' role exists
+            verified_role = analysis.existing_roles.get("verified") or analysis.existing_roles.get("Verified")
+            if not verified_role:
+                try:
+                    verified_role = await guild.create_role(
+                        name="Verified",
+                        reason="Auto-Setup: verification system",
+                        permissions=discord.Permissions(send_messages=True, read_messages=True),
+                    )
+                except Exception as role_err:
+                    logger.warning(f"verification: could not create role: {role_err}")
+
+            channel = analysis.existing_channels.get("verify") or analysis.existing_channels.get("verification") \
+                or await self._create_setup_channel(guild, "verify")
+
+            config = {
+                "enabled": True,
+                "channel_id": channel.id if channel else None,
+                "verified_role_id": verified_role.id if verified_role else None,
+                "method": "button",
+            }
+            dm.update_guild_data(guild.id, "verification_config", config)
+
+            # Drop a persistent verification message with a button if possible
+            try:
+                from modules.verification import VerificationView
+                embed = discord.Embed(
+                    title="🛡️ Server Verification",
+                    description="Click the button below to verify and gain access to the server.",
+                    color=discord.Color.green(),
+                )
+                if channel:
+                    await channel.send(embed=embed, view=VerificationView())
+            except Exception as view_err:
+                logger.info(f"verification: persistent view not available, config-only setup ({view_err})")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to setup verification: {e}")
+            return False
+
+    async def _setup_welcome_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        """Set up a welcome channel + default greeting message config."""
+        try:
+            channel = analysis.existing_channels.get("welcome") \
+                or analysis.existing_channels.get("welcome-and-goodbye") \
+                or await self._create_setup_channel(guild, "welcome")
+            config = {
+                "enabled": True,
+                "channel_id": channel.id if channel else None,
+                "message": "👋 Welcome {user} to **{server}**! You're member #{count}.",
+                "embed_enabled": True,
+                "ping_user": True,
+                "leave_enabled": True,
+                "leave_message": "👋 Goodbye {user}, we'll miss you.",
+            }
+            dm.update_guild_data(guild.id, "welcome_config", config)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to setup welcome: {e}")
+            return False
+
+    async def _setup_ticket_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        """Set up a ticket category, panel channel, persistent panel + base config."""
+        try:
+            # Category
+            category = analysis.existing_categories.get("tickets") \
+                or analysis.existing_categories.get("Tickets")
+            if not category:
+                try:
+                    category = await guild.create_category("Tickets", reason="Auto-Setup: ticket system")
+                except Exception as cat_err:
+                    logger.warning(f"tickets: could not create category: {cat_err}")
+                    category = None
+
+            # Panel channel
+            channel = analysis.existing_channels.get("create-ticket") \
+                or analysis.existing_channels.get("tickets") \
+                or await self._create_setup_channel(guild, "create-ticket", category=category)
+
+            # Optional support role
+            support_role = analysis.existing_roles.get("support") or analysis.existing_roles.get("Support")
+            if not support_role:
+                try:
+                    support_role = await guild.create_role(name="Support", reason="Auto-Setup: tickets")
+                except Exception as r:
+                    logger.info(f"tickets: support role not created ({r})")
+
+            config = {
+                "enabled": True,
+                "category_id": category.id if category else None,
+                "panel_channel_id": channel.id if channel else None,
+                "support_role_id": support_role.id if support_role else None,
+                "max_open_per_user": 1,
+                "transcript_enabled": True,
+            }
+            dm.update_guild_data(guild.id, "tickets_config", config)
+
+            # Drop a persistent panel
+            try:
+                from modules.tickets import TicketPanelView
+                embed = discord.Embed(
+                    title="🎫 Open a Ticket",
+                    description="Need help? Click the button below to create a private ticket with our staff.",
+                    color=discord.Color.blue(),
+                )
+                if channel:
+                    await channel.send(embed=embed, view=TicketPanelView())
+            except Exception as view_err:
+                logger.info(f"tickets: panel view not available, config-only setup ({view_err})")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to setup tickets: {e}")
+            return False
+
+    async def _setup_economy_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        """Set up base economy config (currency, daily reward, starting balance)."""
+        try:
+            config = {
+                "enabled": True,
+                "currency_name": "coins",
+                "currency_emoji": "🪙",
+                "starting_balance": 100,
+                "daily_amount": 250,
+                "daily_streak_bonus": 50,
+                "work_min": 50,
+                "work_max": 200,
+                "work_cooldown_seconds": 3600,
+            }
+            dm.update_guild_data(guild.id, "economy_config", config)
+            # Make sure a balances dict exists so other modules don't crash on first read
+            if dm.get_guild_data(guild.id, "economy_balances", None) is None:
+                dm.update_guild_data(guild.id, "economy_balances", {})
+            return True
+        except Exception as e:
+            logger.error(f"Failed to setup economy: {e}")
+            return False
+
+    async def _setup_leveling_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        """Set up XP/leveling base config."""
+        try:
+            config = {
+                "enabled": True,
+                "xp_per_message_min": 15,
+                "xp_per_message_max": 25,
+                "xp_cooldown_seconds": 60,
+                "level_up_announcements": True,
+                "level_up_channel_id": None,  # falls back to the channel where the user leveled up
+                "no_xp_channel_ids": [],
+                "no_xp_role_ids": [],
+            }
+            dm.update_guild_data(guild.id, "leveling_config", config)
+            if dm.get_guild_data(guild.id, "leveling_data", None) is None:
+                dm.update_guild_data(guild.id, "leveling_data", {})
+            return True
+        except Exception as e:
+            logger.error(f"Failed to setup leveling: {e}")
+            return False
+
+    async def _setup_giveaways(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        """Set up giveaway base config + announcement channel."""
+        try:
+            channel = analysis.existing_channels.get("giveaways") \
+                or await self._create_setup_channel(guild, "giveaways")
+            config = {
+                "enabled": True,
+                "default_channel_id": channel.id if channel else None,
+                "ping_role_id": None,
+                "active_giveaways": [],
+            }
+            dm.update_guild_data(guild.id, "giveaways_config", config)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to setup giveaways: {e}")
+            return False
+
+    async def _setup_automod_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
+        """Set up auto-moderation base config (alias target for _setup_auto_mod)."""
+        try:
+            config = {
+                "enabled": True,
+                "anti_spam": True,
+                "anti_invite": True,
+                "anti_link": False,
+                "blocked_words": [],
+                "max_mentions": 5,
+                "max_emojis": 10,
+                "punishment": "warn",  # warn | mute | kick | ban
+            }
+            dm.update_guild_data(guild.id, "automod_config", config)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to setup automod: {e}")
             return False
 
     # ===== Helper Methods =====
