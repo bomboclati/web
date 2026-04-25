@@ -449,60 +449,7 @@ class SystemSelectionView(discord.ui.View):
         self.add_item(self.select1)
         self.add_item(self.select2)
 
-    @discord.ui.button(label="⚙️ Open Admin Panel", style=discord.ButtonStyle.primary, row=2, custom_id="autosetup_open_panel")
-    async def open_panel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Master-hub action: open the full admin panel for the FIRST selected system.
 
-        Per blueprint: selecting a system from /autosetup should open its full
-        admin panel as a persistent message in the current channel.
-        """
-        selected = self.select1.values + self.select2.values
-        if not selected:
-            return await interaction.response.send_message(
-                "❌ Pick a system from the dropdown first, then click this button.",
-                ephemeral=True,
-            )
-
-        # Map auto_setup system keys -> config_panels keys
-        key_map = {
-            "anti_raid": "antiraid", "welcome_dm": "welcomedm",
-            "apps_simple": "application", "apps_modals": "applicationmodal",
-            "appeals_simple": "appeal", "appeals_system": "appealsystem",
-            "auto_responder": "autoresponder", "economy_shop": "economyshop",
-            "leveling_shop": "levelingshop", "scheduled_reminders": "scheduledreminder",
-            "reaction_roles": "reactionrole", "reaction_menus": "reactionrolemenu",
-            "role_buttons": "rolebutton", "mod_logging": "modlog",
-            "auto_mod": "automod", "warning_system": "warning",
-            "staff_promotion": "staffpromo", "staff_shifts": "staffshift",
-            "staff_reviews": "staffreview", "suggestions": "suggestion",
-            "reminders": "reminder", "announcements": "announcement",
-            "giveaways": "giveaway", "starboard": "starboard",
-        }
-
-        # Open a panel for each selected system (capped at 5 to avoid spam)
-        from modules.config_panels import get_config_panel
-
-        await interaction.response.defer(ephemeral=True)
-        opened, missing = [], []
-        for raw_key in selected[:5]:
-            panel_key = key_map.get(raw_key, raw_key)
-            view = get_config_panel(interaction.guild.id, panel_key)
-            if not view:
-                missing.append(raw_key)
-                continue
-            try:
-                embed = view.create_embed()
-                await interaction.channel.send(embed=embed, view=view)
-                opened.append(raw_key)
-            except Exception as e:
-                missing.append(f"{raw_key} ({e})")
-
-        msg = ""
-        if opened:
-            msg += f"✅ Opened admin panel(s): {', '.join(opened)}\n"
-        if missing:
-            msg += f"⚠️ Could not open: {', '.join(missing)}\n"
-        await interaction.followup.send(msg or "Nothing happened.", ephemeral=True)
 
     @discord.ui.button(label="🚀 Bulk Install Selected", style=discord.ButtonStyle.success, row=2, custom_id="autosetup_bulk_install")
     async def start_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -539,28 +486,69 @@ class SystemSelectionView(discord.ui.View):
         self.stop()
 
 
+
+
+class MockResponse:
+    async def send_message(self, *args, **kwargs): pass
+    async def defer(self, *args, **kwargs): pass
+    async def edit_message(self, *args, **kwargs): pass
+
+class MockFollowup:
+    async def send(self, *args, **kwargs): pass
+    async def send_message(self, *args, **kwargs): pass
+
 class MockInteraction:
-    def __init__(self, bot, guild, user=None):
+    def __init__(self, bot, guild, user=None, channel=None):
         self.bot = bot
         self.guild = guild
         self.user = user or guild.owner or bot.user
-        self.author = self.user # Compatibility with Message.author
-        self.channel = guild.system_channel or (guild.text_channels[0] if guild.text_channels else None)
-        self.response = self
-        self.followup = self
-
-    async def send_message(self, *args, **kwargs): pass
-    async def send(self, *args, **kwargs): pass
-    async def edit_message(self, *args, **kwargs): pass
-    async def defer(self, *args, **kwargs): pass
-    async def followup_send(self, *args, **kwargs): pass
+        self.author = self.user
+        self.channel = channel or guild.system_channel or (guild.text_channels[0] if guild.text_channels else None)
+        self.response = MockResponse()
+        self.followup = MockFollowup()
 
 class AutoSetup(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self._pending_setups: Dict[int, ServerSetup] = {}
+        self._pending_setups: Dict[int, ServerSetup] = self._load_pending_setups()
         self._setup_messages: Dict[int, int] = {}
         self._startup_guilds = set()
+
+    def _load_pending_setups(self) -> Dict[int, ServerSetup]:
+        """Load pending setups from persistent storage."""
+        data = dm.load_json("pending_setups", default={})
+        pending = {}
+        for guild_id_str, setup_dict in data.items():
+            try:
+                guild_id = int(guild_id_str)
+                setup = ServerSetup(
+                    guild_id=guild_id,
+                    state=SetupState(setup_dict["state"]),
+                    started_at=setup_dict["started_at"],
+                    completed_at=setup_dict.get("completed_at"),
+                    steps_completed=setup_dict["steps_completed"],
+                    config=setup_dict["config"],
+                    selected_systems=setup_dict.get("selected_systems")
+                )
+                pending[guild_id] = setup
+            except Exception as e:
+                logger.error(f"Failed to load pending setup for guild {guild_id_str}: {e}")
+        return pending
+
+    def _save_pending_setups(self):
+        """Save pending setups to persistent storage."""
+        data = {}
+        for guild_id, setup in self._pending_setups.items():
+            data[str(guild_id)] = {
+                "guild_id": setup.guild_id,
+                "state": setup.state.value,
+                "started_at": setup.started_at,
+                "completed_at": setup.completed_at,
+                "steps_completed": setup.steps_completed,
+                "config": setup.config,
+                "selected_systems": setup.selected_systems
+            }
+        dm.save_json("pending_setups", data)
 
     async def _create_setup_channel(self, guild: discord.Guild, name: str, **kwargs):
         """Helper to create channel and track it for final report."""
@@ -984,6 +972,7 @@ class AutoSetup(commands.Cog):
                         self._register_system_commands(guild.id, system)
                     results.append((name, result, None))
                     setup.steps_completed.append(system)
+                    self._save_pending_setups()
                     await asyncio.sleep(0.5)
                 except Exception as e:
                     logger.error(f"{name} setup failed: {e}")
@@ -993,6 +982,11 @@ class AutoSetup(commands.Cog):
 
         setup.state = SetupState.COMPLETED
         setup.completed_at = time.time()
+
+        # Remove from pending setups and save
+        if guild.id in self._pending_setups:
+            del self._pending_setups[guild.id]
+            self._save_pending_setups()
 
         # Mark guild as completed setup
         completed = dm.load_json("completed_setups", default={})
@@ -1006,38 +1000,59 @@ class AutoSetup(commands.Cog):
 
     async def _send_setup_results(self, guild: discord.Guild, user: discord.Member, results: List[Tuple[str, bool, Optional[str]]], channel_id: Optional[int] = None, created_channels: List[int] = None):
         """Send final setup summary to channel or user."""
+        success_systems = [name for name, success, _ in results if success]
+        failed_systems = [(name, error) for name, success, error in results if not success]
+        total_count = len(results)
+        success_count = len(success_systems)
+
         embed = discord.Embed(
-            title="✅ Installation Complete — Miro AI is Ready",
-            description=f"All requested systems have been deployed to **{guild.name}**. You can now begin managing your community with enhanced AI capabilities.",
+            title="✅ Setup Complete — Systems Active",
+            description=f"Successfully deployed **{success_count}** systems to **{guild.name}** (Current Server). All systems are now active exclusively in this server.",
             color=discord.Color.green()
         )
 
-        success_count = sum(1 for _, success, _ in results if success)
-        total_count = len(results)
         embed.add_field(
             name="📊 Deployment Summary",
-            value=f"Successfully installed **{success_count}** out of **{total_count}** selected systems.",
+            value=f"Installed **{success_count}** / **{total_count}** selected systems.",
             inline=False
         )
+
+        if success_systems:
+            embed.add_field(
+                name=f"✅ Successfully Installed ({success_count})",
+                value="\n".join(f"• {sys}" for sys in success_systems[:20]),
+                inline=False
+            )
+            if len(success_systems) > 20:
+                embed.add_field(
+                    name="✅ Installed (cont.)",
+                    value="\n".join(f"• {sys}" for sys in success_systems[20:]),
+                    inline=False
+                )
+
+        if failed_systems:
+            failed_text = "\n".join(f"• {name} (Error: {error})" for name, error in failed_systems[:10])
+            embed.add_field(
+                name=f"❌ Failed ({len(failed_systems)})",
+                value=failed_text,
+                inline=False
+            )
 
         if created_channels:
             channel_mentions = [f"<#{cid}>" for cid in created_channels if guild.get_channel(cid)]
             if channel_mentions:
-                embed.add_field(name="📂 New Channels", value=", ".join(channel_mentions), inline=False)
+                embed.add_field(name="📂 Created Channels", value=", ".join(channel_mentions), inline=False)
 
-        # Truncate results if too many for one embed
-        status_list = []
-        for name, success, error in results:
-            status = "✅" if success else "❌"
-            line = f"{status} {name}"
-            if error: line += f" (Error: {error})"
-            status_list.append(line)
-
-        embed.add_field(name="🛠️ Systems Status", value="\n".join(status_list[:15]), inline=False)
-        if len(status_list) > 15:
-            embed.add_field(name="Status (cont.)", value="\n".join(status_list[15:]), inline=False)
-
-        embed.add_field(name="📚 Next Steps", value="• Use `!help` to see all installed system commands.\n• Use `!configpanel <system>` to customize settings.\n• Use `/bot` to create even more custom features!", inline=False)
+        embed.add_field(
+            name="📚 Next Steps",
+            value=(
+                "• Use `!help` to see all installed commands.\n"
+                "• Use `!help <system>` for system-specific help.\n"
+                "• Use `/bot` to create custom features.\n"
+                "• All systems are active only in this server."
+            ),
+            inline=False
+        )
 
         sent = False
         if channel_id:
