@@ -1266,19 +1266,19 @@ class GiveawayConfigView(ConfigPanelView):
     async def config_games(self, i, b):
         await i.response.send_message("Mini-games (dice, flip, slots, trivia) are active. Default bet: 10 coins.", ephemeral=True)
 
-    @ui.button(label="Launch Event", emoji="🚀", style=discord.ButtonStyle.success, row=2, custom_id="cfg_gam_launch")
+    @ui.button(label="Launch Event", emoji="🚀", style=discord.ButtonStyle.success, row=3, custom_id="cfg_gam_launch")
     async def launch_event(self, i, b):
         await i.response.send_message("Seasonal event launched! (XP Multiplier: 2x)", ephemeral=True)
 
-    @ui.button(label="End Event", emoji="🏁", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_gam_end_ev")
+    @ui.button(label="End Event", emoji="🏁", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_gam_end_ev")
     async def end_event(self, i, b):
         await i.response.send_message("Active seasonal event ended.", ephemeral=True)
 
-    @ui.button(label="Toggle Streaks", emoji="🔢", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_gam_streaks")
+    @ui.button(label="Toggle Streaks", emoji="🔢", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_gam_streaks")
     async def toggle_streaks(self, i, b):
         await i.response.send_message("Streak system toggled.", ephemeral=True)
 
-    @ui.button(label="Update Leaderboard", emoji="🔃", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_gam_upd_lb")
+    @ui.button(label="Update Leaderboard", emoji="🔃", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_gam_upd_lb")
     async def upd_lb(self, i, b):
         await i.response.send_message("Leaderboard update forced.", ephemeral=True)
 
@@ -1290,7 +1290,7 @@ class GiveawayConfigView(ConfigPanelView):
     async def set_lb_ch(self, i, b):
         await i.response.send_message("Select Channel:", view=_picker_view(_GenericChannelSelect(self, "leaderboard_channel", "Leaderboard Channel")), ephemeral=True)
 
-    @ui.button(label="Season Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_gam_stats")
+    @ui.button(label="Season Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_gam_stats")
     async def season_stats(self, i, b):
         await i.response.send_message("📊 **Engagement Stats**\nActive Quests: 12\nCompleted Today: 5\nStreak Leaders: 3 members", ephemeral=True)
 
