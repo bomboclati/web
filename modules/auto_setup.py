@@ -183,42 +183,73 @@ class CategorySelect(discord.ui.Select):
 
 
 class SystemSelectView(discord.ui.View):
-    """View for selecting systems within a category"""
+    """View for selecting systems within a category. Holds the live selection state
+    so SystemMultiSelect callbacks, AddCategory, Confirm, Back and BulkInstall all
+    read/write the same authoritative list."""
     def __init__(self, auto_setup, guild_id: int, category: dict, selected_systems: List[str] = None):
         super().__init__(timeout=None)
         self.auto_setup = auto_setup
         self.guild_id = guild_id
         self.category = category
-        self.selected_systems = selected_systems or []
-        
-        # Add back button
-        self.add_item(BackToCategoriesButton(auto_setup, guild_id, selected_systems))
-        
+        # Selections accumulated from previous categories (kept across navigation).
+        self.selected_systems: List[str] = list(selected_systems or [])
+        # Selections the user just clicked in THIS category's dropdown.
+        self.current_picks: List[str] = [s for s in self.selected_systems if s in category.get("systems", [])]
+
+        # Add back button (uses live state)
+        self.add_item(BackToCategoriesButton(auto_setup, guild_id))
+
         # Add system select menu
         systems = category["systems"]
         recommended = SystemCategory.get_recommended_systems()
-        
+
         options = []
         for sys_name in systems:
             sys_display_name = sys_name.replace("_", " ").title()
             is_recommended = sys_name in recommended
             emoji = "⭐" if is_recommended else "⚪"
             label = f"{sys_display_name}{' [Recommended]' if is_recommended else ''}"
-            
+
             options.append(discord.SelectOption(
                 label=label[:100],  # Discord limit
                 emoji=emoji,
                 value=sys_name,
-                default=sys_name in self.selected_systems
+                default=sys_name in self.selected_systems,
             ))
-        
+
         if options:
-            select = SystemMultiSelect(options, guild_id, category["name"])
-            self.add_item(select)
-        
-        # Add action buttons
-        self.add_item(AddCategoryButton(auto_setup, guild_id, category, selected_systems))
+            self.select_menu = SystemMultiSelect(options, guild_id, category["name"])
+            self.add_item(self.select_menu)
+        else:
+            self.select_menu = None
+
+        # Add action buttons (no constructor snapshot — they read live from the view)
+        self.add_item(AddCategoryButton(auto_setup, guild_id, category))
         self.add_item(ConfirmSelectionButton(auto_setup, guild_id))
+
+    def get_full_selection(self) -> List[str]:
+        """Authoritative current selection: previously-selected systems from other
+        categories PLUS what's currently checked in this category's dropdown."""
+        cat_systems = set(self.category.get("systems", []))
+        # Drop this category's old picks (they may have been unchecked) and re-add live picks.
+        kept = [s for s in self.selected_systems if s not in cat_systems]
+        merged = kept + [s for s in self.current_picks if s not in kept]
+        return merged
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item):
+        try:
+            from logger import logger
+            logger.exception(f"SystemSelectView error: {error}")
+        except Exception:
+            pass
+        msg = f"⚠️ Wizard error: `{type(error).__name__}`. Try /autosetup again."
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except Exception:
+            pass
 
 
 class BackToCategoriesButton(discord.ui.Button):
@@ -226,11 +257,21 @@ class BackToCategoriesButton(discord.ui.Button):
         super().__init__(label="◀️ Back to Categories", style=discord.ButtonStyle.secondary, custom_id=f"back_categories_{guild_id}")
         self.auto_setup = auto_setup
         self.guild_id = guild_id
+        # Optional snapshot — but we always prefer live state from self.view if present.
         self.selected_systems = selected_systems or []
-    
+
     async def callback(self, interaction: discord.Interaction):
-        view = CategorySelectionView(self.auto_setup, self.guild_id, self.selected_systems)
-        embed = self.auto_setup.create_welcome_embed(interaction.guild)
+        # Pull the LIVE selection from the parent SystemSelectView so picks made in
+        # the dropdown aren't lost when navigating back.
+        live = self.selected_systems
+        parent = getattr(self, "view", None)
+        if parent is not None and hasattr(parent, "get_full_selection"):
+            try:
+                live = parent.get_full_selection()
+            except Exception:
+                pass
+        view = CategorySelectionView(self.auto_setup, self.guild_id, live)
+        embed = self.auto_setup.create_welcome_embed(interaction.guild, live)
         await interaction.response.edit_message(embed=embed, view=view)
 
 
@@ -241,15 +282,40 @@ class SystemMultiSelect(discord.ui.Select):
             min_values=0,
             max_values=len(options),
             options=options,
-            custom_id=f"system_select_{guild_id}_{category_name}"
+            custom_id=f"system_select_{guild_id}_{category_name}",
         )
         self.guild_id = guild_id
         self.category_name = category_name
-    
+
     async def callback(self, interaction: discord.Interaction):
-        # Store selections - will be collected when "Confirm" is clicked
-        if not interaction.response.is_done():
-            await interaction.response.defer()
+        """CRITICAL: persist the picks onto the parent view so Confirm/Install can see them.
+        Previously this just deferred and discarded `self.values` — that's why install did nothing."""
+        try:
+            picks = list(self.values or [])
+            parent = self.view  # the SystemSelectView
+            if parent is not None:
+                parent.current_picks = picks
+                # Mirror the picks into the persistent selected_systems list too,
+                # so the Cancel/Back path retains them.
+                cat_systems = set(parent.category.get("systems", []))
+                kept = [s for s in (parent.selected_systems or []) if s not in cat_systems]
+                parent.selected_systems = kept + [p for p in picks if p not in kept]
+                # Update each SelectOption.default so the UI re-renders with checks intact.
+                for opt in self.options:
+                    opt.default = opt.value in picks
+            if not interaction.response.is_done():
+                await interaction.response.defer()
+        except Exception as e:
+            try:
+                from logger import logger
+                logger.exception(f"SystemMultiSelect.callback failed: {e}")
+            except Exception:
+                pass
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.defer()
+            except Exception:
+                pass
 
 
 class AddCategoryButton(discord.ui.Button):
@@ -258,15 +324,21 @@ class AddCategoryButton(discord.ui.Button):
         self.auto_setup = auto_setup
         self.guild_id = guild_id
         self.category = category
+        # Snapshot kept only as a fallback — live state from self.view wins.
         self.selected_systems = selected_systems or []
-    
+
     async def callback(self, interaction: discord.Interaction):
-        # Add all systems from this category
-        new_selections = self.selected_systems.copy()
+        # Pull LIVE selection from the parent view, then add every system in this category.
+        parent = getattr(self, "view", None)
+        if parent is not None and hasattr(parent, "get_full_selection"):
+            current = parent.get_full_selection()
+        else:
+            current = list(self.selected_systems)
+        new_selections = list(current)
         for sys in self.category["systems"]:
             if sys not in new_selections:
                 new_selections.append(sys)
-        
+
         view = CategorySelectionView(self.auto_setup, self.guild_id, new_selections)
         embed = self.auto_setup.create_welcome_embed(interaction.guild, new_selections)
         await interaction.response.edit_message(embed=embed, view=view)
@@ -277,14 +349,75 @@ class ConfirmSelectionButton(discord.ui.Button):
         super().__init__(label="✅ Confirm & Install Selected", style=discord.ButtonStyle.success, custom_id=f"confirm_systems_{guild_id}")
         self.auto_setup = auto_setup
         self.guild_id = guild_id
-    
+
     async def callback(self, interaction: discord.Interaction):
-        # Collect all selected systems from the view
-        selected = []
-        # This will be populated from the parent view's selected_systems
-        await interaction.response.defer(ephemeral=True)
-        
-        # The actual installation will be handled by the auto_setup's _run_selected_setup
+        """Actually install the systems. Reads the live selection from the parent
+        SystemSelectView (via get_full_selection). Previously this was a stub that
+        only deferred — that's why nothing happened when users clicked it."""
+        try:
+            parent = getattr(self, "view", None)
+            selected: List[str] = []
+            if parent is not None and hasattr(parent, "get_full_selection"):
+                selected = parent.get_full_selection()
+            elif parent is not None:
+                selected = list(getattr(parent, "selected_systems", []) or [])
+
+            if not selected:
+                return await interaction.response.send_message(
+                    "❌ You haven't selected any systems yet. Pick at least one from the dropdown above, then click **Confirm & Install Selected** again.",
+                    ephemeral=True,
+                )
+
+            guild = interaction.guild
+            if guild is None:
+                return await interaction.response.send_message("❌ This must be used inside a server.", ephemeral=True)
+
+            auto_setup = self.auto_setup or interaction.client.get_cog("AutoSetup")
+            if not auto_setup:
+                return await interaction.response.send_message(
+                    "❌ Setup system not initialized. Please ask an admin to restart the bot.",
+                    ephemeral=True,
+                )
+
+            # Edit the original message immediately so the user sees feedback within 3s.
+            try:
+                await interaction.response.edit_message(
+                    content=f"⚙️ Starting setup of **{len(selected)}** systems: {', '.join(selected[:10])}{'...' if len(selected)>10 else ''}",
+                    embed=None,
+                    view=None,
+                )
+            except Exception:
+                try:
+                    await interaction.response.defer(ephemeral=True)
+                except Exception:
+                    pass
+
+            # Run the install — wrap so errors surface via followup, not "interaction failed".
+            try:
+                await auto_setup._run_selected_setup(
+                    guild.id, interaction.user, selected, interaction.channel_id
+                )
+            except Exception as e:
+                logger.exception(f"ConfirmSelectionButton: install failed: {e}")
+                try:
+                    await interaction.followup.send(
+                        f"⚠️ Install hit an error: `{type(e).__name__}: {e}`. Some systems may have been installed.",
+                        ephemeral=True,
+                    )
+                except Exception:
+                    pass
+        except Exception as e:
+            try:
+                logger.exception(f"ConfirmSelectionButton outer error: {e}")
+            except Exception:
+                pass
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(f"⚠️ {type(e).__name__}: {e}", ephemeral=True)
+                else:
+                    await interaction.response.send_message(f"⚠️ {type(e).__name__}: {e}", ephemeral=True)
+            except Exception:
+                pass
 
 
 class CategorySelectionView(discord.ui.View):
