@@ -822,7 +822,7 @@ class AutoSetup(commands.Cog):
     async def _setup_suggestions(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
             channel = analysis.existing_channels.get("suggestions") or await self._create_setup_channel(guild, "suggestions")
-            from modules.suggestions import SuggestionButton
+
             view = discord.ui.View(timeout=None)
             view.add_item(SuggestionButton(guild.id))
             await channel.send("Submit suggestions here!", view=view)
@@ -1179,3 +1179,102 @@ class AutoSetup(commands.Cog):
     async def autosetup_error(self, interaction: discord.Interaction, error):
         if isinstance(error, app_commands.MissingPermissions):
             await interaction.response.send_message("❌ You need Administrator permissions to use this command.", ephemeral=True)
+
+
+# Added imports for button components
+from modules.tickets import TicketModal
+from modules.suggestions import SuggestionModal
+from modules.staff_system import StaffApplicationModal
+
+
+class CreateTicketButton(discord.ui.View):
+    def __init__(self, guild_id: int = 0):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+
+    @discord.ui.button(label='Create Ticket', style=discord.ButtonStyle.primary, custom_id='create_ticket_button_persistent')
+    async def create_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        system = getattr(interaction.client, 'tickets', None)
+        if not system:
+            await interaction.response.send_message('❌ Ticket system is not available.', ephemeral=True)
+            return
+        settings = system.get_guild_settings(interaction.guild_id)
+        max_per_user = settings.get('max_per_user', 0)
+        if max_per_user > 0:
+            open_tickets = system.get_user_tickets(interaction.guild_id, interaction.user.id)
+            if len(open_tickets) >= max_per_user:
+                await interaction.response.send_message(
+                    f'❌ You already have {len(open_tickets)} open tickets. Please close one before opening another.',
+                    ephemeral=True
+                )
+                return
+        await interaction.response.send_modal(TicketModal())
+
+
+class SuggestionButton(discord.ui.View):
+    def __init__(self, guild_id: int = 0):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+
+    @discord.ui.button(label='Submit Suggestion', style=discord.ButtonStyle.success, custom_id='suggestion_button_persistent')
+    async def submit_suggestion(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_id = self.guild_id or interaction.guild_id
+        if not guild_id:
+            await interaction.response.send_message('❌ Cannot determine guild.', ephemeral=True)
+            return
+        modal = SuggestionModal(guild_id)
+        await interaction.response.send_modal(modal)
+
+
+class ApplyStaffButton(discord.ui.View):
+    def __init__(self, guild_id: int = 0):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+
+    @discord.ui.button(label='Apply for Staff', style=discord.ButtonStyle.primary, custom_id='apply_staff_button_persistent')
+    async def apply_staff(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = StaffApplicationModal(interaction.client)
+        await interaction.response.send_modal(modal)
+
+
+class RoleSelectButton(ui.Button):
+    def __init__(self, guild_id: int = 0):
+        super().__init__(label='Select Role', style=discord.ButtonStyle.secondary, custom_id='role_select_button_persistent')
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        if not guild:
+            await interaction.response.send_message('❌ This can only be used in a server.', ephemeral=True)
+            return
+        view = ui.View(timeout=30)
+
+        class RoleSelect(ui.RoleSelect):
+            def __init__(self):
+                super().__init__(placeholder='Select a role to assign or remove', min_values=1, max_values=1)
+
+            async def callback(self, select_interaction: discord.Interaction):
+                if not self.values:
+                    await select_interaction.response.send_message('No role selected.', ephemeral=True)
+                    return
+                role = self.values[0]
+                user = select_interaction.user
+                try:
+                    if role in user.roles:
+                        await user.remove_roles(role)
+                        await select_interaction.response.send_message(f'✅ Removed role: {role.name}', ephemeral=True)
+                    else:
+                        await user.add_roles(role)
+                        await select_interaction.response.send_message(f'✅ Added role: {role.name}', ephemeral=True)
+                except discord.Forbidden:
+                    await select_interaction.response.send_message('❌ I lack permissions to manage roles.', ephemeral=True)
+                except Exception as e:
+                    logger.error(f'Error toggling role: {e}')
+                    await select_interaction.response.send_message('❌ An error occurred.', ephemeral=True)
+
+        view.add_item(RoleSelect())
+        await interaction.response.send_message('Select a role to toggle:', view=view, ephemeral=True)
+
+
+async def setup(bot):
+    await bot.add_cog(AutoSetup(bot))
