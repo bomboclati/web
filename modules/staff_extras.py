@@ -154,12 +154,10 @@ class StaffExtras:
             
             xp = dm.get_guild_data(guild_id, f"xp_{member.id}", 0)
             messages = dm.get_guild_data(guild_id, f"messages_{member.id}", 0)
-            achievements = dm.get_guild_data(guild_id, f"achievements_{member.id}", 0)
             
             score = (
-                (xp / 5000 * 0.20) +
-                (messages / 1000 * 0.15) +
-                (achievements / 20 * 0.10)
+                (xp / 5000 * 0.25) +
+                (messages / 1000 * 0.20)
             )
             
             return min(1.0, score)

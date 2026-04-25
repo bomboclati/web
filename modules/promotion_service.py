@@ -11,27 +11,17 @@ class PromotionService:
     
     def __init__(self):
         self._default_metrics = {
-            "xp": {"weight": 0.12, "max": 5000, "enabled": True},
-            "tenure_days": {"weight": 0.10, "max": 90, "enabled": True},
-            "messages": {"weight": 0.10, "max": 1000, "enabled": True},
+            "xp": {"weight": 0.15, "max": 5000, "enabled": True},
+            "tenure_days": {"weight": 0.12, "max": 90, "enabled": True},
+            "messages": {"weight": 0.12, "max": 1000, "enabled": True},
             "tickets_resolved": {"weight": 0.15, "max": 50, "enabled": True},
-            "achievements": {"weight": 0.08, "max": 20, "enabled": True},
-            "voice_minutes": {"weight": 0.08, "max": 3600, "enabled": True},
+            "voice_minutes": {"weight": 0.10, "max": 3600, "enabled": True},
             "rep_received": {"weight": 0.08, "max": 100, "enabled": True},
             "rep_given": {"weight": 0.06, "max": 100, "enabled": True},
-            "gamification_score": {"weight": 0.08, "max": 100, "enabled": True},
-            "badge_count": {"weight": 0.05, "max": 10, "enabled": True},
+            "gamification_score": {"weight": 0.10, "max": 100, "enabled": True},
             "level": {"weight": 0.02, "max": 50, "enabled": True},
             "events_hosted": {"weight": 0.10, "max": 10, "enabled": True},
             "peer_votes": {"weight": 0.05, "max": 20, "enabled": True}
-        }
-        
-        self._default_achievement_bonuses = {
-            "Helper": 1.2,
-            "Event Organizer": 1.15,
-            "Problem Solver": 1.1,
-            "Active Contributor": 1.1,
-            "Trusted": 1.05,
         }
         
         self._default_tier_requirements = {}
@@ -41,19 +31,8 @@ class PromotionService:
         self._last_notification_time = {}
 
     def _calculate_gamification_score(self, guild_id: int, user_id: int) -> int:
-        """Calculate a gamification score based on badges, quests, and skills."""
+        """Calculate a gamification score based on quests and skills."""
         try:
-            # Base score from badges earned
-            awarded = dm.load_json("awarded_badges", default={}).get(str(guild_id), {}).get(str(user_id), [])
-            badge_score = len(awarded) * 5
-            
-            # Bonus from legacy badge data if it exists
-            legacy_badges = dm.get_guild_data(guild_id, f"badges_{user_id}", [])
-            if isinstance(legacy_badges, list):
-                for b in legacy_badges:
-                    if isinstance(b, dict):
-                        badge_score += b.get("evolved_level", 1) * 2
-            
             # Quest completion bonus
             udata = dm.get_guild_data(guild_id, f"user_{user_id}", {})
             quests = udata.get("quests_completed", 0)
@@ -62,7 +41,7 @@ class PromotionService:
             skills = dm.get_guild_data(guild_id, f"skills_{user_id}", {})
             skill_score = sum(s.get("level", 1) for s in skills.values()) if isinstance(skills, dict) else 0
             
-            total_score = badge_score + (quests * 5) + (skill_score * 2)
+            total_score = (quests * 10) + (skill_score * 5)
             return min(100, total_score)
         except Exception as e:
             logger.error(f"Error calculating gamification score: {e}")
@@ -99,12 +78,10 @@ class PromotionService:
             "tenure_days": tenure_days,
             "messages": udata.get("on_duty_messages", udata.get("total_messages", 0)),
             "tickets_resolved": dm.get_guild_data(guild_id, f"tickets_resolved_{user_id}", 0),
-            "achievements": len(dm.get_guild_data(guild_id, f"achievements_{user_id}", [])),
             "voice_minutes": udata.get("voice_minutes", 0),
             "rep_received": udata.get("rep_received", 0),
             "rep_given": udata.get("rep_given", 0),
             "gamification_score": self._calculate_gamification_score(guild_id, user_id),
-            "badge_count": len(dm.get_guild_data(guild_id, f"badges_{user_id}", [])),
             "level": self._get_user_level(guild_id, user_id),
             "events_hosted": dm.get_guild_data(guild_id, f"events_hosted_{user_id}", 0),
             "peer_votes": len(dm.get_guild_data(guild_id, f"peer_votes_{user_id}", []))
@@ -119,22 +96,6 @@ class PromotionService:
             raw_val = values.get(metric_name, 0)
             normalized = max(0, min(1, raw_val / max_val)) if max_val > 0 else 0
             score += normalized * weight
-        
-        # Apply achievement bonuses
-        bonuses = config.get("achievement_bonuses", self._default_achievement_bonuses) if config else self._default_achievement_bonuses
-        
-        user_achievements = dm.get_guild_data(guild_id, f"achievements_{user_id}", [])
-        # Also check new awarded_badges.json
-        awarded = dm.load_json("awarded_badges", default={}).get(str(guild_id), {}).get(str(user_id), [])
-
-        total_bonus = 1.0
-        for ach_name, multiplier in bonuses.items():
-            # Check by name in legacy data or by ID in new data
-            has_ach = any(a.get("name") == ach_name for a in user_achievements if isinstance(a, dict)) or ach_name in awarded
-            if has_ach:
-                total_bonus += (multiplier - 1.0)
-        
-        score = score * min(total_bonus, 2.0)
         
         return min(1.0, score)
 
@@ -223,16 +184,12 @@ class PromotionService:
         
         joined_at = member.joined_at or discord.utils.utcnow()
         tenure_days = (discord.utils.utcnow() - joined_at).days
-        user_achievements = dm.get_guild_data(guild_id, f"achievements_{member.id}", [])
         
         missing = []
         for req_type, req_value in tier_reqs.items():
             if req_type == "messages":
                 if udata.get("total_messages", 0) < req_value:
                     missing.append(f"messages: {udata.get('total_messages', 0)}/{req_value}")
-            elif req_type == "achievements":
-                if len(user_achievements) < req_value:
-                    missing.append(f"achievements: {len(user_achievements)}/{req_value}")
             elif req_type == "tenure_days":
                 if tenure_days < req_value:
                     missing.append(f"tenure: {tenure_days}/{req_value} days")

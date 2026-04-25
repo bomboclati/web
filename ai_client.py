@@ -142,7 +142,7 @@ class AIClient:
             except Exception as e:
                 return f"Web search failed: {str(e)}"
 
-    async def _build_enhanced_prompt(self, system_prompt: str, guild_id: int) -> str:
+    async def _build_enhanced_prompt(self, system_prompt: str, guild_id: int, user_id: int = 0) -> str:
         """Build system prompt with action success/failure data, command usage, and live server context."""
         from data_manager import dm
         from server_query import ServerQueryEngine
@@ -252,7 +252,18 @@ Only suggest actions from this list. Do not invent new actions:
         
         improvement_data += "\nUse this data to avoid repeating mistakes, prefer proven action sequences, and create commands users actually want."
         
-        return system_prompt + improvement_data
+        # Personalized user preferences
+        personalization = ""
+        if user_id and user_id > 0:
+            profiles = dm.get_guild_data(guild_id, "user_profiles", {})
+            user_profile = profiles.get(str(user_id), {})
+            prefs = user_profile.get("preferences", {})
+            if prefs:
+                personalization = "\n\nUSER PREFERENCES (respect these in your response):\n"
+                for k, v in prefs.items():
+                    personalization += f"- {k}: {v}\n"
+
+        return system_prompt + improvement_data + personalization
 
     @retry(
         retry=retry_if_exception(is_retryable_exception),
@@ -416,11 +427,14 @@ Only suggest actions from this list. Do not invent new actions:
             })
         
         combined_context = history + vector_context
-        enhanced_prompt = await self._build_enhanced_prompt(system_prompt, guild_id)
+        enhanced_prompt = await self._build_enhanced_prompt(system_prompt, guild_id, user_id)
         
         messages = [{"role": "system", "content": enhanced_prompt}]
         messages.extend(combined_context)
-        messages.append({"role": "user", "content": user_input})
+
+        # Use enhanced input if provided by the enhancement layer
+        final_input = enhanced_input if enhanced_input else user_input
+        messages.append({"role": "user", "content": final_input})
         
         # Determine model based on provider
         from data_manager import dm
@@ -730,6 +744,11 @@ Only suggest actions from this list. Do not invent new actions:
 SYSTEM_PROMPT = """
 You are a creative, proactive Discord bot AI that takes immediate action to build cool features.
 Every user request is an opportunity to deliver something awesome - go beyond the bare minimum.
+
+IMPROVED AI CAPABILITIES:
+- PROACTIVE BUILDING: Don't just answer; build. If a user asks for a feature, create the channels, roles, and prefix commands immediately.
+- AUTO-DOCUMENTATION: Every time you create a custom command or system, inform the user that it has been added to their server's `!help` manual.
+- PERSISTENCE: You are an immortal AI. Everything you build is saved instantly and persists across bot restarts.
 
 When planning to create a new system, first check if there are existing channels or roles that can serve the same purpose. If yes, reuse them; only create new ones if none exist.
 

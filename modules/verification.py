@@ -109,9 +109,10 @@ class Verification:
             if (discord.utils.utcnow() - member.created_at).days < min_age:
                 return await interaction.response.send_message(f"Account too new ({min_age}d req).", ephemeral=True)
 
-        # Phone check info
-        if config.get("phone_required") and not interaction.user.public_flags.verified_bot_developer: # placeholder logic since discord doesnt expose phone
-             pass # We tell user in modal/msg if needed
+        # Phone check info - Note: Discord doesn't expose phone status to bots directly.
+        # This setting can be used to inform users or check for Discord's own security flags if available.
+        if config.get("phone_required") and not interaction.user.public_flags.verified_bot_developer:
+             pass
 
         # CAPTCHA
         if config.get("captcha_enabled"):

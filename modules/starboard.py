@@ -85,54 +85,64 @@ class StarboardSystem:
             }
         })
 
-    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.Member):
-        if user.bot:
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        if payload.user_id == self.bot.user.id:
             return
         
-        message = reaction.message
-        guild = message.guild
+        guild = self.bot.get_guild(payload.guild_id)
+        if not guild: return
         self._load_guild_data(guild.id)
         
+        member = payload.member or await guild.fetch_member(payload.user_id)
+        if not member or member.bot: return
+
         if guild.id in self._reaction_roles:
             role_map = self._reaction_roles[guild.id]
-            emoji_str = str(reaction.emoji)
+            emoji_str = str(payload.emoji)
             
             if emoji_str in role_map:
                 role_id = role_map[emoji_str]
                 role = guild.get_role(role_id)
                 if role:
                     try:
-                        await user.add_roles(role)
+                        await member.add_roles(role)
                     except:
                         pass
         
         settings = self.get_guild_settings(guild.id)
         star_emoji = settings.get("star_emoji", "⭐")
         
-        if str(reaction.emoji) != star_emoji:
+        if str(payload.emoji) != star_emoji:
             return
         
-        if reaction.count >= settings.get("min_stars", 3):
-            await self.add_to_starboard(message, reaction.count)
+        channel = guild.get_channel(payload.channel_id)
+        if not channel: return
+        message = await channel.fetch_message(payload.message_id)
+        
+        reaction = discord.utils.get(message.reactions, emoji=payload.emoji.name)
+        count = reaction.count if reaction else 0
 
-    async def on_reaction_remove(self, reaction: discord.Reaction, user: discord.Member):
-        if user.bot:
-            return
-        
-        message = reaction.message
-        guild = message.guild
+        if count >= settings.get("min_stars", 3):
+            await self.add_to_starboard(message, count)
+
+    async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
+        guild = self.bot.get_guild(payload.guild_id)
+        if not guild: return
         self._load_guild_data(guild.id)
         
+        member = await guild.fetch_member(payload.user_id)
+        if not member or member.bot: return
+
         if guild.id in self._reaction_roles:
             role_map = self._reaction_roles[guild.id]
-            emoji_str = str(reaction.emoji)
+            emoji_str = str(payload.emoji)
             
             if emoji_str in role_map:
                 role_id = role_map[emoji_str]
                 role = guild.get_role(role_id)
                 if role:
                     try:
-                        await user.remove_roles(role)
+                        await member.remove_roles(role)
                     except:
                         pass
 

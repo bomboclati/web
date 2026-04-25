@@ -42,17 +42,30 @@ class VectorMemory:
             return
             
         try:
-            # Ensure directory exists
-            os.makedirs(self.persist_directory, exist_ok=True)
+            # Shared infrastructure for sharding
+            # Check for remote ChromaDB configuration
+            chroma_host = os.getenv("CHROMA_HOST")
+            chroma_port = os.getenv("CHROMA_PORT", "8000")
             
-            # Initialize client
-            self.client = chromadb.PersistentClient(
-                path=self.persist_directory,
-                settings=Settings(
-                    anonymized_telemetry=False,
-                    allow_reset=True
+            if chroma_host:
+                logger.info(f"Connecting to remote ChromaDB at {chroma_host}:{chroma_port}")
+                self.client = chromadb.HttpClient(
+                    host=chroma_host,
+                    port=chroma_port,
+                    settings=Settings(anonymized_telemetry=False)
                 )
-            )
+            else:
+                # Ensure directory exists for local persistent storage
+                os.makedirs(self.persist_directory, exist_ok=True)
+
+                # Initialize client
+                self.client = chromadb.PersistentClient(
+                    path=self.persist_directory,
+                    settings=Settings(
+                        anonymized_telemetry=False,
+                        allow_reset=True
+                    )
+                )
             
             # Get or create collection for conversations
             self.collection = self.client.get_or_create_collection(

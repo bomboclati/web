@@ -165,7 +165,7 @@ Make it exciting and clear."""
             return {
                 "title": result.get("title", f"🎮 {event_name}"),
                 "description": result.get("description", details),
-                "schedule": result.get("schedule", "TBD"),
+                "schedule": result.get("schedule", "Scheduled soon"),
                 "requirements": result.get("requirements", []),
                 "rewards": result.get("rewards", []),
                 "banner_text": result.get("banner_text", event_name[:50])
@@ -176,7 +176,7 @@ Make it exciting and clear."""
             return {
                 "title": f"🎮 {event_name}",
                 "description": details,
-                "schedule": "TBD",
+                "schedule": "Scheduled soon",
                 "requirements": [],
                 "rewards": [],
                 "banner_text": event_name[:50]
