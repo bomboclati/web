@@ -202,7 +202,7 @@ class SystemSelectView(discord.ui.View):
         for sys_name in systems:
             sys_display_name = sys_name.replace("_", " ").title()
             is_recommended = sys_name in recommended
-            emoji = "⭐" if is_recommended else "•"
+             emoji = "⭐" if is_recommended else "⚪"
             label = f"{sys_display_name}{' [Recommended]' if is_recommended else ''}"
             
             options.append(discord.SelectOption(
