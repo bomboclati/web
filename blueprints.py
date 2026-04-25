@@ -539,10 +539,10 @@ Voting buttons on suggestion embeds:
 
 Staff review embed buttons (in #suggestions-review):
 
-· ✅ Approve → updates status to "approved" → edits suggestion embed to show green "APPROVED" badge → DMs submitter with approval message
-· ❌ Deny → opens DenyModal (reason) → updates status to "denied" → edits embed to show red "DENIED" badge + reason → DMs submitter
-· 🚧 Mark In Progress → updates status to "in_progress" → edits embed with yellow "IN PROGRESS" badge → DMs submitter
-· ✅ Mark Completed → updates status to "completed" → edits embed with blue "COMPLETED" badge → DMs submitter
+· ✅ Approve → updates status to "approved" → edits suggestion embed to show green "APPROVED" → DMs submitter with approval message
+· ❌ Deny → opens DenyModal (reason) → updates status to "denied" → edits embed to show red "DENIED" + reason → DMs submitter
+· 🚧 Mark In Progress → updates status to "in_progress" → edits embed with yellow "IN PROGRESS" → DMs submitter
+· ✅ Mark Completed → updates status to "completed" → edits embed with blue "COMPLETED" → DMs submitter
 · 🗑️ Delete Suggestion → removes embed and deletes suggestion from DB
 · 📌 Pin Suggestion → pins the suggestion embed in #suggestions
 
@@ -729,7 +729,7 @@ Economy features:
 
 Shop features:
 
-· Items have: name, price (coins or gems), description, stock (limited or unlimited), role reward (auto‑assigns role on purchase), badge reward, custom emoji
+· Items have: name, price (coins or gems), description, stock (limited or unlimited), role reward (auto‑assigns role on purchase), custom emoji
 · Purchase flow: user clicks buy → checks balance → checks stock → deducts coins → assigns role if configured → adds to inventory → saves transaction → confirms with embed
 · Item categories: Roles, Cosmetics, Access, Special, Limited
 · Limited stock items: stock count shown, auto‑removes from shop when stock hits 0
@@ -783,7 +783,7 @@ XP system features:
 Rewards shop:
 
 · Members spend XP (not coins) to buy rewards
-· Reward types: role unlock, custom color role, custom nickname, vanity badge, access to locked channels
+· Reward types: role unlock, custom color role, custom nickname, access to locked channels
 · Each reward has a level requirement AND an XP cost
 · !rewards shows all available rewards
 · !buyreward <name> checks level + XP → deducts XP → applies reward
@@ -861,7 +861,7 @@ Setup creates:
 
 · Achievements config saved to guild_data.achievements_config
 · Default achievement set pre‑loaded
-· !achievements !badges !progress commands registered
+· !achievements !progress commands registered
 
 Built‑in achievement categories and triggers (all auto‑checked):
 
@@ -878,7 +878,7 @@ Built‑in achievement categories and triggers (all auto‑checked):
 Achievement unlock flow:
 → Achievement condition detected → checks if user already has it → if new: adds to user's achievements in DB
 → Posts unlock embed to configured achievements channel: achievement icon, name, description, user mention
-→ Awards configured reward: coins bonus, XP bonus, special role, custom badge
+→ Awards configured reward: coins bonus, XP bonus, special role
 → DMs user the unlock notification if enabled
 
 Admin panel !achievementspanel buttons:
@@ -915,8 +915,8 @@ Features:
 · Weekly Challenges: bigger challenges, bigger rewards
 · Monthly Tournament: server‑wide competition, top 3 get special roles + prizes
 · Streak System: daily activity streak counter, bonuses at 7/30/100 day milestones
-· Titles/Badges: cosmetic titles users can display (earned through achievements + levels + challenges)
-· Prestige System: at max level, users can "prestige" — resets XP/level but gives a permanent prestige badge
+· Titles: cosmetic titles users can display (earned through achievements + levels + challenges)
+· Prestige System: at max level, users can "prestige" — resets XP/level but gives a permanent prestige reward
 · Mini‑Games: !trivia, !dice, !flip, !slots — all pay out coins, save results to DB
 · Seasonal Events: timed events that modify XP/coin rates and unlock exclusive achievements
 · Ranking Titles: automated title assignments based on level ranges (e.g. Level 1‑9: Newcomer, 10‑24: Regular, 25‑49: Veteran, 50‑99: Elite, 100+: Legend)
