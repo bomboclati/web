@@ -404,12 +404,23 @@ class AntiRaidConfigView(ConfigPanelView):
 
     def create_embed(self, guild_id: int = None) -> discord.Embed:
         c = self.get_config(guild_id)
+        rules = c.setdefault("rules", {})
         embed = discord.Embed(title="🛡️ Anti-Raid System", color=discord.Color.red() if c.get("enabled", True) else discord.Color.greyple())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
         embed.add_field(name="Join Threshold", value=f"{c.get('mass_join_threshold', 10)}/{c.get('mass_join_window', 10)}s", inline=True)
         embed.add_field(name="Action", value=c.get("action", "lockdown").upper(), inline=True)
-        embed.add_field(name="Filters", value=f"Age: {'ON' if c.get('age_filter_enabled') else 'OFF'} | Link: {'ON' if c.get('link_spam_enabled') else 'OFF'} | Inv: {'ON' if c.get('invite_filter_enabled') else 'OFF'}", inline=False)
-        embed.add_field(name="Spam", value=f"Ment: {c.get('mention_threshold',5)} | Dup: {c.get('duplicate_threshold',3)}", inline=True)
+        embed.add_field(
+            name="Filters",
+            value=(
+                f"Age: {'ON' if c.get('age_filter_enabled') else 'OFF'} | "
+                f"Link: {'ON' if rules.get('link_spam', {}).get('enabled', True) else 'OFF'} | "
+                f"Inv: {'ON' if rules.get('invite_filter', {}).get('enabled', True) else 'OFF'} | "
+                f"Ment: {'ON' if rules.get('mention_filter', {}).get('enabled', True) else 'OFF'} | "
+                f"Dup: {'ON' if rules.get('duplicate_filter', {}).get('enabled', True) else 'OFF'} | "
+                f"Emoji: {'ON' if rules.get('emoji_filter', {}).get('enabled', True) else 'OFF'}"
+            ),
+            inline=False
+        )
         embed.add_field(name="Whitelist", value=f"{len(c.get('whitelist', []))} users", inline=True)
         return embed
 
@@ -481,19 +492,39 @@ class AntiRaidConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle Link Filter", emoji="🔗", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_antiraid_t_link")
     async def t_link(self, i, b):
-        c = self.get_config(i.guild_id); c["link_spam_enabled"] = not c.get("link_spam_enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id)
+        rules = c.setdefault("rules", {})
+        link_spam = rules.setdefault("link_spam", {})
+        link_spam["enabled"] = not link_spam.get("enabled", True)
+        self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
 
     @ui.button(label="Toggle Mention Filter", emoji="📣", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_antiraid_s_ment")
     async def s_ment(self, i, b):
-        c = self.get_config(i.guild_id); c["mention_filter_enabled"] = not c.get("mention_filter_enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id)
+        rules = c.setdefault("rules", {})
+        mention_filter = rules.setdefault("mention_filter", {})
+        mention_filter["enabled"] = not mention_filter.get("enabled", True)
+        self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
 
     @ui.button(label="Toggle Duplicate Filter", emoji="💬", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_antiraid_s_dup")
     async def s_dup(self, i, b):
-        c = self.get_config(i.guild_id); c["duplicate_filter_enabled"] = not c.get("duplicate_filter_enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id)
+        rules = c.setdefault("rules", {})
+        dup_filter = rules.setdefault("duplicate_filter", {})
+        dup_filter["enabled"] = not dup_filter.get("enabled", True)
+        self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
 
     @ui.button(label="Toggle Invite Filter", emoji="🌐", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_antiraid_t_inv")
     async def t_inv(self, i, b):
-        c = self.get_config(i.guild_id); c["invite_filter_enabled"] = not c.get("invite_filter_enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id)
+        rules = c.setdefault("rules", {})
+        inv_filter = rules.setdefault("invite_filter", {})
+        inv_filter["enabled"] = not inv_filter.get("enabled", True)
+        self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
 
     @ui.button(label="Raid Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_antiraid_r_stats")
     async def r_stats(self, i, b):
@@ -1908,7 +1939,25 @@ class StaffPromoConfigView(ConfigPanelView):
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="🌟 Staff Promotion System Configuration", color=discord.Color.gold())
 
-        settings = c.get("settings", {"auto_promote": True, "review_mode": False, "notify_on_promotion": True})
+        settings = c.setdefault("settings", {
+            "auto_promote": True,
+            "auto_demote": False,
+            "demotion_threshold_buffer": 0.1,
+            "min_tenure_hours": 72,
+            "excluded_users": [],
+            "promotion_cooldown_hours": 24,
+            "demotion_cooldown_hours": 168,
+            "notify_on_promotion": True,
+            "notify_on_demotion": True,
+            "notify_near_promotion": True,
+            "near_promotion_threshold": 0.05,
+            "announce_channel": None,
+            "log_channel": None,
+            "progress_notify_channel": None,
+            "review_mode": False,
+            "review_channel": None,
+            "activity_decay_days": 30,
+        })
         embed.add_field(name="Auto-Promote", value="✅ ON" if settings.get("auto_promote", True) else "❌ OFF", inline=True)
         embed.add_field(name="Review Mode", value="✅ ON" if settings.get("review_mode", False) else "❌ OFF", inline=True)
         embed.add_field(name="Review Channel", value=f"<#{settings.get('review_channel')}>" if settings.get('review_channel') else "None", inline=True)
@@ -2026,19 +2075,76 @@ class StaffPromoConfigView(ConfigPanelView):
     @ui.button(label="Toggle Auto-Promote", emoji="🚀", style=discord.ButtonStyle.success, row=2, custom_id="cfg_staff_auto")
     async def toggle_auto(self, i, b):
         c = self.get_config(i.guild_id)
-        c.setdefault("settings", {"auto_promote": True, "review_mode": False, "notify_on_promotion": True})
-        c["settings"]["auto_promote"] = not c["settings"].get("auto_promote", True)
+        settings = c.setdefault("settings", {
+            "auto_promote": True,
+            "auto_demote": False,
+            "demotion_threshold_buffer": 0.1,
+            "min_tenure_hours": 72,
+            "excluded_users": [],
+            "promotion_cooldown_hours": 24,
+            "demotion_cooldown_hours": 168,
+            "notify_on_promotion": True,
+            "notify_on_demotion": True,
+            "notify_near_promotion": True,
+            "near_promotion_threshold": 0.05,
+            "announce_channel": None,
+            "log_channel": None,
+            "progress_notify_channel": None,
+            "review_mode": False,
+            "review_channel": None,
+            "activity_decay_days": 30,
+        })
+        settings["auto_promote"] = not settings.get("auto_promote", True)
         self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
 
     @ui.button(label="Toggle Review Mode", emoji="⚖️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staff_review")
     async def toggle_review(self, i, b):
         c = self.get_config(i.guild_id)
-        c.setdefault("settings", {})["review_mode"] = not c.get("settings", {}).get("review_mode", False)
+        settings = c.setdefault("settings", {
+            "auto_promote": True,
+            "auto_demote": False,
+            "demotion_threshold_buffer": 0.1,
+            "min_tenure_hours": 72,
+            "excluded_users": [],
+            "promotion_cooldown_hours": 24,
+            "demotion_cooldown_hours": 168,
+            "notify_on_promotion": True,
+            "notify_on_demotion": True,
+            "notify_near_promotion": True,
+            "near_promotion_threshold": 0.05,
+            "announce_channel": None,
+            "log_channel": None,
+            "progress_notify_channel": None,
+            "review_mode": False,
+            "review_channel": None,
+            "activity_decay_days": 30,
+        })
+        settings["review_mode"] = not settings.get("review_mode", False)
         self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
 
     @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staff_dm")
     async def toggle_dm(self, i, b):
-        c = self.get_config(i.guild_id); c.setdefault("settings", {})["notify_on_promotion"] = not c.get("settings", {}).get("notify_on_promotion", True)
+        c = self.get_config(i.guild_id)
+        settings = c.setdefault("settings", {
+            "auto_promote": True,
+            "auto_demote": False,
+            "demotion_threshold_buffer": 0.1,
+            "min_tenure_hours": 72,
+            "excluded_users": [],
+            "promotion_cooldown_hours": 24,
+            "demotion_cooldown_hours": 168,
+            "notify_on_promotion": True,
+            "notify_on_demotion": True,
+            "notify_near_promotion": True,
+            "near_promotion_threshold": 0.05,
+            "announce_channel": None,
+            "log_channel": None,
+            "progress_notify_channel": None,
+            "review_mode": False,
+            "review_channel": None,
+            "activity_decay_days": 30,
+        })
+        settings["notify_on_promotion"] = not settings.get("notify_on_promotion", True)
         self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
 
     @ui.button(label="Set Review Ch", emoji="🔔", style=discord.ButtonStyle.primary, row=3, custom_id="cfg_staff_rev_ch")
@@ -2106,6 +2212,7 @@ class WarningConfigView(ConfigPanelView):
         embed = discord.Embed(title="⚠️ User Warning System Configuration", color=discord.Color.orange())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
         embed.add_field(name="Expiry", value=f"{c.get('expiry_days', 30)} days", inline=True)
+        embed.add_field(name="DM Warnings", value="✅ ON" if c.get("dm_enabled", True) else "❌ OFF", inline=True)
 
         ts = c.get("thresholds", {})
         ts_text = "\n".join([f"• {k.title()}: {v['count']} -> {v['action'].upper()}" for k, v in ts.items()])
@@ -2139,6 +2246,13 @@ class WarningConfigView(ConfigPanelView):
     async def toggle_system(self, i, b):
         c = self.get_config(i.guild_id)
         c["enabled"] = not c.get("enabled", True)
+        self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
+
+    @ui.button(label="Toggle DM Warnings", emoji="📩", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_warn_toggle_dm")
+    async def toggle_dm(self, i, b):
+        c = self.get_config(i.guild_id)
+        c["dm_enabled"] = not c.get("dm_enabled", True)
         self.save_config(c, i.guild_id, i.client)
         await self.update_panel(i)
 
@@ -2951,8 +3065,19 @@ class LoggingConfigView(ConfigPanelView):
                 super().__init__(placeholder="Toggle event logs...", min_values=0, max_values=len(opts), options=opts)
             async def callback(self, it):
                 c = it.client.logging_system.get_config(it.guild_id)
-                if "enabled_events" not in c: c["enabled_events"] = {}
-                for k in c["enabled_events"]: c["enabled_events"][k] = (k in self.values)
+                enabled_events = c.setdefault("enabled_events", {
+                    "message_edit": True,
+                    "message_delete": True,
+                    "member_join": True,
+                    "member_leave": True,
+                    "voice_state": True,
+                    "channel_update": True,
+                    "role_update": True,
+                    "server_update": True,
+                    "invite_update": True,
+                    "thread_update": True
+                })
+                for k in enabled_events: enabled_events[k] = (k in self.values)
                 it.client.logging_system.save_config(it.guild_id, c)
                 await it.response.send_message("✅ Event logs updated.", ephemeral=True)
         c = i.client.logging_system.get_config(i.guild_id)

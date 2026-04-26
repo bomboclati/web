@@ -53,19 +53,30 @@ class AutoAnnouncer:
                         embed_data = schedule.get("embed", {})
                         
                         channel = guild.get_channel(channel_id)
-                        if channel:
-                            if embed_data:
-                                embed = discord.Embed(
-                                    title=embed_data.get("title", ""),
-                                    description=message,
-                                    color=int(embed_data.get("color", "349ke5f"), 16)
-                                )
-                                await channel.send(embed=embed)
-                            else:
-                                await channel.send(message)
-                            
+                        if not channel:
+                            logger.warning(f"Announcement channel {channel_id} not found in guild {guild_id}")
+                            schedule["posted"] = True  # Mark as posted to avoid retrying
+                            self._save_data()
+                            continue
+                        # Check if bot can send messages to the channel
+                        perms = channel.permissions_for(guild.me)
+                        if not perms.send_messages:
+                            logger.warning(f"Bot lacks send permissions in announcement channel {channel_id} for guild {guild_id}")
                             schedule["posted"] = True
                             self._save_data()
+                            continue
+                        if embed_data:
+                            embed = discord.Embed(
+                                title=embed_data.get("title", ""),
+                                description=message,
+                                color=int(embed_data.get("color", "349ke5f"), 16)
+                            )
+                            await channel.send(embed=embed)
+                        else:
+                            await channel.send(message)
+                        
+                        schedule["posted"] = True
+                        self._save_data()
             
             await asyncio.sleep(60)
 
