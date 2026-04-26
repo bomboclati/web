@@ -2337,7 +2337,7 @@ class AutoModConfigView(ConfigPanelView):
                 self.parent_view = parent_view
                 self.guild_id = guild_id
 
-            @discord.ui.button(label="Add Word", style=discord.ButtonStyle.success)
+            @discord.ui.button(label="Add Word", style=discord.ButtonStyle.success, custom_id="cfg_automod_word_add")
             async def add_word(self, it, btn):
                 class AddWordModal(ui.Modal, title="Add Banned Word"):
                     word = ui.TextInput(label="Word/Phrase")
@@ -2352,7 +2352,7 @@ class AutoModConfigView(ConfigPanelView):
                         else: await it2.response.send_message("Already in list.", ephemeral=True)
                 await it.response.send_modal(AddWordModal())
 
-            @discord.ui.button(label="Remove Word", style=discord.ButtonStyle.danger)
+            @discord.ui.button(label="Remove Word", style=discord.ButtonStyle.danger, custom_id="cfg_automod_word_rem")
             async def remove_word(self, it, btn):
                 c = dm.get_guild_data(it.guild_id, "automod_config", {})
                 words = c.get("rules", {}).get("banned_words", {}).get("words", [])
@@ -2370,7 +2370,7 @@ class AutoModConfigView(ConfigPanelView):
                 v = ui.View(); v.add_item(RemoveSelect(options=[discord.SelectOption(label=w) for w in words[:25]]))
                 await it.response.send_message("Select word to remove:", view=v, ephemeral=True)
 
-            @discord.ui.button(label="View List", style=discord.ButtonStyle.primary)
+            @discord.ui.button(label="View List", style=discord.ButtonStyle.primary, custom_id="cfg_automod_word_list")
             async def view_list(self, it, btn):
                 c = dm.get_guild_data(it.guild_id, "automod_config", {})
                 words = c.get("rules", {}).get("banned_words", {}).get("words", [])
@@ -2923,7 +2923,7 @@ class SuggestionsConfigView(ConfigPanelView):
                 self.parent = parent
                 self.suggestions = suggestions_list
             
-            @ui.select(placeholder="Filter by status", options=[
+            @ui.select(placeholder="Filter by status", custom_id="cfg_suggest_filter", options=[
                 discord.SelectOption(label="All", value="all"),
                 discord.SelectOption(label="Pending", value="pending"),
                 discord.SelectOption(label="Approved", value="approved"),
@@ -3152,15 +3152,15 @@ class EconomyConfigView(ConfigPanelView):
 
     @ui.button(label="Set Currency Name", emoji="✏️", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_eco_name")
     async def set_name(self, i, b):
-        await i.response.send_modal(_TextModal(self, "Currency Name", "currency_symbol", "Credits"))
+        await i.response.send_modal(_TextModal(self, "currency_symbol", "Currency Name", i.guild_id))
 
     @ui.button(label="Set Start Balance", emoji="💵", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_eco_start")
     async def set_start(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "Start Balance", "start_balance", "100"))
+        await i.response.send_modal(_NumberModal(self, "start_balance", "Start Balance", i.guild_id))
 
     @ui.button(label="Set Daily Amount", emoji="📅", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_eco_daily")
     async def set_daily(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "Daily Amount", "daily_amount", "50"))
+        await i.response.send_modal(_NumberModal(self, "daily_amount", "Daily Amount", i.guild_id))
 
     @ui.button(label="Set Work Rewards", emoji="⚒️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_eco_work")
     async def set_work(self, i, b):
@@ -3216,7 +3216,7 @@ class LevelingConfigView(ConfigPanelView):
 
     @ui.button(label="Set Cooldown", emoji="⏱️", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_lvl_cool")
     async def set_cooldown(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "XP Cooldown (seconds)", "cooldown", "60"))
+        await i.response.send_modal(_NumberModal(self, "cooldown", "XP Cooldown (seconds)", i.guild_id))
 
     @ui.button(label="Toggle Msg", emoji="💬", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_lvl_msg")
     async def toggle_msg(self, i, b):
@@ -3246,11 +3246,11 @@ class StarboardConfigView(ConfigPanelView):
 
     @ui.button(label="Set Threshold", emoji="🔢", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_stb_thresh")
     async def set_threshold(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "Starboard Threshold", "threshold", "3"))
+        await i.response.send_modal(_NumberModal(self, "threshold", "Starboard Threshold", i.guild_id))
 
     @ui.button(label="Set Emoji", emoji="✨", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_stb_emoji")
     async def set_emoji(self, i, b):
-        await i.response.send_modal(_TextModal(self, "Starboard Emoji", "emoji", "⭐"))
+        await i.response.send_modal(_TextModal(self, "emoji", "Starboard Emoji", i.guild_id))
 
 
 class AutoResponderConfigView(ConfigPanelView):
@@ -3347,7 +3347,7 @@ class ChatChannelsConfigView(ConfigPanelView):
 
     @ui.button(label="Set Personality", emoji="🎭", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_chat_pers")
     async def set_personality(self, i, b):
-        await i.response.send_modal(_TextModal(self, "AI Personality/Instruction", "personality", "You are a helpful assistant."))
+        await i.response.send_modal(_TextModal(self, "personality", "AI Personality/Instruction", i.guild_id))
 
     @ui.button(label="Manage Channels", emoji="💬", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_chat_chan")
     async def manage_channels(self, i, b):
