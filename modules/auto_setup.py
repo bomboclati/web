@@ -1115,8 +1115,8 @@ class AutoSetup(commands.Cog):
                 "categories": ["Feature", "Bug", "Content", "Other"]
             }
             dm.update_guild_data(guild.id, "suggestions_config", config)
-            from modules.suggestions import SuggestionButton
-            await channel.send("Submit suggestions here!", view=SuggestionButton(guild.id))
+            # Use local SuggestionButton to avoid import errors
+            await channel.send("Submit suggestions here!", view=SuggestionButton(guild_id=guild.id))
             return True
         except Exception as e:
             logger.error(f"Failed to setup suggestions: {e}")

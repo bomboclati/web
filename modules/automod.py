@@ -68,69 +68,70 @@ class AutoModSystem:
 
         content = message.content
         violations = []
+        rules = config.get("rules", {})
 
         # 1. Spam (X messages in Y seconds)
-        rule = config["rules"].get("spam", {})
+        rule = rules.get("spam", {})
         if rule.get("enabled"):
             if await self._check_spam(message, rule):
                 violations.append("Spam")
 
         # 2. Mention Spam
-        rule = config["rules"].get("mentions", {})
+        rule = rules.get("mentions", {})
         if rule.get("enabled"):
             if await self._check_mentions(message, rule):
                 violations.append("Mention Spam")
 
         # 3. Caps Spam
-        rule = config["rules"].get("caps", {})
+        rule = rules.get("caps", {})
         if rule.get("enabled"):
             if self._check_caps(content, rule):
                 violations.append("Caps Spam")
 
         # 4. Emoji Spam
-        rule = config["rules"].get("emojis", {})
+        rule = rules.get("emojis", {})
         if rule.get("enabled"):
             if self._check_emojis(content, rule):
                 violations.append("Emoji Spam")
 
         # 5. Link Spam
-        rule = config["rules"].get("links", {})
+        rule = rules.get("links", {})
         if rule.get("enabled"):
             if await self._check_links(message, rule):
                 violations.append("Link Spam")
 
         # 6. Discord Invites
-        rule = config["rules"].get("invites", {})
+        rule = rules.get("invites", {})
         if rule.get("enabled"):
             if await self._check_invites(content, message.guild):
                 violations.append("Discord Invite")
 
         # 7. Banned Words
-        rule = config["rules"].get("banned_words", {})
+        rule = rules.get("banned_words", {})
         if rule.get("enabled"):
             if self._check_banned_words(content, rule.get("words", [])):
                 violations.append("Banned Word")
 
         # 8. Zalgo Text
-        rule = config["rules"].get("zalgo", {})
+        rule = rules.get("zalgo", {})
         if rule.get("enabled"):
             if self._check_zalgo(content):
                 violations.append("Zalgo Text")
 
         # 9. Mass Ping
-        rule = config["rules"].get("mass_ping", {})
+        rule = rules.get("mass_ping", {})
         if rule.get("enabled"):
             if "@everyone" in content or "@here" in content:
                 violations.append("Mass Ping")
 
         # 10. Repeated Characters
-        rule = config["rules"].get("repeated_chars", {})
+        rule = rules.get("repeated_chars", {})
         if rule.get("enabled"):
             if re.search(r'(.)\1{9,}', content):
                 violations.append("Repeated Characters")
 
         # 11. New Account
-        rule = config["rules"].get("new_account", {})
+        rule = rules.get("new_account", {})
         if rule.get("enabled"):
             days = (discord.utils.utcnow() - message.author.created_at).days
             if days < rule.get("min_age_days", 3):
@@ -138,13 +139,13 @@ class AutoModSystem:
                 await self._log_violation(message, "New Account Message")
 
         # 12. Attachment Spam
-        rule = config["rules"].get("attachments", {})
+        rule = rules.get("attachments", {})
         if rule.get("enabled"):
             if await self._check_attachments(message, rule):
                 violations.append("Attachment Spam")
 
         # 13. Newline Spam
-        rule = config["rules"].get("newlines", {})
+        rule = rules.get("newlines", {})
         if rule.get("enabled"):
             if content.count('\n') > rule.get("max_newlines", 15):
                 violations.append("Newline Spam")

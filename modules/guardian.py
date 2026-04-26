@@ -95,20 +95,49 @@ class GuardianSystem(commands.Cog):
 
         # 1. Bot Token Detection
         if config.get("token_detection"):
-            if re.search(r"[a-zA-Z0-9_-]{24}\.[a-zA-Z0-9_-]{6}\.[a-zA-Z0-9_-]{27}", content):
-                await message.delete()
-                await self._take_action(author, config.get("toxicity_level", "WARN"), "Potential Bot Token Leaked")
+            # Refined regex for Discord tokens
+            token_pattern = r"(mfa\.[a-z0-9_-]{20,})|([a-z0-9_-]{24}\.[a-z0-9_-]{6}\.[a-z0-9_-]{27,})"
+            if re.search(token_pattern, content, re.IGNORECASE):
+                try:
+                    await message.delete()
+                except:
+                    pass
+                # Tokens are high risk, default to MUTE if not specified
+                action_level = config.get("token_action_level", "MUTE")
+                await self._take_action(author, action_level, "Potential Bot Token Leaked")
                 self._log_incident(guild.id, "token_leak", author.id, "DELETE", "Discord Token Pattern Found")
+
+                # Notify the user privately
+                try:
+                    await author.send("⚠️ **SECURITY ALERT**\nYour message was deleted because it appeared to contain a Discord Bot Token. Please reset your token immediately to prevent unauthorized access to your account/bot.")
+                except:
+                    pass
                 return
 
-        # 2. Toxicity & Scam Detection (AI-Powered)
-        # In a real scenario, we'd call bot.ai.chat() here to analyze sentiment/scam
-        # For the blueprint, we simulate high-confidence detection for known patterns
-        scam_patterns = ["nitro", "gift", "steam", "free", "airdrop"]
-        if any(p in content.lower() for p in scam_patterns) and ("http" in content):
-            await message.delete()
-            await self._take_action(author, config.get("scam_level", "MUTE"), "Scam Link Detected")
-            self._log_incident(guild.id, "scam_link", author.id, config.get("scam_level"), content)
+        # 2. Toxicity & Scam Detection
+        scam_patterns = ["nitro", "gift", "steam", "free", "airdrop", "robux", "crypto"]
+        if any(p in content.lower() for p in scam_patterns) and ("http" in content or "discord.gg" in content):
+            # Use AI for high-confidence scam detection if possible
+            is_scam = False
+            if hasattr(self.bot, "ai"):
+                try:
+                    # Quick AI verification for suspicious links
+                    analysis = await self.bot.ai.analyze_content(content, "scam_check")
+                    is_scam = analysis.get("is_scam", False)
+                except:
+                    is_scam = True # Fallback to pattern match
+            else:
+                is_scam = True # No AI, rely on patterns
+
+            if is_scam:
+                try:
+                    await message.delete()
+                except:
+                    pass
+                action_level = config.get("scam_level", "MUTE")
+                await self._take_action(author, action_level, "Scam Link Detected")
+                self._log_incident(guild.id, "scam_link", author.id, action_level, content)
+                return
 
     @commands.Cog.listener()
     async def on_typing(self, channel, user, when):
@@ -137,17 +166,30 @@ class GuardianSystem(commands.Cog):
             pass
 
     async def _take_action(self, member: discord.Member, level: str, reason: str):
+        if level == "OFF":
+            return
+
         try:
             if level == "WARN":
-                await member.send(f"⚠️ **Guardian Warning**\nServer: {member.guild.name}\nReason: {reason}")
+                try:
+                    await member.send(f"⚠️ **Guardian Warning**\nServer: {member.guild.name}\nReason: {reason}")
+                except:
+                    pass
+                # Also log to a moderation system if available
+                if hasattr(self.bot, "warnings"):
+                    await self.bot.warnings.issue_warning(member.guild, member.id, self.bot.user.id, f"Guardian: {reason}", "moderate")
+
             elif level == "MUTE":
                 from datetime import timedelta
                 await member.timeout(timedelta(hours=2), reason=f"Guardian: {reason}")
+
             elif level == "KICK":
                 await member.kick(reason=f"Guardian: {reason}")
+
             elif level == "BAN":
                 await member.ban(reason=f"Guardian: {reason}")
-        except: pass
+        except Exception as e:
+            logger.error(f"Guardian failed to take action {level} on {member.id}: {e}")
 
 async def setup(bot):
     await bot.add_cog(GuardianSystem(bot))

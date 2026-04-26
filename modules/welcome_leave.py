@@ -161,18 +161,21 @@ class WelcomeLeaveSystem:
                 suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
             return f"{n:,}{suffix}"
 
+        # Ensure member count is as accurate as possible
+        m_count = guild.member_count
+
         replacements = {
             "{user}": member.mention,
             "{user.mention}": member.mention,
             "{user.name}": member.name,
             "{user.id}": str(member.id),
             "{server}": guild.name,
-            "{server.membercount}": f"{guild.member_count:,}",
+            "{server.membercount}": f"{m_count:,}",
             "{date}": now.strftime("%Y-%m-%d"),
             "{time}": now.strftime("%H:%M:%S UTC"),
-            "{member_number}": get_ordinal(guild.member_count),
+            "{member_number}": get_ordinal(m_count),
             "{account_age}": f"{account_age} days",
-            "{join_position}": f"member #{guild.member_count:,}"
+            "{join_position}": f"member #{m_count:,}"
         }
 
         for placeholder, value in replacements.items():
