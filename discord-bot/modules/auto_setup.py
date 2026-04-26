@@ -1006,7 +1006,21 @@ class AutoSetup(commands.Cog):
     
     async def _setup_anti_raid(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            config = {"enabled": True, "sensitivity": "medium", "action": "kick"}
+            config = {
+                "enabled": True,
+                "sensitivity": "medium",
+                "action": "lockdown",
+                "mass_join_threshold": 10,
+                "mass_join_window": 10,
+                "rules": {
+                    "link_spam": {"enabled": True},
+                    "mention_spam": {"enabled": True, "threshold": 5},
+                    "duplicate_spam": {"enabled": True, "threshold": 3},
+                    "invites": {"enabled": True}
+                },
+                "whitelist": [],
+                "raid_log": []
+            }
             dm.update_guild_data(guild.id, "anti_raid_config", config)
             return True
         except Exception as e:
@@ -1015,7 +1029,18 @@ class AutoSetup(commands.Cog):
 
     async def _setup_guardian(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            config = {"enabled": True, "sensitivity": "medium"}
+            config = {
+                "enabled": True,
+                "sensitivity": "medium",
+                "alert_channel": None,
+                "token_detection": True,
+                "toxicity_level": "WARN",
+                "scam_level": "MUTE",
+                "nuke_level": "BAN",
+                "mass_dm_threshold": 10,
+                "whitelist": [],
+                "guardian_log": []
+            }
             dm.update_guild_data(guild.id, "guardian_config", config)
             return True
         except Exception as e:
@@ -1029,9 +1054,11 @@ class AutoSetup(commands.Cog):
                 "enabled": True,
                 "message": "Welcome to **{server}**! Click a button below to get started.",
                 "embed_color": 0x3498db,
-                "enabled_buttons": ["verify", "rules", "roles", "ticket"]
+                "enabled_buttons": ["verify", "rules", "roles", "ticket"],
+                "welcomedm_stats": {"sent": 0, "optout": 0, "verify_clicks": 0}
             }
             dm.update_guild_data(guild.id, "welcomedm_config", config)
+            dm.update_guild_data(guild.id, "welcomedm_stats", config["welcomedm_stats"])
             embed = discord.Embed(title="Welcome!", description=config["message"].format(server=guild.name), color=config["embed_color"])
             view = WelcomeDMView()
             await channel.send(embed=embed, view=view)
@@ -1051,7 +1078,11 @@ class AutoSetup(commands.Cog):
                 "log_channel_id": log_channel.id,
                 "questions": ["Why do you want to join?", "Previous experience?", "How active can you be?"],
                 "cooldown_days": 30,
-                "applicant_dms_enabled": True
+                "applicant_dms_enabled": True,
+                "auto_ping_enabled": True,
+                "ping_role_id": None,
+                "role_to_give_on_accept": None,
+                "application_types": ["Staff"]
             }
             dm.update_guild_data(guild.id, "application_config", config)
             from modules.applications import ApplicationPersistentView
@@ -1070,11 +1101,19 @@ class AutoSetup(commands.Cog):
             config = {
                 "enabled": True,
                 "log_channel_id": log_channel.id,
+                "reviewer_role_id": None,
+                "appeals_channel_id": channel.id,
                 "cooldown_days": 30,
                 "appellant_dms_enabled": True,
-                "questions": ["Reason for appeal?", "Why should we unban you?"]
+                "questions": ["Reason for appeal?", "Why should we unban you?"],
+                "approval_dm": "Your appeal has been approved.",
+                "denial_dm": "Your appeal has been denied."
             }
             dm.update_guild_data(guild.id, "appeals_config", config)
+            if dm.get_guild_data(guild.id, "appeals", None) is None:
+                dm.update_guild_data(guild.id, "appeals", {})
+            if dm.get_guild_data(guild.id, "appeals_blacklist", None) is None:
+                dm.update_guild_data(guild.id, "appeals_blacklist", [])
             from modules.appeals import AppealPersistentView
             await channel.send("Submit your appeal here.", view=AppealPersistentView())
             return True
@@ -1090,11 +1129,18 @@ class AutoSetup(commands.Cog):
             config = {
                 "enabled": True,
                 "log_channel_id": log_channel.id,
+                "staff_role_id": None,
                 "auto_close_hours": 168,
                 "thread_style": "thread",
-                "new_thread_pings": True
+                "new_thread_pings": True,
+                "auto_reply_message": "Thank you for contacting staff. We will be with you shortly.",
+                "close_message": "This thread has been closed. If you need further assistance, please message us again."
             }
             dm.update_guild_data(guild.id, "modmail_config", config)
+            if dm.get_guild_data(guild.id, "modmail_threads", None) is None:
+                dm.update_guild_data(guild.id, "modmail_threads", {})
+            if dm.get_guild_data(guild.id, "modmail_blocked", None) is None:
+                dm.update_guild_data(guild.id, "modmail_blocked", [])
             return True
         except Exception as e:
             logger.error(f"Failed to setup modmail: {e}")
@@ -1106,15 +1152,28 @@ class AutoSetup(commands.Cog):
             review_channel = analysis.existing_channels.get("suggestions-review") or await self._create_setup_channel(guild, "suggestions-review", overwrites={
                 guild.default_role: discord.PermissionOverwrite(view_channel=False)
             })
+            guide_channel = analysis.existing_channels.get("suggestions-guide") or await self._create_setup_channel(guild, "suggestions-guide")
+
             config = {
                 "enabled": True,
                 "suggestions_channel_id": channel.id,
                 "suggestions_review_channel_id": review_channel.id,
+                "guide_channel_id": guide_channel.id,
                 "cooldown_minutes": 30,
                 "submitter_dms_enabled": True,
                 "categories": ["Feature", "Bug", "Content", "Other"]
             }
             dm.update_guild_data(guild.id, "suggestions_config", config)
+
+            # Send documentation to guide channel
+            doc_embed = discord.Embed(
+                title="💡 Suggestions System Guide",
+                description="Welcome to our feedback system! Use the button in #suggestions to submit your ideas.",
+                color=discord.Color.blue()
+            )
+            doc_embed.add_field(name="Categories", value="• Feature\n• Bug\n• Content\n• Other")
+            await guide_channel.send(embed=doc_embed)
+
             # Use local SuggestionButton to avoid import errors
             await channel.send("Submit suggestions here!", view=SuggestionButton(guild_id=guild.id))
             return True
@@ -1131,6 +1190,7 @@ class AutoSetup(commands.Cog):
                 "fallback_channel": None
             }
             dm.update_guild_data(guild.id, "reminders_config", config)
+            dm.update_guild_data(guild.id, "reminders", [])
             return True
         except Exception as e:
             logger.error(f"Failed to setup reminders: {e}")
@@ -1138,7 +1198,10 @@ class AutoSetup(commands.Cog):
 
     async def _setup_scheduled_reminders(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            config = {"enabled": True}
+            config = {
+                "enabled": True,
+                "reminders": []
+            }
             dm.update_guild_data(guild.id, "scheduled_config", config)
             return True
         except Exception as e:
@@ -1153,7 +1216,8 @@ class AutoSetup(commands.Cog):
                 "channel_id": channel.id,
                 "auto_pin": True,
                 "cross_post": False,
-                "require_approval": False
+                "require_approval": False,
+                "announcements": []
             }
             dm.update_guild_data(guild.id, "announcements_config", config)
             return True
@@ -1165,9 +1229,9 @@ class AutoSetup(commands.Cog):
         try:
             config = {
                 "enabled": True,
-                "auto_responder_cooldown": 5,
-                "auto_responder_channels": None,
-                "auto_responder_roles": None
+                "cooldown": 5,
+                "allowed_channels": [],
+                "allowed_roles": []
             }
             dm.update_guild_data(guild.id, "auto_responder_config", config)
             dm.update_guild_data(guild.id, "auto_responders", [])
@@ -1183,6 +1247,8 @@ class AutoSetup(commands.Cog):
                 {"id": 2, "name": "Custom Color", "price": 500, "description": "Get a custom color role", "role_id": None, "stock": -1}
             ]
             dm.update_guild_data(guild.id, "shop_items", shop_items)
+            dm.update_guild_data(guild.id, "shop_logs", [])
+            dm.update_guild_data(guild.id, "shop_channel_id", None)
             return True
         except Exception as e:
             logger.error(f"Failed to setup economy shop: {e}")
@@ -1197,6 +1263,9 @@ class AutoSetup(commands.Cog):
                 "50": None
             }
             dm.update_guild_data(guild.id, "level_rewards", level_rewards)
+            dm.update_guild_data(guild.id, "leveling_shop_items", [])
+            dm.update_guild_data(guild.id, "xp_role_multipliers", {})
+            dm.update_guild_data(guild.id, "leveling_shop_channel_id", None)
             return True
         except Exception as e:
             logger.error(f"Failed to setup leveling shop: {e}")
@@ -1209,9 +1278,12 @@ class AutoSetup(commands.Cog):
                 "prestige_level": 100,
                 "xp_multiplier": 1.0,
                 "quests_enabled": True,
-                "skills_enabled": True
+                "skills_enabled": True,
+                "seasonal_event": None,
+                "leaderboard_channel": None
             }
             dm.update_guild_data(guild.id, "gamification_config", config)
+            dm.update_guild_data(guild.id, "gamification_data", {})
             return True
         except Exception as e:
             logger.error(f"Failed to setup gamification: {e}")
@@ -1220,6 +1292,7 @@ class AutoSetup(commands.Cog):
     async def _setup_reaction_roles(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
             dm.update_guild_data(guild.id, "reaction_roles", {})
+            dm.update_guild_data(guild.id, "reaction_role_log", [])
             return True
         except Exception as e:
             logger.error(f"Failed to setup reaction roles: {e}")
@@ -1228,6 +1301,7 @@ class AutoSetup(commands.Cog):
     async def _setup_reaction_menus(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
             dm.update_guild_data(guild.id, "reaction_menus_config", {})
+            dm.update_guild_data(guild.id, "reaction_menu_log", [])
             return True
         except Exception as e:
             logger.error(f"Failed to setup reaction menus: {e}")
@@ -1236,6 +1310,7 @@ class AutoSetup(commands.Cog):
     async def _setup_role_buttons(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
             dm.update_guild_data(guild.id, "role_buttons_config", {})
+            dm.update_guild_data(guild.id, "role_button_log", [])
             return True
         except Exception as e:
             logger.error(f"Failed to setup role buttons: {e}")
@@ -1252,9 +1327,13 @@ class AutoSetup(commands.Cog):
                 "next_case_number": 1,
                 "enabled_logs": {
                     "ban": True, "unban": True, "kick": True, "warn": True, "mute": True
-                }
+                },
+                "ignored_channels": [],
+                "ignored_roles": []
             }
             dm.update_guild_data(guild.id, "mod_logging_config", config)
+            if dm.get_guild_data(guild.id, "mod_cases", None) is None:
+                dm.update_guild_data(guild.id, "mod_cases", {})
             return True
         except Exception as e:
             logger.error(f"Failed to setup mod logging: {e}")
@@ -1266,7 +1345,10 @@ class AutoSetup(commands.Cog):
             config = {
                 "enabled": True,
                 "channels": [channel.id],
-                "personality": "Helpful and friendly AI assistant"
+                "personality": "Helpful and friendly AI assistant",
+                "model": "gpt-4o",
+                "temperature": 0.7,
+                "max_history": 15
             }
             dm.update_guild_data(guild.id, "ai_chat_config", config)
             return True
@@ -1279,10 +1361,15 @@ class AutoSetup(commands.Cog):
             channel = analysis.existing_channels.get("events") or await self._create_setup_channel(guild, "events")
             config = {
                 "enabled": True,
+                "log_channel_id": None,
                 "announcement_channel_id": channel.id,
-                "auto_remind": True
+                "auto_remind": True,
+                "ping_role_id": None,
+                "auto_archive": True,
+                "active_events": []
             }
             dm.update_guild_data(guild.id, "events_config", config)
+            dm.update_guild_data(guild.id, "event_history", [])
             return True
         except Exception as e:
             logger.error(f"Failed to setup events: {e}")
@@ -1290,7 +1377,25 @@ class AutoSetup(commands.Cog):
 
     async def _setup_logging_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            config = {"enabled": True, "events": ["message_delete", "member_join"]}
+            config = {
+                "enabled": True,
+                "log_channel_id": None,
+                "enabled_events": {
+                    "message_delete": True,
+                    "message_edit": True,
+                    "member_join": True,
+                    "member_remove": True,
+                    "role_create": True,
+                    "role_delete": True,
+                    "channel_create": True,
+                    "channel_delete": True,
+                    "voice_join": True,
+                    "voice_leave": True
+                },
+                "ignored_channels": [],
+                "ignored_roles": [],
+                "ignored_users": []
+            }
             dm.update_guild_data(guild.id, "logging_config", config)
             return True
         except Exception as e:
@@ -1302,6 +1407,17 @@ class AutoSetup(commands.Cog):
 
     async def _setup_warning_system(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
+            config = {
+                "enabled": True,
+                "dm_enabled": True,
+                "max_warnings": 5,
+                "decay_days": 30,
+                "punishments": {
+                    "3": "mute_60",
+                    "5": "kick"
+                }
+            }
+            dm.update_guild_data(guild.id, "warning_config", config)
             dm.update_guild_data(guild.id, "warnings_data", {})
             return True
         except Exception as e:
@@ -1310,7 +1426,20 @@ class AutoSetup(commands.Cog):
 
     async def _setup_staff_promotion(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
-            config = {"enabled": True, "requirements": {}}
+            config = {
+                "enabled": True,
+                "settings": {
+                    "auto_promote": True,
+                    "review_mode": False,
+                    "notify_on_promotion": True,
+                    "review_channel": None
+                },
+                "tiers": [],
+                "requirements": {},
+                "roles_by_tier": {},
+                "pending_reviews": [],
+                "promotion_logs": []
+            }
             dm.update_guild_data(guild.id, "staff_promo_config", config)
             return True
         except Exception as e:
@@ -1319,6 +1448,14 @@ class AutoSetup(commands.Cog):
 
     async def _setup_staff_shifts(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
+            config = {
+                "enabled": True,
+                "on_duty_role_id": None,
+                "shift_channel_id": None,
+                "idle_timeout_minutes": 30,
+                "clock_in_notifications": True
+            }
+            dm.update_guild_data(guild.id, "staff_shifts_config", config)
             dm.update_guild_data(guild.id, "staff_shifts_data", {})
             return True
         except Exception as e:
@@ -1327,6 +1464,20 @@ class AutoSetup(commands.Cog):
 
     async def _setup_staff_reviews(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
+            config = {
+                "enabled": True,
+                "cycle": "monthly",
+                "review_channel_id": None,
+                "notifications_enabled": True,
+                "review_dms_enabled": True,
+                "criteria": [
+                    {"name": "Activity", "weight": 1.0},
+                    {"name": "Helpfulness", "weight": 1.0},
+                    {"name": "Professionalism", "weight": 1.0}
+                ],
+                "thresholds": {"warning": 2.5, "promotion": 4.5}
+            }
+            dm.update_guild_data(guild.id, "staff_reviews_config", config)
             dm.update_guild_data(guild.id, "staff_reviews_data", {})
             return True
         except Exception as e:
@@ -1336,7 +1487,16 @@ class AutoSetup(commands.Cog):
     async def _setup_starboard(self, guild: discord.Guild, analysis: ServerAnalysis) -> bool:
         try:
             channel = analysis.existing_channels.get("starboard") or await self._create_setup_channel(guild, "starboard")
-            config = {"enabled": True, "channel_id": channel.id, "threshold": 3}
+            config = {
+                "enabled": True,
+                "channel_id": channel.id,
+                "threshold": 3,
+                "emoji": "⭐",
+                "auto_pin": True,
+                "pin_threshold": 10,
+                "reward_thresholds": {},
+                "blacklisted_channels": []
+            }
             dm.update_guild_data(guild.id, "starboard_config", config)
             return True
         except Exception as e:
@@ -1360,6 +1520,8 @@ class AutoSetup(commands.Cog):
                 except Exception as role_err:
                     logger.warning(f"verification: could not create role: {role_err}")
 
+            unverified_role = analysis.existing_roles.get("unverified") or analysis.existing_roles.get("Unverified")
+
             channel = analysis.existing_channels.get("verify") or analysis.existing_channels.get("verification") \
                 or await self._create_setup_channel(guild, "verify")
 
@@ -1367,7 +1529,12 @@ class AutoSetup(commands.Cog):
                 "enabled": True,
                 "channel_id": channel.id if channel else None,
                 "verified_role_id": verified_role.id if verified_role else None,
+                "unverified_role_id": unverified_role.id if unverified_role else None,
                 "method": "button",
+                "captcha_enabled": False,
+                "phone_required": False,
+                "min_account_age_days": 0,
+                "verification_log": []
             }
             dm.update_guild_data(guild.id, "verification_config", config)
 
@@ -1394,16 +1561,29 @@ class AutoSetup(commands.Cog):
             channel = analysis.existing_channels.get("welcome") \
                 or analysis.existing_channels.get("welcome-and-goodbye") \
                 or await self._create_setup_channel(guild, "welcome")
+
+            leave_channel = analysis.existing_channels.get("goodbye") or channel
+
             config = {
                 "enabled": True,
                 "channel_id": channel.id if channel else None,
-                "message": "👋 Welcome {user} to **{server}**! You're member #{count}.",
+                "message": "👋 Welcome {user} to **{server}**! You're member #{member_number}.",
                 "embed_enabled": True,
+                "embed_color": 0x2ecc71,
                 "ping_user": True,
-                "leave_enabled": True,
-                "leave_message": "👋 Goodbye {user}, we'll miss you.",
+                "show_member_number": True
             }
+
+            leave_config = {
+                "enabled": True,
+                "channel_id": leave_channel.id if leave_channel else None,
+                "message": "👋 Goodbye {user}, we'll miss you.",
+                "embed_enabled": True,
+                "embed_color": 0xe74c3c
+            }
+
             dm.update_guild_data(guild.id, "welcome_config", config)
+            dm.update_guild_data(guild.id, "leave_config", leave_config)
             return True
         except Exception as e:
             logger.error(f"Failed to setup welcome: {e}")
@@ -1440,21 +1620,28 @@ class AutoSetup(commands.Cog):
                 "category_id": category.id if category else None,
                 "panel_channel_id": channel.id if channel else None,
                 "support_role_id": support_role.id if support_role else None,
-                "max_open_per_user": 1,
+                "senior_staff_role_id": None,
+                "log_channel_id": None,
+                "max_per_user": 1,
+                "auto_close_hours": 48,
+                "opener_dm_enabled": True,
                 "transcript_enabled": True,
+                "panel_title": "Support Tickets",
+                "panel_description": "Click the button below to open a ticket.",
+                "panel_color": 0x3498db
             }
             dm.update_guild_data(guild.id, "tickets_config", config)
 
             # Drop a persistent panel
             try:
-                from modules.tickets import TicketPanelView
+                from modules.tickets import TicketOpenPanel
                 embed = discord.Embed(
-                    title="🎫 Open a Ticket",
-                    description="Need help? Click the button below to create a private ticket with our staff.",
-                    color=discord.Color.blue(),
+                    title=config["panel_title"],
+                    description=config["panel_description"],
+                    color=config["panel_color"],
                 )
                 if channel:
-                    await channel.send(embed=embed, view=TicketPanelView())
+                    await channel.send(embed=embed, view=TicketOpenPanel())
             except Exception as view_err:
                 logger.info(f"tickets: panel view not available, config-only setup ({view_err})")
             return True
@@ -1472,14 +1659,27 @@ class AutoSetup(commands.Cog):
                 "starting_balance": 100,
                 "daily_amount": 250,
                 "daily_streak_bonus": 50,
+                "daily_cooldown_seconds": 86400,
                 "work_min": 50,
                 "work_max": 200,
                 "work_cooldown_seconds": 3600,
+                "beg_min": 10,
+                "beg_max": 50,
+                "beg_cooldown_seconds": 60,
+                "rob_success_rate": 0.4,
+                "rob_cooldown_seconds": 3600,
+                "earn_rates": {
+                    "coins_per_message": 2,
+                    "coins_per_voice_minute": 5,
+                    "gem_chance": 0.01
+                }
             }
             dm.update_guild_data(guild.id, "economy_config", config)
             # Make sure a balances dict exists so other modules don't crash on first read
             if dm.get_guild_data(guild.id, "economy_balances", None) is None:
                 dm.update_guild_data(guild.id, "economy_balances", {})
+            if dm.get_guild_data(guild.id, "economy_gems", None) is None:
+                dm.update_guild_data(guild.id, "economy_gems", {})
             return True
         except Exception as e:
             logger.error(f"Failed to setup economy: {e}")
@@ -1492,15 +1692,21 @@ class AutoSetup(commands.Cog):
                 "enabled": True,
                 "xp_per_message_min": 15,
                 "xp_per_message_max": 25,
+                "xp_per_voice_minute": 10,
                 "xp_cooldown_seconds": 60,
                 "level_up_announcements": True,
+                "level_up_message": "Congratulations {user}, you leveled up to level {level}!",
                 "level_up_channel_id": None,  # falls back to the channel where the user leveled up
                 "no_xp_channel_ids": [],
                 "no_xp_role_ids": [],
+                "xp_multiplier_roles": {},
+                "double_xp_enabled": False
             }
             dm.update_guild_data(guild.id, "leveling_config", config)
             if dm.get_guild_data(guild.id, "leveling_data", None) is None:
                 dm.update_guild_data(guild.id, "leveling_data", {})
+            if dm.get_guild_data(guild.id, "leveling_xp", None) is None:
+                dm.update_guild_data(guild.id, "leveling_xp", {})
             return True
         except Exception as e:
             logger.error(f"Failed to setup leveling: {e}")
@@ -1515,9 +1721,13 @@ class AutoSetup(commands.Cog):
                 "enabled": True,
                 "default_channel_id": channel.id if channel else None,
                 "ping_role_id": None,
+                "emoji": "🎉",
+                "entry_dms": True,
                 "active_giveaways": [],
             }
             dm.update_guild_data(guild.id, "giveaways_config", config)
+            dm.update_guild_data(guild.id, "giveaway_settings", {"bonus_roles": {}})
+            dm.update_guild_data(guild.id, "giveaways", {})
             return True
         except Exception as e:
             logger.error(f"Failed to setup giveaways: {e}")
@@ -1528,13 +1738,24 @@ class AutoSetup(commands.Cog):
         try:
             config = {
                 "enabled": True,
-                "anti_spam": True,
-                "anti_invite": True,
-                "anti_link": False,
-                "blocked_words": [],
-                "max_mentions": 5,
-                "max_emojis": 10,
-                "punishment": "warn",  # warn | mute | kick | ban
+                "rules": {
+                    "invites": {"enabled": True},
+                    "links": {"enabled": False, "max_links": 3, "window": 10, "action": "warn", "whitelisted_domains": []},
+                    "spam": {"enabled": True, "max_messages": 5, "window": 5, "action": "delete"},
+                    "mentions": {"enabled": True, "max_mentions": 5, "window": 10, "action": "warn"},
+                    "caps": {"enabled": False, "threshold_pct": 70, "min_chars": 20, "action": "warn"},
+                    "banned_words": {"enabled": True, "words": []}
+                },
+                "escalation": {
+                    "reset_hours": 24,
+                    "1": "warn",
+                    "2": "mute_10",
+                    "3": "mute_60",
+                    "4": "kick",
+                    "5": "ban"
+                },
+                "whitelist_channels": [],
+                "whitelist_roles": []
             }
             dm.update_guild_data(guild.id, "automod_config", config)
             return True

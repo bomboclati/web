@@ -4153,6 +4153,8 @@ class ActionHandler:
                     return await self.handle_economy_daily(message)
                 elif command_type == "economy_balance":
                     return await self.handle_economy_balance(message)
+                elif command_type == "economy_work":
+                    return await self.handle_economy_work(message)
                 elif command_type == "config_panel":
                     return await self.handle_config_panel_redirect(message, data)
                 elif command_type == "help_all":
@@ -4247,6 +4249,37 @@ class ActionHandler:
         embed.add_field(name="Submitted", value=timestamp, inline=True)
 
         await message.channel.send(embed=embed)
+        return True
+
+    async def handle_economy_work(self, message: discord.Message) -> bool:
+        """Handle !work command"""
+        from modules.economy import Economy
+        economy = Economy(self.bot)
+        guild_id = message.guild.id
+        user_id = message.author.id
+
+        c = dm.get_guild_data(guild_id, "economy_config", {})
+        min_reward = c.get("work_min", 50)
+        max_reward = c.get("work_max", 200)
+        cooldown = c.get("work_cooldown_seconds", 3600)
+
+        # Basic cooldown check
+        last_work = dm.get_guild_data(guild_id, "last_work", {})
+        last_time = last_work.get(str(user_id), 0)
+        now = time.time()
+
+        if now - last_time < cooldown:
+            remaining = int(cooldown - (now - last_time))
+            await message.channel.send(f"❌ You're too tired! Wait **{remaining // 60}m {remaining % 60}s**.")
+            return True
+
+        reward = random.randint(min_reward, max_reward)
+        economy.add_coins(guild_id, user_id, reward)
+        last_work[str(user_id)] = now
+        dm.update_guild_data(guild_id, "last_work", last_work)
+
+        jobs = ["Developer", "Artist", "Doctor", "Chef", "Discord Mod", "Farmer"]
+        await message.channel.send(f"💼 You worked as a **{random.choice(jobs)}** and earned **{reward} coins**!")
         return True
 
     async def handle_appeal_status(self, message: discord.Message) -> bool:

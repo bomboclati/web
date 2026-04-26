@@ -677,7 +677,12 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             
             # Handle configpanel commands
             if cmd_content.startswith("configpanel"):
-                system = cmd_content[len("configpanel"):].strip()
+                # Support both !configpanel <system> and !configpanel<system>
+                if cmd_content.startswith("configpanel "):
+                    system = cmd_content[len("configpanel "):].strip()
+                else:
+                    system = cmd_content[len("configpanel"):].strip()
+
                 if system:
                     # Check if user is admin or owner
                     if not message.author.guild_permissions.administrator and message.author.id != message.guild.owner_id:
@@ -722,7 +727,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             if cmd_content.startswith("help "):
                 system = cmd_content[5:].strip()
                 from modules.help_system import send_help
-                await send_help(message.channel, message.guild.id, message.author)
+                await send_help(message.channel, message.guild.id, message.author, system_query=system)
                 return
 
             # Handle staff commands

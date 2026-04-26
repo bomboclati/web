@@ -31,11 +31,13 @@ DEFAULT_GUARDIAN_CONFIG = {
     "guardian_log": []
 }
 
-# Discord bot token regex (covers all 3 known formats)
+# Discord bot token and API key regex (Discord tokens, OpenAI keys, etc.)
 _TOKEN_PATTERN = re.compile(
-    r"(?:[MNO][A-Za-z\d]{23}|[A-Za-z\d]{24})\."
-    r"(?:[A-Za-z\d]{6}|[A-Za-z\d_-]{4,8})\."
-    r"[A-Za-z\d_-]{27,38}"
+    r"("
+    r"(?:[MNO][A-Za-z\d]{23}|[A-Za-z\d]{24})\.(?:[A-Za-z\d]{6}|[A-Za-z\d_-]{4,8})\.[A-Za-z\d_-]{27,38}" # Discord Token
+    r"|sk-[a-zA-Z0-9]{48}" # OpenAI Key
+    r"|bot_[a-zA-Z0-9]{20,}" # Generic Bot Token pattern
+    r")"
 )
 
 class GuardianSystem(commands.Cog):
