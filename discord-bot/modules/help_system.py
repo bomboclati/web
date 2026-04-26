@@ -111,17 +111,22 @@ def _status_emoji(guild_id: int, system_key: str) -> str:
         return "⬜"
 
 
-def _build_main_embed(guild_id: int) -> discord.Embed:
+def _build_main_embed(guild_id: int, bot: discord.Client = None) -> discord.Embed:
     embed = discord.Embed(
         title="📖 Miro Bot — Command Reference",
         description=(
             "**Select a category** below to explore all systems and their commands.\n"
-            "Each system can be configured with `!configpanel <system>`.\n\n"
+            "Each system can be configured with `!configpanel<system>`.\n\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━"
         ),
         color=BRAND
     )
-    embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+
+    guild = bot.get_guild(guild_id) if bot else None
+    if guild and guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    else:
+        embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
 
     for cat_name, cat_data in CATEGORIES.items():
         systems = cat_data["systems"]
@@ -159,27 +164,44 @@ def _build_category_embed(guild_id: int, cat_name: str) -> discord.Embed:
 
 def _build_search_embed(guild_id: int, query: str) -> discord.Embed:
     query_l = query.lower()
-    results = [
+
+    # Search in systems
+    sys_results = [
         (k, v) for k, v in _SYSTEM_LOOKUP.items()
         if query_l in k or query_l in v[1].lower() or query_l in v[2].lower()
     ]
+
+    # Search in custom commands
+    cmd_results = []
+    try:
+        custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
+        for cmd_name, cmd_data in custom_cmds.items():
+            if query_l in cmd_name.lower():
+                cmd_results.append((cmd_name, cmd_data))
+    except: pass
 
     embed = discord.Embed(
         title=f"🔍 Search Results: \"{query}\"",
         color=BRAND
     )
-    if results:
-        for sys_key, (emoji, desc, cat) in results[:10]:
-            status = _status_emoji(guild_id, sys_key)
-            embed.add_field(
-                name=f"{emoji} {sys_key.title()}  {status}",
-                value=f"{desc}\n`!configpanel {sys_key}`\n-# {cat}",
-                inline=True
-            )
-    else:
-        embed.description = f"No systems found matching **\"{query}\"**."
 
-    embed.set_footer(text=f"Showing {len(results[:10])} result(s)")
+    if sys_results:
+        text = ""
+        for sys_key, (emoji, desc, cat) in sys_results[:8]:
+            status = _status_emoji(guild_id, sys_key)
+            text += f"{emoji} **{sys_key.title()}** {status} — {desc}\n"
+        embed.add_field(name="Systems", value=text, inline=False)
+
+    if cmd_results:
+        text = ""
+        for cmd_name, _ in cmd_results[:12]:
+            text += f"`!{cmd_name}` "
+        embed.add_field(name="Matching Commands", value=text or "None", inline=False)
+
+    if not sys_results and not cmd_results:
+        embed.description = f"No systems or commands found matching **\"{query}\"**."
+
+    embed.set_footer(text=f"Search scope: Global Systems & Guild Commands")
     return embed
 
 
@@ -205,10 +227,10 @@ class HelpCategoryView(ui.View):
         self.guild_id = guild_id
         self.cat_name = cat_name
 
-    @ui.button(label="⬅ Back", style=discord.ButtonStyle.secondary, custom_id="help_cat_back")
+    @ui.button(label="🏠 Home", style=discord.ButtonStyle.secondary, custom_id="help_cat_back")
     async def back(self, interaction: Interaction, button: ui.Button):
         view = HelpMainView(interaction.guild_id)
-        embed = _build_main_embed(interaction.guild_id)
+        embed = _build_main_embed(interaction.guild_id, interaction.client)
         await interaction.response.edit_message(embed=embed, view=view)
 
     @ui.button(label="🔍 Search", style=discord.ButtonStyle.secondary, custom_id="help_cat_search")
@@ -260,10 +282,23 @@ class HelpMainView(ui.View):
         await interaction.response.send_modal(_SearchModal(interaction.guild_id))
 
 
-async def send_help(channel: discord.TextChannel, guild_id: int, invoker: discord.Member = None):
+async def send_help(channel: discord.TextChannel, guild_id: int, invoker: discord.Member = None, system_query: str = None):
     """Entry point called from bot.py on_message for the !help command."""
+    if system_query:
+        system_key = system_query.lower().replace("_", "").replace("system", "")
+        if system_key in _SYSTEM_LOOKUP:
+            emoji, desc, cat = _SYSTEM_LOOKUP[system_key]
+            embed = discord.Embed(title=f"{emoji} System Guide: {system_key.title()}", color=CATEGORIES[cat]["color"])
+            embed.description = f"**Description:** {desc}\n\n**Category:** {cat}\n**Configuration:** `!configpanel{system_key}`"
+
+            # Add common commands for this system if they exist in help_data
+            # For now, show basic info.
+            embed.set_footer(text=f"Requested by {invoker.display_name if invoker else 'User'}")
+            await channel.send(embed=embed)
+            return
+
     view = HelpMainView(guild_id)
-    embed = _build_main_embed(guild_id)
+    embed = _build_main_embed(guild_id, channel.guild.me.client if hasattr(channel, "guild") else None)
     if invoker:
         embed.set_author(name=f"Requested by {invoker.display_name}", icon_url=invoker.display_avatar.url)
     await channel.send(embed=embed, view=view)
