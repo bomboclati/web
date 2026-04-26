@@ -33,14 +33,13 @@ class AntiRaidSystem:
             "quarantine_role_id": None,
             "alert_channel_id": None,
             "raid_log": [],
-            "link_spam_enabled": True,
-            "invite_filter_enabled": True,
-            "mention_threshold": 5,
-            "mention_filter_enabled": True,
-            "duplicate_threshold": 3,
-            "duplicate_filter_enabled": True,
-            "emoji_threshold": 15,
-            "emoji_filter_enabled": True
+            "rules": {
+                "link_spam": {"enabled": True},
+                "invite_filter": {"enabled": True},
+                "mention_filter": {"enabled": True, "threshold": 5},
+                "duplicate_filter": {"enabled": True, "threshold": 3},
+                "emoji_filter": {"enabled": True, "threshold": 15}
+            }
         })
 
     def save_settings(self, guild_id: int, settings: dict):
@@ -123,16 +122,20 @@ class AntiRaidSystem:
         author = message.author
 
         # 1. Mention Spam
-        if settings.get("mention_filter_enabled"):
+        mention_filter = settings.get("rules", {}).get("mention_filter", {})
+        if mention_filter.get("enabled", True):
             mentions = len(message.mentions) + len(message.role_mentions)
-            if mentions >= settings.get("mention_threshold", 5) or message.mention_everyone:
+            threshold = mention_filter.get("threshold", 5)
+            if mentions >= threshold or message.mention_everyone:
                 await message.delete()
                 await self._take_action(author, "mute", "Mention spam")
                 self._log_incident(guild.id, "mention_spam", [author.id], "mute")
                 return
 
         # 2. Duplicate Spam
-        if settings.get("duplicate_filter_enabled"):
+        dup_filter = settings.get("rules", {}).get("duplicate_filter", {})
+        if dup_filter.get("enabled", True):
+            threshold = dup_filter.get("threshold", 3)
             if guild.id not in self._msg_content_history: self._msg_content_history[guild.id] = {}
             if author.id not in self._msg_content_history[guild.id]: self._msg_content_history[guild.id][author.id] = []
             
@@ -140,24 +143,28 @@ class AntiRaidSystem:
             history.append(content)
             if len(history) > 10: history.pop(0)
             
-            if len(history) >= 3 and all(m == content for m in history[-3:]):
+            if len(history) >= threshold and all(m == content for m in history[-threshold:]):
                 await message.delete()
                 await self._take_action(author, "mute", "Duplicate message spam")
                 self._log_incident(guild.id, "duplicate_spam", [author.id], "mute")
                 return
 
         # 3. Link/Invite Spam
-        if settings.get("link_spam_enabled") and re.search(r"https?://", content):
+        link_filter = settings.get("rules", {}).get("link_spam", {})
+        if link_filter.get("enabled", True) and re.search(r"https?://", content):
             # Check for discord invites
-            if settings.get("invite_filter_enabled") and ("discord.gg/" in content or "discord.com/invite/" in content):
+            inv_filter = settings.get("rules", {}).get("invite_filter", {})
+            if inv_filter.get("enabled", True) and ("discord.gg/" in content or "discord.com/invite/" in content):
                 await message.delete()
                 await self._take_action(author, "warn", "Invite link spam")
                 return
             
         # 4. Emoji Spam
-        if settings.get("emoji_filter_enabled"):
+        emoji_filter = settings.get("rules", {}).get("emoji_filter", {})
+        if emoji_filter.get("enabled", True):
             emojis = len(re.findall(r"<a?:\w+:\d+>|[\u263a-\U0001f645]", content))
-            if emojis > settings.get("emoji_threshold", 15):
+            threshold = emoji_filter.get("threshold", 15)
+            if emojis > threshold:
                 await message.delete()
                 await self._take_action(author, "warn", "Emoji spam")
                 return
