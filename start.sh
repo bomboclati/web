@@ -1,4 +1,7 @@
 #!/bin/bash
+# Add Mise Python to PATH
+export PATH="/mise/installs/python/3.13.13/bin:$PATH"
+
 echo "Starting Miro Bot Overhaul Deployment..."
 
 # Function to find the python command
