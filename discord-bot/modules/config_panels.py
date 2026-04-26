@@ -135,7 +135,7 @@ class ConfigPanelView(ui.View):
             pass
 
     async def update_panel(self, interaction: Interaction):
-        embed = self.create_embed(interaction.guild_id)
+        embed = self.create_embed(interaction.guild_id, interaction.guild)
         try:
             if interaction.response.is_done():
                 await interaction.edit_original_response(embed=embed, view=self)
@@ -147,7 +147,7 @@ class ConfigPanelView(ui.View):
             except Exception:
                 pass
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         gid = guild_id or self.guild_id
         cfg = self.get_config(gid)
 
@@ -158,12 +158,11 @@ class ConfigPanelView(ui.View):
             color=discord.Color.blurple(),
         )
 
-        # Try to find the guild to set the icon as thumbnail
-        try:
-            # We use a bit of a hack since 'bot' isn't stored, but it's often in interaction.client
-            # For persistent view registration (id=0), this won't work, which is fine.
-            pass
-        except: pass
+        # Set server icon as thumbnail if guild is provided
+        if guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        elif guild and not guild.icon:
+            embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
 
         if cfg:
             # Filter out large log/data fields for a cleaner preview
@@ -313,9 +312,13 @@ class VerificationConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "verification")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
         embed = discord.Embed(title="🛡️ Verification System", color=discord.Color.green() if c.get("enabled", True) else discord.Color.red())
+        if guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        elif guild:
+            embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
         embed.add_field(name="Verified Role", value=f"<@&{c.get('verified_role_id')}>" if c.get('verified_role_id') else "_None_", inline=True)
         embed.add_field(name="Unverified Role", value=f"<@&{c.get('unverified_role_id')}>" if c.get('unverified_role_id') else "_None_", inline=True)
@@ -402,10 +405,14 @@ class AntiRaidConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "antiraid")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
         rules = c.setdefault("rules", {})
         embed = discord.Embed(title="🛡️ Anti-Raid System", color=discord.Color.red() if c.get("enabled", True) else discord.Color.greyple())
+        if guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        elif guild:
+            embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
         embed.add_field(name="Join Threshold", value=f"{c.get('mass_join_threshold', 10)}/{c.get('mass_join_window', 10)}s", inline=True)
         embed.add_field(name="Action", value=c.get("action", "lockdown").upper(), inline=True)
@@ -544,9 +551,13 @@ class GuardianConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "guardian")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
         embed = discord.Embed(title="🛡️ Guardian System", color=discord.Color.blue())
+        if guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        elif guild:
+            embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
         embed.add_field(name="Response Levels", value=f"Tox: {c.get('toxicity_level','WARN')} | Scam: {c.get('scam_level','MUTE')} | Nuke: {c.get('nuke_level','BAN')}", inline=False)
         embed.add_field(name="Alert Channel", value=f"<#{c.get('alert_channel')}>" if c.get('alert_channel') else "_None_", inline=True)
@@ -654,7 +665,7 @@ class WelcomeConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "welcome")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         wc = dm.get_guild_data(guild_id or self.guild_id, "welcome_config", {})
         lc = dm.get_guild_data(guild_id or self.guild_id, "leave_config", {})
 
@@ -759,7 +770,7 @@ class WelcomeDMConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "welcomedm")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = dm.get_guild_data(guild_id or self.guild_id, "welcomedm_config", {})
         embed = discord.Embed(title="✉️ Welcome DM Configuration", color=c.get("embed_color", 0x3498db))
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled") else "❌ Disabled", inline=True)
@@ -833,7 +844,7 @@ class ApplicationConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "application")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="📋 Application System Configuration", color=discord.Color.blue())
         embed.add_field(name="Status", value="✅ Open" if c.get("applications_open", True) else "❌ Closed", inline=True)
@@ -1025,7 +1036,7 @@ class AppealsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "appeals")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="⚖️ Appeals System Configuration", color=discord.Color.blue())
         embed.add_field(name="Cooldown", value=f"{c.get('cooldown_days', 30)} days", inline=True)
@@ -1135,7 +1146,7 @@ class ModmailConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "modmail")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="📬 Modmail Configuration", color=discord.Color.blue())
         embed.add_field(name="Status", value="✅ Open" if c.get("enabled", True) else "❌ Closed", inline=True)
@@ -1226,7 +1237,7 @@ class TicketsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "tickets")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="🎫 Ticket System", color=discord.Color.blue())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
@@ -1339,7 +1350,7 @@ class GiveawayConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "giveaway")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         target_guild = guild_id or self.guild_id
         c = self.get_config(target_guild)
         giveaways_data = dm.get_guild_data(target_guild, "giveaways", {})
@@ -1484,7 +1495,7 @@ class ReactionRolesConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "reactionroles")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = dm.get_guild_data(guild_id or self.guild_id, "reaction_roles", {})
         count = sum(len(e) for e in c.values())
         embed = discord.Embed(title="🎭 Reaction Roles Configuration", color=discord.Color.blue())
@@ -1583,7 +1594,7 @@ class ReactionMenusConfigView(ConfigPanelView):
         target_guild = guild_id or self.guild_id
         dm.update_guild_data(target_guild, "reaction_menus_config", config)
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
         embed = discord.Embed(title="📋 Reaction Role Menus", color=discord.Color.blue())
         embed.add_field(name="Active Menus", value=str(len(c)), inline=True)
@@ -1725,7 +1736,7 @@ class RoleButtonsConfigView(ConfigPanelView):
         target_guild = guild_id or self.guild_id
         dm.update_guild_data(target_guild, "role_buttons_config", config)
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
         embed = discord.Embed(title="🔘 Role Button Panels", color=discord.Color.blue())
         embed.add_field(name="Active Panels", value=str(len(c)), inline=True)
@@ -1835,7 +1846,7 @@ class ModLogConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "mod_log")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
         embed = discord.Embed(title="📝 Moderation Logging", color=discord.Color.red() if c.get("enabled") else discord.Color.greyple())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled") else "❌ Disabled", inline=True)
@@ -1935,7 +1946,7 @@ class StaffPromoConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "staff_promo")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="🌟 Staff Promotion System Configuration", color=discord.Color.gold())
 
@@ -2207,7 +2218,7 @@ class WarningConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "warning")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="⚠️ User Warning System Configuration", color=discord.Color.orange())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
@@ -2370,7 +2381,7 @@ class AutoModConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "automod")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="🛡️ Auto-Mod System Configuration", color=discord.Color.blue())
         enabled = c.get("enabled", True)
@@ -2659,7 +2670,7 @@ class StaffReviewsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "staff_reviews")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="📝 Staff Reviews Configuration", color=discord.Color.blue())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
@@ -2828,7 +2839,7 @@ class StaffShiftsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "staff_shifts")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="🕒 Staff Shifts Configuration", color=discord.Color.blue())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
@@ -2972,7 +2983,7 @@ class LoggingConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "logging")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
         embed = discord.Embed(title="📊 General Server Logging", color=discord.Color.green() if c.get("enabled") else discord.Color.greyple())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled") else "❌ Disabled", inline=True)
@@ -3089,7 +3100,7 @@ class SuggestionsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "suggestions")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         is_enabled = c.get("enabled", True)
         embed = discord.Embed(
@@ -3281,7 +3292,7 @@ class GamificationConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "gamification")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         is_enabled = c.get("enabled", True)
         embed = discord.Embed(
@@ -3362,7 +3373,7 @@ class EconomyConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "economy")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         gid = guild_id or self.guild_id
         c = self.get_config(gid)
 
@@ -3534,7 +3545,7 @@ class LevelingConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "leveling")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="🆙 Leveling System Configuration", color=discord.Color.blue())
         embed.set_footer(text="Tip: Active voice channels provide higher XP retention!")
@@ -3668,7 +3679,7 @@ class StarboardConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "starboard")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="⭐ Starboard Configuration", color=discord.Color.gold())
         embed.set_footer(text="Tip: Lower thresholds allow more community-curated content!")
@@ -3781,7 +3792,7 @@ class AutoResponderConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "auto_responder")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="🤖 Auto-Responder Configuration", color=discord.Color.blue())
         responders = dm.get_guild_data(guild_id or self.guild_id, "auto_responders", [])
@@ -3936,7 +3947,7 @@ class ChatChannelsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "chat_channels")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         is_enabled = c.get("enabled", True)
         embed = discord.Embed(
@@ -4058,7 +4069,7 @@ class EventsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "events")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="📅 Server Events Configuration", color=discord.Color.orange())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
@@ -4144,7 +4155,7 @@ class EconomyShopConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "economy_shop")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         items = dm.get_guild_data(guild_id or self.guild_id, "shop_items", [])
         embed = discord.Embed(title="🛒 Economy Shop Configuration", color=discord.Color.green())
         embed.add_field(name="Items in Shop", value=str(len(items)), inline=True)
@@ -4344,7 +4355,7 @@ class LevelingShopConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "leveling_shop")
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         rewards = dm.get_guild_data(guild_id or self.guild_id, "level_rewards", {})
         embed = discord.Embed(title="🆙 Leveling Rewards Configuration", color=discord.Color.blue())
         embed.add_field(name="Total Rewards", value=str(len(rewards)), inline=True)
@@ -4628,7 +4639,7 @@ def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
 async def handle_config_panel_command(message: discord.Message, system: str):
     view = get_config_panel(message.guild.id, system)
     if not view: return await message.channel.send(f"❌ System '{system}' not found.")
-    await message.channel.send(embed=view.create_embed(), view=view)
+    await message.channel.send(embed=view.create_embed(guild=message.guild), view=view)
 
 def register_all_persistent_views(bot: discord.Client):
     # Config Panels
