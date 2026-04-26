@@ -63,18 +63,30 @@ class ReminderView(ui.View):
 
 class RemindersPanelView(ConfigPanelView):
     def __init__(self, guild_id: int):
-        super().__init__(guild_id, "Reminders System")
+        super().__init__(guild_id, "reminders")
 
-    def get_config(self, guild_id: int) -> dict:
-        return dm.get_guild_data(guild_id, "reminders_config", {
+    def get_config(self, guild_id: int = None) -> dict:
+        return dm.get_guild_data(guild_id or self.guild_id, "reminders_config", {
             "enabled": True,
             "max_per_user": 10,
             "allow_dms": True,
             "fallback_channel": None
         })
 
-    def save_config(self, config: dict, guild_id: int, client):
-        dm.update_guild_data(guild_id, "reminders_config", config)
+    def save_config(self, config: dict, guild_id: int = None, client = None):
+        dm.update_guild_data(guild_id or self.guild_id, "reminders_config", config)
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id)
+        embed = discord.Embed(title="⏰ Reminders System Configuration", color=discord.Color.blue())
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="DMs Allowed", value="✅ Yes" if c.get("allow_dms", True) else "❌ No", inline=True)
+        embed.add_field(name="Max Per User", value=str(c.get("max_per_user", 10)), inline=True)
+        embed.add_field(name="Fallback Channel", value=f"<#{c.get('fallback_channel')}>" if c.get('fallback_channel') else "_None_", inline=True)
+
+        reminders = dm.get_guild_data(guild_id or self.guild_id, "reminders", {})
+        embed.add_field(name="Active Reminders", value=str(len(reminders)), inline=True)
+        return embed
 
     @ui.button(label="View All Active", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_remind_viewall")
     async def view_all(self, interaction: discord.Interaction, button: ui.Button):
@@ -527,13 +539,27 @@ class ReminderSystem:
 
 class ScheduledPanelView(ConfigPanelView):
     def __init__(self, guild_id: int):
-        super().__init__(guild_id, "Scheduled Reminders")
+        super().__init__(guild_id, "scheduled")
 
-    def get_config(self, guild_id: int) -> dict:
-        return dm.get_guild_data(guild_id, "scheduled_config", {"enabled": True})
+    def get_config(self, guild_id: int = None) -> dict:
+        return dm.get_guild_data(guild_id or self.guild_id, "scheduled_config", {"enabled": True})
 
-    def save_config(self, config: dict, guild_id: int, client):
-        dm.update_guild_data(guild_id, "scheduled_config", config)
+    def save_config(self, config: dict, guild_id: int = None, client = None):
+        dm.update_guild_data(guild_id or self.guild_id, "scheduled_config", config)
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id)
+        embed = discord.Embed(title="📅 Scheduled Messages Configuration", color=discord.Color.purple())
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+
+        scheduled = dm.get_guild_data(guild_id or self.guild_id, "scheduled_reminders", {})
+        embed.add_field(name="Total Scheduled", value=str(len(scheduled)), inline=True)
+
+        if scheduled:
+            active = sum(1 for s in scheduled.values() if s.get("enabled", True))
+            embed.add_field(name="Active Tasks", value=str(active), inline=True)
+
+        return embed
 
     @ui.button(label="View All Scheduled", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_sched_viewall")
     async def view_all(self, interaction: discord.Interaction, button: ui.Button):
@@ -563,7 +589,7 @@ class ScheduledPanelView(ConfigPanelView):
         if not scheduled:
             return await interaction.response.send_message("📭 No scheduled reminders to edit.", ephemeral=True)
         
-        class SchedSelect(ui.StringSelect):
+        class SchedSelect(ui.Select):
             def __init__(self, panel):
                 options = [discord.SelectOption(label=s["name"], value=k) for k, s in list(scheduled.items())[:25]]
                 super().__init__(placeholder="Select reminder to edit...", options=options)
@@ -585,7 +611,7 @@ class ScheduledPanelView(ConfigPanelView):
         if not enabled:
             return await interaction.response.send_message("📭 No active reminders to pause.", ephemeral=True)
         
-        class PauseSelect(ui.StringSelect):
+        class PauseSelect(ui.Select):
             def __init__(self, panel):
                 options = [discord.SelectOption(label=s["name"], value=k) for k, s in list(enabled.items())[:25]]
                 super().__init__(placeholder="Select reminder to pause...", options=options)
@@ -608,7 +634,7 @@ class ScheduledPanelView(ConfigPanelView):
         if not paused:
             return await interaction.response.send_message("📭 No paused reminders.", ephemeral=True)
         
-        class ResumeSelect(ui.StringSelect):
+        class ResumeSelect(ui.Select):
             def __init__(self, panel):
                 options = [discord.SelectOption(label=s["name"], value=k) for k, s in list(paused.items())[:25]]
                 super().__init__(placeholder="Select reminder to resume...", options=options)
@@ -629,7 +655,7 @@ class ScheduledPanelView(ConfigPanelView):
         if not scheduled:
             return await interaction.response.send_message("📭 No scheduled reminders.", ephemeral=True)
         
-        class DeleteSelect(ui.StringSelect):
+        class DeleteSelect(ui.Select):
             def __init__(self, panel):
                 options = [discord.SelectOption(label=s["name"], value=k) for k, s in list(scheduled.items())[:25]]
                 super().__init__(placeholder="Select reminder to delete...", options=options)
@@ -649,7 +675,7 @@ class ScheduledPanelView(ConfigPanelView):
         if not scheduled:
             return await interaction.response.send_message("📭 No scheduled reminders.", ephemeral=True)
         
-        class SendNowSelect(ui.StringSelect):
+        class SendNowSelect(ui.Select):
             def __init__(self, panel):
                 options = [discord.SelectOption(label=s["name"], value=k) for k, s in list(scheduled.items())[:25]]
                 super().__init__(placeholder="Select reminder to send now...", options=options)
@@ -851,10 +877,11 @@ async def schedule_checker(bot, guild_id: str, scheduled_id: str):
 
 class AnnouncementsPanelView(ConfigPanelView):
     def __init__(self, guild_id: int):
-        super().__init__(guild_id, "Announcements System")
+        super().__init__(guild_id, "announcements")
 
-    def get_config(self, guild_id: int) -> dict:
-        return dm.get_guild_data(guild_id, "announcements_config", {
+    def get_config(self, guild_id: int = None) -> dict:
+        return dm.get_guild_data(guild_id or self.guild_id, "announcements_config", {
+            "enabled": True,
             "channel_id": None,
             "ping_role_id": None,
             "auto_pin": True,
@@ -863,12 +890,29 @@ class AnnouncementsPanelView(ConfigPanelView):
             "approval_channel_id": None
         })
 
-    def save_config(self, config: dict, guild_id: int, client):
-        dm.update_guild_data(guild_id, "announcements_config", config)
+    def save_config(self, config: dict, guild_id: int = None, client = None):
+        dm.update_guild_data(guild_id or self.guild_id, "announcements_config", config)
+
+    def create_embed(self, guild_id: int = None) -> discord.Embed:
+        c = self.get_config(guild_id)
+        embed = discord.Embed(title="📢 Announcements System Configuration", color=discord.Color.gold())
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Channel", value=f"<#{c.get('channel_id')}>" if c.get('channel_id') else "_Not Set_", inline=True)
+        embed.add_field(name="Ping Role", value=f"<@&{c.get('ping_role_id')}>" if c.get('ping_role_id') else "_None_", inline=True)
+        embed.add_field(name="Auto-Pin", value="ON" if c.get("auto_pin", True) else "OFF", inline=True)
+        embed.add_field(name="Cross-Post", value="ON" if c.get("cross_post", False) else "OFF", inline=True)
+        embed.add_field(name="Approval Req.", value="YES" if c.get("require_approval", False) else "NO", inline=True)
+
+        if c.get("require_approval"):
+            embed.add_field(name="Approval Ch", value=f"<#{c.get('approval_channel_id')}>" if c.get('approval_channel_id') else "_Not Set_", inline=True)
+
+        logs = dm.get_guild_data(guild_id or self.guild_id, "announcements_log", [])
+        embed.add_field(name="Total Posted", value=str(len(logs)), inline=True)
+        return embed
 
     @ui.button(label="New Announcement", emoji="📢", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_announce_new")
     async def new_announcement(self, interaction: discord.Interaction, button: ui.Button):
-        class TypeSelect(ui.StringSelect):
+        class TypeSelect(ui.Select):
             def __init__(self, panel):
                 options = [
                     discord.SelectOption(label="Standard", value="standard", emoji="📝"),
@@ -923,7 +967,7 @@ class AnnouncementsPanelView(ConfigPanelView):
         if not scheduled:
             return await interaction.response.send_message("📭 No scheduled announcements.", ephemeral=True)
         
-        class SchedSelect(ui.StringSelect):
+        class SchedSelect(ui.Select):
             def __init__(self, panel):
                 options = [discord.SelectOption(label=s["title"], value=k) for k, s in list(scheduled.items())[:25]]
                 super().__init__(placeholder="Select to edit...", options=options)
@@ -943,7 +987,7 @@ class AnnouncementsPanelView(ConfigPanelView):
         if not scheduled:
             return await interaction.response.send_message("📭 No scheduled announcements.", ephemeral=True)
         
-        class CancelSelect(ui.StringSelect):
+        class CancelSelect(ui.Select):
             def __init__(self, panel):
                 options = [discord.SelectOption(label=s["title"], value=k) for k, s in list(scheduled.items())[:25]]
                 super().__init__(placeholder="Select to cancel...", options=options)

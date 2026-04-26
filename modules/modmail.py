@@ -122,11 +122,22 @@ class ModmailSystem:
             embed.add_field(name="Joined Server", value=f"<t:{int(user.joined_at.timestamp())}:R>" if user in guild.members else "Not in server")
 
             view = ModmailThreadView()
-            await channel_to_send.send(embed=embed, view=view)
+
+            # Implementation of "Toggle Pings"
+            ping_content = None
+            if config.get("new_thread_pings", True):
+                staff_role_id = config.get("staff_role_id")
+                if staff_role_id:
+                    ping_content = f"<@&{staff_role_id}>"
+
+            await channel_to_send.send(content=ping_content, embed=embed, view=view)
 
             if is_new:
                 auto_reply = config.get("auto_reply_message", "Your message has been forwarded to the staff. We'll get back to you soon.")
-                await user.send(auto_reply)
+                try:
+                    await user.send(auto_reply)
+                except:
+                    pass
 
         # Forward the message
         forward_embed = Embed(description=message.content, color=discord.Color.light_grey())

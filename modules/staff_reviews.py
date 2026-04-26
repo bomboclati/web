@@ -114,17 +114,18 @@ class StaffReviewSystem:
             # Fallback to members with manage_messages
             staff_members = [m for m in guild.members if m.guild_permissions.manage_messages and not m.bot]
 
-        for member in staff_members:
-            try:
-                embed = discord.Embed(
-                    title="📝 Staff Review Cycle Started!",
-                    description=f"A new review cycle has started in **{guild.name}**. Please complete your self-review and peer reviews.",
-                    color=discord.Color.blue()
-                )
-                embed.add_field(name="How to complete", value="Use `!review` in the server to open the review menu.")
-                await member.send(embed=embed)
-            except:
-                pass
+        if config.get("notifications_enabled", True):
+            for member in staff_members:
+                try:
+                    embed = discord.Embed(
+                        title="📝 Staff Review Cycle Started!",
+                        description=f"A new review cycle has started in **{guild.name}**. Please complete your self-review and peer reviews.",
+                        color=discord.Color.blue()
+                    )
+                    embed.add_field(name="How to complete", value="Use `!review` in the server to open the review menu.")
+                    await member.send(embed=embed)
+                except:
+                    pass
 
         if config.get("review_channel_id"):
             channel = guild.get_channel(config.get("review_channel_id"))

@@ -57,7 +57,7 @@ COMMAND_SCHEMA = {
     "properties": {
         "command_type": {
             "type": "string",
-            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "list_triggers", "help_all", "config_panel"]
+            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "list_triggers", "help_all", "config_panel"]
         },
         "content": {"type": "string"},
         "actions": {
@@ -4491,80 +4491,42 @@ class ActionHandler:
         return True
 
     async def handle_help_all(self, message: discord.Message) -> bool:
-        """Handle !help command - dynamically lists all systems and custom commands with interactive buttons."""
+        """Handle !help command - A masterfully crafted interactive manual."""
         guild_id = message.guild.id
-        custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
-        
-        systems = []
-        commands = {}
-        for cmd_name, cmd_code in custom_cmds.items():
-            if cmd_name.startswith("help ") and cmd_name != "help all":
-                systems.append(cmd_name[5:])
-            elif not cmd_name.startswith("help "):
-                commands[cmd_name] = cmd_code
-        
-        # Add built-in help systems if not present but config exists
-        check_systems = ["verification", "anti_raid", "guardian", "welcome", "tickets", "modmail", "economy", "leveling", "giveaways", "starboard", "suggestions"]
-        for s in check_systems:
-            if s not in systems:
-                if dm.get_guild_data(guild_id, f"{s}_config") or dm.get_guild_data(guild_id, f"{s}_settings"):
-                    systems.append(s)
         
         embed = discord.Embed(
-            title="📚 Miro AI - Server Help Manual",
+            title="📚 Miro AI System Manual",
             description=(
-                "I'm an AI-powered system designed to manage and grow your community. "
-                "Below are the installed systems and custom commands available."
+                "━━━━━━━━━━━━━━\n"
+                "I am **Miro AI**, your server's central operating system. I manage everything from "
+                "enterprise security to hyper-growth engagement.\n\n"
+                "**Select a category below** to view detailed system guides and commands."
             ),
-            color=discord.Color.blue()
+            color=discord.Color.blurple()
         )
         embed.set_thumbnail(url=self.bot.user.display_avatar.url)
         
-        if systems:
-            # Format systems nicely with emojis
-            sys_emojis = {"verification": "🛡️", "anti_raid": "⚔️", "guardian": "👁️", "welcome": "👋", "tickets": "🎫", "modmail": "📬", "economy": "💰", "leveling": "⬆️", "giveaways": "🎁", "starboard": "⭐", "suggestions": "💡"}
-            sys_text = "\n".join([f"{sys_emojis.get(s, '⚙️')} `!help {s}`" for s in sorted(list(set(systems)))])
-            embed.add_field(name="🛡️ Installed Systems", value=sys_text, inline=False)
+        # System Health Snapshot
+        enabled_count = 0
+        systems = ["verification", "anti_raid", "guardian", "welcome", "tickets", "modmail", "economy", "leveling", "giveaways", "starboard", "suggestions", "logging", "auto_responder", "chat_channels", "events"]
+        for s in systems:
+            if dm.get_guild_data(guild_id, f"{s}_config") or dm.get_guild_data(guild_id, f"{s}_settings"):
+                enabled_count += 1
         
-        if commands:
-            cmd_groups = {}
-            for c in commands:
-                parent = c.split()[0]
-                cmd_groups[parent] = cmd_groups.get(parent, 0) + 1
-            
-            cmd_list = []
-            for parent, count in sorted(cmd_groups.items()):
-                if count > 1:
-                    cmd_list.append(f"**!{parent}** ({count} subs)")
-                else:
-                    cmd_list.append(f"**!{parent}**")
-            
-            embed.add_field(name="⌨️ Custom Commands", value="\n".join(cmd_list[:25]), inline=False)
-        
-        if not systems and not commands:
-            embed.description = "No systems or commands installed yet. Use `/bot` or `/autosetup` to get started!"
-        
-        # Add Quick Tips section
         embed.add_field(
-            name="💡 Quick Tips",
-            value="• Use `!help <command>` for detailed info\n• Use `!help <system>` for system guide\n• Most commands require specific permissions",
+            name="📊 System Status",
+            value=f"**Installed:** `{enabled_count}/{len(systems)}` Systems\n**Prefix:** `!` | **AI Core:** `GPT-4o`",
             inline=False
         )
         
-        # Auto-suggest popular commands
-        popular_cmds = self._get_popular_commands(guild_id)
-        if popular_cmds:
-            embed.add_field(
-                name="🔥 Popular Commands",
-                value="\n".join([f"• `!{cmd}`" for cmd in popular_cmds[:5]]),
-                inline=False
-            )
+        embed.add_field(
+            name="🛠️ Rapid Setup",
+            value="Use `/autosetup` for bulk installation or `/bot` for custom AI-driven changes.",
+            inline=False
+        )
         
-        embed.add_field(name="🛠️ Admin Tools", value="`/autosetup` - Bulk install systems\n`/bot` - Build something new\n`!configpanel <system>` - Configure settings", inline=False)
+        embed.set_footer(text="Miro AI v4.0 • Enterprise Edition")
         
-        embed.set_footer(text="Type !help <system> for specific info | Use /bot for AI assistance")
-        
-        # Create interactive view with category buttons
         view = HelpCategoryView(self, guild_id, message.author.id)
         await message.channel.send(embed=embed, view=view)
         return True
@@ -4621,72 +4583,95 @@ class HelpCategoryView(discord.ui.View):
     
     @discord.ui.button(label="🛡️ Security", style=discord.ButtonStyle.primary, custom_id="help_sec")
     async def security_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        await self._show_category(interaction, ["verification", "anti_raid", "guardian", "auto_mod", "warnings"])
+        if interaction.user.id != self.user_id: return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+        await self._show_category(interaction, "Security & Verification", [
+            ("verification", "🛡️", "Instant member onboarding and gates."),
+            ("anti_raid", "⚔️", "Mass-join and spam detection logic."),
+            ("guardian", "👁️", "AI-powered token and scam link detection."),
+            ("automod", "🤖", "Keyword, caps, and mention filtering."),
+            ("warnings", "⚠️", "Strike system with auto-escalation.")
+        ], discord.Color.red())
     
-    @discord.ui.button(label="🎮 Engagement", style=discord.ButtonStyle.success, custom_id="help_eng")
+    @discord.ui.button(label="📈 Engagement", style=discord.ButtonStyle.success, custom_id="help_eng")
     async def engagement_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        await self._show_category(interaction, ["economy", "leveling", "giveaways", "gamification", "starboard"])
+        if interaction.user.id != self.user_id: return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+        await self._show_category(interaction, "Economy & Engagement", [
+            ("economy", "💰", "Advanced currency and shop system."),
+            ("leveling", "⬆️", "XP, roles, and multipliers for activity."),
+            ("giveaways", "🎁", "Automated prize hosting and entry."),
+            ("gamification", "🎮", "Prestige, quests, and daily challenges."),
+            ("starboard", "⭐", "Hall of fame for best messages.")
+        ], discord.Color.green())
     
-    @discord.ui.button(label="📝 Moderation", style=discord.ButtonStyle.danger, custom_id="help_mod")
-    async def moderation_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        await self._show_category(interaction, ["mod_logging", "logging", "automod", "warnings", "modmail"])
-    
-    @discord.ui.button(label="👥 Staff", style=discord.ButtonStyle.secondary, custom_id="help_staff")
+    @discord.ui.button(label="⚖️ Staff", style=discord.ButtonStyle.secondary, custom_id="help_staff")
     async def staff_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        await self._show_category(interaction, ["staff_promotion", "staff_shifts", "staff_reviews", "apps_simple", "appeals_simple"])
+        if interaction.user.id != self.user_id: return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+        await self._show_category(interaction, "Staff & Admin Hub", [
+            ("staff_promo", "🌟", "Automated staff performance & hierarchy."),
+            ("staff_shifts", "🕒", "On-duty tracking and idle monitor."),
+            ("staff_reviews", "📝", "Peer and admin evaluation cycles."),
+            ("applications", "📋", "Recruitment and interview management."),
+            ("modmail", "📬", "Direct staff communication channel.")
+        ], discord.Color.blue())
     
     @discord.ui.button(label="🤖 Automation", style=discord.ButtonStyle.primary, custom_id="help_auto", row=1)
     async def automation_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        await self._show_category(interaction, ["welcome", "tickets", "reminders", "announcements", "auto_responder"])
+        if interaction.user.id != self.user_id: return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+        await self._show_category(interaction, "Smart Automation", [
+            ("welcome", "👋", "Custom greet/leave messages and DMs."),
+            ("tickets", "🎫", "Interactive support ticket system."),
+            ("reminders", "⏰", "Personal and server-wide scheduled alerts."),
+            ("auto_responder", "💬", "Automated replies for common questions."),
+            ("chat_channels", "🧠", "AI-powered chat channels and personas.")
+        ], discord.Color.teal())
     
     @discord.ui.button(label="🌐 Community", style=discord.ButtonStyle.secondary, custom_id="help_comm", row=1)
     async def community_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        await self._show_category(interaction, ["reaction_roles", "reaction_menus", "role_buttons", "suggestions", "chat_channels"])
-    
-    async def _show_category(self, interaction: discord.Interaction, systems: List[str]):
-        """Show commands for a specific category"""
-        custom_cmds = dm.get_guild_data(self.guild_id, "custom_commands", {})
+        if interaction.user.id != self.user_id: return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+        await self._show_category(interaction, "Community Tools", [
+            ("reaction_roles", "🎭", "Bind roles to message reactions."),
+            ("reaction_menus", "📋", "Organized role selection views."),
+            ("role_buttons", "🔘", "Button-based role assignment."),
+            ("suggestions", "💡", "Community feedback and voting."),
+            ("events", "📅", "Server events and participant logging.")
+        ], discord.Color.gold())
+
+    @discord.ui.button(label="🔍 Search", style=discord.ButtonStyle.secondary, custom_id="help_search", row=1)
+    async def search_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id: return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
         
-        embed = discord.Embed(
-            title=f"📋 Category Commands",
-            description="Here are the available commands in this category:",
-            color=discord.Color.blue()
-        )
+        class SearchModal(discord.ui.Modal, title="Search Miro Systems"):
+            query = discord.ui.TextInput(label="System Name", placeholder="e.g. Economy, AutoMod...")
+            def __init__(self, handler):
+                super().__init__()
+                self.handler = handler
+            async def on_submit(self, it):
+                await self.handler.handle_help_system(it, self.query.value)
+
+        await interaction.response.send_modal(SearchModal(self.handler))
+
+    @discord.ui.button(label="🏠 Home", style=discord.ButtonStyle.secondary, custom_id="help_home", row=1)
+    async def home_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id: return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
+        # Use interaction directly since handle_help_all handles both message and interaction
+        await self.handler.handle_help_all(interaction)
+
+    async def _show_category(self, interaction: discord.Interaction, title: str, systems: List[tuple], color: discord.Color):
+        guild_id = self.guild_id
+        embed = discord.Embed(title=f"📋 Category: {title}", description="━━━━━━━━━━━━━━", color=color)
         
-        for system in systems:
-            help_key = f"help {system}"
-            if help_key in custom_cmds:
-                try:
-                    data = json.loads(custom_cmds[help_key])
-                    if data.get("command_type") == "help_embed":
-                        embed.add_field(
-                            name=data.get("title", system),
-                            value=data.get("description", "No description"),
-                            inline=False
-                        )
-                except:
-                    pass
+        for sys_id, emoji, desc in systems:
+            status = "🔴"
+            if dm.get_guild_data(guild_id, f"{sys_id}_config") or dm.get_guild_data(guild_id, f"{sys_id}_settings"):
+                status = "🟢"
+
+            embed.add_field(
+                name=f"{status} {emoji} {sys_id.replace('_', ' ').title()}",
+                value=f"{desc}\n`!configpanel {sys_id}` | `!help {sys_id}`",
+                inline=False
+            )
         
-        # Add Quick Tips
-        embed.add_field(
-            name="💡 Quick Tips",
-            value="Use `!help <command>` for more details",
-            inline=False
-        )
-        
-        embed.set_footer(text="Need help? Type !help")
+        embed.set_footer(text="🟢 = Installed | 🔴 = Not Setup")
         await interaction.response.edit_message(embed=embed, view=self)
 
 
