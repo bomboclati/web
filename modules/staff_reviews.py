@@ -309,12 +309,12 @@ class ReviewSelectionView(discord.ui.View):
         self.guild_id = guild_id
         self.user_id = user_id
 
-    @discord.ui.button(label="Self Review", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="Self Review", style=discord.ButtonStyle.primary, custom_id="rev_cfg_self_review")
     async def self_review(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id: return
         await interaction.response.send_modal(ReviewModal(self.system, self.guild_id, "self", interaction.user))
 
-    @discord.ui.button(label="Peer Review", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Peer Review", style=discord.ButtonStyle.secondary, custom_id="rev_cfg_peer_review")
     async def peer_review(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id: return
         

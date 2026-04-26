@@ -163,7 +163,7 @@ class SuggestionVoteView(ui.View):
                 return s
         return None
     
-    @ui.button(label="Upvote", style=discord.ButtonStyle.green, emoji="✅", custom_id="suggestion_upvote")
+    @ui.button(label="Upvote", style=discord.ButtonStyle.success, emoji="✅", custom_id="suggestion_upvote")
     async def upvote(self, interaction: discord.Interaction, button: ui.Button):
         guild_data = dm.get_guild_data(self.guild_id)
         suggestion = self._get_suggestion(guild_data)
@@ -211,7 +211,7 @@ class SuggestionVoteView(ui.View):
             ephemeral=True
         )
     
-    @ui.button(label="Downvote", style=discord.ButtonStyle.red, emoji="❌", custom_id="suggestion_downvote")
+    @ui.button(label="Downvote", style=discord.ButtonStyle.danger, emoji="❌", custom_id="suggestion_downvote")
     async def downvote(self, interaction: discord.Interaction, button: ui.Button):
         guild_data = dm.get_guild_data(self.guild_id)
         suggestion = self._get_suggestion(guild_data)
@@ -299,7 +299,7 @@ class SuggestionReviewView(ui.View):
                 return s
         return None
     
-    @ui.button(label="Approve", style=discord.ButtonStyle.green, emoji="✅", custom_id="suggestion_approve")
+    @ui.button(label="Approve", style=discord.ButtonStyle.success, emoji="✅", custom_id="suggestion_approve")
     async def approve(self, interaction: discord.Interaction, button: ui.Button):
         if not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
@@ -361,7 +361,7 @@ class SuggestionReviewView(ui.View):
         
         await interaction.response.send_message("✅ Suggestion approved!", ephemeral=True)
     
-    @ui.button(label="Deny", style=discord.ButtonStyle.red, emoji="❌", custom_id="suggestion_deny")
+    @ui.button(label="Deny", style=discord.ButtonStyle.danger, emoji="❌", custom_id="suggestion_deny")
     async def deny(self, interaction: discord.Interaction, button: ui.Button):
         if not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
@@ -413,7 +413,7 @@ class SuggestionReviewView(ui.View):
         
         await interaction.response.send_message("🚧 Marked as in progress.", ephemeral=True)
     
-    @ui.button(label="Completed", style=discord.ButtonStyle.blurple, emoji="✅", custom_id="suggestion_completed")
+    @ui.button(label="Completed", style=discord.ButtonStyle.primary, emoji="✅", custom_id="suggestion_completed")
     async def completed(self, interaction: discord.Interaction, button: ui.Button):
         if not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
@@ -457,7 +457,7 @@ class SuggestionReviewView(ui.View):
         
         await interaction.response.send_message("✅ Marked as completed.", ephemeral=True)
     
-    @ui.button(label="Delete", style=discord.ButtonStyle.red, emoji="🗑️", custom_id="suggestion_delete")
+    @ui.button(label="Delete", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="suggestion_delete")
     async def delete(self, interaction: discord.Interaction, button: ui.Button):
         if not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)

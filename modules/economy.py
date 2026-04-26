@@ -252,37 +252,37 @@ class EconomyPanel(View):
         self.guild_id = guild_id
         self.economy = Economy(bot)
     
-    @discord.ui.button(label="Add Coins", style=discord.ButtonStyle.success, row=0)
+    @discord.ui.button(label="Add Coins", style=discord.ButtonStyle.success, row=0, custom_id="eco_cfg_add_coins")
     async def add_coins(self, interaction: discord.Interaction, button: Button):
         modal = AddRemoveCoinsModal(self.bot, self.guild_id, action="add")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Remove Coins", style=discord.ButtonStyle.danger, row=0)
+    @discord.ui.button(label="Remove Coins", style=discord.ButtonStyle.danger, row=0, custom_id="eco_cfg_remove_coins")
     async def remove_coins(self, interaction: discord.Interaction, button: Button):
         modal = AddRemoveCoinsModal(self.bot, self.guild_id, action="remove")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Add Gems", style=discord.ButtonStyle.success, row=0)
+    @discord.ui.button(label="Add Gems", style=discord.ButtonStyle.success, row=0, custom_id="eco_cfg_add_gems")
     async def add_gems(self, interaction: discord.Interaction, button: Button):
         modal = AddRemoveGemsModal(self.bot, self.guild_id, action="add")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Remove Gems", style=discord.ButtonStyle.danger, row=0)
+    @discord.ui.button(label="Remove Gems", style=discord.ButtonStyle.danger, row=0, custom_id="eco_cfg_remove_gems")
     async def remove_gems(self, interaction: discord.Interaction, button: Button):
         modal = AddRemoveGemsModal(self.bot, self.guild_id, action="remove")
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="View Balance", style=discord.ButtonStyle.primary, row=1)
+    @discord.ui.button(label="View Balance", style=discord.ButtonStyle.primary, row=1, custom_id="eco_cfg_view_balance")
     async def view_balance(self, interaction: discord.Interaction, button: Button):
         modal = ViewBalanceModal(self.bot, self.guild_id)
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Transfer", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Transfer", style=discord.ButtonStyle.secondary, row=1, custom_id="eco_cfg_transfer")
     async def transfer_btn(self, interaction: discord.Interaction, button: Button):
         modal = TransferModal(self.bot, self.guild_id)
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Leaderboard", style=discord.ButtonStyle.primary, row=1)
+    @discord.ui.button(label="Leaderboard", style=discord.ButtonStyle.primary, row=1, custom_id="eco_cfg_leaderboard")
     async def leaderboard(self, interaction: discord.Interaction, button: Button):
         balances = dm.get_guild_data(self.guild_id, "economy_balances", {})
         sorted_users = sorted(balances.items(), key=lambda x: x[1], reverse=True)[:10]
@@ -293,7 +293,7 @@ class EconomyPanel(View):
             embed.add_field(name=f"{i}. {name}", value=f"{amount:,} coins", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @discord.ui.button(label="Stats", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Stats", style=discord.ButtonStyle.secondary, row=1, custom_id="eco_cfg_stats")
     async def show_stats(self, interaction: discord.Interaction, button: Button):
         balances = dm.get_guild_data(self.guild_id, "economy_balances", {})
         total_coins = sum(balances.values())
@@ -301,22 +301,22 @@ class EconomyPanel(View):
         embed.add_field(name="Total Coins", value=f"{total_coins:,}", inline=True)
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @discord.ui.button(label="Add Shop Item", style=discord.ButtonStyle.success, row=2)
+    @discord.ui.button(label="Add Shop Item", style=discord.ButtonStyle.success, row=2, custom_id="eco_cfg_add_shop_item")
     async def add_shop_item(self, interaction: discord.Interaction, button: Button):
         modal = AddShopItemModal(self.bot, self.guild_id)
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Configure Daily", style=discord.ButtonStyle.secondary, row=2)
+    @discord.ui.button(label="Configure Daily", style=discord.ButtonStyle.secondary, row=2, custom_id="eco_cfg_configure_daily")
     async def configure_daily(self, interaction: discord.Interaction, button: Button):
         modal = ConfigureDailyModal(self.bot, self.guild_id)
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Set Currency Name", style=discord.ButtonStyle.secondary, row=2)
+    @discord.ui.button(label="Set Currency Name", style=discord.ButtonStyle.secondary, row=2, custom_id="eco_cfg_set_currency_name")
     async def set_currency_name(self, interaction: discord.Interaction, button: Button):
         modal = SetCurrencyNameModal(self.bot, self.guild_id)
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="Transaction Log", style=discord.ButtonStyle.primary, row=3)
+    @discord.ui.button(label="Transaction Log", style=discord.ButtonStyle.primary, row=3, custom_id="eco_cfg_transaction_log")
     async def transaction_log(self, interaction: discord.Interaction, button: Button):
         transactions = dm.get_guild_data(self.guild_id, "economy_transactions", [])
         recent = transactions[-10:][::-1]
@@ -325,7 +325,7 @@ class EconomyPanel(View):
             embed.add_field(name=f"User {tx["user_id"]}: {tx["amount"]}", value=f"{tx["type"]} - {tx["reason"]}", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @discord.ui.button(label="Reset User Balance", style=discord.ButtonStyle.danger, row=3)
+    @discord.ui.button(label="Reset User Balance", style=discord.ButtonStyle.danger, row=3, custom_id="eco_cfg_reset_user_balance")
     async def reset_balance(self, interaction: discord.Interaction, button: Button):
         modal = ResetBalanceModal(self.bot, self.guild_id)
         await interaction.response.send_modal(modal)

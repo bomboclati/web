@@ -209,7 +209,7 @@ class AutoResponderPanel(View):
         msg = await interaction.original_response()
         await msg.edit(embed=embed, view=self)
     
-    @discord.ui.button(label="📋 View All", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="📋 View All", style=discord.ButtonStyle.primary, row=0, custom_id="ar_cfg__view_all")
     async def view_all(self, interaction: discord.Interaction, button: Button):
         responders = self.ar.get_responders(self.guild_id)
         if not responders:
@@ -227,12 +227,12 @@ class AutoResponderPanel(View):
             embed.set_footer(text=f"Showing 10 of {len(responders)} responders")
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @discord.ui.button(label="➕ Add Responder", style=discord.ButtonStyle.success, row=0)
+    @discord.ui.button(label="➕ Add Responder", style=discord.ButtonStyle.success, row=0, custom_id="ar_cfg__add_responder")
     async def add_responder(self, interaction: discord.Interaction, button: Button):
         modal = AddResponderModal(self.bot, self.guild_id)
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="✏️ Edit Responder", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="✏️ Edit Responder", style=discord.ButtonStyle.secondary, row=0, custom_id="ar_cfg__edit_responder")
     async def edit_responder(self, interaction: discord.Interaction, button: Button):
         responders = self.ar.get_responders(self.guild_id)
         if not responders:
@@ -243,7 +243,7 @@ class AutoResponderPanel(View):
         view.add_item(select)
         await interaction.response.send_message("Select a responder to edit:", ephemeral=True, view=view)
     
-    @discord.ui.button(label="⏸️ Disable", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="⏸️ Disable", style=discord.ButtonStyle.secondary, row=1, custom_id="ar_cfg__disable")
     async def disable_responder(self, interaction: discord.Interaction, button: Button):
         responders = self.ar.get_responders(self.guild_id)
         active = [r for r in responders if r.get("enabled", True)]
@@ -255,7 +255,7 @@ class AutoResponderPanel(View):
         view.add_item(select)
         await interaction.response.send_message("Select responder to disable:", ephemeral=True, view=view)
     
-    @discord.ui.button(label="▶️ Enable", style=discord.ButtonStyle.success, row=1)
+    @discord.ui.button(label="▶️ Enable", style=discord.ButtonStyle.success, row=1, custom_id="ar_cfg__enable")
     async def enable_responder(self, interaction: discord.Interaction, button: Button):
         responders = self.ar.get_responders(self.guild_id)
         disabled = [r for r in responders if not r.get("enabled", True)]
@@ -267,7 +267,7 @@ class AutoResponderPanel(View):
         view.add_item(select)
         await interaction.response.send_message("Select responder to enable:", ephemeral=True, view=view)
     
-    @discord.ui.button(label="🗑️ Delete", style=discord.ButtonStyle.danger, row=1)
+    @discord.ui.button(label="🗑️ Delete", style=discord.ButtonStyle.danger, row=1, custom_id="ar_cfg__delete")
     async def delete_responder(self, interaction: discord.Interaction, button: Button):
         responders = self.ar.get_responders(self.guild_id)
         if not responders:
@@ -278,12 +278,12 @@ class AutoResponderPanel(View):
         view.add_item(select)
         await interaction.response.send_message("Select responder to delete:", ephemeral=True, view=view)
     
-    @discord.ui.button(label="🔍 Test Responder", style=discord.ButtonStyle.primary, row=2)
+    @discord.ui.button(label="🔍 Test Responder", style=discord.ButtonStyle.primary, row=2, custom_id="ar_cfg__test_responder")
     async def test_responder(self, interaction: discord.Interaction, button: Button):
         modal = TestResponderModal(self.bot, self.guild_id)
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="📊 Stats", style=discord.ButtonStyle.secondary, row=2)
+    @discord.ui.button(label="📊 Stats", style=discord.ButtonStyle.secondary, row=2, custom_id="ar_cfg__stats")
     async def show_stats(self, interaction: discord.Interaction, button: Button):
         responders = self.ar.get_responders(self.guild_id)
         total_triggers = sum(r.get("trigger_count", 0) for r in responders)
@@ -304,31 +304,31 @@ class AutoResponderPanel(View):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @discord.ui.button(label="🌐 Channel Restriction", style=discord.ButtonStyle.secondary, row=3)
+    @discord.ui.button(label="🌐 Channel Restriction", style=discord.ButtonStyle.secondary, row=3, custom_id="ar_cfg__channel_restriction")
     async def set_channels(self, interaction: discord.Interaction, button: Button):
         select = ChannelRestrictionSelect(self.bot, self.guild_id)
         view = View(timeout=180)
         view.add_item(select)
         await interaction.response.send_message("Select channels where auto-responders work (or none for all):", ephemeral=True, view=view)
     
-    @discord.ui.button(label="🎭 Role Restriction", style=discord.ButtonStyle.secondary, row=3)
+    @discord.ui.button(label="🎭 Role Restriction", style=discord.ButtonStyle.secondary, row=3, custom_id="ar_cfg__role_restriction")
     async def set_roles(self, interaction: discord.Interaction, button: Button):
         select = RoleRestrictionSelect(self.bot, self.guild_id)
         view = View(timeout=180)
         view.add_item(select)
         await interaction.response.send_message("Select roles that can trigger auto-responders (or none for all):", ephemeral=True, view=view)
     
-    @discord.ui.button(label="⏱️ Set Cooldown", style=discord.ButtonStyle.primary, row=3)
+    @discord.ui.button(label="⏱️ Set Cooldown", style=discord.ButtonStyle.primary, row=3, custom_id="ar_cfg__set_cooldown")
     async def set_cooldown(self, interaction: discord.Interaction, button: Button):
         modal = CooldownModal(self.bot, self.guild_id)
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="🔃 Import", style=discord.ButtonStyle.secondary, row=4)
+    @discord.ui.button(label="🔃 Import", style=discord.ButtonStyle.secondary, row=4, custom_id="ar_cfg__import")
     async def import_responders(self, interaction: discord.Interaction, button: Button):
         modal = ImportModal(self.bot, self.guild_id)
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="📤 Export", style=discord.ButtonStyle.secondary, row=4)
+    @discord.ui.button(label="📤 Export", style=discord.ButtonStyle.secondary, row=4, custom_id="ar_cfg__export")
     async def export_responders(self, interaction: discord.Interaction, button: Button):
         responders = self.ar.get_responders(self.guild_id)
         json_str = json.dumps(responders, indent=2)
