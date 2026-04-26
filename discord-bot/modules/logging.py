@@ -1,4 +1,4 @@
-import discord
+﻿import discord
 from discord.ext import commands
 import time
 import asyncio
@@ -56,7 +56,7 @@ class LoggingSystem:
         if not config.get("enabled", True):
             return
 
-        if not config.get("enabled_events", {}).get(event_type, True):
+        if not config.setdefault("enabled_events", {}).get(event_type, True):
             return
 
         # Check category-specific channel

@@ -1,4 +1,4 @@
-import discord
+﻿import discord
 from discord import ui, Interaction, app_commands
 import asyncio
 import json
@@ -438,19 +438,25 @@ class AntiRaidConfigView(ConfigPanelView):
 
     @ui.button(label="Manual Lockdown", emoji="🔒", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_antiraid_lockdown")
     async def lockdown(self, i: Interaction, b):
-        from modules.anti_raid import AntiRaidSystem
-        ar = AntiRaidSystem(i.client)
+        ar = getattr(i.client, "anti_raid", None)
+        if ar is None:
+            return await i.response.send_message("❌ Anti-Raid module not loaded.", ephemeral=True)
+        await i.response.defer(ephemeral=True)
         await ar._lockdown(i.guild)
+        await i.followup.send("🔒 Locked Down.", ephemeral=True)
+        return
         log_panel_action(i.guild_id, i.user.id, "Manual Lockdown")
-        await i.response.send_message("🔒 Locked Down.", ephemeral=True)
 
     @ui.button(label="Unlock Server", emoji="🔓", style=discord.ButtonStyle.success, row=2, custom_id="cfg_antiraid_unlock")
     async def unlock(self, i: Interaction, b):
-        from modules.anti_raid import AntiRaidSystem
-        ar = AntiRaidSystem(i.client)
+        ar = getattr(i.client, "anti_raid", None)
+        if ar is None:
+            return await i.response.send_message("❌ Anti-Raid module not loaded.", ephemeral=True)
+        await i.response.defer(ephemeral=True)
         await ar.lift_lockdown(i.guild)
+        await i.followup.send("🔓 Unlocked.", ephemeral=True)
+        return
         log_panel_action(i.guild_id, i.user.id, "Lifted Lockdown")
-        await i.response.send_message("🔓 Unlocked.", ephemeral=True)
 
     @ui.button(label="Set Min Age", emoji="👶", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_antiraid_set_age")
     async def set_age(self, i, b):
@@ -1872,7 +1878,7 @@ class StaffPromoConfigView(ConfigPanelView):
         c = self.get_config(guild_id or self.guild_id)
         embed = discord.Embed(title="🌟 Staff Promotion System Configuration", color=discord.Color.gold())
 
-        settings = c.get("settings", {})
+        settings = c.get("settings", {"auto_promote": True, "review_mode": False, "notify_on_promotion": True})
         embed.add_field(name="Auto-Promote", value="✅ ON" if settings.get("auto_promote", True) else "❌ OFF", inline=True)
         embed.add_field(name="Review Mode", value="✅ ON" if settings.get("review_mode", False) else "❌ OFF", inline=True)
         embed.add_field(name="Review Channel", value=f"<#{settings.get('review_channel')}>" if settings.get('review_channel') else "None", inline=True)
@@ -1990,18 +1996,18 @@ class StaffPromoConfigView(ConfigPanelView):
     @ui.button(label="Toggle Auto-Promote", emoji="🚀", style=discord.ButtonStyle.success, row=2, custom_id="cfg_staff_auto")
     async def toggle_auto(self, i, b):
         c = self.get_config(i.guild_id)
-        c["settings"]["auto_promote"] = not c["settings"].get("auto_promote", True)
+        c.setdefault("settings", {})["auto_promote"] = not c.get("settings", {}).get("auto_promote", True)
         self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
 
     @ui.button(label="Toggle Review Mode", emoji="⚖️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staff_review")
     async def toggle_review(self, i, b):
         c = self.get_config(i.guild_id)
-        c["settings"]["review_mode"] = not c["settings"].get("review_mode", False)
+        c.setdefault("settings", {})["review_mode"] = not c.get("settings", {}).get("review_mode", False)
         self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
 
     @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staff_dm")
     async def toggle_dm(self, i, b):
-        c = self.get_config(i.guild_id); c["settings"]["notify_on_promotion"] = not c["settings"].get("notify_on_promotion", True)
+        c = self.get_config(i.guild_id); c.setdefault("settings", {})["notify_on_promotion"] = not c.get("settings", {}).get("notify_on_promotion", True)
         self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
 
     @ui.button(label="Set Review Ch", emoji="🔔", style=discord.ButtonStyle.primary, row=3, custom_id="cfg_staff_rev_ch")
@@ -2352,7 +2358,7 @@ class AutoModConfigView(ConfigPanelView):
     @ui.button(label="Toggle Invites", emoji="✅", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_automod_inv")
     async def toggle_invites(self, i, b):
         c = self.get_config(i.guild_id)
-        c["rules"]["invites"]["enabled"] = not c["rules"]["invites"].get("enabled", True)
+        rules = c.setdefault("rules", {}); inv = rules.setdefault("invites", {}); inv["enabled"] = not inv.get("enabled", True)
         self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
 
     @ui.button(label="Manage Banned Words", emoji="📝", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_automod_words")
@@ -4207,6 +4213,14 @@ def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
         _view_cache["AutoModConfigView"] = AutoModConfigView
         _view_cache["WarningConfigView"] = WarningConfigView
         _view_cache["StaffPromoConfigView"] = StaffPromoConfigView
+        _view_cache["EconomyConfigView"] = EconomyConfigView
+        _view_cache["LevelingConfigView"] = LevelingConfigView
+        _view_cache["StarboardConfigView"] = StarboardConfigView
+        _view_cache["AutoResponderConfigView"] = AutoResponderConfigView
+        _view_cache["ChatChannelsConfigView"] = ChatChannelsConfigView
+        _view_cache["EventsConfigView"] = EventsConfigView
+        _view_cache["EconomyShopConfigView"] = EconomyShopConfigView
+        _view_cache["LevelingShopConfigView"] = LevelingShopConfigView
         _view_cache["AntiRaidConfigView"] = AntiRaidConfigView
         _view_cache["GuardianConfigView"] = GuardianConfigView
         _view_cache["TicketsConfigView"] = TicketsConfigView

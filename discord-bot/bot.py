@@ -631,6 +631,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         await self._safe_call(self.trigger_roles.handle_message(message), "trigger_roles")
         await self._safe_call(self.moderation.analyze_message(message), "moderation")
         await self._safe_call(self.automod.handle_message(message), "automod")
+        await self._safe_call(self.guardian.handle_message(message), "guardian")
         await self._safe_call(self.staff_shift.track_message(message), "staff_shift")
         await self._safe_call(self.intelligence.track_message(message), "intelligence")
         await self._safe_call(self.conflict_resolution.analyze_message(message), "conflict_resolution")
@@ -714,18 +715,14 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 return
 
             if cmd_content.strip() == "help":
-                from actions import ActionHandler
-                handler = ActionHandler(self)
-                handler.set_guild_context(message.guild)
-                await handler.handle_help_all(message)
+                from modules.help_system import send_help
+                await send_help(message.channel, message.guild.id, message.author)
                 return
 
             if cmd_content.startswith("help "):
                 system = cmd_content[5:].strip()
-                from actions import ActionHandler
-                handler = ActionHandler(self)
-                handler.set_guild_context(message.guild)
-                await handler.handle_help_system(message, system)
+                from modules.help_system import send_help
+                await send_help(message.channel, message.guild.id, message.author)
                 return
 
             # Handle staff commands

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Suggestions System - Full implementation for Discord bot
 Handles suggestion submission, voting, staff review, and complete admin panel
 """

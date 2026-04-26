@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 from datetime import datetime
 import json
 import discord

@@ -1,4 +1,4 @@
-import discord
+﻿import discord
 import time
 import re
 from typing import Dict, List, Optional

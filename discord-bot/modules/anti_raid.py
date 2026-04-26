@@ -1,4 +1,4 @@
-import discord
+﻿import discord
 from discord.ext import commands
 import asyncio
 import json
@@ -21,7 +21,7 @@ class AntiRaidSystem:
 
     def get_guild_settings(self, guild_id: int) -> dict:
         """Retrieve guild anti-raid settings, unified with config panel key."""
-        return dm.get_guild_data(guild_id, "antiraid_config", {
+        return dm.get_guild_data(guild_id, "anti_raid_config", {
             "enabled": True,
             "mass_join_threshold": 10,
             "mass_join_window": 10,
@@ -44,7 +44,7 @@ class AntiRaidSystem:
         })
 
     def save_settings(self, guild_id: int, settings: dict):
-        dm.update_guild_data(guild_id, "antiraid_config", settings)
+        dm.update_guild_data(guild_id, "anti_raid_config", settings)
 
     def _log_incident(self, guild_id: int, type: str, members: List[int], action: str):
         settings = self.get_guild_settings(guild_id)
