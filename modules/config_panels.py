@@ -166,13 +166,13 @@ class ConfigPanelView(ui.View):
 class _GenericRoleSelect(ui.RoleSelect):
     def __init__(self, parent: ConfigPanelView, key: str, placeholder: str):
         super().__init__(placeholder=placeholder, min_values=1, max_values=1)
-        self.parent = parent
+        self.config_panel = parent
         self.key = key
 
     async def callback(self, interaction: Interaction):
-        config = self.parent.get_config(interaction.guild_id)
+        config = self.config_panel.get_config(interaction.guild_id)
         config[self.key] = self.values[0].id
-        self.parent.save_config(config, interaction.guild_id, interaction.client)
+        self.config_panel.save_config(config, interaction.guild_id, interaction.client)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {self.values[0].name}")
         await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to {self.values[0].mention}", ephemeral=True)
 
@@ -183,13 +183,13 @@ class _GenericChannelSelect(ui.ChannelSelect):
             channel_types=channel_types or [discord.ChannelType.text],
             min_values=1, max_values=1,
         )
-        self.parent = parent
+        self.config_panel = parent
         self.key = key
 
     async def callback(self, interaction: Interaction):
-        config = self.parent.get_config(interaction.guild_id)
+        config = self.config_panel.get_config(interaction.guild_id)
         config[self.key] = self.values[0].id
-        self.parent.save_config(config, interaction.guild_id, interaction.client)
+        self.config_panel.save_config(config, interaction.guild_id, interaction.client)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to #{self.values[0].name}")
         await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to <#{self.values[0].id}>", ephemeral=True)
 
@@ -199,7 +199,7 @@ class _NumberModal(ui.Modal):
 
     def __init__(self, parent: ConfigPanelView, key: str, label: str, guild_id: int, min_v: int = 0, max_v: int = 999999999999, second_label: str = None):
         super().__init__(title=label)
-        self.parent = parent
+        self.config_panel = parent
         self.key = key
         self.min_v, self.max_v = min_v, max_v
         self.value_input.label = label
@@ -223,7 +223,7 @@ class _NumberModal(ui.Modal):
         except ValueError:
             return await interaction.response.send_message(f"❌ Enter a valid number.", ephemeral=True)
         
-        config = self.parent.get_config(interaction.guild_id)
+        config = self.config_panel.get_config(interaction.guild_id)
         
         # Special handling for whitelist operations
         if self.key == "whitelist_add":
@@ -232,7 +232,7 @@ class _NumberModal(ui.Modal):
             if user_id not in whitelist:
                 whitelist.append(user_id)
                 config["whitelist"] = whitelist
-                self.parent.save_config(config, interaction.guild_id, interaction.client)
+                self.config_panel.save_config(config, interaction.guild_id, interaction.client)
                 log_panel_action(interaction.guild_id, interaction.user.id, f"Added {user_id} to whitelist")
                 return await interaction.response.send_message(f"✅ User `{user_id}` added to whitelist.", ephemeral=True)
             else:
@@ -245,26 +245,26 @@ class _NumberModal(ui.Modal):
                     y = int(self.second_value.value)
                     config["duplicate_threshold"] = v
                     config["duplicate_window"] = y
-                    self.parent.save_config(config, interaction.guild_id, interaction.client)
+                    self.config_panel.save_config(config, interaction.guild_id, interaction.client)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set duplicate filter to {v} msgs in {y}s")
                     return await interaction.response.send_message(f"✅ Duplicate filter: **{v}** messages in **{y}** seconds.", ephemeral=True)
                 except ValueError:
                     return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
             config["duplicate_threshold"] = v
-            self.parent.save_config(config, interaction.guild_id, interaction.client)
+            self.config_panel.save_config(config, interaction.guild_id, interaction.client)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set duplicate threshold to {v}")
             return await interaction.response.send_message(f"✅ Duplicate threshold set to **{v}** messages.", ephemeral=True)
         
         # Special handling for mention threshold config
         if self.key == "mention_threshold_config":
             config["mention_threshold"] = v
-            self.parent.save_config(config, interaction.guild_id, interaction.client)
+            self.config_panel.save_config(config, interaction.guild_id, interaction.client)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set mention threshold to {v}")
             return await interaction.response.send_message(f"✅ Max mentions per message: **{v}**.", ephemeral=True)
         
         # Default: single value storage
         config[self.key] = v
-        self.parent.save_config(config, interaction.guild_id, interaction.client)
+        self.config_panel.save_config(config, interaction.guild_id, interaction.client)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {v}")
         await interaction.response.send_message(f"✅ {self.key.replace('_',' ').title()} set to **{v}**.", ephemeral=True)
 
@@ -273,7 +273,7 @@ class _TextModal(ui.Modal):
 
     def __init__(self, parent: ConfigPanelView, key: str, label: str, guild_id: int):
         super().__init__(title=label)
-        self.parent = parent
+        self.config_panel = parent
         self.key = key
         self.value_input.label = label
         existing = parent.get_config(guild_id).get(key, "")
@@ -281,9 +281,9 @@ class _TextModal(ui.Modal):
             self.value_input.default = str(existing)
 
     async def on_submit(self, interaction: Interaction):
-        config = self.parent.get_config(interaction.guild_id)
+        config = self.config_panel.get_config(interaction.guild_id)
         config[self.key] = self.value_input.value
-        self.parent.save_config(config, interaction.guild_id, interaction.client)
+        self.config_panel.save_config(config, interaction.guild_id, interaction.client)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Updated text field {self.key}")
         await interaction.response.send_message(f"✅ {self.key.replace('_',' ').title()} updated.", ephemeral=True)
 
@@ -657,7 +657,7 @@ class WelcomeConfigView(ConfigPanelView):
 class _WelcomeTextModal(ui.Modal):
     def __init__(self, parent, config_key, field, label):
         super().__init__(title=label)
-        self.parent = parent
+        self.config_panel = parent
         self.config_key = config_key
         self.field = field
         self.input = ui.TextInput(label="Message Content", style=discord.TextStyle.paragraph, required=True, max_length=1500)
@@ -674,7 +674,7 @@ class _WelcomeTextModal(ui.Modal):
 class _WLColorModal(ui.Modal):
     def __init__(self, parent):
         super().__init__(title="Set Embed Color")
-        self.parent = parent
+        self.config_panel = parent
         self.input = ui.TextInput(label="Hex Color (e.g. #2ecc71)", required=True, min_length=7, max_length=7)
         self.add_item(self.input)
 
@@ -719,7 +719,7 @@ class WelcomeDMConfigView(ConfigPanelView):
     async def config_btns(self, i, b):
         class BtnSelect(ui.Select):
             def __init__(self, parent):
-                self.parent = parent
+                self.config_panel = parent
                 options = [
                     discord.SelectOption(label="Verify", value="verify"),
                     discord.SelectOption(label="Rules", value="rules"),
@@ -749,7 +749,7 @@ class WelcomeDMConfigView(ConfigPanelView):
 class _WDMColorModal(ui.Modal):
     def __init__(self, parent):
         super().__init__(title="Set DM Embed Color")
-        self.parent = parent
+        self.config_panel = parent
         self.input = ui.TextInput(label="Hex Color", required=True, min_length=7, max_length=7)
         self.add_item(self.input)
     async def on_submit(self, interaction: Interaction):
@@ -790,7 +790,7 @@ class ApplicationConfigView(ConfigPanelView):
         class FilterView(ui.View):
             def __init__(self, parent):
                 super().__init__(timeout=60)
-                self.parent = parent
+                self.config_panel = parent
                 options = [
                     discord.SelectOption(label="All", value="all"),
                     discord.SelectOption(label="Pending", value="pending", emoji="⏳"),
@@ -850,15 +850,15 @@ class ApplicationConfigView(ConfigPanelView):
         class QModal(ui.Modal):
             def __init__(self, parent):
                 super().__init__(title="Edit Questions")
-                self.parent = parent
+                self.config_panel = parent
                 existing = parent.get_config(i.guild_id).get("questions", [])
                 self.input = ui.TextInput(label="Questions (one per line, max 5)", style=discord.TextStyle.paragraph,
                                         default="\n".join(existing), required=True)
                 self.add_item(self.input)
             async def on_submit(self, it):
                 qs = [q.strip() for q in self.input.value.split("\n") if q.strip()][:5]
-                c = self.parent.get_config(it.guild_id); c["questions"] = qs
-                self.parent.save_config(c, it.guild_id, it.client)
+                c = self.config_panel.get_config(it.guild_id); c["questions"] = qs
+                self.config_panel.save_config(c, it.guild_id, it.client)
                 await it.response.send_message(f"✅ Questions updated ({len(qs)} set).", ephemeral=True)
         await i.response.send_modal(QModal(self))
 
@@ -892,7 +892,7 @@ class ApplicationConfigView(ConfigPanelView):
         class Confirm(ui.Modal):
             def __init__(self, parent):
                 super().__init__(title="Confirm Clear")
-                self.parent = parent
+                self.config_panel = parent
                 self.input = ui.TextInput(label="Type 'CLEAR' to confirm")
                 self.add_item(self.input)
             async def on_submit(self, it):
@@ -929,16 +929,16 @@ class ApplicationConfigView(ConfigPanelView):
         class TypeModal(ui.Modal):
             def __init__(self, parent):
                 super().__init__(title="Add Application Type")
-                self.parent = parent
+                self.config_panel = parent
                 self.input = ui.TextInput(label="Type Name (e.g. Staff, Partner)")
                 self.add_item(self.input)
             async def on_submit(self, it):
-                c = self.parent.get_config(it.guild_id)
+                c = self.config_panel.get_config(it.guild_id)
                 types = c.get("application_types", [])
                 if self.input.value not in types:
                     types.append(self.input.value)
                     c["application_types"] = types
-                    self.parent.save_config(c, it.guild_id, it.client)
+                    self.config_panel.save_config(c, it.guild_id, it.client)
                     await it.response.send_message(f"✅ Added application type: {self.input.value}", ephemeral=True)
                 else:
                     await it.response.send_message("❌ Type already exists.", ephemeral=True)
@@ -1014,13 +1014,13 @@ class AppealsConfigView(ConfigPanelView):
             q = ui.TextInput(label="Questions (one per line, max 4)", style=discord.TextStyle.paragraph, required=True)
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
                 existing = parent.get_config(i.guild_id).get("questions", [])
                 self.q.default = "\n".join(existing)
             async def on_submit(self, it):
                 qs = [s.strip() for s in self.q.value.split("\n") if s.strip()][:4]
-                c = self.parent.get_config(it.guild_id); c["questions"] = qs
-                self.parent.save_config(c, it.guild_id, it.client)
+                c = self.config_panel.get_config(it.guild_id); c["questions"] = qs
+                self.config_panel.save_config(c, it.guild_id, it.client)
                 await it.response.send_message(f"✅ Questions updated.", ephemeral=True)
         await i.response.send_modal(QModal(self))
 
@@ -2096,7 +2096,7 @@ class WarningConfigView(ConfigPanelView):
             reason = ui.TextInput(label="Pardon Reason")
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
             async def on_submit(self, it):
                 success = await it.client.warnings.pardon_warning(it.guild, int(self.uid.value), int(self.wid.value), self.reason.value)
                 if success: await it.response.send_message("✅ Warning pardoned.", ephemeral=True)
@@ -2147,14 +2147,14 @@ class WarningConfigView(ConfigPanelView):
             critical = ui.TextInput(label="Critical (Count)", default="5")
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
             async def on_submit(self, it):
-                c = self.parent.get_config(it.guild_id)
+                c = self.config_panel.get_config(it.guild_id)
                 c["thresholds"]["minor"]["count"] = int(self.minor.value)
                 c["thresholds"]["moderate"]["count"] = int(self.moderate.value)
                 c["thresholds"]["severe"]["count"] = int(self.severe.value)
                 c["thresholds"]["critical"]["count"] = int(self.critical.value)
-                self.parent.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client)
                 await it.response.send_message("✅ Threshold counts updated.", ephemeral=True)
         await i.response.send_modal(ThreshModal(self))
 
@@ -2242,16 +2242,16 @@ class AutoModConfigView(ConfigPanelView):
             action = ui.TextInput(label="Action (warn/mute/delete)", default="mute")
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
             async def on_submit(self, it):
-                c = self.parent.get_config(it.guild_id)
+                c = self.config_panel.get_config(it.guild_id)
                 c["rules"]["spam"].update({
                     "max_messages": int(self.count.value),
                     "window": int(self.window.value),
                     "action": self.action.value.lower(),
                     "enabled": True
                 })
-                self.parent.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client)
                 await it.response.send_message("✅ Spam filter updated.", ephemeral=True)
         await i.response.send_modal(SpamModal(self))
 
@@ -2263,16 +2263,16 @@ class AutoModConfigView(ConfigPanelView):
             action = ui.TextInput(label="Action (warn/mute/delete)", default="warn")
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
             async def on_submit(self, it):
-                c = self.parent.get_config(it.guild_id)
+                c = self.config_panel.get_config(it.guild_id)
                 c["rules"]["mentions"].update({
                     "max_mentions": int(self.count.value),
                     "window": int(self.window.value),
                     "action": self.action.value.lower(),
                     "enabled": True
                 })
-                self.parent.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client)
                 await it.response.send_message("✅ Mention filter updated.", ephemeral=True)
         await i.response.send_modal(MentModal(self))
 
@@ -2284,16 +2284,16 @@ class AutoModConfigView(ConfigPanelView):
             action = ui.TextInput(label="Action (warn/delete)", default="warn")
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
             async def on_submit(self, it):
-                c = self.parent.get_config(it.guild_id)
+                c = self.config_panel.get_config(it.guild_id)
                 c["rules"]["caps"].update({
                     "threshold_pct": int(self.pct.value),
                     "min_chars": int(self.min_chars.value),
                     "action": self.action.value.lower(),
                     "enabled": True
                 })
-                self.parent.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client)
                 await it.response.send_message("✅ Caps filter updated.", ephemeral=True)
         await i.response.send_modal(CapsModal(self))
 
@@ -2306,11 +2306,11 @@ class AutoModConfigView(ConfigPanelView):
             whitelist = ui.TextInput(label="Whitelist Domains (comma sep)", required=False)
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
                 existing = parent.get_config(i.guild_id).get("rules", {}).get("links", {}).get("whitelisted_domains", [])
                 self.whitelist.default = ", ".join(existing)
             async def on_submit(self, it):
-                c = self.parent.get_config(it.guild_id)
+                c = self.config_panel.get_config(it.guild_id)
                 domains = [d.strip() for d in self.whitelist.value.split(",") if d.strip()]
                 c["rules"]["links"].update({
                     "max_links": int(self.count.value),
@@ -2319,7 +2319,7 @@ class AutoModConfigView(ConfigPanelView):
                     "whitelisted_domains": domains,
                     "enabled": True
                 })
-                self.parent.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client)
                 await it.response.send_message("✅ Link filter updated.", ephemeral=True)
         await i.response.send_modal(LinkModal(self))
 
@@ -2334,7 +2334,7 @@ class AutoModConfigView(ConfigPanelView):
         class WordManagementView(discord.ui.View):
             def __init__(self, parent_view, guild_id):
                 super().__init__(timeout=None)
-                self.parent_view = parent_view
+                self.config_panel_view = parent_view
                 self.guild_id = guild_id
 
             @discord.ui.button(label="Add Word", style=discord.ButtonStyle.success, custom_id="cfg_automod_word_add")
@@ -2388,9 +2388,9 @@ class AutoModConfigView(ConfigPanelView):
             p4 = ui.TextInput(label="4th+ violation", default="kick")
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
             async def on_submit(self, it):
-                c = self.parent.get_config(it.guild_id)
+                c = self.config_panel.get_config(it.guild_id)
                 c["escalation"].update({
                     "reset_hours": int(self.reset.value),
                     "1": self.p1.value.lower(),
@@ -2399,7 +2399,7 @@ class AutoModConfigView(ConfigPanelView):
                     "4": self.p4.value.lower(),
                     "5": "ban"
                 })
-                self.parent.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client)
                 await it.response.send_message("✅ Escalation settings updated.", ephemeral=True)
         await i.response.send_modal(EscModal(self))
 
@@ -2601,7 +2601,7 @@ class StaffReviewsConfigView(ConfigPanelView):
                     if ":" in line:
                         name, weight = line.split(":")
                         new_crit.append({"name": name.strip(), "weight": float(weight.strip())})
-                c = self.parent.get_config(it.guild_id); c["criteria"] = new_crit; self.parent.save_config(c, it.guild_id, it.client)
+                c = self.config_panel.get_config(it.guild_id); c["criteria"] = new_crit; self.config_panel.save_config(c, it.guild_id, it.client)
                 await it.response.send_message("✅ Criteria updated.", ephemeral=True)
         modal = CritModal(); modal.parent = self; await i.response.send_modal(modal)
 
@@ -2609,7 +2609,7 @@ class StaffReviewsConfigView(ConfigPanelView):
     async def set_cycle(self, i, b):
         class CycleSelect(ui.Select):
             async def callback(self, it):
-                c = self.parent.get_config(it.guild_id); c["cycle"] = self.values[0]; self.parent.save_config(c, it.guild_id, it.client)
+                c = self.config_panel.get_config(it.guild_id); c["cycle"] = self.values[0]; self.config_panel.save_config(c, it.guild_id, it.client)
                 await it.response.send_message(f"✅ Cycle set to {self.values[0]}.", ephemeral=True)
         v = ui.View(); v.add_item(CycleSelect(options=[discord.SelectOption(label="Weekly", value="weekly"), discord.SelectOption(label="Bi-Weekly", value="bi-weekly"), discord.SelectOption(label="Monthly", value="monthly")])); await i.response.send_message("Select cycle frequency:", view=v, ephemeral=True)
 
@@ -2619,7 +2619,7 @@ class StaffReviewsConfigView(ConfigPanelView):
             warn = ui.TextInput(label="Warning Threshold (e.g. 2.5)", default="2.5")
             promo = ui.TextInput(label="Promotion Threshold (e.g. 4.5)", default="4.5")
             async def on_submit(self, it):
-                c = self.parent.get_config(it.guild_id); c["thresholds"] = {"warning": float(self.warn.value), "promotion": float(self.promo.value)}; self.parent.save_config(c, it.guild_id, it.client)
+                c = self.config_panel.get_config(it.guild_id); c["thresholds"] = {"warning": float(self.warn.value), "promotion": float(self.promo.value)}; self.config_panel.save_config(c, it.guild_id, it.client)
                 await it.response.send_message("✅ Thresholds updated.", ephemeral=True)
         await i.response.send_modal(ThreshModal())
 
@@ -2862,7 +2862,7 @@ class LoggingConfigView(ConfigPanelView):
     async def set_cats(self, i, b):
         class CatSelect(ui.Select):
             def __init__(self, parent):
-                self.parent = parent
+                self.config_panel = parent
                 options = [
                     discord.SelectOption(label="Messages", value="messages", description="Log message edits/deletes"),
                     discord.SelectOption(label="Members", value="members", description="Log join/leave/roles"),
@@ -2872,7 +2872,7 @@ class LoggingConfigView(ConfigPanelView):
                 super().__init__(placeholder="Select category to set channel for...", options=options)
             async def callback(self, it):
                 cat = self.values[0]
-                await it.response.send_message(f"Select channel for {cat}:", view=_picker_view(_GenericChannelSelect(self.parent, f"category_channels:{cat}", f"{cat.title()} Logs")), ephemeral=True)
+                await it.response.send_message(f"Select channel for {cat}:", view=_picker_view(_GenericChannelSelect(self.config_panel, f"category_channels:{cat}", f"{cat.title()} Logs")), ephemeral=True)
 
         view = ui.View(); view.add_item(CatSelect(self)); await i.response.send_message("Select a logging category:", view=view, ephemeral=True)
 
@@ -2920,7 +2920,7 @@ class SuggestionsConfigView(ConfigPanelView):
         class FilterView(ui.View):
             def __init__(self, parent, suggestions_list):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
                 self.suggestions = suggestions_list
             
             @ui.select(placeholder="Filter by status", custom_id="cfg_suggest_filter", options=[
@@ -2973,10 +2973,10 @@ class SuggestionsConfigView(ConfigPanelView):
             cats = ui.TextInput(label="Categories (comma-separated)", placeholder="Feature, Bug, Content, Other", required=True)
             async def on_submit(self, it):
                 categories = [c.strip() for c in self.cats.value.split(",") if c.strip()]
-                c = self.parent.get_config(it.guild_id) if hasattr(self, 'parent') else {}
+                c = self.config_panel.get_config(it.guild_id) if hasattr(self, 'parent') else {}
                 c["categories"] = categories
                 if hasattr(self, 'parent'):
-                    self.parent.save_config(c, it.guild_id, it.client)
+                    self.config_panel.save_config(c, it.guild_id, it.client)
                 else:
                     dm.update_guild_data(it.guild_id, "suggestions_config", c)
                 await it.response.send_message(f"✅ Categories updated: {', '.join(categories)}", ephemeral=True)
@@ -3048,7 +3048,7 @@ class SuggestionsConfigView(ConfigPanelView):
 class _TicketEmbedModal(ui.Modal):
     def __init__(self, parent):
         super().__init__(title="Customize Ticket Panel")
-        self.parent = parent
+        self.config_panel = parent
         self.title_in = ui.TextInput(label="Panel Title", required=True)
         self.desc_in = ui.TextInput(label="Panel Description", style=discord.TextStyle.paragraph, required=True)
         self.color_in = ui.TextInput(label="Color (Hex)", required=True, min_length=7, max_length=7)
@@ -3059,11 +3059,11 @@ class _TicketEmbedModal(ui.Modal):
     async def on_submit(self, interaction: Interaction):
         try:
             color = int(self.color_in.value.lstrip("#"), 16)
-            c = self.parent.get_config(interaction.guild_id)
+            c = self.config_panel.get_config(interaction.guild_id)
             c["panel_title"] = self.title_in.value
             c["panel_description"] = self.desc_in.value
             c["panel_color"] = color
-            self.parent.save_config(c, interaction.guild_id, interaction.client)
+            self.config_panel.save_config(c, interaction.guild_id, interaction.client)
             await interaction.response.send_message("✅ Ticket panel customized.", ephemeral=True)
         except:
             await interaction.response.send_message("❌ Invalid color.", ephemeral=True)
@@ -3100,11 +3100,11 @@ class GamificationConfigView(ConfigPanelView):
             level = ui.TextInput(label="Prestige Level (minimum level to prestige)", default="100")
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
             async def on_submit(self, it):
-                c = self.parent.get_config(it.guild_id)
+                c = self.config_panel.get_config(it.guild_id)
                 c["prestige_level"] = int(self.level.value)
-                self.parent.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client)
                 await it.response.send_message("✅ Prestige level updated.", ephemeral=True)
         await i.response.send_modal(PrestigeModal(self))
 
@@ -3114,11 +3114,11 @@ class GamificationConfigView(ConfigPanelView):
             mult = ui.TextInput(label="XP Multiplier", default="1.0")
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
             async def on_submit(self, it):
-                c = self.parent.get_config(it.guild_id)
+                c = self.config_panel.get_config(it.guild_id)
                 c["xp_multiplier"] = float(self.mult.value)
-                self.parent.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client)
                 await it.response.send_message("✅ XP multiplier updated.", ephemeral=True)
         await i.response.send_modal(XPModal(self))
 
@@ -3169,15 +3169,15 @@ class EconomyConfigView(ConfigPanelView):
             wmax = ui.TextInput(label="Maximum Reward", default="30")
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
             async def on_submit(self, it):
-                c = self.parent.get_config(it.guild_id)
+                c = self.config_panel.get_config(it.guild_id)
                 try:
                     c["work_min"] = int(self.wmin.value)
                     c["work_max"] = int(self.wmax.value)
-                    self.parent.save_config(c, it.guild_id, it.client)
+                    self.config_panel.save_config(c, it.guild_id, it.client)
                     await it.response.send_message("✅ Work rewards updated.", ephemeral=True)
-                    await self.parent.update_panel(it)
+                    await self.config_panel.update_panel(it)
                 except ValueError: await it.response.send_message("❌ Invalid numbers.", ephemeral=True)
         await i.response.send_modal(WorkModal(self))
 
@@ -3202,15 +3202,15 @@ class LevelingConfigView(ConfigPanelView):
             xmax = ui.TextInput(label="Maximum XP", default="25")
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
             async def on_submit(self, it):
-                c = self.parent.get_config(it.guild_id)
+                c = self.config_panel.get_config(it.guild_id)
                 try:
                     c["min_xp"] = int(self.xmin.value)
                     c["max_xp"] = int(self.xmax.value)
-                    self.parent.save_config(c, it.guild_id, it.client)
+                    self.config_panel.save_config(c, it.guild_id, it.client)
                     await it.response.send_message("✅ XP range updated.", ephemeral=True)
-                    await self.parent.update_panel(it)
+                    await self.config_panel.update_panel(it)
                 except ValueError: await it.response.send_message("❌ Invalid numbers.", ephemeral=True)
         await i.response.send_modal(RangeModal(self))
 
@@ -3287,7 +3287,7 @@ class AutoResponderConfigView(ConfigPanelView):
             response = ui.TextInput(label="Response Message", style=discord.TextStyle.paragraph, placeholder="The message the bot sends...")
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
             async def on_submit(self, it):
                 responders = dm.get_guild_data(it.guild_id, "auto_responders", [])
                 # Update existing or add new
@@ -3302,7 +3302,7 @@ class AutoResponderConfigView(ConfigPanelView):
 
                 dm.update_guild_data(it.guild_id, "auto_responders", responders)
                 await it.response.send_message(f"✅ Saved responder for '{self.trigger.value}'", ephemeral=True)
-                await self.parent.update_panel(it)
+                await self.config_panel.update_panel(it)
         await i.response.send_modal(ResponderModal(self))
 
     @ui.button(label="Remove Responder", emoji="➖", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_ar_rem")
@@ -3314,13 +3314,13 @@ class AutoResponderConfigView(ConfigPanelView):
         class RemoveSelect(ui.Select):
             def __init__(self, parent, options):
                 super().__init__(placeholder="Select a responder to remove", options=options)
-                self.parent = parent
+                self.config_panel = parent
             async def callback(self, it):
                 responders = dm.get_guild_data(it.guild_id, "auto_responders", [])
                 responders = [r for r in responders if r["trigger"] != self.values[0]]
                 dm.update_guild_data(it.guild_id, "auto_responders", responders)
                 await it.response.send_message(f"✅ Removed responder: {self.values[0]}", ephemeral=True)
-                await self.parent.update_panel(it)
+                await self.config_panel.update_panel(it)
 
         view = ui.View()
         opts = [discord.SelectOption(label=r["trigger"], value=r["trigger"]) for r in responders[:25]]
@@ -3355,9 +3355,9 @@ class ChatChannelsConfigView(ConfigPanelView):
         class ChatChannelSelect(ui.ChannelSelect):
             def __init__(self, parent):
                 super().__init__(placeholder="Select a channel for AI chat", channel_types=[discord.ChannelType.text])
-                self.parent = parent
+                self.config_panel = parent
             async def callback(self, it):
-                c = self.parent.get_config(it.guild_id)
+                c = self.config_panel.get_config(it.guild_id)
                 if "channels" not in c: c["channels"] = []
                 cid = self.values[0].id
                 if cid in c["channels"]:
@@ -3366,9 +3366,9 @@ class ChatChannelsConfigView(ConfigPanelView):
                 else:
                     c["channels"].append(cid)
                     msg = f"✅ AI chat enabled in <#{cid}>."
-                self.parent.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client)
                 await it.response.send_message(msg, ephemeral=True)
-                await self.parent.update_panel(it)
+                await self.config_panel.update_panel(it)
 
         view.add_item(ChatChannelSelect(self))
         await i.response.send_message("Select a channel to toggle AI chat:", view=view, ephemeral=True)
@@ -3439,7 +3439,7 @@ class EconomyShopConfigView(ConfigPanelView):
             price = ui.TextInput(label="Price", placeholder="e.g. 500")
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
             async def on_submit(self, it):
                 items = dm.get_guild_data(it.guild_id, "shop_items", [])
                 try:
@@ -3452,7 +3452,7 @@ class EconomyShopConfigView(ConfigPanelView):
                     })
                     dm.update_guild_data(it.guild_id, "shop_items", items)
                     await it.response.send_message(f"✅ Added item: {self.name.value}", ephemeral=True)
-                    await self.parent.update_panel(it)
+                    await self.config_panel.update_panel(it)
                 except ValueError: await it.response.send_message("❌ Invalid price.", ephemeral=True)
         await i.response.send_modal(ItemModal(self))
 
@@ -3465,13 +3465,13 @@ class EconomyShopConfigView(ConfigPanelView):
         class RemoveSelect(ui.Select):
             def __init__(self, parent, options):
                 super().__init__(placeholder="Select an item to remove", options=options)
-                self.parent = parent
+                self.config_panel = parent
             async def callback(self, it):
                 items = dm.get_guild_data(it.guild_id, "shop_items", [])
                 items = [item for item in items if item['name'] != self.values[0]]
                 dm.update_guild_data(it.guild_id, "shop_items", items)
                 await it.response.send_message(f"✅ Removed item: {self.values[0]}", ephemeral=True)
-                await self.parent.update_panel(it)
+                await self.config_panel.update_panel(it)
 
         view = ui.View()
         opts = [discord.SelectOption(label=item['name'], value=item['name']) for item in items[:25]]
@@ -3501,7 +3501,7 @@ class LevelingShopConfigView(ConfigPanelView):
             role_id = ui.TextInput(label="Role ID to Award", placeholder="Leave empty for no role")
             def __init__(self, parent):
                 super().__init__()
-                self.parent = parent
+                self.config_panel = parent
             async def on_submit(self, it):
                 rewards = dm.get_guild_data(it.guild_id, "level_rewards", {})
                 try:
@@ -3510,7 +3510,7 @@ class LevelingShopConfigView(ConfigPanelView):
                     rewards[lvl] = rid
                     dm.update_guild_data(it.guild_id, "level_rewards", rewards)
                     await it.response.send_message(f"✅ Set reward for level {lvl}", ephemeral=True)
-                    await self.parent.update_panel(it)
+                    await self.config_panel.update_panel(it)
                 except ValueError: await it.response.send_message("❌ Invalid number.", ephemeral=True)
         await i.response.send_modal(RewardModal(self))
 
@@ -3523,14 +3523,14 @@ class LevelingShopConfigView(ConfigPanelView):
         class RemoveSelect(ui.Select):
             def __init__(self, parent, options):
                 super().__init__(placeholder="Select a level to remove reward", options=options)
-                self.parent = parent
+                self.config_panel = parent
             async def callback(self, it):
                 rewards = dm.get_guild_data(it.guild_id, "level_rewards", {})
                 if self.values[0] in rewards:
                     del rewards[self.values[0]]
                     dm.update_guild_data(it.guild_id, "level_rewards", rewards)
                     await it.response.send_message(f"✅ Removed reward for level {self.values[0]}", ephemeral=True)
-                    await self.parent.update_panel(it)
+                    await self.config_panel.update_panel(it)
 
         view = ui.View()
         opts = [discord.SelectOption(label=f"Level {lvl}", value=lvl) for lvl in sorted(rewards.keys(), key=lambda x: int(x))[:25]]
