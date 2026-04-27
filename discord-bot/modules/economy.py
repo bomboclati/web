@@ -322,7 +322,7 @@ class EconomyPanel(View):
         recent = transactions[-10:][::-1]
         embed = discord.Embed(title="Recent Transactions", color=discord.Color.blue())
         for tx in recent:
-            embed.add_field(name=f"User {tx["user_id"]}: {tx["amount"]}", value=f"{tx["type"]} - {tx["reason"]}", inline=False)
+            embed.add_field(name=f"User {tx['user_id']}: {tx['amount']}", value=f"{tx['type']} - {tx['reason']}", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @discord.ui.button(label="Reset User Balance", style=discord.ButtonStyle.danger, row=3, custom_id="eco_cfg_reset_user_balance")
