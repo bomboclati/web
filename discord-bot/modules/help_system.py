@@ -282,7 +282,7 @@ class HelpMainView(ui.View):
         await interaction.response.send_modal(_SearchModal(interaction.guild_id))
 
 
-async def send_help(channel: discord.TextChannel, guild_id: int, invoker: discord.Member = None, system_query: str = None):
+async def send_help(channel: discord.TextChannel, guild_id: int, invoker: discord.Member = None, system_query: str = None, bot: discord.Client = None):
     """Entry point called from bot.py on_message for the !help command."""
     if system_query:
         system_key = system_query.lower().replace("_", "").replace("system", "")
@@ -297,8 +297,15 @@ async def send_help(channel: discord.TextChannel, guild_id: int, invoker: discor
             await channel.send(embed=embed)
             return
 
+    # Resolve a bot reference if the caller didn't pass one (Member has no .client).
+    if bot is None:
+        try:
+            bot = channel._state._get_client()
+        except Exception:
+            bot = None
+
     view = HelpMainView(guild_id)
-    embed = _build_main_embed(guild_id, channel.guild.me.client if hasattr(channel, "guild") else None)
+    embed = _build_main_embed(guild_id, bot)
     if invoker:
         embed.set_author(name=f"Requested by {invoker.display_name}", icon_url=invoker.display_avatar.url)
     await channel.send(embed=embed, view=view)
