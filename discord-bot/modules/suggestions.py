@@ -641,13 +641,11 @@ async def setup_suggestions_system(guild: discord.Guild):
         color=discord.Color.blue()
     )
     
-    view = ui.View()
-    view.add_item(ui.Button(
-        label="Submit Suggestion",
-        style=discord.ButtonStyle.primary,
-        custom_id="submit_suggestion_btn"
-    ))
-    
+    # Use the persistent SuggestionButton view (registered globally via add_view in bot.setup_hook).
+    # It opens SuggestionModal on click and survives bot restarts because it has a fixed custom_id.
+    from modules.auto_setup import SuggestionButton
+    view = SuggestionButton(guild_id=guild.id)
+
     await suggestions_channel.send(embed=embed, view=view)
     
     # Create guide channel
