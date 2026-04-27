@@ -721,13 +721,13 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
 
             if cmd_content.strip() == "help":
                 from modules.help_system import send_help
-                await send_help(message.channel, message.guild.id, message.author)
+                await send_help(message.channel, message.guild.id, message.author, bot=self)
                 return
 
             if cmd_content.startswith("help "):
                 system = cmd_content[5:].strip()
                 from modules.help_system import send_help
-                await send_help(message.channel, message.guild.id, message.author, system_query=system)
+                await send_help(message.channel, message.guild.id, message.author, system_query=system, bot=self)
                 return
 
             # Handle staff commands
