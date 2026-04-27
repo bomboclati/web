@@ -76,7 +76,7 @@ class RemindersPanelView(ConfigPanelView):
     def save_config(self, config: dict, guild_id: int = None, client = None):
         dm.update_guild_data(guild_id or self.guild_id, "reminders_config", config)
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
         embed = discord.Embed(title="⏰ Reminders System Configuration", color=discord.Color.blue())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
@@ -547,7 +547,7 @@ class ScheduledPanelView(ConfigPanelView):
     def save_config(self, config: dict, guild_id: int = None, client = None):
         dm.update_guild_data(guild_id or self.guild_id, "scheduled_config", config)
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
         embed = discord.Embed(title="📅 Scheduled Messages Configuration", color=discord.Color.purple())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
@@ -893,7 +893,7 @@ class AnnouncementsPanelView(ConfigPanelView):
     def save_config(self, config: dict, guild_id: int = None, client = None):
         dm.update_guild_data(guild_id or self.guild_id, "announcements_config", config)
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
         embed = discord.Embed(title="📢 Announcements System Configuration", color=discord.Color.gold())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
