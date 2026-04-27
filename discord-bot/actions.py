@@ -57,7 +57,7 @@ COMMAND_SCHEMA = {
     "properties": {
         "command_type": {
             "type": "string",
-            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "leaderboard", "leveling_rank", "leveling_leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "list_triggers", "help_all", "config_panel"]
+            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "leaderboard", "leveling_rank", "leveling_leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "list_triggers", "help_all", "config_panel"]
         },
         "content": {"type": "string"},
         "actions": {
@@ -4157,6 +4157,16 @@ class ActionHandler:
                     return await self.handle_economy_work(message)
                 elif command_type == "economy_beg":
                     return await self.handle_economy_beg(message)
+                elif command_type == "economy_leaderboard":
+                    return await self.handle_economy_leaderboard(message)
+                elif command_type == "economy_shop":
+                    return await self.handle_economy_shop(message)
+                elif command_type == "economy_buy":
+                    return await self.handle_economy_buy(message)
+                elif command_type == "economy_transfer":
+                    return await self.handle_economy_transfer(message)
+                elif command_type == "economy_rob":
+                    return await self.handle_economy_rob(message)
                 elif command_type == "leveling_rank":
                     return await self.handle_leveling_rank(message)
                 elif command_type == "leveling_leaderboard" or command_type == "leaderboard":
@@ -4380,6 +4390,147 @@ class ActionHandler:
         await message.channel.send(f"🎉 {message.author.mention} claimed **{reward} coins**!")
         return True
 
+    async def handle_economy_buy(self, message: discord.Message) -> bool:
+        """!buy <item_name_or_id>"""
+        parts = message.content.split(maxsplit=1)
+        if len(parts) < 2:
+            await message.channel.send("❌ Usage: `!buy <item_name_or_id>`")
+            return True
+
+        query = parts[1].strip()
+        guild_id = message.guild.id
+        items = dm.get_guild_data(guild_id, "shop_items", [])
+
+        target_item = None
+        for item in items:
+            if str(item.get("id")) == query or item.get("name").lower() == query.lower():
+                target_item = item
+                break
+
+        if not target_item:
+            await message.channel.send(f"❌ Item '**{query}**' not found in the shop.")
+            return True
+
+        from modules.economy import Economy
+        eco = Economy(self.bot)
+
+        balance = eco.get_coins(guild_id, message.author.id)
+        price = target_item.get("price", 0)
+
+        if balance < price:
+            await message.channel.send(f"❌ You don't have enough coins! (Need {price}, have {balance})")
+            return True
+
+        # Check stock
+        stock = target_item.get("stock", -1)
+        if stock == 0:
+            await message.channel.send("❌ This item is out of stock!")
+            return True
+
+        # Give item (role)
+        role_id = target_item.get("role_id")
+        if role_id:
+            role = message.guild.get_role(int(role_id))
+            if role:
+                try:
+                    await message.author.add_roles(role)
+                except:
+                    await message.channel.send("❌ I couldn't assign you the role. Please contact staff.")
+                    return True
+            else:
+                await message.channel.send("❌ The role for this item no longer exists.")
+                return True
+
+        # Deduct coins
+        eco.add_coins(guild_id, message.author.id, -price)
+
+        # Update stock
+        if stock > 0:
+            target_item["stock"] -= 1
+            dm.update_guild_data(guild_id, "shop_items", items)
+
+        await message.channel.send(f"🛍️ You bought **{target_item['name']}** for **{price} coins**!")
+        return True
+
+    async def handle_economy_transfer(self, message: discord.Message) -> bool:
+        """!transfer <user> <amount>"""
+        parts = message.content.split()
+        if len(parts) < 3:
+            await message.channel.send("❌ Usage: `!transfer @user <amount>`")
+            return True
+
+        target = message.mentions[0] if message.mentions else None
+        if not target:
+            await message.channel.send("❌ Please mention a user to transfer coins to.")
+            return True
+
+        try:
+            amount = int(parts[2])
+        except ValueError:
+            await message.channel.send("❌ Invalid amount.")
+            return True
+
+        from modules.economy import Economy
+        eco = Economy(self.bot)
+
+        if amount <= 0:
+            await message.channel.send("❌ Amount must be positive.")
+            return True
+
+        if eco.get_coins(message.guild.id, message.author.id) < amount:
+            await message.channel.send("❌ Insufficient funds.")
+            return True
+
+        eco.add_coins(message.guild.id, message.author.id, -amount)
+        eco.add_coins(message.guild.id, target.id, amount)
+        await message.channel.send(f"💸 Transferred **{amount} coins** to {target.mention}.")
+        return True
+
+    async def handle_economy_rob(self, message: discord.Message) -> bool:
+        """!rob <user>"""
+        if not message.mentions:
+            await message.channel.send("❌ Mention someone to rob!")
+            return True
+
+        target = message.mentions[0]
+        if target.id == message.author.id:
+            await message.channel.send("❌ You can't rob yourself!")
+            return True
+
+        from modules.economy import Economy
+        eco = Economy(self.bot)
+
+        guild_id = message.guild.id
+        author_id = message.author.id
+
+        # Cooldown check
+        last_rob = dm.get_guild_data(guild_id, "last_rob", {})
+        now = time.time()
+        if now - last_rob.get(str(author_id), 0) < 3600:
+            rem = int(3600 - (now - last_rob.get(str(author_id), 0)))
+            await message.channel.send(f"❌ You're laying low. Try again in **{rem//60}m {rem%60}s**.")
+            return True
+
+        target_bal = eco.get_coins(guild_id, target.id)
+        if target_bal < 100:
+            await message.channel.send("❌ They're too poor to rob. Have some heart!")
+            return True
+
+        last_rob[str(author_id)] = now
+        dm.update_guild_data(guild_id, "last_rob", last_rob)
+
+        success = random.random() < 0.4
+        if success:
+            stolen = random.randint(10, int(target_bal * 0.3))
+            eco.add_coins(guild_id, target.id, -stolen)
+            eco.add_coins(guild_id, author_id, stolen)
+            await message.channel.send(f"💰 **Success!** You robbed {target.mention} and made off with **{stolen} coins**!")
+        else:
+            fine = random.randint(50, 200)
+            eco.add_coins(guild_id, author_id, -fine)
+            await message.channel.send(f"👮 **Caught!** You were caught trying to rob {target.mention} and fined **{fine} coins**.")
+        return True
+
     async def handle_economy_balance(self, message: discord.Message) -> bool:
         """Handle !balance command"""
         from modules.economy import Economy
@@ -4437,6 +4588,47 @@ class ActionHandler:
 
         donors = ["a kind stranger", "an old wizard", "a tired developer", "a passing knight", "a generous shopkeeper"]
         await message.channel.send(f"🙇 You begged and received **{reward} coins** from {random.choice(donors)}!")
+        return True
+
+    async def handle_economy_leaderboard(self, message: discord.Message) -> bool:
+        """!economylb — top balances in the guild."""
+        from modules.economy import Economy
+        economy = Economy(self.bot)
+        guild_id = message.guild.id
+
+        balances = dm.get_guild_data(guild_id, "economy_balances", {})
+        if not balances:
+            await message.channel.send("💰 Nobody has any coins yet!")
+            return True
+
+        sorted_lb = sorted(balances.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        lines = []
+        for i, (uid, amt) in enumerate(sorted_lb):
+            lines.append(f"**{i+1}.** <@{uid}> — {amt:,} coins")
+
+        embed = discord.Embed(
+            title=f"💰 {message.guild.name} — Economy Leaderboard",
+            description="\n".join(lines),
+            color=discord.Color.gold(),
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_economy_shop(self, message: discord.Message) -> bool:
+        """!shop command for members"""
+        guild_id = message.guild.id
+        items = dm.get_guild_data(guild_id, "shop_items", [])
+
+        if not items:
+            await message.channel.send("🛒 The shop is currently empty.")
+            return True
+
+        embed = discord.Embed(title=f"🛒 {message.guild.name} Shop", color=discord.Color.green())
+        for item in items[:25]:
+            embed.add_field(name=f"{item['name']} — {item['price']} Credits", value=item.get('description', 'No description'), inline=False)
+
+        await message.channel.send(embed=embed)
         return True
 
     async def handle_leveling_rank(self, message: discord.Message) -> bool:
@@ -4634,44 +4826,12 @@ class ActionHandler:
         return True
 
     async def handle_help_all(self, message: discord.Message) -> bool:
-        """Handle !help command - A masterfully crafted interactive manual."""
-        guild_id = message.guild.id
-        
-        embed = discord.Embed(
-            title="📚 Miro AI System Manual",
-            description=(
-                "━━━━━━━━━━━━━━\n"
-                "I am **Miro AI**, your server's central operating system. I manage everything from "
-                "enterprise security to hyper-growth engagement.\n\n"
-                "**Select a category below** to view detailed system guides and commands."
-            ),
-            color=discord.Color.blurple()
-        )
-        embed.set_thumbnail(url=self.bot.user.display_avatar.url)
-        
-        # System Health Snapshot
-        enabled_count = 0
-        systems = ["verification", "anti_raid", "guardian", "welcome", "tickets", "modmail", "economy", "leveling", "giveaways", "starboard", "suggestions", "logging", "auto_responder", "chat_channels", "events"]
-        for s in systems:
-            if dm.get_guild_data(guild_id, f"{s}_config") or dm.get_guild_data(guild_id, f"{s}_settings"):
-                enabled_count += 1
-        
-        embed.add_field(
-            name="📊 System Status",
-            value=f"**Installed:** `{enabled_count}/{len(systems)}` Systems\n**Prefix:** `!` | **AI Core:** `GPT-4o`",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🛠️ Rapid Setup",
-            value="Use `/autosetup` for bulk installation or `/bot` for custom AI-driven changes.",
-            inline=False
-        )
-        
-        embed.set_footer(text="Miro AI v4.0 • Enterprise Edition")
-        
-        view = HelpCategoryView(self, guild_id, message.author.id)
-        await message.channel.send(embed=embed, view=view)
+        """Handle !help command - Delegate to standardized help system."""
+        from modules.help_system import send_help
+        if isinstance(message, discord.Interaction):
+            await send_help(message.channel, message.guild_id, message.user, bot=self.bot)
+        else:
+            await send_help(message.channel, message.guild.id, message.author, bot=self.bot)
         return True
     
     def _get_popular_commands(self, guild_id: int) -> List[str]:
@@ -4681,38 +4841,12 @@ class ActionHandler:
         return [cmd for cmd, data in sorted_cmds[:10] if data.get("count", 0) > 0]
 
     async def handle_help_system(self, message: discord.Message, system: str) -> bool:
-        """Handle !help <system> command - shows help for a specific system."""
-        guild_id = message.guild.id
-        custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
-
-        # If a specific help command exists for this system, execute it
-        help_cmd_name = f"help {system}"
-        if help_cmd_name in custom_cmds:
-            return await self.execute_custom_command(message, custom_cmds[help_cmd_name], help_cmd_name)
-
-        # Fallback: find all commands that start with the system name
-        system_commands = {k: v for k, v in custom_cmds.items() if k.startswith(system)}
-        if not system_commands:
-            await message.channel.send(f"No commands found for system '{system}'. Try !help for all commands.")
-            return True
-
-        embed = discord.Embed(
-            title=f"📋 {system.capitalize()} System Commands",
-            description=f"Commands for the {system} system:",
-            color=discord.Color.green()
-        )
-
-        cmd_list = []
-        for cmd_name in sorted(system_commands.keys()):
-            cmd_list.append(f"**!{cmd_name}**")
-
-        embed.add_field(
-            name="Commands",
-            value="\n".join(cmd_list),
-            inline=False
-        )
-
-        await message.channel.send(embed=embed)
+        """Handle !help <system> command - Delegate to standardized help system."""
+        from modules.help_system import send_help
+        if isinstance(message, discord.Interaction):
+            await send_help(message.channel, message.guild_id, message.user, system_query=system, bot=self.bot)
+        else:
+            await send_help(message.channel, message.guild.id, message.author, system_query=system, bot=self.bot)
         return True
 
 
