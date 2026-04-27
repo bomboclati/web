@@ -57,7 +57,7 @@ COMMAND_SCHEMA = {
     "properties": {
         "command_type": {
             "type": "string",
-            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "list_triggers", "help_all", "config_panel"]
+            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "leaderboard", "leveling_rank", "leveling_leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "list_triggers", "help_all", "config_panel"]
         },
         "content": {"type": "string"},
         "actions": {
@@ -4155,6 +4155,12 @@ class ActionHandler:
                     return await self.handle_economy_balance(message)
                 elif command_type == "economy_work":
                     return await self.handle_economy_work(message)
+                elif command_type == "economy_beg":
+                    return await self.handle_economy_beg(message)
+                elif command_type == "leveling_rank":
+                    return await self.handle_leveling_rank(message)
+                elif command_type == "leveling_leaderboard" or command_type == "leaderboard":
+                    return await self.handle_leveling_leaderboard(message)
                 elif command_type == "config_panel":
                     return await self.handle_config_panel_redirect(message, data)
                 elif command_type == "help_all":
@@ -4392,6 +4398,110 @@ class ActionHandler:
         embed.add_field(name="Coins", value=str(coins), inline=True)
         embed.add_field(name="Gems", value=str(gems), inline=True)
         embed.add_field(name="Level", value=f"{level} ({xp} XP)", inline=True)
+
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_economy_beg(self, message: discord.Message) -> bool:
+        """!beg — small random coin reward with a short cooldown. Mirrors handle_economy_work."""
+        from modules.economy import Economy
+        economy = Economy(self.bot)
+        guild_id = message.guild.id
+        user_id = message.author.id
+
+        c = dm.get_guild_data(guild_id, "economy_config", {})
+        min_reward = c.get("beg_min", 1)
+        max_reward = c.get("beg_max", 25)
+        cooldown = c.get("beg_cooldown_seconds", 300)
+
+        last_beg = dm.get_guild_data(guild_id, "last_beg", {})
+        last_time = last_beg.get(str(user_id), 0)
+        now = time.time()
+
+        if now - last_time < cooldown:
+            remaining = int(cooldown - (now - last_time))
+            await message.channel.send(f"❌ Nobody feels generous right now. Try again in **{remaining // 60}m {remaining % 60}s**.")
+            return True
+
+        # 25% chance of getting nothing — keeps it fun.
+        if random.random() < 0.25:
+            last_beg[str(user_id)] = now
+            dm.update_guild_data(guild_id, "last_beg", last_beg)
+            await message.channel.send("🥲 Nobody gave you anything this time. Try again later!")
+            return True
+
+        reward = random.randint(min_reward, max_reward)
+        economy.add_coins(guild_id, user_id, reward)
+        last_beg[str(user_id)] = now
+        dm.update_guild_data(guild_id, "last_beg", last_beg)
+
+        donors = ["a kind stranger", "an old wizard", "a tired developer", "a passing knight", "a generous shopkeeper"]
+        await message.channel.send(f"🙇 You begged and received **{reward} coins** from {random.choice(donors)}!")
+        return True
+
+    async def handle_leveling_rank(self, message: discord.Message) -> bool:
+        """!rank — show the invoker's current XP, level, gems and streak."""
+        from modules.leveling import Leveling
+        leveling = Leveling(self.bot)
+        guild_id = message.guild.id
+        user_id = message.author.id
+
+        xp = leveling.get_xp(guild_id, user_id)
+        level = leveling.get_level_from_xp(xp)
+        gems = leveling.get_gems(guild_id, user_id)
+        streak = leveling.get_streak(guild_id, user_id)
+
+        # XP needed for next level: level^2 * 100 (inverse of get_level_from_xp).
+        next_level = level + 1
+        xp_for_next = (next_level * next_level) * 100
+        xp_into_level = xp - (level * level * 100)
+        xp_to_next = max(0, xp_for_next - xp)
+
+        embed = discord.Embed(
+            title=f"📊 {message.author.display_name}'s Rank",
+            color=discord.Color.purple(),
+        )
+        embed.set_thumbnail(url=message.author.display_avatar.url)
+        embed.add_field(name="Level", value=str(level), inline=True)
+        embed.add_field(name="Total XP", value=f"{xp:,}", inline=True)
+        embed.add_field(name="Gems", value=str(gems), inline=True)
+        embed.add_field(name="Streak", value=f"🔥 {streak} day(s)", inline=True)
+        embed.add_field(name="XP to next level", value=f"{xp_to_next:,} XP", inline=True)
+        embed.set_footer(text=f"Progress: {xp_into_level} / {xp_for_next - (level * level * 100)} XP this level")
+
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_leveling_leaderboard(self, message: discord.Message) -> bool:
+        """!leaderboard / !rank top — top XP earners in the guild."""
+        from modules.leveling import Leveling
+        leveling = Leveling(self.bot)
+        guild_id = message.guild.id
+
+        board = leveling.get_leaderboard(guild_id, limit=10)
+        if not board:
+            await message.channel.send("📉 Nobody has earned any XP yet. Start chatting!")
+            return True
+
+        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+        lines = []
+        for entry in board:
+            rank = entry["rank"]
+            badge = medals.get(rank, f"`#{rank:>2}`")
+            mention = f"<@{entry['user_id']}>"
+            streak_txt = f" 🔥{entry['streak']}" if entry.get("streak") else ""
+            lines.append(
+                f"{badge} {mention} — Lvl **{entry['level']}** · {entry['xp']:,} XP{streak_txt}"
+            )
+
+        embed = discord.Embed(
+            title=f"🏆 {message.guild.name} — XP Leaderboard",
+            description="\n".join(lines),
+            color=discord.Color.gold(),
+        )
+        if message.guild.icon:
+            embed.set_thumbnail(url=message.guild.icon.url)
+        embed.set_footer(text=f"Top {len(board)} of all members • Earn XP by chatting!")
 
         await message.channel.send(embed=embed)
         return True
