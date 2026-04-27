@@ -110,8 +110,14 @@ class StarboardSystem:
                         pass
         
         settings = self.get_guild_settings(guild.id)
+
+        # Honor the master "star reactions" toggle from StarboardConfigView.
+        # When admins disable reactions via the config panel, star clicks should be a no-op.
+        if not settings.get("reactions_enabled", True):
+            return
+
         star_emoji = settings.get("star_emoji", "⭐")
-        
+
         if str(payload.emoji) != star_emoji:
             return
         
