@@ -102,13 +102,25 @@ for _cat, _data in CATEGORIES.items():
 
 
 def _status_emoji(guild_id: int, system_key: str) -> str:
-    """Return ✅ / ❌ based on whether the system is enabled in guild config."""
+    """Return ✅ / ❌ / ⬜ based on whether the system is enabled in guild config."""
     try:
-        cfg = dm.get_guild_data(guild_id, f"{system_key}_config", {})
+        cfg = dm.get_guild_data(guild_id, f"{system_key}_config", None)
+        if cfg is None or not isinstance(cfg, dict):
+            return "⬜"  # Not configured yet.
         enabled = cfg.get("enabled", True)
         return "✅" if enabled else "❌"
     except Exception:
         return "⬜"
+
+
+def _bot_avatar_url(bot: discord.Client = None) -> str:
+    """Return the bot's display avatar URL, with a Discord-default fallback."""
+    try:
+        if bot is not None and bot.user is not None:
+            return bot.user.display_avatar.url
+    except Exception:
+        pass
+    return "https://cdn.discordapp.com/embed/avatars/0.png"
 
 
 def _build_main_embed(guild_id: int, bot: discord.Client = None) -> discord.Embed:
@@ -116,17 +128,20 @@ def _build_main_embed(guild_id: int, bot: discord.Client = None) -> discord.Embe
         title="📖 Miro Bot — Command Reference",
         description=(
             "**Select a category** below to explore all systems and their commands.\n"
-            "Each system can be configured with `!configpanel<system>`.\n\n"
+            "Each system can be configured with `!configpanel <system>`.\n\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━"
         ),
         color=BRAND
     )
 
-    guild = bot.get_guild(guild_id) if bot else None
-    if guild and guild.icon:
-        embed.set_thumbnail(url=guild.icon.url)
-    else:
-        embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+    # Always show the bot's own avatar as the thumbnail so users instantly
+    # recognise which bot this help menu belongs to.
+    avatar_url = _bot_avatar_url(bot)
+    embed.set_thumbnail(url=avatar_url)
+
+    # Use the bot's name + avatar as the author so the menu feels branded.
+    bot_name = bot.user.name if (bot and bot.user) else "Miro Bot"
+    embed.set_author(name=f"{bot_name} • Help Menu", icon_url=avatar_url)
 
     for cat_name, cat_data in CATEGORIES.items():
         systems = cat_data["systems"]
@@ -156,13 +171,15 @@ def _build_main_embed(guild_id: int, bot: discord.Client = None) -> discord.Embe
     return embed
 
 
-def _build_category_embed(guild_id: int, cat_name: str) -> discord.Embed:
+def _build_category_embed(guild_id: int, cat_name: str, bot: discord.Client = None) -> discord.Embed:
     cat_data = CATEGORIES[cat_name]
     embed = discord.Embed(
         title=f"{cat_name} — Systems",
         description="Use `!configpanel <system>` to open a system's configuration panel.\n━━━━━━━━━━━━━━━━━━━━━━━━━━",
         color=cat_data["color"]
     )
+
+    embed.set_thumbnail(url=_bot_avatar_url(bot))
 
     for sys_key, emoji, desc, cmd_examples in cat_data["systems"]:
         status = _status_emoji(guild_id, sys_key)
@@ -175,14 +192,14 @@ def _build_category_embed(guild_id: int, cat_name: str) -> discord.Embed:
             inline=False
         )
 
-    embed.set_footer(text=f"Category: {cat_name} • Click '⬅ Back' to return to main menu")
+    embed.set_footer(text=f"Category: {cat_name} • Click '🏠 Home' to return to main menu")
     return embed
 
 
-def _build_search_embed(guild_id: int, query: str) -> discord.Embed:
+def _build_search_embed(guild_id: int, query: str, bot: discord.Client = None) -> discord.Embed:
     query_l = query.lower()
 
-    # Search in systems (CATEGORIES now has 4 elements: sys_key, emoji, desc, cmd_examples)
+    # Search in systems (CATEGORIES has 4 elements: sys_key, emoji, desc, cmd_examples)
     sys_results = []
     for cat_name, cat_data in CATEGORIES.items():
         for sys_key, emoji, desc, cmd_examples in cat_data["systems"]:
@@ -194,14 +211,16 @@ def _build_search_embed(guild_id: int, query: str) -> discord.Embed:
     try:
         custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
         for cmd_name, cmd_data in custom_cmds.items():
-            if query_l in cmd_name.lower():
+            if isinstance(cmd_name, str) and query_l in cmd_name.lower():
                 cmd_results.append((cmd_name, cmd_data))
-    except: pass
+    except Exception:
+        pass
 
     embed = discord.Embed(
         title=f"🔍 Search Results: \"{query}\"",
         color=BRAND
     )
+    embed.set_thumbnail(url=_bot_avatar_url(bot))
 
     if sys_results:
         text = ""
@@ -222,7 +241,7 @@ def _build_search_embed(guild_id: int, query: str) -> discord.Embed:
     if not sys_results and not cmd_results:
         embed.description = f"No systems or commands found matching **\"{query}\"**."
 
-    embed.set_footer(text=f"Search scope: Global Systems & Guild Commands")
+    embed.set_footer(text="Search scope: Global Systems & Guild Commands")
     return embed
 
 
@@ -236,7 +255,7 @@ class _SearchModal(ui.Modal, title="Search Systems"):
         self.guild_id = guild_id
 
     async def on_submit(self, interaction: Interaction):
-        embed = _build_search_embed(self.guild_id, self.query.value)
+        embed = _build_search_embed(self.guild_id, self.query.value, interaction.client)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -260,7 +279,7 @@ class HelpCategoryView(ui.View):
 
     @ui.button(label="🔄 Refresh", style=discord.ButtonStyle.secondary, custom_id="help_cat_refresh")
     async def refresh(self, interaction: Interaction, button: ui.Button):
-        embed = _build_category_embed(interaction.guild_id, self.cat_name)
+        embed = _build_category_embed(interaction.guild_id, self.cat_name, interaction.client)
         await interaction.response.edit_message(embed=embed, view=self)
 
 
@@ -292,51 +311,95 @@ class HelpMainView(ui.View):
         search_btn.callback = self._search_callback
         self.add_item(search_btn)
 
+        # Quick "View All Commands" — lists every registered prefix command across systems.
+        cmds_btn = ui.Button(
+            label="📜 All Commands",
+            style=discord.ButtonStyle.success,
+            custom_id="help_main_cmds",
+            row=3
+        )
+        cmds_btn.callback = self._all_cmds_callback
+        self.add_item(cmds_btn)
+
     def _make_callback(self, cat_name: str):
         async def callback(interaction: Interaction):
             view = HelpCategoryView(interaction.guild_id, cat_name)
-            embed = _build_category_embed(interaction.guild_id, cat_name)
+            embed = _build_category_embed(interaction.guild_id, cat_name, interaction.client)
             await interaction.response.edit_message(embed=embed, view=view)
         return callback
 
     async def _search_callback(self, interaction: Interaction):
         await interaction.response.send_modal(_SearchModal(interaction.guild_id))
 
+    async def _all_cmds_callback(self, interaction: Interaction):
+        # Builds an embed listing every example command from CATEGORIES plus the
+        # guild's custom commands — gives users a single scrollable command index.
+        embed = discord.Embed(
+            title="📜 All Commands",
+            description="Every built-in example command grouped by system, followed by your server's custom commands.",
+            color=BRAND
+        )
+        embed.set_thumbnail(url=_bot_avatar_url(interaction.client))
+
+        for cat_name, cat_data in CATEGORIES.items():
+            lines = []
+            for sys_key, emoji, _desc, cmds in cat_data["systems"]:
+                if cmds:
+                    cmd_str = " ".join([f"`{c}`" for c in cmds[:3]])
+                    lines.append(f"{emoji} **{sys_key.title()}** — {cmd_str}")
+            if lines:
+                embed.add_field(name=cat_name, value="\n".join(lines)[:1024], inline=False)
+
+        try:
+            custom = dm.get_guild_data(interaction.guild_id, "custom_commands", {}) or {}
+            custom_names = [n for n in custom.keys() if isinstance(n, str)]
+            if custom_names:
+                preview = " ".join([f"`!{n}`" for n in sorted(custom_names)[:30]])
+                if len(custom_names) > 30:
+                    preview += f"  …and {len(custom_names) - 30} more"
+                embed.add_field(name="🛠️ Custom Commands", value=preview[:1024], inline=False)
+        except Exception:
+            pass
+
+        embed.set_footer(text="Tip: !help <system> for a deep dive into one system.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 
 async def send_help(channel: discord.TextChannel, guild_id: int, invoker: discord.Member = None, system_query: str = None, bot: discord.Client = None):
     """Entry point called from bot.py on_message for the !help command."""
-    if system_query:
-        system_key = system_query.lower().replace("_", "").replace("system", "")
-        if system_key in _SYSTEM_LOOKUP:
-            emoji, desc, cat = _SYSTEM_LOOKUP[system_key]
-            embed = discord.Embed(title=f"{emoji} System Guide: {system_key.title()}", color=CATEGORIES[cat]["color"])
-            
-            # Get command examples from CATEGORIES
-            cmd_examples = []
-            for sys_key, sys_emoji, sys_desc, sys_cmds in CATEGORIES[cat]["systems"]:
-                if sys_key == system_key:
-                    cmd_examples = sys_cmds
-                    break
-            
-            embed.description = f"**Description:** {desc}\n\n**Category:** {cat}\n**Configuration:** `!configpanel {system_key}`"
-            
-            if cmd_examples:
-                embed.add_field(
-                    name="⌨️ Example Commands",
-                    value="\n".join([f"{cmd}`" for cmd in cmd_examples[:5]]),
-                    inline=False
-                )
-            
-            embed.set_footer(text=f"Requested by {invoker.display_name if invoker else 'User'}")
-            await channel.send(embed=embed)
-            return
-
-    # Resolve a bot reference if the caller didn't pass one (Member has no .client).
+    # Resolve a bot reference if the caller didn't pass one.
     if bot is None:
         try:
             bot = channel._state._get_client()
         except Exception:
             bot = None
+
+    if system_query:
+        system_key = system_query.lower().replace("_", "").replace("system", "").strip()
+        if system_key in _SYSTEM_LOOKUP:
+            # _SYSTEM_LOOKUP stores 4-tuples: (emoji, desc, category, cmd_examples).
+            emoji, desc, cat, cmd_examples = _SYSTEM_LOOKUP[system_key]
+            embed = discord.Embed(
+                title=f"{emoji} System Guide: {system_key.title()}",
+                color=CATEGORIES[cat]["color"],
+            )
+            embed.set_thumbnail(url=_bot_avatar_url(bot))
+            embed.description = (
+                f"**Description:** {desc}\n\n"
+                f"**Category:** {cat}\n"
+                f"**Configuration:** `!configpanel {system_key}`"
+            )
+
+            if cmd_examples:
+                embed.add_field(
+                    name="⌨️ Example Commands",
+                    value="\n".join([f"`{cmd}`" for cmd in cmd_examples[:5]]),
+                    inline=False,
+                )
+
+            embed.set_footer(text=f"Requested by {invoker.display_name if invoker else 'User'}")
+            await channel.send(embed=embed)
+            return
 
     view = HelpMainView(guild_id)
     embed = _build_main_embed(guild_id, bot)
