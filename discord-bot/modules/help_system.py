@@ -8,7 +8,7 @@ from discord import ui, Interaction
 from data_manager import dm
 import time
 
-# ─────────────────────────── Colour palette ─────────────────────────────────
+# ───────────────────────── Colour palette ──────────────────────────
 BRAND      = 0x5865F2   # Discord Blurple
 GREEN      = 0x2ECC71
 RED        = 0xE74C3C
@@ -18,87 +18,87 @@ TEAL       = 0x1ABC9C
 ORANGE     = 0xE67E22
 DARK_BLUE  = 0x2C3E50
 
-# ─────────────────────────── System catalogue ───────────────────────────────
+# ───────────────────────── System catalogue ──────────────────────────
 CATEGORIES = {
     "🛡️ Security": {
         "color": RED,
         "systems": [
-            ("verification",   "🛡️", "Captcha / phone gate for new members"),
-            ("antiraid",       "🚨", "Mass-join detection & server lockdown"),
-            ("guardian",       "⚔️", "AI threat detection (scam, token, nuke)"),
-            ("automod",        "🤖", "Spam, caps, invite & link filters"),
-            ("warnings",       "⚠️", "Warning system with escalation"),
-            ("moderation",     "🔨", "Kick, ban, mute, timeout commands"),
-            ("modlog",         "📋", "Audit log for all mod actions"),
-            ("logging",        "📊", "Full server event logging"),
+            ("verification",   "🛡️", "Captcha / phone gate for new members", ["!verify", "!setverifychannel"]),
+            ("antiraid",       "🚨", "Mass-join detection & server lockdown", ["!raidstatus", "!configpanel antiraid"]),
+            ("guardian",       "⚔️", "AI threat detection (scam, token, nuke)", ["!guardian status", "!configpanel guardian"]),
+            ("automod",        "🤖", "Spam, caps, invite & link filters", ["!automod status", "!configpanel automod"]),
+            ("warnings",       "⚠️", "Warning system with escalation", ["!warn @user", "!warnings"]),
+            ("moderation",     "🔨", "Kick, ban, mute, timeout commands", ["!kick", "!ban", "!mute"]),
+            ("modlog",         "📋", "Audit log for all mod actions", ["!modlog view", "!configpanel modlog"]),
+            ("logging",        "📊", "Full server event logging", ["!configpanel logging"]),
         ]
     },
     "💰 Economy": {
         "color": GOLD,
         "systems": [
-            ("economy",        "💵", "Balance, daily, work, rob & transfer"),
-            ("economyshop",    "🛒", "Item shop with role rewards"),
-            ("leveling",       "🆙", "XP per message with role rewards"),
-            ("levelingshop",   "🎁", "Spend XP on perks & roles"),
-            ("starboard",      "⭐", "Star highlight board with rewards"),
+            ("economy",        "💵", "Balance, daily, work, rob & transfer", ["!daily", "!balance", "!shop"]),
+            ("economyshop",    "🛒", "Item shop with role rewards", ["!shop", "!buy"]),
+            ("leveling",       "🆙", "XP per message with role rewards", ["!rank", "!leaderboard"]),
+            ("levelingshop",   "🎁", "Spend XP on perks & roles", ["!levelshop"]),
+            ("starboard",      "⭐", "Star highlight board with rewards", ["!starboard"]),
         ]
     },
     "🎮 Gamification": {
         "color": PURPLE,
         "systems": [
-            ("gamification",   "🎮", "Prestige, quests, skill trees"),
-            ("giveaways",      "🎉", "Timed giveaways with role requirements"),
-            ("events",         "📅", "Server event scheduling & RSVP"),
-            ("tournaments",    "🏆", "Bracket-style tournament management"),
+            ("gamification",   "🎮", "Prestige, quests, skill trees", ["!quests", "!prestige"]),
+            ("giveaways",      "🎉", "Timed giveaways with role requirements", ["!giveaway create", "!giveaway list"]),
+            ("events",         "📅", "Server event scheduling & RSVP", ["!event create", "!event list"]),
+            ("tournaments",    "🏆", "Bracket-style tournament management", ["!tournament create"]),
         ]
     },
     "📋 Staff": {
         "color": TEAL,
         "systems": [
-            ("staffpromo",     "📈", "Auto staff promotion tiers"),
-            ("staffreviews",   "📝", "Peer & admin review cycles"),
-            ("staffshifts",    "🕒", "On-duty shift tracker & hours log"),
-            ("staffsystem",    "👮", "Staff hierarchy & management"),
+            ("staffpromo",     "📈", "Auto staff promotion tiers", ["!staffpromo", "!promotionhistory"]),
+            ("staffreviews",   "📝", "Peer & admin review cycles", ["!staffreview"]),
+            ("staffshifts",    "🕒", "On-duty shift tracker & hours log", ["!shift start", "!shift end"]),
+            ("staffsystem",    "👮", "Staff hierarchy & management", ["!staffleaderboard"]),
         ]
     },
     "🎫 Support": {
         "color": ORANGE,
         "systems": [
-            ("tickets",        "🎫", "Support ticket system"),
-            ("modmail",        "📬", "Private DM-based modmail"),
-            ("appeals",        "⚖️", "Ban / mute appeal system"),
-            ("applications",   "📋", "Staff application forms"),
-            ("suggestions",    "💡", "Community suggestion board"),
+            ("tickets",        "🎫", "Support ticket system", ["!ticket", "!close"]),
+            ("modmail",        "📬", "Private DM-based modmail", ["DM the bot"]),
+            ("appeals",        "⚖️", "Ban / mute appeal system", ["!appeal"]),
+            ("applications",   "📋", "Staff application forms", ["!apply"]),
+            ("suggestions",    "💡", "Community suggestion board", ["!suggest"]),
         ]
     },
     "📣 Communication": {
         "color": BRAND,
         "systems": [
-            ("welcome",        "👋", "Welcome & leave messages"),
-            ("welcomedm",      "✉️", "Direct-message on join"),
-            ("chatchannels",   "🧠", "AI-powered chat channels"),
-            ("autoresponder",  "💬", "Keyword auto-responses"),
-            ("reminders",      "⏰", "Personal & server reminders"),
-            ("announcements",  "📢", "Scheduled announcements"),
+            ("welcome",        "👋", "Welcome & leave messages", ["!configpanel welcome"]),
+            ("welcomedm",      "✉️", "Direct-message on join", ["!configpanel welcomedm"]),
+            ("chatchannels",   "🧠", "AI-powered chat channels", ["!chatchannel add"]),
+            ("autoresponder",  "💬", "Keyword auto-responses", ["!autoresponder add"]),
+            ("reminders",      "⏰", "Personal & server reminders", ["!remindme"]),
+            ("announcements",  "📢", "Scheduled announcements", ["!announcement create"]),
         ]
     },
     "🔧 Configuration": {
         "color": DARK_BLUE,
         "systems": [
-            ("reactionroles",  "🎭", "Emoji-based role assignment"),
-            ("reactionmenus",  "📌", "Role picker menus"),
-            ("rolebuttons",    "🔘", "Button-based role panels"),
-            ("automod",        "🛡️", "AutoMod rule management"),
-            ("voicesystem",    "🔊", "Voice channel management"),
+            ("reactionroles",  "🎭", "Emoji-based role assignment", ["!configpanel reactionroles"]),
+            ("reactionmenus",  "📌", "Role picker menus", ["!configpanel reactionmenus"]),
+            ("rolebuttons",    "🔘", "Button-based role panels", ["!configpanel rolebuttons"]),
+            ("automod",        "🛡️", "AutoMod rule management", ["!configpanel automod"]),
+            ("voicesystem",    "🔊", "Voice channel management", ["!configpanel voicesystem"]),
         ]
     },
 }
 
-# Flat lookup: system_key → (emoji, description, category_name)
+# Flat lookup: system_key → (emoji, description, category_name, cmd_examples)
 _SYSTEM_LOOKUP = {}
 for _cat, _data in CATEGORIES.items():
-    for _sys, _emoji, _desc in _data["systems"]:
-        _SYSTEM_LOOKUP[_sys] = (_emoji, _desc, _cat)
+    for _sys, _emoji, _desc, _cmds in _data["systems"]:
+        _SYSTEM_LOOKUP[_sys] = (_emoji, _desc, _cat, _cmds)
 
 
 def _status_emoji(guild_id: int, system_key: str) -> str:
@@ -130,11 +130,26 @@ def _build_main_embed(guild_id: int, bot: discord.Client = None) -> discord.Embe
 
     for cat_name, cat_data in CATEGORIES.items():
         systems = cat_data["systems"]
-        # Show first 3 systems as a taster
-        preview = " · ".join(f"{e} {s.replace('_',' ').title()}" for s, e, _ in systems[:4])
-        if len(systems) > 4:
-            preview += f" + {len(systems)-4} more"
+        # Show systems with example commands
+        preview_parts = []
+        for s, e, _, cmd_examples in systems[:3]:
+            cmd_str = " | ".join([f"`{cmd}`" for cmd in cmd_examples[:2]])
+            preview_parts.append(f"{e} {s.replace('_', ' ').title()}: {cmd_str}")
+        preview = "\n".join(preview_parts)
+        if len(systems) > 3:
+            preview += f"\n...and {len(systems)-3} more systems"
         embed.add_field(name=cat_name, value=preview, inline=False)
+
+    embed.add_field(
+        name="📚 Quick Links",
+        value=(
+            "• `!help` - Show this help menu\n"
+            "• `!help <system>` - View system-specific help\n"
+            "• `!configpanel <system>` - Configure any system\n"
+            "• `!stats` - View server statistics"
+        ),
+        inline=False
+    )
 
     embed.set_footer(text="Miro Bot • Use !configpanel <system> to configure any system")
     embed.timestamp = discord.utils.utcnow()
@@ -149,13 +164,15 @@ def _build_category_embed(guild_id: int, cat_name: str) -> discord.Embed:
         color=cat_data["color"]
     )
 
-    for sys_key, emoji, desc in cat_data["systems"]:
+    for sys_key, emoji, desc, cmd_examples in cat_data["systems"]:
         status = _status_emoji(guild_id, sys_key)
+        # Build command examples string
+        cmd_str = " | ".join([f"`{cmd}`" for cmd in cmd_examples[:3]])
         panel_cmd = f"`!configpanel {sys_key}`"
         embed.add_field(
-            name=f"{emoji} {sys_key.replace('_',' ').title()}  {status}",
-            value=f"{desc}\n{panel_cmd}",
-            inline=True
+            name=f"{emoji} {sys_key.replace('_', ' ').title()}  {status}",
+            value=f"{desc}\n{cmd_str}\n{panel_cmd}",
+            inline=False
         )
 
     embed.set_footer(text=f"Category: {cat_name} • Click '⬅ Back' to return to main menu")
@@ -165,11 +182,12 @@ def _build_category_embed(guild_id: int, cat_name: str) -> discord.Embed:
 def _build_search_embed(guild_id: int, query: str) -> discord.Embed:
     query_l = query.lower()
 
-    # Search in systems
-    sys_results = [
-        (k, v) for k, v in _SYSTEM_LOOKUP.items()
-        if query_l in k or query_l in v[1].lower() or query_l in v[2].lower()
-    ]
+    # Search in systems (CATEGORIES now has 4 elements: sys_key, emoji, desc, cmd_examples)
+    sys_results = []
+    for cat_name, cat_data in CATEGORIES.items():
+        for sys_key, emoji, desc, cmd_examples in cat_data["systems"]:
+            if query_l in sys_key or query_l in desc.lower() or query_l in cat_name.lower():
+                sys_results.append((sys_key, emoji, desc, cmd_examples, cat_name))
 
     # Search in custom commands
     cmd_results = []
@@ -187,9 +205,12 @@ def _build_search_embed(guild_id: int, query: str) -> discord.Embed:
 
     if sys_results:
         text = ""
-        for sys_key, (emoji, desc, cat) in sys_results[:8]:
+        for sys_key, emoji, desc, cmd_examples, cat in sys_results[:8]:
             status = _status_emoji(guild_id, sys_key)
             text += f"{emoji} **{sys_key.title()}** {status} — {desc}\n"
+            if cmd_examples:
+                cmd_str = " | ".join([f"`{cmd}`" for cmd in cmd_examples[:3]])
+                text += f"   Commands: {cmd_str}\n"
         embed.add_field(name="Systems", value=text, inline=False)
 
     if cmd_results:
@@ -289,10 +310,23 @@ async def send_help(channel: discord.TextChannel, guild_id: int, invoker: discor
         if system_key in _SYSTEM_LOOKUP:
             emoji, desc, cat = _SYSTEM_LOOKUP[system_key]
             embed = discord.Embed(title=f"{emoji} System Guide: {system_key.title()}", color=CATEGORIES[cat]["color"])
-            embed.description = f"**Description:** {desc}\n\n**Category:** {cat}\n**Configuration:** `!configpanel{system_key}`"
-
-            # Add common commands for this system if they exist in help_data
-            # For now, show basic info.
+            
+            # Get command examples from CATEGORIES
+            cmd_examples = []
+            for sys_key, sys_emoji, sys_desc, sys_cmds in CATEGORIES[cat]["systems"]:
+                if sys_key == system_key:
+                    cmd_examples = sys_cmds
+                    break
+            
+            embed.description = f"**Description:** {desc}\n\n**Category:** {cat}\n**Configuration:** `!configpanel {system_key}`"
+            
+            if cmd_examples:
+                embed.add_field(
+                    name="⌨️ Example Commands",
+                    value="\n".join([f"{cmd}`" for cmd in cmd_examples[:5]]),
+                    inline=False
+                )
+            
             embed.set_footer(text=f"Requested by {invoker.display_name if invoker else 'User'}")
             await channel.send(embed=embed)
             return

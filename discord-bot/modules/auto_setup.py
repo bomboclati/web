@@ -890,14 +890,14 @@ class AutoSetup(commands.Cog):
             value=(
                 "• Use `!help` to see all installed commands\n"
                 "• Use `!help <system>` for system-specific help\n"
-                "• Use `/bot` to create custom features\n"
+                "• Use `!configpanel <system>` to configure any system\n"
                 "• All systems are now active in this server!"
             ),
             inline=False
         )
         
         embed.set_footer(text="Need help? Type !help | Enjoy your new systems! 🎮")
-
+    
         # Build a PostInstallView with one Configure button per installed system,
         # so users can jump straight into each config panel from the success embed.
         installed_keys: List[str] = []
@@ -909,9 +909,13 @@ class AutoSetup(commands.Cog):
                     installed_keys.append(key)
         except Exception as e:
             logger.debug(f"Could not build PostInstallView mapping: {e}")
-
+        
+        # Store installed keys for persistent view registration across restarts
+        if installed_keys:
+            dm.update_guild_data(guild.id, "installed_systems", installed_keys)
+    
         view: Optional[discord.ui.View] = PostInstallView(installed_keys) if installed_keys else None
-
+    
         sent = False
         if channel_id:
             target_channel = guild.get_channel(channel_id)
@@ -924,7 +928,7 @@ class AutoSetup(commands.Cog):
                     sent = True
                 except Exception as e:
                     logger.warning(f"Failed to send celebratory embed to channel: {e}")
-
+    
         if not sent:
             try:
                 if view is not None:
