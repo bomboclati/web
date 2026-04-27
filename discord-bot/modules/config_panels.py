@@ -4681,7 +4681,7 @@ def register_all_persistent_views(bot: discord.Client):
     # System Components
     from modules.tickets import TicketOpenPanel, TicketPersistentView
     from modules.welcome_leave import WelcomeDMView
-    from modules.auto_setup import CategorySelectionView
+    from modules.auto_setup import CategorySelectionView, PostInstallView
     from modules.giveaways import GiveawayEntryView
     from modules.applications import ApplicationPersistentView, ApplicationReviewView
     from modules.appeals import AppealPersistentView, AppealReviewView
@@ -4705,6 +4705,10 @@ def register_all_persistent_views(bot: discord.Client):
                     panels = dm.get_guild_data(guild_id, "role_buttons_config", {})
                     for pid in panels:
                         bot.add_view(RoleButtonPersistentView(pid))
+                    # PostInstallView - register for guilds with installed systems
+                    installed = dm.get_guild_data(guild_id, "installed_systems", [])
+                    if installed:
+                        bot.add_view(PostInstallView(installed))
                 except: continue
     bot.add_view(TicketOpenPanel())
     bot.add_view(AppealPersistentView())
