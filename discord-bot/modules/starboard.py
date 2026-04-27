@@ -71,18 +71,18 @@ class StarboardSystem:
         dm.update_guild_data(guild_id, "starboard_system_data", data)
 
     def get_guild_settings(self, guild_id: int) -> dict:
-        return dm.get_guild_data(guild_id, "starboard_settings", {
+        return dm.get_guild_data(guild_id, "starboard_config", {
             "enabled": True,
-            "star_emoji": "⭐",
-            "min_stars": 3,
+            "emoji": "⭐",
+            "threshold": 3,
             "auto_pin": True,
             "pin_threshold": 10,
-            "reward_emoji": "🌟",
             "reward_thresholds": {
                 "5": {"coins": 10, "xp": 5},
                 "10": {"coins": 25, "xp": 15},
                 "25": {"coins": 50, "xp": 30}
-            }
+            },
+            "reactions_enabled": True
         })
 
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
@@ -116,7 +116,7 @@ class StarboardSystem:
         if not settings.get("reactions_enabled", True):
             return
 
-        star_emoji = settings.get("star_emoji", "⭐")
+        star_emoji = settings.get("emoji", "⭐")
 
         if str(payload.emoji) != star_emoji:
             return
@@ -128,7 +128,7 @@ class StarboardSystem:
         reaction = discord.utils.get(message.reactions, emoji=payload.emoji.name)
         count = reaction.count if reaction else 0
 
-        if count >= settings.get("min_stars", 3):
+        if count >= settings.get("threshold", 3):
             await self.add_to_starboard(message, count)
 
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
@@ -274,7 +274,7 @@ class StarboardSystem:
         
         settings = self.get_guild_settings(guild.id)
         settings["enabled"] = True
-        dm.update_guild_data(guild.id, "starboard_settings", settings)
+        dm.update_guild_data(guild.id, "starboard_config", settings)
         
         # Create documentation channel
         try:

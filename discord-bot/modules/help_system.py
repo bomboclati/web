@@ -80,6 +80,7 @@ CATEGORIES = {
             ("autoresponder",  "💬", "Keyword auto-responses", ["!autoresponder add"]),
             ("reminders",      "⏰", "Personal & server reminders", ["!remindme"]),
             ("announcements",  "📢", "Scheduled announcements", ["!announcement create"]),
+            ("scheduled",      "🕒", "Scheduled automated messages", ["!configpanel scheduled"]),
         ]
     },
     "🔧 Configuration": {

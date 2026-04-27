@@ -43,6 +43,7 @@ from modules.reminders import ReminderSystem
 from modules.welcome_leave import WelcomeLeaveSystem
 from modules.giveaways import GiveawaySystem
 from modules.anti_raid import AntiRaidSystem
+from modules.auto_responder import AutoResponder
 from modules.auto_publisher import AutoPublisher
 from modules.staff_promo import StaffPromotionSystem, PromotionReviewView
 from modules.staff_extras import StaffExtras, StaffExtrasCommands
@@ -129,6 +130,7 @@ class MiroBot(commands.Bot):
         self.staff_reviews = StaffReviewSystem(self)
         self.staff_shift = StaffShiftSystem(self)
         self.auto_announcer = AutoAnnouncer(self)
+        self.auto_responder = AutoResponder(self)
         self.conflict_resolution = ConflictResolution(self)
         self.community_health = CommunityHealth(self)
         self.auto_setup = AutoSetup(self)

@@ -1800,6 +1800,9 @@ class AutoSetup(commands.Cog):
                 custom_cmds.setdefault("daily", json.dumps({"command_type": "economy_daily"}))
                 custom_cmds.setdefault("balance", json.dumps({"command_type": "economy_balance"}))
                 custom_cmds.setdefault("work", json.dumps({"command_type": "economy_work"}))
+                custom_cmds.setdefault("beg", json.dumps({"command_type": "economy_beg"}))
+                custom_cmds.setdefault("economylb", json.dumps({"command_type": "economy_leaderboard"}))
+                custom_cmds.setdefault("shop", json.dumps({"command_type": "economy_shop"}))
             elif system_name == "leveling":
                 custom_cmds.setdefault("rank", json.dumps({"command_type": "leveling_rank"}))
                 custom_cmds.setdefault("leaderboard", json.dumps({"command_type": "leveling_leaderboard"}))
