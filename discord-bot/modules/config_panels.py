@@ -135,7 +135,7 @@ class ConfigPanelView(ui.View):
             pass
 
     async def update_panel(self, interaction: Interaction):
-        embed = self.create_embed(interaction.guild_id, interaction.guild)
+        embed = self.create_embed(guild_id=interaction.guild_id, guild=interaction.guild)
         try:
             if interaction.response.is_done():
                 await interaction.edit_original_response(embed=embed, view=self)
@@ -4658,7 +4658,7 @@ def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
 async def handle_config_panel_command(message: discord.Message, system: str):
     view = get_config_panel(message.guild.id, system)
     if not view: return await message.channel.send(f"❌ System '{system}' not found.")
-    await message.channel.send(embed=view.create_embed(guild=message.guild), view=view)
+    await message.channel.send(embed=view.create_embed(guild_id=message.guild.id, guild=message.guild), view=view)
 
 def register_all_persistent_views(bot: discord.Client):
     # Config Panels
