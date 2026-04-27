@@ -587,12 +587,12 @@ Only suggest actions from this list. Do not invent new actions:
 
         # Final validation and sanitization
         if self._validate_json_response(res_json):
-            # Remove optional fields if empty/None
-            if res_json.get("reasoning") in [None, "", "Raw text response", "Standard response"]:
+            # Remove optional fields if empty/None - safely handle missing 'reasoning' key
+            if "reasoning" in res_json and res_json.get("reasoning") in [None, "", "Raw text response", "Standard response"]:
                 del res_json["reasoning"]
-            if res_json.get("walkthrough") in [None, "", ""]:
+            if "walkthrough" in res_json and res_json.get("walkthrough") in [None, "", ""]:
                 del res_json["walkthrough"]
-            if res_json.get("actions") in [None, [], []]:
+            if "actions" in res_json and res_json.get("actions") in [None, [], []]:
                 del res_json["actions"]
 
             # Double-serialize to ensure proper escaping
@@ -602,6 +602,7 @@ Only suggest actions from this list. Do not invent new actions:
             # Log error and treat as plain text
             logger.error("Failed to parse valid JSON from AI response, treating as plain text")
             # Always ensure summary is clean text - NEVER return raw JSON structure
+            # Safely get summary even if 'reasoning' or other fields are missing
             summary_text = str(res_json.get("summary", ai_msg)).strip()
 
             # Final sanitization to remove any JSON artifacts
