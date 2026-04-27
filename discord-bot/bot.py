@@ -636,7 +636,13 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         await self._safe_call(self.intelligence.track_message(message), "intelligence")
         await self._safe_call(self.conflict_resolution.analyze_message(message), "conflict_resolution")
         await self._safe_call(self.community_health.analyze_interaction(message), "community_health")
-        
+
+        # Auto-Responder: keyword-based automated replies.
+        # Wired here so messages in normal channels still trigger configured responders
+        # (admin sets these via !configpanel autoresponder).
+        if hasattr(self, "auto_responder") and self.auto_responder:
+            await self._safe_call(self.auto_responder.handle_message(message), "auto_responder")
+
         # Apply system connections for leveling events
         if hasattr(self.leveling, 'last_level_up') and self.leveling.last_level_up:
             user_id, guild_id = self.leveling.last_level_up
