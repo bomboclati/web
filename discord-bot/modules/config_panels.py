@@ -4022,6 +4022,25 @@ class ChatChannelsConfigView(ConfigPanelView):
             discord.SelectOption(label="Gemini 1.5 Pro", value="google/gemini-pro-1.5")
         ])); await i.response.send_message("Select model:", view=v, ephemeral=True)
 
+    @ui.button(label="Set AI Provider", emoji="🛰️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_chat_provider")
+    async def set_provider(self, i, b):
+        # Pick which backend powers the AI chat channels (mirrors AIProvider enum in chat_channels.py).
+        # Saved as ai_chat_config["provider"]; ChatChannelManager._chat_with_provider reads this
+        # to decide which API key/model bucket to use.
+        class ProviderSelect(ui.Select):
+            async def callback(self, it):
+                c = dm.get_guild_data(it.guild_id, "ai_chat_config", {})
+                c["provider"] = self.values[0]
+                dm.update_guild_data(it.guild_id, "ai_chat_config", c)
+                await it.response.send_message(f"✅ AI provider set to **{self.values[0]}**.", ephemeral=True)
+        v = ui.View(); v.add_item(ProviderSelect(placeholder="Choose AI provider...", options=[
+            discord.SelectOption(label="Default (OpenRouter)", value="default", description="Use the global default provider"),
+            discord.SelectOption(label="OpenAI / GPT-4", value="gpt4", description="Direct OpenAI API"),
+            discord.SelectOption(label="Anthropic Claude", value="claude", description="Claude 3.x models"),
+            discord.SelectOption(label="DeepSeek", value="deepseek", description="DeepSeek chat models"),
+            discord.SelectOption(label="Local / Self-hosted", value="local", description="Custom local endpoint")
+        ])); await i.response.send_message("Select AI provider:", view=v, ephemeral=True)
+
     @ui.button(label="Max History", emoji="💾", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_chat_hist")
     async def set_hist(self, i, b):
         await i.response.send_modal(_NumberModal(self, "max_history", "Memory Depth (Messages)", i.guild_id))
