@@ -50,7 +50,8 @@ class AutoPublisher:
         try:
             async for message in channel.history(limit=10):
                 messages.append(message)
-        except:
+        except Exception as e:
+            logger.error(f"Failed to get channel history: {e}")
             return
         
         # Common bump bot IDs (DISBOARD, etc.)
@@ -71,8 +72,8 @@ class AutoPublisher:
                         
                         try:
                             await channel.send(embed=embed)
-                        except:
-                            pass
+                        except Exception as e:
+                            logger.error(f"Failed to send bump reminder: {e}")
                     
                     break
 
@@ -105,8 +106,8 @@ class AutoPublisher:
             try:
                 if not thread.pinned:
                     await thread.publish()
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to publish thread: {e}")
 
     async def on_thread_update(self, before: discord.Thread, after: discord.Thread):
         if before.pinned or after.pinned:
@@ -122,8 +123,8 @@ class AutoPublisher:
             try:
                 if not after.pinned:
                     await after.publish()
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to publish thread on update: {e}")
 
     def add_publish_channel(self, guild_id: int, channel_id: int):
         settings = self.get_guild_settings(guild_id)
@@ -136,35 +137,46 @@ class AutoPublisher:
 
     async def create_announcement(self, guild_id: int, channel_id: int, title: str, 
                                   content: str, mention_roles: List[int] = None) -> discord.Message:
-        channel = self.bot.get_guild(guild_id).get_channel(channel_id)
+        if mention_roles is None:
+            mention_roles = []
+            
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            return None
+            
+        channel = guild.get_channel(channel_id)
         
         if not channel:
             return None
-        
+
         embed = discord.Embed(
             title=title,
             description=content,
             color=discord.Color.blue()
         )
-        
+
         mentions = []
         if mention_roles:
             for role_id in mention_roles:
-                role = self.bot.get_guild(guild_id).get_role(role_id)
+                role = guild.get_role(role_id)
                 if role:
                     mentions.append(role.mention)
-        
-        message = ", ".join(mentions) if mentions else ""
-        
+
+        message_content = ", ".join(mentions) if mentions else ""
+
         try:
-            msg = await channel.send(content=message, embed=embed)
+            msg = await channel.send(content=message_content, embed=embed)
             await msg.publish()
             return msg
-        except:
+        except Exception as e:
+            logger.error(f"Failed to create announcement: {e}")
             return None
 
     async def schedule_announcement(self, guild_id: int, channel_id: int, title: str,
                                     content: str, post_at: float, mention_roles: List[int] = None):
+        if mention_roles is None:
+            mention_roles = []
+            
         scheduled = {
             "id": f"scheduled_{guild_id}_{int(time.time())}",
             "guild_id": guild_id,
@@ -175,13 +187,13 @@ class AutoPublisher:
             "mention_roles": mention_roles or [],
             "created_at": time.time()
         }
-        
+
         scheduled_announcements = dm.get_guild_data(guild_id, "scheduled_announcements", {})
         scheduled_announcements[scheduled["id"]] = scheduled
         dm.update_guild_data(guild_id, "scheduled_announcements", scheduled_announcements)
-        
+
         asyncio.create_task(self._post_scheduled(scheduled))
-        
+
         return scheduled
 
     async def _post_scheduled(self, scheduled: dict):
@@ -189,13 +201,13 @@ class AutoPublisher:
         
         if wait_time > 0:
             await asyncio.sleep(wait_time)
-        
+
         await self.create_announcement(
             scheduled["guild_id"],
             scheduled["channel_id"],
             scheduled["title"],
             scheduled["content"],
-            scheduled.get("mention_roles")
+            scheduled.get("mention_roles", [])
         )
         
         scheduled_announcements = dm.get_guild_data(scheduled["guild_id"], "scheduled_announcements", {})
@@ -247,4 +259,5 @@ class AutoPublisher:
         return True
 
 
-from discord import app_commands
+async def setup(bot):
+    await bot.add_cog(AutoPublisher(bot))

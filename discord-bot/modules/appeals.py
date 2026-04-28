@@ -379,4 +379,6 @@ class Appeals:
         return True
 
 async def setup(bot):
-    pass # Managed by bot.py
+    # This function is kept for compatibility but the actual setup is handled in bot.py
+    # to ensure proper initialization order
+    return True

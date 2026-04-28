@@ -111,8 +111,18 @@ class Verification:
 
         # Phone check info - Note: Discord doesn't expose phone status to bots directly.
         # This setting can be used to inform users or check for Discord's own security flags if available.
-        if config.get("phone_required") and not interaction.user.public_flags.verified_bot_developer:
-             pass
+        if config.get("phone_required"):
+            # Since Discord API doesn't expose phone verification status to bots,
+            # we inform the user about the requirement
+            try:
+                await interaction.user.send(
+                    f"⚠️ **Phone Verification Required**\n"
+                    f"The server {interaction.guild.name} requires phone verification for full access.\n"
+                    f"Please verify your phone number in your Discord User Settings under 'Privacy & Safety'."
+                )
+            except Exception:
+                # If we can't send a DM, we'll note it in the verification log but not block verification
+                logger.info(f"Could not send phone verification reminder to {interaction.user.id}")
 
         # CAPTCHA
         if config.get("captcha_enabled"):
