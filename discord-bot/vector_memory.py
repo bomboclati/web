@@ -672,18 +672,18 @@ Walkthrough: {walkthrough}
             count = self.collection.count()
             summary_count = self.summary_collection.count() if self.summary_collection else 0
             
-                 # Get pinned memories count
-                 pinned_count = 0
-                 if self.collection:
-                     try:
-                         pinned_results = self.collection.get(
-                             where={"is_pinned": {"$eq": "true"}},
-                             include=["metadatas"]
-                         )
-                         pinned_count = len(pinned_results['ids']) if pinned_results['ids'] else 0
-                     except Exception as e:
-                         logger.debug(f"Failed to get pinned memories count: {e}")
-                         pinned_count = 0
+            # Get pinned memories count
+            pinned_count = 0
+            if self.collection:
+                try:
+                    pinned_results = self.collection.get(
+                        where={"is_pinned": {"$eq": "true"}},
+                        include=["metadatas"]
+                    )
+                    pinned_count = len(pinned_results['ids']) if pinned_results['ids'] else 0
+                except Exception as e:
+                    logger.debug(f"Failed to get pinned memories count: {e}")
+                    pinned_count = 0
             
             return {
                 "status": "active",
