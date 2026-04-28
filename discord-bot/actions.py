@@ -4545,10 +4545,10 @@ class ActionHandler:
         xp = leveling.get_xp(guild_id, user_id)
         level = leveling.get_level_from_xp(xp)
 
-        embed = discord.Embed(title=f"{message.author.name}'s Balance", color=discord.Color.gold())
-        embed.add_field(name="Coins", value=str(coins), inline=True)
-        embed.add_field(name="Gems", value=str(gems), inline=True)
-        embed.add_field(name="Level", value=f"{level} ({xp} XP)", inline=True)
+        embed = discord.Embed(title=f"💰 {message.author.name}'s Balance", color=discord.Color.gold())
+        embed.add_field(name="💰 Coins", value=f"{coins:,}", inline=True)
+        embed.add_field(name="💎 Gems", value=str(gems), inline=True)
+        embed.add_field(name="🆙 Level", value=f"{level} ({xp:,} XP)", inline=True)
 
         await message.channel.send(embed=embed)
         return True
@@ -4603,9 +4603,11 @@ class ActionHandler:
 
         sorted_lb = sorted(balances.items(), key=lambda x: x[1], reverse=True)[:10]
 
+        medals = ["🥇", "🥈", "🥉"]
         lines = []
         for i, (uid, amt) in enumerate(sorted_lb):
-            lines.append(f"**{i+1}.** <@{uid}> — {amt:,} coins")
+            medal = medals[i] if i < 3 else f"**{i+1}.**"
+            lines.append(f"{medal} <@{uid}> — {amt:,} 💰")
 
         embed = discord.Embed(
             title=f"💰 {message.guild.name} — Economy Leaderboard",
