@@ -1,0 +1,48 @@
+{
+  "welcome": {
+    "welcome": {
+      "command_type": "simple",
+      "content": "Welcome system is active! New members will receive automated welcome messages."
+    }
+  },
+  "verification": {
+    "verify": {
+      "command_type": "simple",
+      "content": "Use `/verify` to verify your account and gain access to the server."
+    }
+  },
+  "economy": {
+    "balance": {
+      "command_type": "economy_balance",
+      "content": "Check your current balance with !balance"
+    },
+    "daily": {
+      "command_type": "economy_daily",
+      "content": "Claim your daily reward with !daily"
+    }
+  },
+  "leveling": {
+    "rank": {
+      "command_type": "simple",
+      "content": "Check your current level and XP with !rank"
+    }
+  },
+  "tickets": {
+    "ticket": {
+      "command_type": "simple",
+      "content": "Create a support ticket with !ticket"
+    }
+  },
+  "moderation": {
+    "report": {
+      "command_type": "simple",
+      "content": "Report a user with !report <user> <reason>"
+    }
+  },
+  "staff_system": {
+    "shift": {
+      "command_type": "simple",
+      "content": "Start or end your staff shift with !shift"
+    }
+  }
+}
