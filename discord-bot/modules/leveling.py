@@ -184,7 +184,7 @@ class Leveling:
                 "level": self.get_level_from_xp(xp),
                 "streak": streak
             })
-         return leaderboard
+        return leaderboard
 
     def get_hourly_stats(self, guild_id: int, hours: int = 24) -> dict:
         """
@@ -206,4 +206,3 @@ class Leveling:
         
         # If no cached data, return empty structure
         return {}
-
