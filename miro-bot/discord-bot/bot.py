@@ -63,7 +63,7 @@ from modules.embed_system import EmbedSystem
 from modules.reaction_roles import ReactionRoles
 from modules.logging import LoggingSystem
 from modules.mod_logging import ModLogging
-from modules.reaction_menus import ReactionMenus, ReactionMenuPersistentView
+from modules.reaction_menus import ReactionMenus
 from modules.role_buttons import RoleButtons
 from modules.config_panels import handle_config_panel_command, register_all_persistent_views
 
@@ -236,7 +236,6 @@ class MiroBot(commands.Bot):
         self.add_view(EmbedVerifyView(guild_id=0))  # Guild ID will be determined from interaction
         self.add_view(EmbedApplyStaffView(guild_id=0))
         self.add_view(EmbedCreateTicketView(guild_id=0))
-        self.add_view(ReactionMenuPersistentView(0))
         
         # Support for Manual Sync (Prefix command !sync)
         # Standard implementation for syncing slash commands as a prefix command

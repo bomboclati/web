@@ -16,7 +16,7 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
     def __init__(self, guild_id: int):
         super().__init__()
         self.guild_id = guild_id
-
+        
         # Get categories from config
         config = dm.get_guild_data(guild_id, "suggestions_config", {})
         categories = config.get('categories', ['Feature', 'Bug', 'Content', 'Other'])
@@ -41,13 +41,13 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
         self.add_item(self.description_input)
     
     async def on_submit(self, interaction: discord.Interaction):
-        config = dm.get_guild_data(self.guild_id, "suggestions_config", {})
-
+        guild_data = dm.get_guild_data(self.guild_id)
+        
         # Check cooldown
-        cooldown_minutes = config.get('cooldown_minutes', 30)
-        user_suggestions = dm.get_guild_data(self.guild_id, 'suggestions_by_user', {})
+        cooldown_minutes = guild_data.get('suggestions_cooldown_minutes', 30)
+        user_suggestions = guild_data.get('suggestions_by_user', {})
         user_id_str = str(interaction.user.id)
-
+        
         if user_id_str in user_suggestions:
             last_submission = user_suggestions[user_id_str].get('last_submission')
             if last_submission:
@@ -60,11 +60,11 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
                         ephemeral=True
                     )
                     return
-
+        
         # Generate suggestion ID
-        suggestions = dm.get_guild_data(self.guild_id, 'suggestions', [])
+        suggestions = guild_data.get('suggestions', [])
         suggestion_id = len(suggestions) + 1
-
+        
         # Create suggestion data
         suggestion_data = {
             'id': suggestion_id,
@@ -79,19 +79,20 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
             'downvotes': [],
             'comments': []
         }
-
+        
         # Save suggestion
         suggestions.append(suggestion_data)
-        dm.update_guild_data(self.guild_id, 'suggestions', suggestions)
-
+        dm.update_guild_data(self.guild_id, "suggestions", suggestions)
+        
         # Update user tracking
         if user_id_str not in user_suggestions:
             user_suggestions[user_id_str] = {}
         user_suggestions[user_id_str]['last_submission'] = datetime.utcnow().isoformat()
         user_suggestions[user_id_str]['count'] = user_suggestions[user_id_str].get('count', 0) + 1
-        dm.update_guild_data(self.guild_id, 'suggestions_by_user', user_suggestions)
-
+        dm.update_guild_data(self.guild_id, "suggestions_by_user", user_suggestions)
+        
         # Post to suggestions channel
+        config = dm.get_guild_data(self.guild_id, "suggestions_config", {})
         suggestions_channel_id = config.get('suggestions_channel_id')
         if suggestions_channel_id:
             channel = interaction.client.get_channel(suggestions_channel_id)
@@ -107,17 +108,17 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
                 embed.add_field(name="🔢 ID", value=f"#{suggestion_id}", inline=True)
                 embed.add_field(name="👤 Author", value=interaction.user.mention, inline=True)
                 embed.set_footer(text=f"Suggestion ID: {suggestion_id}")
-
+                
                 view = SuggestionVoteView(suggestion_id, self.guild_id)
                 msg = await channel.send(embed=embed, view=view)
-
+                
                 # Store message reference
                 suggestion_data['message_id'] = msg.id
                 suggestion_data['channel_id'] = channel.id
-                dm.update_guild_data(self.guild_id, 'suggestions', suggestions)
-
+                dm.update_guild_data(self.guild_id, guild_data)
+        
         # Send DM
-        send_dms = config.get('submitter_dms_enabled', True)
+        send_dms = guild_data.get('suggestions_send_dms', True)
         if send_dms:
             try:
                 await interaction.user.send(
@@ -128,7 +129,7 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
                 )
             except:
                 pass
-
+        
         # Log action
         action_log = guild_data.get('action_logs', [])
         action_log.append({

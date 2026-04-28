@@ -24,17 +24,9 @@
                                  "command_type": "economy_work",
                                  "content": "Work to earn coins!"
                              },
-                    "beg": {
-                                 "command_type": "economy_beg",
-                                 "content": "Beg for coins!"
-                             },
                     "shop":  {
                                  "command_type":  "simple",
                                  "content":  "Use !shop to see available items."
-                             },
-                    "leaderboard":  {
-                                 "command_type":  "economy_leaderboard",
-                                 "content":  "View top members by coins with !leaderboard"
                              }
                 },
     "leveling":  {

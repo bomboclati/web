@@ -595,12 +595,6 @@ Only suggest actions from this list. Do not invent new actions:
             if "actions" in res_json and res_json.get("actions") in [None, [], []]:
                 del res_json["actions"]
 
-            # Ensure required fields are present for framework compatibility
-            if "reasoning" not in res_json:
-                res_json["reasoning"] = "AI processed the request"
-            if "actions" not in res_json:
-                res_json["actions"] = []
-
             # Double-serialize to ensure proper escaping
             serialized = json.dumps(res_json, ensure_ascii=False)
             return json.loads(serialized)
@@ -626,12 +620,7 @@ Only suggest actions from this list. Do not invent new actions:
                     # Actions are handled internally, not returned to end user
                 pass
 
-            # Return framework-compatible response for plain text
-            return {
-                "summary": summary_text,
-                "reasoning": "Direct AI response without structured reasoning",
-                "actions": []
-            }
+            return {"summary": summary_text}
 
 
     def extract_json(self, text: str) -> Dict[str, Any]:

@@ -893,8 +893,9 @@ class AnnouncementsPanelView(ConfigPanelView):
     def save_config(self, config: dict, guild_id: int = None, client = None):
         dm.update_guild_data(guild_id or self.guild_id, "announcements_config", config)
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
-        c = self.get_config(guild_id)
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
+        gid = guild_id or self.guild_id
+        c = self.get_config(gid)
         embed = discord.Embed(title="📢 Announcements System Configuration", color=discord.Color.gold())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
         embed.add_field(name="Channel", value=f"<#{c.get('channel_id')}>" if c.get('channel_id') else "_Not Set_", inline=True)
@@ -902,11 +903,11 @@ class AnnouncementsPanelView(ConfigPanelView):
         embed.add_field(name="Auto-Pin", value="ON" if c.get("auto_pin", True) else "OFF", inline=True)
         embed.add_field(name="Cross-Post", value="ON" if c.get("cross_post", False) else "OFF", inline=True)
         embed.add_field(name="Approval Req.", value="YES" if c.get("require_approval", False) else "NO", inline=True)
-
+        
         if c.get("require_approval"):
             embed.add_field(name="Approval Ch", value=f"<#{c.get('approval_channel_id')}>" if c.get('approval_channel_id') else "_Not Set_", inline=True)
-
-        logs = dm.get_guild_data(guild_id or self.guild_id, "announcements_log", [])
+        
+        logs = dm.get_guild_data(gid, "announcements_log", [])
         embed.add_field(name="Total Posted", value=str(len(logs)), inline=True)
         return embed
 

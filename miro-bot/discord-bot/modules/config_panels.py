@@ -276,40 +276,6 @@ class _NumberModal(ui.Modal):
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set mention threshold to {v}")
             return await interaction.response.send_message(f"✅ Max mentions per message: **{v}**.", ephemeral=True)
         
-        # Special handling for work rewards (min and max)
-        if self.key == "work_min":
-            if self.second_value.value:
-                try:
-                    max_v = int(self.second_value.value)
-                    config["work_min"] = v
-                    config["work_max"] = max_v
-                    self.config_panel.save_config(config, interaction.guild_id, interaction.client)
-                    log_panel_action(interaction.guild_id, interaction.user.id, f"Set work rewards to {v}-{max_v}")
-                    return await interaction.response.send_message(f"✅ Work rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
-                except ValueError:
-                    return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
-            config["work_min"] = v
-            self.config_panel.save_config(config, interaction.guild_id, interaction.client)
-            log_panel_action(interaction.guild_id, interaction.user.id, f"Set work min to {v}")
-            return await interaction.response.send_message(f"✅ Work min reward set to **{v}**.", ephemeral=True)
-        
-        # Special handling for beg rewards (min and max)
-        if self.key == "beg_min":
-            if self.second_value.value:
-                try:
-                    max_v = int(self.second_value.value)
-                    config["beg_min"] = v
-                    config["beg_max"] = max_v
-                    self.config_panel.save_config(config, interaction.guild_id, interaction.client)
-                    log_panel_action(interaction.guild_id, interaction.user.id, f"Set beg rewards to {v}-{max_v}")
-                    return await interaction.response.send_message(f"✅ Beg rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
-                except ValueError:
-                    return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
-            config["beg_min"] = v
-            self.config_panel.save_config(config, interaction.guild_id, interaction.client)
-            log_panel_action(interaction.guild_id, interaction.user.id, f"Set beg min to {v}")
-            return await interaction.response.send_message(f"✅ Beg min reward set to **{v}**.", ephemeral=True)
-        
         # Default: single value storage
         config[self.key] = v
         self.config_panel.save_config(config, interaction.guild_id, interaction.client)
@@ -1778,22 +1744,37 @@ class RoleButtonsConfigView(ConfigPanelView):
 
     @ui.button(label="Create Panel", emoji="➕", style=discord.ButtonStyle.success, row=0, custom_id="cfg_rb_create")
     async def create_panel(self, i, b):
-        class ChSelect(ui.ChannelSelect, placeholder="Select Channel for Panel", channel_types=[discord.ChannelType.text]):
+        # Get available text channels
+        channels = [ch for ch in i.guild.text_channels if ch.permissions_for(i.guild.me).send_messages]
+        if not channels:
+            return await i.response.send_message("❌ No available text channels to create panel in.", ephemeral=True)
+        
+        class ChannelSelect(ui.Select):
+            def __init__(self):
+                options = [discord.SelectOption(label=ch.name, value=str(ch.id)) for ch in channels[:25]]
+                super().__init__(placeholder="Select channel for panel", options=options)
+            
             async def callback(self, it):
+                selected_channel_id = int(self.values[0])
+                channel = i.guild.get_channel(selected_channel_id)
+                
                 class PanelModal(ui.Modal, title="Create Role Button Panel"):
-                    title = ui.TextInput(label="Panel Title")
-                    desc = ui.TextInput(label="Panel Description", style=discord.TextStyle.paragraph)
+                    title = ui.TextInput(label="Panel Title", max_length=256)
+                    desc = ui.TextInput(label="Panel Description", style=discord.TextStyle.paragraph, max_length=1000)
+                    
                     async def on_submit(self, it2):
-                        channel = it.guild.get_channel(self.values[0].id)
-                        if not channel:
-                            return await it2.response.send_message("❌ Channel not found.", ephemeral=True)
-                        pid = await it2.client.role_buttons.create_panel(it2, self.title.value, self.desc.value, channel)
+                        rb = it2.client.role_buttons
+                        pid = await rb.create_panel(it2, self.title.value, self.desc.value, channel)
                         if pid:
-                            await it2.response.send_message(f"✅ Panel created in {channel.mention}! Add buttons using the 'Add Button' button.", ephemeral=True)
+                            await it2.response.send_message(f"✅ Panel created in {channel.mention}! Use 'Add Button' to add role buttons.", ephemeral=True)
                         else:
-                            await it2.response.send_message("❌ Failed to create panel.", ephemeral=True)
+                            await it2.response.send_message("❌ Failed to create panel. Check bot permissions.", ephemeral=True)
+                
                 await it.response.send_modal(PanelModal())
-        await i.response.send_message("Select a channel for the role button panel:", view=_picker_view(ChSelect()), ephemeral=True)
+        
+        view = ui.View()
+        view.add_item(ChannelSelect())
+        await i.response.send_message("Select channel for the new panel:", view=view, ephemeral=True)
 
     @ui.button(label="Add Button", emoji="🔘", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_rb_add_btn")
     async def add_btn(self, i, b):
@@ -1810,7 +1791,11 @@ class RoleButtonsConfigView(ConfigPanelView):
                     async def on_submit(self, it2):
                         panels = it2.client.role_buttons.get_panels(it2.guild_id)
                         bid = f"btn_{int(time.time())}"
-                        panels[pid]["buttons"][bid] = {"label": self.label.value, "role_id": int(self.role.value), "emoji": self.emoji.value}
+                        panels[pid]["buttons"][bid] = {
+                            "label": self.label.value,
+                            "role_id": int(self.role.value),
+                            "emoji": self.emoji.value
+                        }
                         it2.client.role_buttons.save_panels(it2.guild_id, panels)
                         # Refresh message
                         ch = it2.guild.get_channel(panels[pid]["channel_id"])
@@ -3462,10 +3447,6 @@ class EconomyConfigView(ConfigPanelView):
     async def set_start(self, i, b):
         await i.response.send_modal(_NumberModal(self, "starting_balance", "Starting Balance", i.guild_id))
 
-    @ui.button(label="Beg Rewards", emoji="🙏", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_eco_beg")
-    async def set_beg(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "beg_min", "Min Beg Reward", i.guild_id, second_label="Max Beg Reward"))
-
     @ui.button(label="Daily Reward", emoji="📅", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_eco_daily")
     async def set_daily(self, i, b):
         await i.response.send_modal(_NumberModal(self, "daily_amount", "Daily Reward Amount", i.guild_id))
@@ -3723,6 +3704,7 @@ class LevelingConfigView(ConfigPanelView):
 
 
 class StarboardConfigView(ConfigPanelView):
+    _config_key = "starboard_system_data"
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "starboard")
 
@@ -3736,7 +3718,6 @@ class StarboardConfigView(ConfigPanelView):
         embed.add_field(name="Emoji", value=c.get("emoji", "⭐"), inline=True)
         embed.add_field(name="Auto Pin", value="ON" if c.get("auto_pin", True) else "OFF", inline=True)
         embed.add_field(name="Pin Threshold", value=str(c.get("pin_threshold", 10)), inline=True)
-        embed.add_field(name="Reactions", value="ON" if c.get("reactions_enabled", True) else "OFF", inline=True)
 
         rewards = c.get("reward_thresholds", {})
         embed.add_field(name="Rewards", value=f"{len(rewards)} thresholds", inline=True)
@@ -3765,10 +3746,6 @@ class StarboardConfigView(ConfigPanelView):
     @ui.button(label="Toggle Auto Pin", emoji="📌", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_stb_pin")
     async def toggle_pin(self, i, b):
         c = self.get_config(i.guild_id); c["auto_pin"] = not c.get("auto_pin", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
-
-    @ui.button(label="Toggle Reactions", emoji="⭐", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_stb_react")
-    async def toggle_react(self, i, b):
-        c = self.get_config(i.guild_id); c["reactions_enabled"] = not c.get("reactions_enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
 
     @ui.button(label="Pin Threshold", emoji="📍", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_stb_pin_th")
     async def set_pin_th(self, i, b):
@@ -4061,52 +4038,36 @@ class ChatChannelsConfigView(ConfigPanelView):
 
     @ui.button(label="Set AI Model", emoji="🤖", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_chat_model")
     async def set_model(self, i, b):
-        # Get current provider for this guild
-        c = dm.get_guild_data(i.guild_id, "ai_chat_config", {})
-        provider = c.get("provider", "openrouter")
-        
-        # Model choices based on provider
-        MODEL_CHOICES = {
-            "openrouter": ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash"],
-            "openai": ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
-            "gemini": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
-            "groq": ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
-            "mistral": ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"],
-            "deepseek": ["deepseek-chat", "deepseek-coder"],
-            "anthropic": ["claude-3-5-sonnet-20240620", "claude-3-opus-20240229"],
-            "dashscope": ["qwen-turbo", "qwen-plus", "qwen-max"]
-        }
-        available_models = MODEL_CHOICES.get(provider, ["gpt-4o", "gpt-4o-mini"])
-        
         class ModelSelect(ui.Select):
             async def callback(self, it):
-                config = dm.get_guild_data(it.guild_id, "ai_chat_config", {})
-                config["model"] = self.values[0]
-                dm.update_guild_data(it.guild_id, "ai_chat_config", config)
+                c = dm.get_guild_data(it.guild_id, "ai_chat_config", {})
+                c["model"] = self.values[0]
+                dm.update_guild_data(it.guild_id, "ai_chat_config", c)
                 await it.response.send_message(f"✅ Model set to {self.values[0]}", ephemeral=True)
-        
-        options = [discord.SelectOption(label=model, value=model) for model in available_models]
-        v = ui.View(); v.add_item(ModelSelect(placeholder="Choose AI Model...", options=options))
-        await i.response.send_message("Select model:", view=v, ephemeral=True)
+        v = ui.View(); v.add_item(ModelSelect(placeholder="Choose AI Model...", options=[
+            discord.SelectOption(label="GPT-4o", value="gpt-4o"),
+            discord.SelectOption(label="GPT-4o mini", value="gpt-4o-mini"),
+            discord.SelectOption(label="Claude 3.5 Sonnet", value="anthropic/claude-3.5-sonnet"),
+            discord.SelectOption(label="Gemini 1.5 Pro", value="google/gemini-pro-1.5")
+        ])); await i.response.send_message("Select model:", view=v, ephemeral=True)
 
     @ui.button(label="Set AI Provider", emoji="🛰️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_chat_provider")
     async def set_provider(self, i, b):
-        # Pick which backend powers the AI chat channels (matches /config provider choices).
+        # Pick which backend powers the AI chat channels (mirrors AIProvider enum in chat_channels.py).
+        # Saved as ai_chat_config["provider"]; ChatChannelManager._chat_with_provider reads this
+        # to decide which API key/model bucket to use.
         class ProviderSelect(ui.Select):
             async def callback(self, it):
-                config = dm.get_guild_data(it.guild_id, "ai_chat_config", {})
-                config["provider"] = self.values[0]
-                dm.update_guild_data(it.guild_id, "ai_chat_config", config)
+                c = dm.get_guild_data(it.guild_id, "ai_chat_config", {})
+                c["provider"] = self.values[0]
+                dm.update_guild_data(it.guild_id, "ai_chat_config", c)
                 await it.response.send_message(f"✅ AI provider set to **{self.values[0]}**.", ephemeral=True)
         v = ui.View(); v.add_item(ProviderSelect(placeholder="Choose AI provider...", options=[
-            discord.SelectOption(label="OpenRouter", value="openrouter"),
-            discord.SelectOption(label="OpenAI", value="openai"),
-            discord.SelectOption(label="Gemini", value="gemini"),
-            discord.SelectOption(label="Groq", value="groq"),
-            discord.SelectOption(label="Mistral", value="mistral"),
-            discord.SelectOption(label="DeepSeek", value="deepseek"),
-            discord.SelectOption(label="Anthropic", value="anthropic"),
-            discord.SelectOption(label="DashScope", value="dashscope")
+            discord.SelectOption(label="Default (OpenRouter)", value="default", description="Use the global default provider"),
+            discord.SelectOption(label="OpenAI / GPT-4", value="gpt4", description="Direct OpenAI API"),
+            discord.SelectOption(label="Anthropic Claude", value="claude", description="Claude 3.x models"),
+            discord.SelectOption(label="DeepSeek", value="deepseek", description="DeepSeek chat models"),
+            discord.SelectOption(label="Local / Self-hosted", value="local", description="Custom local endpoint")
         ])); await i.response.send_message("Select AI provider:", view=v, ephemeral=True)
 
     @ui.button(label="Max History", emoji="💾", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_chat_hist")
