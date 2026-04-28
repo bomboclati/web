@@ -57,7 +57,7 @@ COMMAND_SCHEMA = {
     "properties": {
         "command_type": {
             "type": "string",
-            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "leaderboard", "leveling_rank", "leveling_leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "list_triggers", "help_all", "config_panel"]
+            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "leaderboard", "leveling_rank", "leveling_leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "staffpromo_requirements", "staffpromo_bonuses", "staffpromo_exclude", "staffpromo_config", "staffpromo_promote", "staffpromo_demote", "list_triggers", "help_all", "config_panel"]
         },
         "content": {"type": "string"},
         "actions": {
@@ -4410,14 +4410,6 @@ class ActionHandler:
             logger.error(f"Error in handle_economy_daily: {e}")
             await message.channel.send("❌ Unable to claim daily reward. Please try again later.")
             return False
-
-        reward = 100
-        economy.add_coins(guild_id, user_id, reward)
-        last_daily[str(user_id)] = str(dt.datetime.now())
-        dm.update_guild_data(guild_id, "last_daily", last_daily)
-
-        await message.channel.send(f"🎉 {message.author.mention} claimed **{reward} coins**!")
-        return True
 
     async def handle_economy_buy(self, message: discord.Message) -> bool:
         """!buy <item_name_or_id>"""
