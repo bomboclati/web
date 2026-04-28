@@ -101,8 +101,16 @@ class ServerAnalytics:
         
         try:
             # Get message count and unique chatters from leveling module
-            # Note: get_hourly_stats is not implemented in Leveling class, so we skip this for now
-            # The metrics will remain at 0 until the method is added to Leveling
+            if hasattr(self.bot, 'leveling'):
+                hourly_stats = self.bot.leveling.get_hourly_stats(guild_id, 1)  # Last hour
+                if hourly_stats:
+                    # Take the most recent hour's data
+                    latest_hour = sorted(hourly_stats.keys())[0] if hourly_stats else None
+                    if latest_hour:
+                        hour_data = hourly_stats[latest_hour]
+                        metrics["message_count"] = hour_data.get("message_count", 0)
+                        metrics["unique_chatters"] = hour_data.get("unique_chatters", 0)
+                        metrics["xp_gained"] = hour_data.get("xp_gained", 0)
             
             # Get voice minutes from voice system
             if hasattr(self.bot, 'voice_system'):

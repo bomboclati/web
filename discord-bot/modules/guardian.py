@@ -176,7 +176,42 @@ class GuardianSystem(commands.Cog):
             return
         # Nuke protection: rapid channel/role deletions
         if entry.action in [discord.AuditLogAction.channel_delete, discord.AuditLogAction.role_delete]:
-            pass  # TODO: implement rapid-deletion tracking
+            # Track rapid deletions for nuke protection
+            if not hasattr(self, '_deletion_tracker'):
+                self._deletion_tracker = {}
+            
+            user_id = entry.user.id if entry.user else 0
+            now = time.time()
+            
+            if user_id not in self._deletion_tracker:
+                self._deletion_tracker[user_id] = []
+            
+            # Add current deletion timestamp
+            self._deletion_tracker[user_id].append(now)
+            
+            # Keep only deletions from last 10 seconds
+            self._deletion_tracker[user_id] = [t for t in self._deletion_tracker[user_id] if now - t < 10]
+            
+            # If user deleted 5+ channels/roles in 10 seconds, consider it a nuke
+            if len(self._deletion_tracker[user_id]) >= 5:
+                # Reset tracker to prevent repeated triggers
+                self._deletion_tracker[user_id] = []
+                
+                # Take action based on nuke_level config
+                action_level = config.get("nuke_level", "BAN")
+                await self._take_action(
+                    guild.get_member(user_id) or await guild.fetch_member(user_id),
+                    action_level,
+                    f"Nuke protection: {len(self._deletion_tracker[user_id] + [now])} rapid deletions detected"
+                )
+                
+                self._log_incident(
+                    guild.id, 
+                    "nuke_detected", 
+                    user_id, 
+                    action_level, 
+                    f"Rapid deletion of {len(self._deletion_tracker[user_id] + [now])} channels/roles"
+                )
 
     async def _take_action(self, member: discord.Member, level: str, reason: str):
         if level in ("OFF", None):

@@ -184,5 +184,26 @@ class Leveling:
                 "level": self.get_level_from_xp(xp),
                 "streak": streak
             })
-        return leaderboard
+         return leaderboard
+
+    def get_hourly_stats(self, guild_id: int, hours: int = 24) -> dict:
+        """
+        Get hourly statistics for the past N hours.
+        Returns a dictionary with hourly data for message count, unique chatters, and XP gained.
+        """
+        # This would typically pull from a time-series database or cache
+        # For now, we'll return a placeholder structure that the analytics system expects
+        # In a full implementation, this would track hourly metrics
+        
+        # Try to load cached hourly data if available
+        hourly_cache_key = f"leveling_hourly_stats_{guild_id}"
+        cached_data = dm.get_guild_data(guild_id, hourly_cache_key, {})
+        
+        if cached_data:
+            # Return the last N hours of data
+            sorted_hours = sorted(cached_data.keys(), reverse=True)[:hours]
+            return {hour: cached_data[hour] for hour in sorted_hours if hour in cached_data}
+        
+        # If no cached data, return empty structure
+        return {}
 
