@@ -745,10 +745,43 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 return
             
             guild_cmds = dm.get_guild_data(message.guild.id, "custom_commands", {})
-            
+
+            # Add default commands if not present
+            default_cmds = {
+                "balance": json.dumps({"command_type": "economy_balance"}),
+                "daily": json.dumps({"command_type": "economy_daily"}),
+                "work": json.dumps({"command_type": "economy_work"}),
+                "beg": json.dumps({"command_type": "economy_beg"}),
+                "leaderboard": json.dumps({"command_type": "economy_leaderboard"}),
+                "shop": json.dumps({"command_type": "economy_shop"}),
+                "buy": json.dumps({"command_type": "economy_buy"}),
+                "transfer": json.dumps({"command_type": "economy_transfer"}),
+                "rob": json.dumps({"command_type": "economy_rob"}),
+                "rank": json.dumps({"command_type": "leveling_rank"}),
+                "leveling_leaderboard": json.dumps({"command_type": "leveling_leaderboard"}),
+                "staffpromo_status": json.dumps({"command_type": "staffpromo_status"}),
+                "staffpromo_leaderboard": json.dumps({"command_type": "staffpromo_leaderboard"}),
+                "staffpromo_progress": json.dumps({"command_type": "staffpromo_progress"}),
+                "staffpromo_tiers": json.dumps({"command_type": "staffpromo_tiers"}),
+                "staffpromo_roles": json.dumps({"command_type": "staffpromo_roles"}),
+                "staffpromo_review": json.dumps({"command_type": "staffpromo_review"}),
+                "list_triggers": json.dumps({"command_type": "list_triggers"}),
+                "application_status": json.dumps({"command_type": "application_status"}),
+                "appeal_status": json.dumps({"command_type": "appeal_status"}),
+                "help": json.dumps({"command_type": "help_all"}),
+                "configpanel": json.dumps({"command_type": "config_panel"}),
+            }
+            updated = False
+            for cmd, data in default_cmds.items():
+                if cmd not in guild_cmds:
+                    guild_cmds[cmd] = data
+                    updated = True
+            if updated:
+                dm.update_guild_data(message.guild.id, "custom_commands", guild_cmds)
+
             matched_cmd = None
             matched_data = None
-            
+
             for cmd_name in list(guild_cmds.keys()):
                 if cmd_name is None or not isinstance(cmd_name, str):
                     logger.warning("Found None or non-string key in custom_commands for guild %s", message.guild.id)
