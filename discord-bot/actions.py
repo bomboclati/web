@@ -4212,14 +4212,19 @@ class ActionHandler:
             await message.channel.send(content=code)
             return True
         except Exception as e:
-            logger.error("Error executing custom command: %s", e)
-
+            import traceback
+            logger.error(f"Error executing custom command {cmd_name}: {e}\n{traceback.format_exc()}")
+            
             # Check for error prevention
             prevention = self._get_error_prevention(guild_id, cmd_name, cmd_data_obj, str(e))
-            if prevention:
-                await message.channel.send(prevention.get("message", "An error occurred. Try: !help " + (cmd_name or "help")))
+            if prevention and prevention.get("message"):
+                await message.channel.send(prevention["message"])
+            elif prevention and prevention.get("message") == "":
+                # Empty message, provide fallback
+                await message.channel.send(f"❌ An error occurred while executing `{cmd_name}`. Please try again later or contact an administrator.")
             else:
-                await message.channel.send("An error occurred while executing this command.")
+                # No prevention or empty prevention, provide helpful fallback
+                await message.channel.send(f"❌ An error occurred while executing `{cmd_name}`. The administrators have been notified.")
             return False
 
     def _get_error_prevention(self, guild_id: int, cmd_name: str, cmd_data: dict, error_msg: str) -> dict:
@@ -4269,34 +4274,39 @@ class ActionHandler:
 
     async def handle_economy_work(self, message: discord.Message) -> bool:
         """Handle !work command"""
-        from modules.economy import Economy
-        economy = Economy(self.bot)
-        guild_id = message.guild.id
-        user_id = message.author.id
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            guild_id = message.guild.id
+            user_id = message.author.id
 
-        c = dm.get_guild_data(guild_id, "economy_config", {})
-        min_reward = c.get("work_min", 50)
-        max_reward = c.get("work_max", 200)
-        cooldown = c.get("work_cooldown_seconds", 3600)
+            c = dm.get_guild_data(guild_id, "economy_config", {})
+            min_reward = c.get("work_min", 50)
+            max_reward = c.get("work_max", 200)
+            cooldown = c.get("work_cooldown_seconds", 3600)
 
-        # Basic cooldown check
-        last_work = dm.get_guild_data(guild_id, "last_work", {})
-        last_time = last_work.get(str(user_id), 0)
-        now = time.time()
+            # Basic cooldown check
+            last_work = dm.get_guild_data(guild_id, "last_work", {})
+            last_time = last_work.get(str(user_id), 0)
+            now = time.time()
 
-        if now - last_time < cooldown:
-            remaining = int(cooldown - (now - last_time))
-            await message.channel.send(f"❌ You're too tired! Wait **{remaining // 60}m {remaining % 60}s**.")
+            if now - last_time < cooldown:
+                remaining = int(cooldown - (now - last_time))
+                await message.channel.send(f"❌ You're too tired! Wait **{remaining // 60}m {remaining % 60}s**.")
+                return True
+
+            reward = random.randint(min_reward, max_reward)
+            economy.add_coins(guild_id, user_id, reward)
+            last_work[str(user_id)] = now
+            dm.update_guild_data(guild_id, "last_work", last_work)
+
+            jobs = ["Developer", "Artist", "Doctor", "Chef", "Discord Mod", "Farmer"]
+            await message.channel.send(f"💼 You worked as a **{random.choice(jobs)}** and earned **{reward} coins**!")
             return True
-
-        reward = random.randint(min_reward, max_reward)
-        economy.add_coins(guild_id, user_id, reward)
-        last_work[str(user_id)] = now
-        dm.update_guild_data(guild_id, "last_work", last_work)
-
-        jobs = ["Developer", "Artist", "Doctor", "Chef", "Discord Mod", "Farmer"]
-        await message.channel.send(f"💼 You worked as a **{random.choice(jobs)}** and earned **{reward} coins**!")
-        return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_work: {e}")
+            await message.channel.send("❌ Unable to work right now. Please try again.")
+            return False
 
     async def handle_appeal_status(self, message: discord.Message) -> bool:
         """Handle !appeal status command"""
@@ -4345,42 +4355,61 @@ class ActionHandler:
 
     async def list_triggers(self, message: discord.Message) -> bool:
         """List all active trigger words for the guild"""
-        guild_id = message.guild.id
-        triggers = dm.get_guild_data(guild_id, "trigger_roles", {})
+        try:
+            guild_id = message.guild.id
+            triggers = dm.get_guild_data(guild_id, "trigger_roles", {})
 
-        if not triggers:
-            await message.channel.send("No trigger words are currently set up.")
+            if not triggers:
+                await message.channel.send("No trigger words are currently set up.")
+                return True
+
+            embed = discord.Embed(title="Active Trigger Words", color=discord.Color.blue())
+
+            for word, role_id in triggers.items():
+                role = message.guild.get_role(role_id)
+                role_name = role.name if role else f"Unknown Role (ID: {role_id})"
+                embed.add_field(
+                    name=f"Trigger: `{word}`",
+                    value=f"Assigns role: **{role_name}**",
+                    inline=False
+                )
+
+            await message.channel.send(embed=embed)
             return True
-
-        embed = discord.Embed(title="Active Trigger Words", color=discord.Color.blue())
-
-        for word, role_id in triggers.items():
-            role = message.guild.get_role(role_id)
-            role_name = role.name if role else f"Unknown Role (ID: {role_id})"
-            embed.add_field(
-                name=f"Trigger: `{word}`",
-                value=f"Assigns role: **{role_name}**",
-                inline=False
-            )
-
-        await message.channel.send(embed=embed)
-        return True
+        except Exception as e:
+            logger.error(f"Error in list_triggers: {e}")
+            await message.channel.send("❌ Unable to list trigger words. Please try again.")
+            return False
 
     async def handle_economy_daily(self, message: discord.Message) -> bool:
         """Handle !daily command"""
-        from modules.economy import Economy
-        economy = Economy(self.bot)
-        guild_id = message.guild.id
-        user_id = message.author.id
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            guild_id = message.guild.id
+            user_id = message.author.id
 
-        last_daily = dm.get_guild_data(guild_id, "last_daily", {})
-        last_time = last_daily.get(str(user_id))
+            last_daily = dm.get_guild_data(guild_id, "last_daily", {})
+            last_time = last_daily.get(str(user_id))
 
-        if last_time:
-            last_date = dt.datetime.fromisoformat(last_time)
-            if (dt.datetime.now() - last_date).days < 1:
-                await message.channel.send("Daily reward already claimed today!")
-                return True
+            if last_time:
+                import datetime
+                last_date = datetime.datetime.fromisoformat(last_time)
+                if (datetime.datetime.now() - last_date).days < 1:
+                    await message.channel.send("🎉 Daily reward already claimed today!")
+                    return True
+
+            reward = 100
+            economy.add_coins(guild_id, user_id, reward)
+            last_daily[str(user_id)] = str(datetime.datetime.now())
+            dm.update_guild_data(guild_id, "last_daily", last_daily)
+
+            await message.channel.send(f"🎉 You claimed **{reward} coins**!")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_daily: {e}")
+            await message.channel.send("❌ Unable to claim daily reward. Please try again later.")
+            return False
 
         reward = 100
         economy.add_coins(guild_id, user_id, reward)
@@ -4533,172 +4562,201 @@ class ActionHandler:
 
     async def handle_economy_balance(self, message: discord.Message) -> bool:
         """Handle !balance command"""
-        from modules.economy import Economy
-        from modules.leveling import Leveling
-        economy = Economy(self.bot)
-        leveling = Leveling(self.bot)
-        guild_id = message.guild.id
-        user_id = message.author.id
+        try:
+            from modules.economy import Economy
+            from modules.leveling import Leveling
+            economy = Economy(self.bot)
+            leveling = Leveling(self.bot)
+            guild_id = message.guild.id
+            user_id = message.author.id
 
-        coins = economy.get_coins(guild_id, user_id)
-        gems = leveling.get_gems(guild_id, user_id)
-        xp = leveling.get_xp(guild_id, user_id)
-        level = leveling.get_level_from_xp(xp)
+            coins = economy.get_coins(guild_id, user_id)
+            gems = leveling.get_gems(guild_id, user_id)
+            xp = leveling.get_xp(guild_id, user_id)
+            level = leveling.get_level_from_xp(xp)
 
-        embed = discord.Embed(title=f"💰 {message.author.name}'s Balance", color=discord.Color.gold())
-        embed.add_field(name="💰 Coins", value=f"{coins:,}", inline=True)
-        embed.add_field(name="💎 Gems", value=str(gems), inline=True)
-        embed.add_field(name="🆙 Level", value=f"{level} ({xp:,} XP)", inline=True)
+            embed = discord.Embed(title=f"💰 {message.author.name}'s Balance", color=discord.Color.gold())
+            embed.add_field(name="💰 Coins", value=f"{coins:,}", inline=True)
+            embed.add_field(name="💎 Gems", value=str(gems), inline=True)
+            embed.add_field(name="🆙 Level", value=f"{level} ({xp:,} XP)", inline=True)
 
-        await message.channel.send(embed=embed)
-        return True
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_balance: {e}")
+            await message.channel.send("❌ Unable to retrieve your balance. Please contact an administrator.")
+            return False
 
     async def handle_economy_beg(self, message: discord.Message) -> bool:
         """!beg — small random coin reward with a short cooldown. Mirrors handle_economy_work."""
-        from modules.economy import Economy
-        economy = Economy(self.bot)
-        guild_id = message.guild.id
-        user_id = message.author.id
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            guild_id = message.guild.id
+            user_id = message.author.id
 
-        c = dm.get_guild_data(guild_id, "economy_config", {})
-        min_reward = c.get("beg_min", 1)
-        max_reward = c.get("beg_max", 25)
-        cooldown = c.get("beg_cooldown_seconds", 300)
+            c = dm.get_guild_data(guild_id, "economy_config", {})
+            min_reward = c.get("beg_min", 1)
+            max_reward = c.get("beg_max", 25)
+            cooldown = c.get("beg_cooldown_seconds", 300)
 
-        last_beg = dm.get_guild_data(guild_id, "last_beg", {})
-        last_time = last_beg.get(str(user_id), 0)
-        now = time.time()
+            last_beg = dm.get_guild_data(guild_id, "last_beg", {})
+            last_time = last_beg.get(str(user_id), 0)
+            now = time.time()
 
-        if now - last_time < cooldown:
-            remaining = int(cooldown - (now - last_time))
-            await message.channel.send(f"❌ Nobody feels generous right now. Try again in **{remaining // 60}m {remaining % 60}s**.")
-            return True
+            if now - last_time < cooldown:
+                remaining = int(cooldown - (now - last_time))
+                await message.channel.send(f"❌ Nobody feels generous right now. Try again in **{remaining // 60}m {remaining % 60}s**.")
+                return True
 
-        # 25% chance of getting nothing — keeps it fun.
-        if random.random() < 0.25:
+            # 25% chance of getting nothing — keeps it fun.
+            if random.random() < 0.25:
+                last_beg[str(user_id)] = now
+                dm.update_guild_data(guild_id, "last_beg", last_beg)
+                await message.channel.send("🥲 Nobody gave you anything this time. Try again later!")
+                return True
+
+            reward = random.randint(min_reward, max_reward)
+            economy.add_coins(guild_id, user_id, reward)
             last_beg[str(user_id)] = now
             dm.update_guild_data(guild_id, "last_beg", last_beg)
-            await message.channel.send("🥲 Nobody gave you anything this time. Try again later!")
+
+            donors = ["a kind stranger", "an old wizard", "a tired developer", "a passing knight", "a generous shopkeeper"]
+            await message.channel.send(f"🙇 You begged and received **{reward} coins** from {random.choice(donors)}!")
             return True
-
-        reward = random.randint(min_reward, max_reward)
-        economy.add_coins(guild_id, user_id, reward)
-        last_beg[str(user_id)] = now
-        dm.update_guild_data(guild_id, "last_beg", last_beg)
-
-        donors = ["a kind stranger", "an old wizard", "a tired developer", "a passing knight", "a generous shopkeeper"]
-        await message.channel.send(f"🙇 You begged and received **{reward} coins** from {random.choice(donors)}!")
-        return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_beg: {e}")
+            await message.channel.send("❌ Unable to beg right now. Please try again.")
+            return False
 
     async def handle_economy_leaderboard(self, message: discord.Message) -> bool:
         """!economylb — top balances in the guild."""
-        from modules.economy import Economy
-        economy = Economy(self.bot)
-        guild_id = message.guild.id
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            guild_id = message.guild.id
 
-        balances = dm.get_guild_data(guild_id, "economy_balances", {})
-        if not balances:
-            await message.channel.send("💰 Nobody has any coins yet!")
+            balances = dm.get_guild_data(guild_id, "economy_balances", {})
+            if not balances:
+                await message.channel.send("💰 Nobody has any coins yet!")
+                return True
+
+            sorted_lb = sorted(balances.items(), key=lambda x: x[1], reverse=True)[:10]
+
+            medals = ["🥇", "🥈", "🥉"]
+            lines = []
+            for i, (uid, amt) in enumerate(sorted_lb):
+                medal = medals[i] if i < 3 else f"**{i+1}.**"
+                lines.append(f"{medal} <@{uid}> — {amt:,} 💰")
+
+            embed = discord.Embed(
+                title=f"💰 {message.guild.name} — Economy Leaderboard",
+                description="\n".join(lines),
+                color=discord.Color.gold(),
+            )
+            await message.channel.send(embed=embed)
             return True
-
-        sorted_lb = sorted(balances.items(), key=lambda x: x[1], reverse=True)[:10]
-
-        medals = ["🥇", "🥈", "🥉"]
-        lines = []
-        for i, (uid, amt) in enumerate(sorted_lb):
-            medal = medals[i] if i < 3 else f"**{i+1}.**"
-            lines.append(f"{medal} <@{uid}> — {amt:,} 💰")
-
-        embed = discord.Embed(
-            title=f"💰 {message.guild.name} — Economy Leaderboard",
-            description="\n".join(lines),
-            color=discord.Color.gold(),
-        )
-        await message.channel.send(embed=embed)
-        return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_leaderboard: {e}")
+            await message.channel.send("❌ Unable to load leaderboard. Please try again.")
+            return False
 
     async def handle_economy_shop(self, message: discord.Message) -> bool:
         """!shop command for members"""
-        guild_id = message.guild.id
-        items = dm.get_guild_data(guild_id, "shop_items", [])
+        try:
+            guild_id = message.guild.id
+            items = dm.get_guild_data(guild_id, "shop_items", [])
 
-        if not items:
-            await message.channel.send("🛒 The shop is currently empty.")
+            if not items:
+                await message.channel.send("🛒 The shop is currently empty.")
+                return True
+
+            embed = discord.Embed(title=f"🛒 {message.guild.name} Shop", color=discord.Color.green())
+            for item in items[:25]:
+                embed.add_field(name=f"{item['name']} — {item['price']} Credits", value=item.get('description', 'No description'), inline=False)
+
+            await message.channel.send(embed=embed)
             return True
-
-        embed = discord.Embed(title=f"🛒 {message.guild.name} Shop", color=discord.Color.green())
-        for item in items[:25]:
-            embed.add_field(name=f"{item['name']} — {item['price']} Credits", value=item.get('description', 'No description'), inline=False)
-
-        await message.channel.send(embed=embed)
-        return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_shop: {e}")
+            await message.channel.send("❌ Unable to load shop. Please try again.")
+            return False
 
     async def handle_leveling_rank(self, message: discord.Message) -> bool:
         """!rank — show the invoker's current XP, level, gems and streak."""
-        from modules.leveling import Leveling
-        leveling = Leveling(self.bot)
-        guild_id = message.guild.id
-        user_id = message.author.id
+        try:
+            from modules.leveling import Leveling
+            leveling = Leveling(self.bot)
+            guild_id = message.guild.id
+            user_id = message.author.id
 
-        xp = leveling.get_xp(guild_id, user_id)
-        level = leveling.get_level_from_xp(xp)
-        gems = leveling.get_gems(guild_id, user_id)
-        streak = leveling.get_streak(guild_id, user_id)
+            xp = leveling.get_xp(guild_id, user_id)
+            level = leveling.get_level_from_xp(xp)
+            gems = leveling.get_gems(guild_id, user_id)
+            streak = leveling.get_streak(guild_id, user_id)
 
-        # XP needed for next level: level^2 * 100 (inverse of get_level_from_xp).
-        next_level = level + 1
-        xp_for_next = (next_level * next_level) * 100
-        xp_into_level = xp - (level * level * 100)
-        xp_to_next = max(0, xp_for_next - xp)
+            # XP needed for next level: level^2 * 100 (inverse of get_level_from_xp).
+            next_level = level + 1
+            xp_for_next = (next_level * next_level) * 100
+            xp_into_level = xp - (level * level * 100)
+            xp_to_next = max(0, xp_for_next - xp)
 
-        embed = discord.Embed(
-            title=f"📊 {message.author.display_name}'s Rank",
-            color=discord.Color.purple(),
-        )
-        embed.set_thumbnail(url=message.author.display_avatar.url)
-        embed.add_field(name="Level", value=str(level), inline=True)
-        embed.add_field(name="Total XP", value=f"{xp:,}", inline=True)
-        embed.add_field(name="Gems", value=str(gems), inline=True)
-        embed.add_field(name="Streak", value=f"🔥 {streak} day(s)", inline=True)
-        embed.add_field(name="XP to next level", value=f"{xp_to_next:,} XP", inline=True)
-        embed.set_footer(text=f"Progress: {xp_into_level} / {xp_for_next - (level * level * 100)} XP this level")
+            embed = discord.Embed(
+                title=f"📊 {message.author.display_name}'s Rank",
+                color=discord.Color.purple(),
+            )
+            embed.set_thumbnail(url=message.author.display_avatar.url)
+            embed.add_field(name="Level", value=str(level), inline=True)
+            embed.add_field(name="Total XP", value=f"{xp:,}", inline=True)
+            embed.add_field(name="Gems", value=str(gems), inline=True)
+            embed.add_field(name="Streak", value=f"🔥 {streak} day(s)", inline=True)
+            embed.add_field(name="XP to next level", value=f"{xp_to_next:,} XP", inline=True)
 
-        await message.channel.send(embed=embed)
-        return True
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leveling_rank: {e}")
+            await message.channel.send("❌ Unable to retrieve your rank. Please try again.")
+            return False
 
     async def handle_leveling_leaderboard(self, message: discord.Message) -> bool:
         """!leaderboard / !rank top — top XP earners in the guild."""
-        from modules.leveling import Leveling
-        leveling = Leveling(self.bot)
-        guild_id = message.guild.id
+        try:
+            from modules.leveling import Leveling
+            leveling = Leveling(self.bot)
+            guild_id = message.guild.id
 
-        board = leveling.get_leaderboard(guild_id, limit=10)
-        if not board:
-            await message.channel.send("📉 Nobody has earned any XP yet. Start chatting!")
-            return True
+            board = leveling.get_leaderboard(guild_id, limit=10)
+            if not board:
+                await message.channel.send("📉 Nobody has earned any XP yet. Start chatting!")
+                return True
 
-        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-        lines = []
-        for entry in board:
-            rank = entry["rank"]
-            badge = medals.get(rank, f"`#{rank:>2}`")
-            mention = f"<@{entry['user_id']}>"
-            streak_txt = f" 🔥{entry['streak']}" if entry.get("streak") else ""
-            lines.append(
-                f"{badge} {mention} — Lvl **{entry['level']}** · {entry['xp']:,} XP{streak_txt}"
+            medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+            lines = []
+            for entry in board:
+                rank = entry["rank"]
+                badge = medals.get(rank, f"`#{rank:>2}`")
+                mention = f"<@{entry['user_id']}>"
+                streak_txt = f" 🔥{entry['streak']}" if entry.get("streak") else ""
+                lines.append(
+                    f"{badge} {mention} — Lvl **{entry['level']}** · {entry['xp']:,} XP{streak_txt}"
+                )
+
+            embed = discord.Embed(
+                title=f"🏆 {message.guild.name} — XP Leaderboard",
+                description="\n".join(lines),
+                color=discord.Color.gold(),
             )
+            if message.guild.icon:
+                embed.set_thumbnail(url=message.guild.icon.url)
+            embed.set_footer(text=f"Top {len(board)} of all members • Earn XP by chatting!")
 
-        embed = discord.Embed(
-            title=f"🏆 {message.guild.name} — XP Leaderboard",
-            description="\n".join(lines),
-            color=discord.Color.gold(),
-        )
-        if message.guild.icon:
-            embed.set_thumbnail(url=message.guild.icon.url)
-        embed.set_footer(text=f"Top {len(board)} of all members • Earn XP by chatting!")
-
-        await message.channel.send(embed=embed)
-        return True
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leveling_leaderboard: {e}")
+            await message.channel.send("❌ Unable to load XP leaderboard. Please try again.")
+            return False
 
 
     async def undo_last_actions(self, interaction: discord.Interaction, count: int = 1) -> List[Tuple[str, bool]]:
@@ -5126,47 +5184,46 @@ class CommandsListView(discord.ui.View):
         await interaction.response.edit_message(content="?? Commands closed.", view=None)
 
     async def handle_staffpromo_status(self, message: discord.Message) -> bool:
-        guild = message.guild
-        member = message.author
-        staff_promo = self.bot.staff_promo
-        promotion_service = self.bot.promotion_service
+        try:
+            guild = message.guild
+            member = message.author
+            staff_promo = self.bot.staff_promo
+            promotion_service = self.bot.promotion_service
 
-        config = staff_promo._get_full_config(guild.id)
-        metrics = config.get("metrics", staff_promo._default_metrics)
+            config = staff_promo._get_full_config(guild.id)
+            metrics = config.get("metrics", staff_promo._default_metrics)
 
-        score = promotion_service._compute_score(guild.id, member.id, member, metrics)
-        tiers = config.get("tiers", staff_promo._default_tiers)
+            score = promotion_service._compute_score(guild.id, member.id, member, metrics)
+            tiers = config.get("tiers", staff_promo._default_tiers)
 
-        current_tier = "None"
-        for tier in tiers:
-            rid = config.get("roles_by_tier", {}).get(tier["name"])
-            if rid and any(r.id == rid for r in member.roles):
-                current_tier = tier["name"]
-                break
+            current_tier = "None"
+            for tier in tiers:
+                rid = config.get("roles_by_tier", {}).get(tier["name"])
+                if rid and any(r.id == rid for r in member.roles):
+                    current_tier = tier["name"]
+                    break
 
-        embed = discord.Embed(title="?? Your Staff Promotion Status", color=discord.Color.blue())
-        embed.add_field(name="Current Role", value=current_tier, inline=True)
-        embed.add_field(name="Score", value=f"{score*100:.1f}%", inline=True)
+            embed = discord.Embed(title="?? Your Staff Promotion Status", color=discord.Color.blue())
+            embed.add_field(name="Current Role", value=current_tier, inline=True)
+            embed.add_field(name="Score", value=f"{score*100:.1f}%", inline=True)
 
-        breakdown = []
-        udata = dm.get_guild_data(guild.id, f"user_{member.id}", {})
-        for metric_name, cfg in metrics.items():
-            if not cfg.get("enabled", True):
-                continue
-            max_val = cfg.get("max", 100)
-            weight = cfg.get("weight", 0)
-            if metric_name == "tenure_days":
-                val = (discord.utils.utcnow() - (member.joined_at or discord.utils.utcnow())).days
-            else:
-                val = udata.get(metric_name, 0)
-            normalized = max(0, min(1, val / max_val)) if max_val > 0 else 0
-            breakdown.append(f". {metric_name}: {val}/{max_val} ({normalized*weight*100:.1f}%)")
+            breakdown = []
+            udata = dm.get_guild_data(guild.id, f"user_{member.id}", {})
+            for metric_name, cfg in metrics.items():
+                if not cfg.get("enabled", True):
+                    continue
 
-        embed.add_field(name="Score Breakdown", value="\n".join(breakdown), inline=False)
-        embed.set_thumbnail(url=member.display_avatar.url)
+                breakdown.append(f"{metric_name}: {udata.get(metric_name, 0)}")
 
-        await message.channel.send(embed=embed)
-        return True
+            if breakdown:
+                embed.add_field(name="Metrics", value="\n".join(breakdown), inline=False)
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_staffpromo_status: {e}")
+            await message.channel.send("❌ Unable to retrieve your promotion status. Please contact staff.")
+            return False
 
     async def handle_staffpromo_leaderboard(self, message: discord.Message) -> bool:
         guild = message.guild
