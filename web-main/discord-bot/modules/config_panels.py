@@ -1744,13 +1744,37 @@ class RoleButtonsConfigView(ConfigPanelView):
 
     @ui.button(label="Create Panel", emoji="➕", style=discord.ButtonStyle.success, row=0, custom_id="cfg_rb_create")
     async def create_panel(self, i, b):
-        class PanelModal(ui.Modal, title="Create Role Button Panel"):
-            panel_title = ui.TextInput(label="Panel Title")
-            desc = ui.TextInput(label="Panel Description", style=discord.TextStyle.paragraph)
-            async def on_submit(self, it):
-                pid = await it.client.role_buttons.create_panel(it, self.panel_title.value, self.desc.value, it.channel)
-                await it.response.send_message(f"✅ Panel created! Use `!rolebuttonspanel` to add buttons to it.", ephemeral=True)
-        await i.response.send_modal(PanelModal())
+        # Get available text channels
+        channels = [ch for ch in i.guild.text_channels if ch.permissions_for(i.guild.me).send_messages]
+        if not channels:
+            return await i.response.send_message("❌ No available text channels to create panel in.", ephemeral=True)
+        
+        class ChannelSelect(ui.Select):
+            def __init__(self):
+                options = [discord.SelectOption(label=ch.name, value=str(ch.id)) for ch in channels[:25]]
+                super().__init__(placeholder="Select channel for panel", options=options)
+            
+            async def callback(self, it):
+                selected_channel_id = int(self.values[0])
+                channel = i.guild.get_channel(selected_channel_id)
+                
+                class PanelModal(ui.Modal, title="Create Role Button Panel"):
+                    title = ui.TextInput(label="Panel Title", max_length=256)
+                    desc = ui.TextInput(label="Panel Description", style=discord.TextStyle.paragraph, max_length=1000)
+                    
+                    async def on_submit(self, it2):
+                        rb = it2.client.role_buttons
+                        pid = await rb.create_panel(it2, self.title.value, self.desc.value, channel)
+                        if pid:
+                            await it2.response.send_message(f"✅ Panel created in {channel.mention}! Use 'Add Button' to add role buttons.", ephemeral=True)
+                        else:
+                            await it2.response.send_message("❌ Failed to create panel. Check bot permissions.", ephemeral=True)
+                
+                await it.response.send_modal(PanelModal())
+        
+        view = ui.View()
+        view.add_item(ChannelSelect())
+        await i.response.send_message("Select channel for the new panel:", view=view, ephemeral=True)
 
     @ui.button(label="Add Button", emoji="🔘", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_rb_add_btn")
     async def add_btn(self, i, b):
@@ -1767,7 +1791,11 @@ class RoleButtonsConfigView(ConfigPanelView):
                     async def on_submit(self, it2):
                         panels = it2.client.role_buttons.get_panels(it2.guild_id)
                         bid = f"btn_{int(time.time())}"
-                        panels[pid]["buttons"][bid] = {"label": self.label.value, "role_id": int(self.role.value), "emoji": self.emoji.value}
+                        panels[pid]["buttons"][bid] = {
+                            "label": self.label.value,
+                            "role_id": int(self.role.value),
+                            "emoji": self.emoji.value
+                        }
                         it2.client.role_buttons.save_panels(it2.guild_id, panels)
                         # Refresh message
                         ch = it2.guild.get_channel(panels[pid]["channel_id"])
@@ -3676,6 +3704,7 @@ class LevelingConfigView(ConfigPanelView):
 
 
 class StarboardConfigView(ConfigPanelView):
+    _config_key = "starboard_system_data"
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "starboard")
 

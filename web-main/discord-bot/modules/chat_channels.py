@@ -358,6 +358,15 @@ Respond with JSON only:
         """Validate the AI response conforms to Discord Automation AI framework constraints."""
         if not isinstance(response, dict):
             return False
+        
+        # Summary is always required
+        if "summary" not in response or not isinstance(response.get("summary"), str):
+            return False
+        
+        # Validate reasoning if present (optional field)
+        reasoning = response.get("reasoning")
+        if reasoning is not None and (not isinstance(reasoning, str) or len(reasoning) > 500):
+            return False
 
         # Summary is the primary requirement
         if "summary" not in response:
