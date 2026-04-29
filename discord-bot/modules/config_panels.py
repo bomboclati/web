@@ -3688,6 +3688,21 @@ class EconomyConfigView(ConfigPanelView):
 class LevelingConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "leveling")
+        # Set initial toggle button state
+        c = self.get_config(guild_id)
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_lvl_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "leveling")
 
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
@@ -3710,9 +3725,23 @@ class LevelingConfigView(ConfigPanelView):
         embed.add_field(name="Role Rewards", value=f"{len(rewards)} configured", inline=True)
         return embed
 
-    @ui.button(label="Toggle System", emoji="🔌", style=discord.ButtonStyle.success, row=0, custom_id="cfg_lvl_toggle")
+    @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_lvl_toggle")
     async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
+        log_panel_action(i.guild_id, i.user.id, f"Toggled leveling to {c.get('enabled')}")
+        # Update toggle button label and style
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_lvl_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
+        await self.update_panel(i)
 
     @ui.button(label="XP Range", emoji="📊", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_lvl_range")
     async def set_range(self, i, b):
