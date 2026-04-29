@@ -23,7 +23,7 @@ CATEGORIES = {
     "🛡️ Security": {
         "color": RED,
         "systems": [
-            ("verification",   "🛡️", "Captcha / phone gate for new members", ["!verify", "!setverifychannel"]),
+            ("verification",   "🛡️", "Captcha verification for new members", ["!verify", "!setverifychannel"]),
             ("antiraid",       "🚨", "Mass-join detection & server lockdown", ["!raidstatus", "!configpanel antiraid"]),
             ("guardian",       "⚔️", "AI threat detection (scam, token, nuke)", ["!guardian status", "!configpanel guardian"]),
             ("automod",        "🤖", "Spam, caps, invite & link filters", ["!automod status", "!configpanel automod"]),
@@ -401,6 +401,29 @@ async def send_help(channel: discord.TextChannel, guild_id: int, invoker: discor
             embed.set_footer(text=f"Requested by {invoker.display_name if invoker else 'User'}")
             await channel.send(embed=embed)
             return
+
+        # Check custom commands if system not found in built-in systems
+        try:
+            custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
+            if system_query and system_query.lower() in custom_cmds:
+                cmd_name = system_query.lower()
+                cmd_data = custom_cmds[cmd_name]
+                embed = discord.Embed(
+                    title=f"🛠️ Custom Command: !{cmd_name}",
+                    color=BRAND
+                )
+                embed.set_thumbnail(url=_bot_avatar_url(bot))
+                if isinstance(cmd_data, dict):
+                    embed.description = cmd_data.get("content", "No description available.")
+                    if cmd_data.get("command_type"):
+                        embed.add_field(name="Type", value=cmd_data["command_type"], inline=True)
+                else:
+                    embed.description = str(cmd_data)
+                embed.set_footer(text=f"Requested by {invoker.display_name if invoker else 'User'}")
+                await channel.send(embed=embed)
+                return
+        except Exception:
+            pass
 
     view = HelpMainView(guild_id)
     embed = _build_main_embed(guild_id, bot)
