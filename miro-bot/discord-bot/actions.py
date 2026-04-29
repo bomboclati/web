@@ -4228,14 +4228,29 @@ class ActionHandler:
             await message.channel.send(content=code)
             return True
         except Exception as e:
-            logger.error("Error executing custom command: %s", e)
+            logger.error("Error executing custom command %s: %s", cmd_name, e)
+
+            # Provide helpful error message based on the actual error
+            error_str = str(e)
+            if "not found" in error_str.lower() or "no result" in error_str.lower():
+                user_msg = f"❌ {cmd_name} could not find the requested resource. Please check your input and try again."
+            elif "permission" in error_str.lower():
+                user_msg = f"❌ {cmd_name} failed due to insufficient permissions. Please contact an administrator."
+            elif "cooldown" in error_str.lower() or "rate limit" in error_str.lower():
+                user_msg = f"❌ {cmd_name} is on cooldown. Please wait a moment and try again."
+            elif "invalid" in error_str.lower() or "missing" in error_str.lower():
+                user_msg = f"❌ Invalid input for {cmd_name}. Please check the command usage and try again."
+            else:
+                # Generic error with actual error info (sanitized)
+                safe_error = error_str[:200] if error_str else "Unknown error"
+                user_msg = f"❌ Error executing `{cmd_name}`: {safe_error}\nPlease try again or contact an administrator."
 
             # Check for error prevention
-            prevention = self._get_error_prevention(guild_id, cmd_name, cmd_data_obj, str(e))
-            if prevention:
-                await message.channel.send(prevention.get("message", "An error occurred. Try: !help " + (cmd_name or "help")))
+            prevention = self._get_error_prevention(guild_id, cmd_name, cmd_data_obj, error_str)
+            if prevention and prevention.get("message"):
+                await message.channel.send(prevention["message"])
             else:
-                await message.channel.send("An error occurred while executing this command.")
+                await message.channel.send(user_msg)
             return False
 
     def _get_error_prevention(self, guild_id: int, cmd_name: str, cmd_data: dict, error_msg: str) -> dict:
