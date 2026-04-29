@@ -739,8 +739,87 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "trainingtasks", "appeal"]) or cmd_content.startswith("shift"):
                 await self._handle_staff_command(message, cmd_content)
                 return
-            
+             
             guild_cmds = dm.get_guild_data(message.guild.id, "custom_commands", {})
+
+            # Add default commands if not present
+            default_cmds = {
+                # Economy commands
+                "balance": json.dumps({"command_type": "economy_balance"}),
+                "daily": json.dumps({"command_type": "economy_daily"}),
+                "work": json.dumps({"command_type": "economy_work"}),
+                "beg": json.dumps({"command_type": "economy_beg"}),
+                "leaderboard": json.dumps({"command_type": "economy_leaderboard"}),
+                "shop": json.dumps({"command_type": "economy_shop"}),
+                "buy": json.dumps({"command_type": "economy_buy"}),
+                "transfer": json.dumps({"command_type": "economy_transfer"}),
+                "rob": json.dumps({"command_type": "economy_rob"}),
+                # Leveling commands
+                "rank": json.dumps({"command_type": "leveling_rank"}),
+                "leveling_leaderboard": json.dumps({"command_type": "leveling_leaderboard"}),
+                # Staff promotion commands
+                "staffpromo_status": json.dumps({"command_type": "staffpromo_status"}),
+                "staffpromo_leaderboard": json.dumps({"command_type": "staffpromo_leaderboard"}),
+                "staffpromo_progress": json.dumps({"command_type": "staffpromo_progress"}),
+                "staffpromo_tiers": json.dumps({"command_type": "staffpromo_tiers"}),
+                "staffpromo_roles": json.dumps({"command_type": "staffpromo_roles"}),
+                "staffpromo_review": json.dumps({"command_type": "staffpromo_review"}),
+                "staffpromo_requirements": json.dumps({"command_type": "staffpromo_requirements"}),
+                "staffpromo_bonuses": json.dumps({"command_type": "staffpromo_bonuses"}),
+                "staffpromo_exclude": json.dumps({"command_type": "staffpromo_exclude"}),
+                "staffpromo_config": json.dumps({"command_type": "staffpromo_config"}),
+                "staffpromo_promote": json.dumps({"command_type": "staffpromo_promote"}),
+                "staffpromo_demote": json.dumps({"command_type": "staffpromo_demote"}),
+                "staffpromo": json.dumps({"command_type": "staffpromo_status"}),
+                "staffpromotion": json.dumps({"command_type": "staffpromo_status"}),
+                "promotionhistory": json.dumps({"command_type": "staffpromotion_history"}),
+                "staffpromotionhistory": json.dumps({"command_type": "staffpromotion_history"}),
+                # Trigger roles commands
+                "list_triggers": json.dumps({"command_type": "list_triggers"}),
+                # Application commands
+                "application_status": json.dumps({"command_type": "application_status"}),
+                "apply": json.dumps({"command_type": "application_apply"}),
+                "appeal_status": json.dumps({"command_type": "appeal_status"}),
+                "appeal": json.dumps({"command_type": "appeal_create"}),
+                # Verification commands
+                "verify": json.dumps({"command_type": "verification_verify"}),
+                "setverifychannel": json.dumps({"command_type": "set_verify_channel"}),
+                # Ticket commands
+                "ticket": json.dumps({"command_type": "ticket_create"}),
+                "close": json.dumps({"command_type": "ticket_close"}),
+                # Starboard commands
+                "starboard": json.dumps({"command_type": "starboard_leaderboard"}),
+                # Gamification commands
+                "quests": json.dumps({"command_type": "list_quests"}),
+                "quest": json.dumps({"command_type": "list_quests"}),
+                "prestige": json.dumps({"command_type": "prestige"}),
+                "dice": json.dumps({"command_type": "dice"}),
+                "flip": json.dumps({"command_type": "flip"}),
+                "slots": json.dumps({"command_type": "slots"}),
+                "trivia": json.dumps({"command_type": "trivia"}),
+                # Giveaway commands
+                "giveaway": json.dumps({"command_type": "simple", "content": "Use !giveawaypanel to manage giveaways."}),
+                # Event commands
+                "events": json.dumps({"command_type": "list_events"}),
+                "event create": json.dumps({"command_type": "create_event"}),
+                # Tournament commands
+                "tournaments": json.dumps({"command_type": "list_tournaments"}),
+                "tournament create": json.dumps({"command_type": "create_tournament"}),
+                # Help commands
+                "help": json.dumps({"command_type": "help_all"}),
+                "configpanel": json.dumps({"command_type": "config_panel"}),
+            }
+
+            updated = False
+            for cmd, data in default_cmds.items():
+                if cmd not in guild_cmds:
+                    guild_cmds[cmd] = data
+                    updated = True
+            if updated:
+                dm.update_guild_data(message.guild.id, "custom_commands", guild_cmds)
+
+            matched_cmd = None
+            matched_data = None
             
             matched_cmd = None
             matched_data = None
@@ -3116,7 +3195,9 @@ async def on_command_error(ctx, error):
     error = getattr(error, 'original', error)
     
     if isinstance(error, commands.CommandNotFound):
-        await ctx.send("❌ Command not found. Use `!help` to see available commands.", suppress_embeds=True)
+        # Try to give a helpful suggestion
+        cmd_name = ctx.message.content.split()[0] if ctx.message.content else "unknown"
+        await ctx.send(f"❌ Command `{cmd_name}` not found. Use `!help` to see available commands.", suppress_embeds=True)
         return
     
     if isinstance(error, commands.MissingPermissions):
