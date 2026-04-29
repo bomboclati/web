@@ -137,6 +137,36 @@ class Economy:
             "completed": completed
         }
     
+    async def handle_message(self, message: discord.Message):
+        """Passive income for chatting."""
+        if not message.guild or message.author.bot:
+            return
+
+        config = dm.get_guild_data(message.guild.id, "economy_config", {})
+        if not config.get("enabled", True):
+            return
+
+        # Cooldown to prevent spam
+        last_gain_key = f"last_eco_gain_{message.author.id}"
+        last_gain_time = dm.get_guild_data(message.guild.id, last_gain_key, 0)
+        if time.time() - last_gain_time < 60:
+            return
+
+        rates = config.get("earn_rates", {})
+        coins = rates.get("coins_per_message", 2)
+
+        self.add_coins(message.guild.id, message.author.id, coins)
+        dm.update_guild_data(message.guild.id, last_gain_key, time.time())
+
+        # Gem chance
+        gem_chance = rates.get("gem_chance", 0.01)
+        if random.random() < gem_chance:
+            self.add_gems(message.guild.id, message.author.id, 1)
+            try:
+                await message.channel.send(f"✨ {message.author.mention}, you found a **Gem** while chatting!", delete_after=5)
+            except:
+                pass
+    
     
     async def daily(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
@@ -530,34 +560,3 @@ class ResetBalanceModal(Modal, title="Reset User Balance"):
         dm.update_guild_data(self.guild_id, "economy_balances", balances)
         self.economy.log_transaction(self.guild_id, user_id, -old_balance, "reset", "Admin reset")
         await interaction.response.send_message(f"Reset balance from {old_balance} to 0!", ephemeral=True)
-
-
-    async def handle_message(self, message: discord.Message):
-        """Passive income for chatting."""
-        if not message.guild or message.author.bot:
-            return
-
-        config = dm.get_guild_data(message.guild.id, "economy_config", {})
-        if not config.get("enabled", True):
-            return
-
-        # Cooldown to prevent spam
-        last_gain_key = f"last_eco_gain_{message.author.id}"
-        last_gain_time = dm.get_guild_data(message.guild.id, last_gain_key, 0)
-        if time.time() - last_gain_time < 60:
-            return
-
-        rates = config.get("earn_rates", {})
-        coins = rates.get("coins_per_message", 2)
-
-        self.add_coins(message.guild.id, message.author.id, coins)
-        dm.update_guild_data(message.guild.id, last_gain_key, time.time())
-
-        # Gem chance
-        gem_chance = rates.get("gem_chance", 0.01)
-        if random.random() < gem_chance:
-            self.add_gems(message.guild.id, message.author.id, 1)
-            try:
-                await message.channel.send(f"✨ {message.author.mention}, you found a **Gem** while chatting!", delete_after=5)
-            except:
-                pass
