@@ -290,7 +290,7 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
                     role = discord.utils.get(guild.roles, name=title_name)
                     if role:
                         try: await member.add_roles(role)
-                        except: pass
+                        except Exception as e: logger.error(f"Failed to add role {title_name}: {e}")
 
     async def prestige(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
@@ -447,6 +447,7 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
         # Register prefix commands
         custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
         custom_cmds["quests"] = json.dumps({"command_type": "list_quests"})
+        custom_cmds["quest"] = json.dumps({"command_type": "list_quests"})
         custom_cmds["prestige"] = json.dumps({"command_type": "prestige"})
         custom_cmds["dice"] = json.dumps({"command_type": "dice"})
         custom_cmds["flip"] = json.dumps({"command_type": "flip"})

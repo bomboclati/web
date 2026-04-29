@@ -21,8 +21,18 @@ class StaffExtras:
         self._load_data()
 
     def _load_data(self):
-        """Data is now loaded per-guild in respective methods."""
-        pass
+        """Preload all guild data for staff extras on startup"""
+        # Get all guild IDs from data manager (assuming dm has a method to list guilds)
+        # If not, load per-guild on demand via _get_guild_data
+        import os
+        data_dir = dm.data_dir if hasattr(dm, "data_dir") else "./data"
+        if not os.path.exists(data_dir):
+            return
+        for guild_folder in os.listdir(data_dir):
+            if not guild_folder.isdigit():
+                continue
+            guild_id = int(guild_folder)
+            self._get_guild_data(guild_id)
 
     def _save_guild_data(self, guild_id: int):
         """Save all staff extras data for a specific guild."""

@@ -666,7 +666,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         # 4. Prefix Commands
         prefix = await self.get_dynamic_prefix(self, message)
         if message.content.startswith(prefix):
-            cmd_content = message.content[len(prefix):].strip()
+            cmd_content = " ".join(message.content[len(prefix):].split()).strip()
             
             # Handle !suggest command
             if cmd_content.startswith("suggest"):
@@ -738,7 +738,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 return
 
             # Handle staff commands
-            if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "trainingtasks", "appeal"]) or cmd_content.startswith("shift"):
+            if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "staffpromotionhistory", "trainingtasks", "appeal"]) or cmd_content.startswith("shift"):
                 await self._handle_staff_command(message, cmd_content)
                 return
             
@@ -774,6 +774,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 "appeal_status": json.dumps({"command_type": "appeal_status"}),
                 "help": json.dumps({"command_type": "help_all"}),
                 "configpanel": json.dumps({"command_type": "config_panel"}),
+                "setverifychannel": json.dumps({"command_type": "set_verify_channel"}),
             }
             updated = False
             for cmd, data in default_cmds.items():
@@ -1201,7 +1202,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             "announce": self.auto_announcer.handle_announce_create,
             "announces": self.auto_announcer.handle_announce_list,
             "remind": self.auto_announcer.handle_remind,
-            "remindme": self.auto_announcer.handle_reminders_list,
+            "remindme": self.auto_announcer.handle_remind,
             "remind_user": self.auto_announcer.handle_remind_user,
         }
         
@@ -1237,6 +1238,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         staff_commands = {
             "staffleaderboard": self.staff_extras.handle_staff_leaderboard,
             "promotionhistory": self.staff_extras.handle_promotion_history,
+            "staffpromotionhistory": self.staff_extras.handle_promotion_history,
             "trainingtasks": self.staff_extras.handle_training_tasks,
             "appeal": self.staff_extras.handle_appeal,
             "staffstats": self.staff_reviews.handle_myreview,
@@ -1253,6 +1255,59 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         if command == "myshifts":
             await self.staff_shift.handle_myshifts(message, parts)
             return
+    
+    async def _handle_suggest_command(self, message, cmd_content):
+        """Handle !suggest command with voting system"""
+        parts = cmd_content.split(maxsplit=1)
+        if len(parts) < 2:
+            return await message.channel.send("❌ Usage: `!suggest <title> | <description>` (separate title and description with |)")
+        
+        content = parts[1]
+        if "|" not in content:
+            return await message.channel.send("❌ Please separate title and description with | (e.g., `!suggest Add dark mode | Make the UI dark`)")
+        
+        title, desc = content.split("|", 1)
+        title = title.strip()
+        desc = desc.strip()
+        
+        if not title or not desc:
+            return await message.channel.send("❌ Title and description cannot be empty.")
+        
+        # Create suggestion embed
+        embed = discord.Embed(
+            title=f"💡 Suggestion: {title}",
+            description=desc,
+            color=discord.Color.blurple()
+        )
+        embed.set_author(name=message.author.display_name, icon_url=message.author.avatar.url)
+        embed.add_field(name="Status", value="Pending Review", inline=True)
+        embed.add_field(name="Upvotes", value="0", inline=True)
+        embed.add_field(name="Downvotes", value="0", inline=True)
+        embed.set_footer(text=f"Suggestion ID: {message.id}")
+        
+        # Send to suggestions channel or current channel
+        suggestions_ch = discord.utils.get(message.guild.text_channels, name="suggestions")
+        target_ch = suggestions_ch or message.channel
+        
+        suggest_msg = await target_ch.send(embed=embed)
+        await suggest_msg.add_reaction("👍")
+        await suggest_msg.add_reaction("👎")
+        
+        # Save suggestion data
+        suggest_data = {
+            "id": suggest_msg.id,
+            "author_id": message.author.id,
+            "title": title,
+            "description": desc,
+            "status": "pending",
+            "upvotes": 0,
+            "downvotes": 0,
+            "channel_id": target_ch.id,
+            "created_at": time.time()
+        }
+        dm.update_guild_data(message.guild.id, f"suggestion_{suggest_msg.id}", suggest_data)
+        
+        await message.channel.send(f"✅ Suggestion submitted! View it here: {suggest_msg.jump_url}")
     
     async def analyze_command_usage_and_suggest_improvements(self):
         """Periodically analyze command usage and suggest improvements."""
