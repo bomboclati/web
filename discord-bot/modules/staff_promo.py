@@ -939,5 +939,27 @@ class StaffPromotionSystem:
         })
         
         dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
-        
+         
         await interaction.followup.send("✅ Staff Promotion System set up!", ephemeral=True)
+
+    def get_promo_status(self, guild_id: int, user_id: int) -> dict:
+        config = self._get_full_config(guild_id)
+        tiers = config.get("tiers", {})
+        user_data = dm.get_guild_data(guild_id, f"staff_user_{user_id}", {})
+        current_tier = user_data.get("current_tier", "None")
+        # Calculate progress to next tier
+        next_tier = None
+        progress = 0
+        tier_names = list(tiers.keys())
+        if current_tier in tier_names:
+            current_idx = tier_names.index(current_tier)
+            if current_idx + 1 < len(tier_names):
+                next_tier = tier_names[current_idx + 1]
+                next_req = tiers[next_tier].get("threshold", 100)
+                # Simplified progress calculation
+                progress = min(100, int(user_data.get("activity_score", 0) / next_req * 100))
+        return {
+            "current_tier": current_tier,
+            "next_tier": next_tier or "None",
+            "progress": progress
+        }

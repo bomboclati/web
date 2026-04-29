@@ -543,8 +543,14 @@ Respond with JSON only:
         })
         
         dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
-        
+         
         return True
 
-
+    def get_guild_events(self, guild_id: int) -> List[ScheduledEvent]:
+        events = []
+        for event in self._scheduled_events.values():
+            if event.guild_id == guild_id:
+                events.append(event)
+        return events
+ 
 from discord import app_commands

@@ -774,7 +774,22 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 "appeal_status": json.dumps({"command_type": "appeal_status"}),
                 "help": json.dumps({"command_type": "help_all"}),
                 "configpanel": json.dumps({"command_type": "config_panel"}),
+                "verify": json.dumps({"command_type": "verification_verify"}),
+                "verify": json.dumps({"command_type": "verification_verify"}),
                 "setverifychannel": json.dumps({"command_type": "set_verify_channel"}),
+                "raidstatus": json.dumps({"command_type": "anti_raid_status"}),
+                "guardian": json.dumps({"command_type": "guardian_status"}),
+                "automod": json.dumps({"command_type": "automod_status"}),
+                "modlog": json.dumps({"command_type": "modlog_view"}),
+                "levelshop": json.dumps({"command_type": "leveling_shop"}),
+                "starboard": json.dumps({"command_type": "starboard_status"}),
+                "quest": json.dumps({"command_type": "gamification_quest"}),
+                "prestige": json.dumps({"command_type": "gamification_prestige"}),
+                "giveaway": json.dumps({"command_type": "giveaway_create"}),
+                "event": json.dumps({"command_type": "event_list"}),
+                "tournament": json.dumps({"command_type": "create_tournament"}),
+                "staffpromo": json.dumps({"command_type": "staffpromo_cmd"}),
+                "staffpromotion": json.dumps({"command_type": "staffpromotion_cmd"}),
             }
             updated = False
             for cmd, data in default_cmds.items():

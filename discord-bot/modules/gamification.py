@@ -441,6 +441,22 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
                 })
         return user_quests
 
+    def get_prestige_data(self, guild_id: int, user_id: int) -> dict:
+        user_data = dm.get_guild_data(guild_id, f"user_{user_id}", {})
+        leveling = self.bot.leveling
+        total_xp = leveling.get_xp(guild_id, user_id)
+        current_level = leveling.get_level_from_xp(total_xp)
+        prestige_level = user_data.get("prestige_level", 0)
+        # Calculate next prestige requirement (e.g., every 100 levels)
+        next_prestige_level = prestige_level + 1
+        next_requirement = f"Reach level {next_prestige_level * 100}"
+        return {
+            "level": prestige_level,
+            "next_requirement": next_requirement,
+            "total_xp": total_xp,
+            "current_level": current_level
+        }
+ 
     async def setup(self, interaction: discord.Interaction, params: Dict = None):
         guild = interaction.guild
         

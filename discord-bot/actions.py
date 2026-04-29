@@ -57,7 +57,7 @@ COMMAND_SCHEMA = {
     "properties": {
         "command_type": {
             "type": "string",
-            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "leaderboard", "leveling_rank", "leveling_leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "staffpromo_requirements", "staffpromo_bonuses", "staffpromo_exclude", "staffpromo_config", "staffpromo_promote", "staffpromo_demote", "list_triggers", "help_all", "config_panel", "ticket_create", "ticket_close", "verification_verify", "appeal_create", "application_apply", "set_verify_channel", "create_tournament", "create_event"]
+            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "leaderboard", "leveling_rank", "leveling_leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "staffpromo_requirements", "staffpromo_bonuses", "staffpromo_exclude", "staffpromo_config", "staffpromo_promote", "staffpromo_demote", "list_triggers", "help_all", "config_panel", "ticket_create", "ticket_close", "verification_verify", "appeal_create", "application_apply", "set_verify_channel", "create_tournament", "create_event", "anti_raid_status", "guardian_status", "automod_status", "modlog_view", "leveling_shop", "starboard_status", "gamification_quest", "gamification_prestige", "giveaway_create", "event_list", "staffpromo_cmd", "staffpromotion_cmd"]
         },
         "content": {"type": "string"},
         "actions": {
@@ -4213,6 +4213,30 @@ class ActionHandler:
                     return await self.handle_appeal_create(message)
                 elif command_type == "application_apply":
                     return await self.handle_application_apply(message)
+                elif command_type == "anti_raid_status":
+                    return await self.handle_anti_raid_status(message)
+                elif command_type == "guardian_status":
+                    return await self.handle_guardian_status(message)
+                elif command_type == "automod_status":
+                    return await self.handle_automod_status(message)
+                elif command_type == "modlog_view":
+                    return await self.handle_modlog_view(message)
+                elif command_type == "leveling_shop":
+                    return await self.handle_leveling_shop(message)
+                elif command_type == "starboard_status":
+                    return await self.handle_starboard_status(message)
+                elif command_type == "gamification_quest":
+                    return await self.handle_gamification_quest(message)
+                elif command_type == "gamification_prestige":
+                    return await self.handle_gamification_prestige(message)
+                elif command_type == "giveaway_create":
+                    return await self.handle_giveaway_create(message)
+                elif command_type == "event_list":
+                    return await self.handle_event_list(message)
+                elif command_type == "staffpromo_cmd":
+                    return await self.handle_staffpromo_cmd(message)
+                elif command_type == "staffpromotion_cmd":
+                    return await self.handle_staffpromotion_cmd(message)
                 else:
                     # Unknown dict type, fall back to sending as string
                     await message.channel.send(content=code)
@@ -5909,9 +5933,10 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         return True
 
     async def handle_verification_verify(self, message: discord.Message) -> bool:
-        from modules.verification import VerifyView
+        from modules.verification import Verification, VerifyView
+        verification = Verification(self.bot)
         embed = discord.Embed(title="Verification Required", description="Click the button below to verify.", color=discord.Color.blue())
-        await message.channel.send(embed=embed, view=VerifyView())
+        await message.channel.send(embed=embed, view=VerifyView(verification))
         return True
 
     async def handle_set_verify_channel(self, message: discord.Message) -> bool:
@@ -6023,4 +6048,192 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         embed.set_footer(text="Higher weights mean the metric is more important for promotion.")
 
         await message.channel.send(embed=embed)
+        return True
+
+    async def handle_anti_raid_status(self, message: discord.Message) -> bool:
+        from modules.anti_raid import AntiRaidSystem
+        anti_raid = AntiRaidSystem(self.bot)
+        guild = message.guild
+        settings = anti_raid.get_guild_settings(guild.id)
+        embed = discord.Embed(title="🚨 Anti-Raid Status", color=discord.Color.red() if settings.get("enabled") else discord.Color.green())
+        embed.add_field(name="Status", value="✅ Enabled" if settings.get("enabled") else "❌ Disabled", inline=True)
+        embed.add_field(name="Mass Join Threshold", value=f"{settings.get('mass_join_threshold', 10)} joins / {settings.get('mass_join_window', 10)}s", inline=True)
+        embed.add_field(name="Action", value=settings.get("action", "lockdown").upper(), inline=True)
+        embed.add_field(name="Auto Lockdown", value="✅ On" if settings.get("auto_lockdown") else "❌ Off", inline=True)
+        rules = settings.get("rules", {})
+        rules_str = "\n".join([f"• {k.replace('_', ' ').title()}: {'✅' if v.get('enabled') else '❌'}" for k, v in rules.items()])
+        embed.add_field(name="Filters", value=rules_str or "None", inline=False)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_guardian_status(self, message: discord.Message) -> bool:
+        from modules.guardian import GuardianSystem
+        guardian = GuardianSystem(self.bot)
+        guild = message.guild
+        config = guardian.get_config(guild.id)
+        embed = discord.Embed(title="⚔️ Guardian System Status", color=discord.Color.dark_red() if config.get("enabled") else discord.Color.green())
+        embed.add_field(name="Status", value="✅ Enabled" if config.get("enabled") else "❌ Disabled", inline=True)
+        embed.add_field(name="Toxicity Level", value=config.get("toxicity_level", "WARN"), inline=True)
+        embed.add_field(name="Scam Level", value=config.get("scam_level", "MUTE"), inline=True)
+        embed.add_field(name="Token Detection", value="✅ On" if config.get("token_detection") else "❌ Off", inline=True)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_automod_status(self, message: discord.Message) -> bool:
+        from modules.automod import AutoModSystem
+        automod = AutoModSystem(self.bot)
+        guild = message.guild
+        config = automod.get_config(guild.id)
+        embed = discord.Embed(title="🤖 AutoMod Status", color=discord.Color.blue() if config.get("enabled") else discord.Color.green())
+        embed.add_field(name="Status", value="✅ Enabled" if config.get("enabled") else "❌ Disabled", inline=True)
+        rules = config.get("rules", {})
+        rules_str = "\n".join([f"• {k.replace('_', ' ').title()}: {'✅' if v.get('enabled') else '❌'}" for k, v in rules.items()])
+        embed.add_field(name="Active Rules", value=rules_str or "None", inline=False)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_modlog_view(self, message: discord.Message) -> bool:
+        from modules.mod_logging import ModLogging
+        modlog = ModLogging(self.bot)
+        guild = message.guild
+        config = modlog.get_config(guild.id)
+        embed = discord.Embed(title="📋 ModLog Status", color=discord.Color.orange() if config.get("enabled") else discord.Color.green())
+        embed.add_field(name="Status", value="✅ Enabled" if config.get("enabled") else "❌ Disabled", inline=True)
+        log_channel = guild.get_channel(config.get("log_channel_id")) if config.get("log_channel_id") else None
+        embed.add_field(name="Log Channel", value=log_channel.mention if log_channel else "Not set", inline=True)
+        embed.add_field(name="Next Case #", value=str(config.get("next_case_number", 1)), inline=True)
+        enabled_logs = config.get("enabled_logs", {})
+        logs_str = "\n".join([f"• {k.title()}: {'✅' if v else '❌'}" for k, v in enabled_logs.items()])
+        embed.add_field(name="Logged Actions", value=logs_str or "None", inline=False)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_leveling_shop(self, message: discord.Message) -> bool:
+        from modules.shop import LevelingShop
+        shop = LevelingShop(self.bot)
+        guild = message.guild
+        shop_items = shop.get_shop_items(guild.id)
+        embed = discord.Embed(title="🎁 Leveling Shop", color=discord.Color.purple())
+        if not shop_items:
+            embed.description = "No items available in the leveling shop."
+        else:
+            for item in shop_items:
+                embed.add_field(name=f"{item.get('name', 'Item')} (Cost: {item.get('cost', 0)} XP)", value=item.get("description", "No description"), inline=False)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_starboard_status(self, message: discord.Message) -> bool:
+        from modules.starboard import StarboardSystem
+        starboard = StarboardSystem(self.bot)
+        guild = message.guild
+        settings = starboard.get_guild_settings(guild.id)
+        embed = discord.Embed(title="⭐ Starboard Status", color=discord.Color.gold() if settings.get("enabled") else discord.Color.green())
+        embed.add_field(name="Status", value="✅ Enabled" if settings.get("enabled") else "❌ Disabled", inline=True)
+        embed.add_field(name="Reaction Emoji", value=settings.get("emoji", "⭐"), inline=True)
+        embed.add_field(name="Threshold", value=str(settings.get("threshold", 3)), inline=True)
+        starboard_channel = guild.get_channel(settings.get("channel_id")) if settings.get("channel_id") else None
+        embed.add_field(name="Starboard Channel", value=starboard_channel.mention if starboard_channel else "Not set", inline=True)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_gamification_quest(self, message: discord.Message) -> bool:
+        from modules.gamification import AdaptiveGamification
+        gamification = AdaptiveGamification(self.bot)
+        guild = message.guild
+        user_id = message.author.id
+        quests = gamification.get_user_quests(guild.id, user_id)
+        embed = discord.Embed(title="🎮 Your Active Quests", color=discord.Color.purple())
+        if not quests:
+            embed.description = "No active quests. Check back later!"
+        else:
+            for quest in quests:
+                embed.add_field(name=quest.title, value=f"{quest.description}\nProgress: {quest.progress}%\nReward: {quest.rewards}", inline=False)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_gamification_prestige(self, message: discord.Message) -> bool:
+        from modules.gamification import AdaptiveGamification
+        gamification = AdaptiveGamification(self.bot)
+        guild = message.guild
+        user_id = message.author.id
+        prestige_data = gamification.get_prestige_data(guild.id, user_id)
+        embed = discord.Embed(title="🏆 Prestige Status", color=discord.Color.gold())
+        embed.add_field(name="Current Prestige", value=str(prestige_data.get("level", 0)), inline=True)
+        embed.add_field(name="Next Prestige Requirement", value=prestige_data.get("next_requirement", "N/A"), inline=True)
+        embed.add_field(name="Total XP", value=str(prestige_data.get("total_xp", 0)), inline=True)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_giveaway_create(self, message: discord.Message) -> bool:
+        from modules.giveaways import GiveawaySystem
+        giveaway_system = GiveawaySystem(self.bot)
+        args = message.content.split()
+        if len(args) < 3:
+            return await message.channel.send("❌ Usage: `!giveaway create <prize> <duration_minutes> [winners]`")
+        prize = args[2]
+        try:
+            duration = int(args[3]) * 60
+            winners = int(args[4]) if len(args) > 4 else 1
+        except ValueError:
+            return await message.channel.send("❌ Duration must be a number (minutes), winners must be integer.")
+        import time
+        from datetime import datetime, timedelta
+        ends_at = time.time() + duration
+        giveaway_id = f"giveaway_{int(time.time())}"
+        from modules.giveaways import Giveaway
+        giveaway = Giveaway(
+            id=giveaway_id,
+            guild_id=message.guild.id,
+            channel_id=message.channel.id,
+            message_id=None,
+            name=f"Giveaway: {prize}",
+            description=f"Win {prize}!",
+            prize=prize,
+            winners_count=winners,
+            requirements={},
+            ends_at=ends_at,
+            entries=[],
+            winners=[],
+            created_by=message.author.id,
+            created_at=time.time(),
+            ended=False
+        )
+        giveaway_system._giveaways[giveaway_id] = giveaway
+        giveaway_system._save_giveaway(giveaway)
+        embed = discord.Embed(title=f"🎉 Giveaway: {prize}", color=discord.Color.green())
+        embed.add_field(name="Duration", value=str(timedelta(seconds=duration)), inline=True)
+        embed.add_field(name="Winners", value=str(winners), inline=True)
+        embed.set_footer(text=f"Ends at {datetime.fromtimestamp(ends_at).strftime('%Y-%m-%d %H:%M:%S')}")
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_event_list(self, message: discord.Message) -> bool:
+        from modules.events import EventScheduler
+        event_scheduler = EventScheduler(self.bot)
+        guild = message.guild
+        events = event_scheduler.get_guild_events(guild.id)
+        embed = discord.Embed(title="📅 Scheduled Events", color=discord.Color.blue())
+        if not events:
+            embed.description = "No scheduled events."
+        else:
+            for event in events:
+                embed.add_field(name=event.name, value=f"Type: {event.event_type.value}\nStatus: {event.status.value}\nNext Run: {datetime.fromtimestamp(event.next_run).strftime('%Y-%m-%d %H:%M:%S')}", inline=False)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_staffpromo_cmd(self, message: discord.Message) -> bool:
+        from modules.staff_promo import StaffPromotionSystem
+        staff_promo = StaffPromotionSystem(self.bot)
+        guild = message.guild
+        user_id = message.author.id
+        status = staff_promo.get_promo_status(guild.id, user_id)
+        embed = discord.Embed(title="📈 Staff Promotion Status", color=discord.Color.teal())
+        embed.add_field(name="Current Tier", value=status.get("current_tier", "None"), inline=True)
+        embed.add_field(name="Progress to Next Tier", value=f"{status.get('progress', 0)}%", inline=True)
+        embed.add_field(name="Next Tier", value=status.get("next_tier", "None"), inline=True)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_staffpromotion_cmd(self, message: discord.Message) -> bool:
+        await message.channel.send("✅ This command is now `!staffpromo`. Use `!staffpromo` to check your promotion status.")
         return True
