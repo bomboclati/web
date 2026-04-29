@@ -28,6 +28,11 @@ class Economy:
     
     def get_coins(self, guild_id: int, user_id: int) -> int:
         balances = dm.get_guild_data(guild_id, "economy_balances", {})
+        if str(user_id) not in balances:
+            config = dm.get_guild_data(guild_id, "economy_config", {})
+            starting = config.get("starting_balance", 100)
+            balances[str(user_id)] = starting
+            dm.update_guild_data(guild_id, "economy_balances", balances)
         return balances.get(str(user_id), 0)
     
     def get_gems(self, guild_id: int, user_id: int) -> int:
@@ -36,7 +41,7 @@ class Economy:
     
     def add_coins(self, guild_id: int, user_id: int, amount: int):
         balances = dm.get_guild_data(guild_id, "economy_balances", {})
-        current = balances.get(str(user_id), 0)
+        current = self.get_coins(guild_id, user_id)
         balances[str(user_id)] = current + amount
         dm.update_guild_data(guild_id, "economy_balances", balances)
     
@@ -136,37 +141,47 @@ class Economy:
     async def daily(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
         user_id = interaction.user.id
-        
+        config = dm.get_guild_data(guild_id, "economy_config", {})
+        if not config.get("enabled", True):
+            return await interaction.response.send_message("❌ Economy system is disabled.", ephemeral=True)
+
         last_daily = dm.get_guild_data(guild_id, "last_daily", {})
         last_time = last_daily.get(str(user_id))
         
+        now = datetime.datetime.now()
+        cooldown = config.get("daily_cooldown_seconds", 86400)
+
         if last_time:
             last_date = datetime.datetime.fromisoformat(last_time)
-            if (datetime.datetime.now() - last_date).days < 1:
-                return await interaction.response.send_message("Daily reward already claimed today!", ephemeral=True)
+            if (now - last_date).total_seconds() < cooldown:
+                remaining = int(cooldown - (now - last_date).total_seconds())
+                return await interaction.response.send_message(f"❌ Daily already claimed! Try again in **{remaining // 3600}h {(remaining % 3600) // 60}m**.", ephemeral=True)
         
-        reward = 100
+        reward = config.get("daily_amount", 100)
         self.add_coins(guild_id, user_id, reward)
-        last_daily[str(user_id)] = str(datetime.datetime.now())
+        last_daily[str(user_id)] = str(now)
         
         # Track daily streak
         daily_count = dm.get_guild_data(guild_id, "daily_streaks", {})
-        daily_count[str(user_id)] = daily_count.get(str(user_id), 0) + 1
+        streak = daily_count.get(str(user_id), 0) + 1
+        daily_count[str(user_id)] = streak
         dm.update_guild_data(guild_id, "daily_streaks", daily_count)
         
         dm.update_guild_data(guild_id, "last_daily", last_daily)
         
         # Check for daily streak bonus
-        streak = daily_count.get(str(user_id), 0)
         bonus = 0
+        streak_bonus_cfg = config.get("daily_streak_bonus", 50)
         if streak % 7 == 0:
-            bonus = 500
+            bonus = streak_bonus_cfg * (streak // 7)
             self.add_coins(guild_id, user_id, bonus)
         
         # Build response
-        msg = f"💰 You claimed your daily **{reward} coins**!"
+        emoji = config.get("currency_emoji", "🪙")
+        name = config.get("currency_name", "coins")
+        msg = f"{emoji} You claimed your daily **{reward} {name}**!"
         if bonus:
-            msg += f"\n🎉 **Streak bonus: +{bonus} coins!** (day {streak})"
+            msg += f"\n🎉 **Streak bonus: +{bonus} {name}!** (Week {streak // 7})"
         
         await interaction.response.send_message(msg, ephemeral=True)
     
@@ -516,3 +531,33 @@ class ResetBalanceModal(Modal, title="Reset User Balance"):
         self.economy.log_transaction(self.guild_id, user_id, -old_balance, "reset", "Admin reset")
         await interaction.response.send_message(f"Reset balance from {old_balance} to 0!", ephemeral=True)
 
+
+    async def handle_message(self, message: discord.Message):
+        """Passive income for chatting."""
+        if not message.guild or message.author.bot:
+            return
+
+        config = dm.get_guild_data(message.guild.id, "economy_config", {})
+        if not config.get("enabled", True):
+            return
+
+        # Cooldown to prevent spam
+        last_gain_key = f"last_eco_gain_{message.author.id}"
+        last_gain_time = dm.get_guild_data(message.guild.id, last_gain_key, 0)
+        if time.time() - last_gain_time < 60:
+            return
+
+        rates = config.get("earn_rates", {})
+        coins = rates.get("coins_per_message", 2)
+
+        self.add_coins(message.guild.id, message.author.id, coins)
+        dm.update_guild_data(message.guild.id, last_gain_key, time.time())
+
+        # Gem chance
+        gem_chance = rates.get("gem_chance", 0.01)
+        if random.random() < gem_chance:
+            self.add_gems(message.guild.id, message.author.id, 1)
+            try:
+                await message.channel.send(f"✨ {message.author.mention}, you found a **Gem** while chatting!", delete_after=5)
+            except:
+                pass
