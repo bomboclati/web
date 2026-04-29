@@ -188,6 +188,7 @@ class _GenericRoleSelect(ui.RoleSelect):
         config[self.key] = self.values[0].id
         self.config_panel.save_config(config, interaction.guild_id, interaction.client)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {self.values[0].name}")
+        await self.config_panel.update_panel(interaction)
         await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to {self.values[0].mention}", ephemeral=True)
 
 class _GenericChannelSelect(ui.ChannelSelect):
@@ -248,8 +249,10 @@ class _NumberModal(ui.Modal):
                 config["whitelist"] = whitelist
                 self.config_panel.save_config(config, interaction.guild_id, interaction.client)
                 log_panel_action(interaction.guild_id, interaction.user.id, f"Added {user_id} to whitelist")
+                await self.config_panel.update_panel(interaction)
                 return await interaction.response.send_message(f"✅ User `{user_id}` added to whitelist.", ephemeral=True)
             else:
+                await self.config_panel.update_panel(interaction)
                 return await interaction.response.send_message(f"⚠️ User `{user_id}` is already whitelisted.", ephemeral=True)
         
         # Special handling for duplicate filter (X messages in Y seconds)
@@ -261,12 +264,15 @@ class _NumberModal(ui.Modal):
                     config["duplicate_window"] = y
                     self.config_panel.save_config(config, interaction.guild_id, interaction.client)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set duplicate filter to {v} msgs in {y}s")
+                    await self.config_panel.update_panel(interaction)
                     return await interaction.response.send_message(f"✅ Duplicate filter: **{v}** messages in **{y}** seconds.", ephemeral=True)
                 except ValueError:
+                    await self.config_panel.update_panel(interaction)
                     return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
             config["duplicate_threshold"] = v
             self.config_panel.save_config(config, interaction.guild_id, interaction.client)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set duplicate threshold to {v}")
+            await self.config_panel.update_panel(interaction)
             return await interaction.response.send_message(f"✅ Duplicate threshold set to **{v}** messages.", ephemeral=True)
         
         # Special handling for mention threshold config
@@ -274,6 +280,7 @@ class _NumberModal(ui.Modal):
             config["mention_threshold"] = v
             self.config_panel.save_config(config, interaction.guild_id, interaction.client)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set mention threshold to {v}")
+            await self.config_panel.update_panel(interaction)
             return await interaction.response.send_message(f"✅ Max mentions per message: **{v}**.", ephemeral=True)
         
         # Special handling for work rewards (min and max)
@@ -285,12 +292,15 @@ class _NumberModal(ui.Modal):
                     config["work_max"] = max_v
                     self.config_panel.save_config(config, interaction.guild_id, interaction.client)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set work rewards to {v}-{max_v}")
+                    await self.config_panel.update_panel(interaction)
                     return await interaction.response.send_message(f"✅ Work rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
                 except ValueError:
+                    await self.config_panel.update_panel(interaction)
                     return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
             config["work_min"] = v
             self.config_panel.save_config(config, interaction.guild_id, interaction.client)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set work min to {v}")
+            await self.config_panel.update_panel(interaction)
             return await interaction.response.send_message(f"✅ Work min reward set to **{v}**.", ephemeral=True)
         
         # Special handling for beg rewards (min and max)
@@ -302,18 +312,22 @@ class _NumberModal(ui.Modal):
                     config["beg_max"] = max_v
                     self.config_panel.save_config(config, interaction.guild_id, interaction.client)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set beg rewards to {v}-{max_v}")
+                    await self.config_panel.update_panel(interaction)
                     return await interaction.response.send_message(f"✅ Beg rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
                 except ValueError:
+                    await self.config_panel.update_panel(interaction)
                     return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
             config["beg_min"] = v
             self.config_panel.save_config(config, interaction.guild_id, interaction.client)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set beg min to {v}")
+            await self.config_panel.update_panel(interaction)
             return await interaction.response.send_message(f"✅ Beg min reward set to **{v}**.", ephemeral=True)
         
         # Default: single value storage
         config[self.key] = v
         self.config_panel.save_config(config, interaction.guild_id, interaction.client)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {v}")
+        await self.config_panel.update_panel(interaction)
         await interaction.response.send_message(f"✅ {self.key.replace('_',' ').title()} set to **{v}**.", ephemeral=True)
 
 class _TextModal(ui.Modal):
@@ -333,6 +347,7 @@ class _TextModal(ui.Modal):
         config[self.key] = self.value_input.value
         self.config_panel.save_config(config, interaction.guild_id, interaction.client)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Updated text field {self.key}")
+        await self.config_panel.update_panel(interaction)
         await interaction.response.send_message(f"✅ {self.key.replace('_',' ').title()} updated.", ephemeral=True)
 
 def _picker_view(component: ui.Item) -> ui.View:
@@ -412,7 +427,7 @@ class VerificationConfigView(ConfigPanelView):
     async def reset(self, i, b):
         c = self.get_config(i.guild_id); c["verification_log"] = []; self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, "Reset verification log")
-        await i.response.send_message("Log Reset", ephemeral=True)
+        await self.update_panel(i)
 
     @ui.button(label="Re-verify All", emoji="🔁", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_verify_reverify")
     async def reverify(self, i: Interaction, b):
@@ -483,7 +498,7 @@ class AntiRaidConfigView(ConfigPanelView):
             discord.SelectOption(label="Mute", value="mute")
         ])
         async def callback(it):
-            c = self.get_config(i.guild_id); c["action"] = select.values[0]; self.save_config(c, i.guild_id, i.client); await it.response.send_message(f"Action set to {c['action']}", ephemeral=True)
+            c = self.get_config(i.guild_id); c["action"] = select.values[0]; self.save_config(c, i.guild_id, i.client); await self.update_panel(it); await it.response.send_message(f"Action set to {c['action']}", ephemeral=True)
         select.callback = callback
         view.add_item(select)
         await i.response.send_message("Choose action:", view=view, ephemeral=True)
@@ -578,8 +593,7 @@ class AntiRaidConfigView(ConfigPanelView):
         c["alerts_silenced"] = not c.get("alerts_silenced", False)
         self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, f"Anti-raid alerts silenced={c['alerts_silenced']}")
-        state = "silenced" if c["alerts_silenced"] else "active"
-        await i.response.send_message(f"🔕 Raid alerts are now **{state}**.", ephemeral=True)
+        await self.update_panel(i)
 
 class GuardianConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
@@ -624,7 +638,7 @@ class GuardianConfigView(ConfigPanelView):
             discord.SelectOption(label="Ban", value="BAN")
         ])
         async def callback(it):
-            c = self.get_config(i.guild_id); c[key] = select.values[0]; self.save_config(c, i.guild_id, i.client); await it.response.send_message(f"Set to {c[key]}", ephemeral=True)
+            c = self.get_config(i.guild_id); c[key] = select.values[0]; self.save_config(c, i.guild_id, i.client); await self.update_panel(it); await it.response.send_message(f"Set to {c[key]}", ephemeral=True)
         select.callback = callback; view.add_item(select); await i.response.send_message("Choose Level:", view=view, ephemeral=True)
 
     @ui.button(label="Mass DM Detection", emoji="📨", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_guardian_set_dm")
@@ -731,6 +745,7 @@ class WelcomeConfigView(ConfigPanelView):
             async def callback(self, it):
                 c = dm.get_guild_data(it.guild_id, "welcome_config", {}); c["channel_id"] = self.values[0].id
                 dm.update_guild_data(it.guild_id, "welcome_config", c); await it.response.send_message("✅ Welcome channel set.", ephemeral=True)
+                await self.update_panel(it)
         await i.response.send_message("Select channel:", view=_picker_view(ChSelect(placeholder="Welcome Channel")), ephemeral=True)
 
     @ui.button(label="Set Leave Ch", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_wl_set_lch")
@@ -1059,7 +1074,7 @@ class ApplicationConfigView(ConfigPanelView):
     @ui.button(label="Clear Types", emoji="🗑️", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_app_clear_types")
     async def clear_types(self, i, b):
         c = self.get_config(i.guild_id); c["application_types"] = []
-        self.save_config(c, i.guild_id, i.client); await i.response.send_message("✅ Application types cleared.", ephemeral=True)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i); await i.response.send_message("✅ Application types cleared.", ephemeral=True)
 
     @ui.button(label="Open/Close Apps", emoji="🔒", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_app_toggle_open")
     async def toggle_open(self, i, b):
@@ -1245,7 +1260,7 @@ class ModmailConfigView(ConfigPanelView):
         ])
         async def cb(it):
             c = self.get_config(it.guild_id); c["thread_style"] = s.values[0]
-            self.save_config(c, it.guild_id, it.client); await it.response.send_message(f"Style set to {s.values[0]}", ephemeral=True)
+            self.save_config(c, it.guild_id, it.client); await self.update_panel(it); await it.response.send_message(f"Style set to {s.values[0]}", ephemeral=True)
         s.callback = cb; view.add_item(s); await i.response.send_message("Choose Style:", view=view, ephemeral=True)
 
     @ui.button(label="Set Auto-Close", emoji="⏰", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_modmail_autoclose")
@@ -1313,7 +1328,7 @@ class TicketsConfigView(ConfigPanelView):
     @ui.button(label="Toggle DM", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_tickets_t_dm")
     async def toggle_dm(self, i, b):
         c = self.get_config(i.guild_id); c["opener_dm_enabled"] = not c.get("opener_dm_enabled", True)
-        self.save_config(c, i.guild_id, i.client); await i.response.send_message(f"Opener DM set to {c['opener_dm_enabled']}", ephemeral=True)
+        self.save_config(c, i.guild_id, i.client); await self.update_panel(i); await i.response.send_message(f"Opener DM set to {c['opener_dm_enabled']}", ephemeral=True)
 
     @ui.button(label="View Open Tickets", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_tickets_view_open")
     async def view_open(self, i, b):
@@ -3793,7 +3808,7 @@ class StarboardConfigView(ConfigPanelView):
 
     @ui.button(label="Clear Rewards", emoji="🧹", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_stb_rew_clr")
     async def clr_rewards(self, i, b):
-        c = self.get_config(i.guild_id); c["reward_thresholds"] = {}; self.save_config(c, i.guild_id, i.client); await i.response.send_message("✅ Rewards cleared.", ephemeral=True)
+        c = self.get_config(i.guild_id); c["reward_thresholds"] = {}; self.save_config(c, i.guild_id, i.client); await self.update_panel(i); await i.response.send_message("✅ Rewards cleared.", ephemeral=True)
 
     @ui.button(label="Toggle Reactions", emoji="🎭", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_stb_react")
     async def toggle_react(self, i, b):
