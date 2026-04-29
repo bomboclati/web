@@ -7,6 +7,10 @@
         "command_type": "verification_verify",
         "content": "Click the button below to verify your account."
     },
+    "setverifychannel": {
+        "command_type": "simple",
+        "content": "Usage: !setverifychannel #channel - Set the verification channel."
+    },
     "verification": {
         "command_type": "verification_verify",
         "content": "Use /verify or click below to verify."
@@ -47,6 +51,10 @@
         "command_type": "leveling_rank",
         "content": "Check your current level and XP with !rank"
     },
+    "levelshop": {
+        "command_type": "simple",
+        "content": "Open the level shop to purchase roles and rewards with your XP."
+    },
     "ticket": {
         "command_type": "ticket_create",
         "content": "Create a support ticket with !ticket"
@@ -67,9 +75,25 @@
         "command_type": "staffpromo_status",
         "content": "Check your staff promotion eligibility."
     },
+    "staffpromo": {
+        "command_type": "staffpromo_status",
+        "content": "Check your staff promotion status."
+    },
     "staffpromo_leaderboard": {
         "command_type": "staffpromo_leaderboard",
         "content": "View staff activity leaderboard."
+    },
+    "staffleaderboard": {
+        "command_type": "staffpromo_leaderboard",
+        "content": "Staff activity leaderboard."
+    },
+    "staffpromotionhistory": {
+        "command_type": "simple",
+        "content": "View staff promotion history."
+    },
+    "staffreview": {
+        "command_type": "simple",
+        "content": "Review a staff member's performance."
     },
     "suggest": {
         "command_type": "simple",
@@ -82,5 +106,65 @@
     "apply": {
         "command_type": "application_apply",
         "content": "Open a staff application form."
+    },
+    "raidstatus": {
+        "command_type": "simple",
+        "content": "Check anti-raid protection status."
+    },
+    "guardian_status": {
+        "command_type": "simple",
+        "content": "Check Guardian (automod) status."
+    },
+    "automod_status": {
+        "command_type": "simple",
+        "content": "Check AutoMod status and configuration."
+    },
+    "modlog_view": {
+        "command_type": "simple",
+        "content": "View moderation log entries."
+    },
+    "starboard": {
+        "command_type": "simple",
+        "content": "Starboard configuration and settings."
+    },
+    "quest": {
+        "command_type": "simple",
+        "content": "View or accept quests for rewards."
+    },
+    "prestige": {
+        "command_type": "simple",
+        "content": "Prestige your account for special rewards."
+    },
+    "giveaway_create": {
+        "command_type": "simple",
+        "content": "Create a new giveaway."
+    },
+    "event_create": {
+        "command_type": "simple",
+        "content": "Create a new server event."
+    },
+    "event_list": {
+        "command_type": "simple",
+        "content": "List all upcoming events."
+    },
+    "tournament_create": {
+        "command_type": "simple",
+        "content": "Create a new tournament."
+    },
+    "chatchannel_add": {
+        "command_type": "simple",
+        "content": "Add a chat channel to the system."
+    },
+    "autoresponder_add": {
+        "command_type": "simple",
+        "content": "Add a new autoresponder rule."
+    },
+    "remindme": {
+        "command_type": "simple",
+        "content": "Set a reminder for yourself."
+    },
+    "announcement_create": {
+        "command_type": "simple",
+        "content": "Create a new announcement."
     }
 }

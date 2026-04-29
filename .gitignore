@@ -1,65 +1,52 @@
 ```
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-.ENV
-.ENV.local
+# Configuration files
+*.json
+*.config
+*.conf
+*.ini
 
-# Discord bot specific
+# Logs
 *.log
-*.tmp
+
+# Environment variables
+.env
+.env.local
+*.env.*
 
 # Dependencies
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Distribution / packaging
+node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
 .Python
+venv/
+env/
+ENV/
+.venv/
+env.bak/
+venv.bak/
+
+# Build artifacts
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 
-# Pytest
-.pytest_cache/
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# Mypy
-.mypy_cache/
-
-# Coverage
-htmlcov/
-.coverage
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 ```
