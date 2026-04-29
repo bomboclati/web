@@ -4114,7 +4114,23 @@ class ActionHandler:
                 # or {"actions": [{"name": "...", "parameters": {...}}]}
                 if not command_type and (data.get("action") or data.get("actions")):
                     await message.channel.send(f"⚙️ Running **!{cmd_name}**...")
-                    from modules.auto_setup import MockInteraction
+                    # Define MockInteraction inline
+                    class MockInteraction:
+                        def __init__(self, bot, guild, user):
+                            self.bot = bot
+                            self.guild = guild
+                            self.user = user
+                            self.channel = None
+                            self.followup = self
+                            self.response = self
+                        async def send(self, *args, **kwargs):
+                            pass
+                        async def send_message(self, *args, **kwargs):
+                            pass
+                        async def edit_message(self, *args, **kwargs):
+                            pass
+                        async def defer(self, *args, **kwargs):
+                            pass
                     fake = MockInteraction(self.bot, message.guild, message.author)
                     fake.channel = message.channel
 

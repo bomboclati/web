@@ -4114,7 +4114,23 @@ class ActionHandler:
                 # or {"actions": [{"name": "...", "parameters": {...}}]}
                 if not command_type and (data.get("action") or data.get("actions")):
                     await message.channel.send(f"⚙️ Running **!{cmd_name}**...")
-                    from modules.auto_setup import MockInteraction
+                    # Define MockInteraction inline
+                    class MockInteraction:
+                        def __init__(self, bot, guild, user):
+                            self.bot = bot
+                            self.guild = guild
+                            self.user = user
+                            self.channel = None
+                            self.followup = self
+                            self.response = self
+                        async def send(self, *args, **kwargs):
+                            pass
+                        async def send_message(self, *args, **kwargs):
+                            pass
+                        async def edit_message(self, *args, **kwargs):
+                            pass
+                        async def defer(self, *args, **kwargs):
+                            pass
                     fake = MockInteraction(self.bot, message.guild, message.author)
                     fake.channel = message.channel
 
@@ -5922,7 +5938,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         return True
 
     async def handle_create_tournament(self, message: discord.Message) -> bool:
-        from modules.tournaments import TournamentSystem
+        from modules.tournaments import TournamentSystem, Tournament, TournamentType, TournamentStatus
         tournament_system = TournamentSystem(self.bot)
         args = message.content.split()
         # Parse tournament name from args (e.g., !tournament create "My Tournament")
@@ -5990,8 +6006,8 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             settings={},
             created_by=message.author.id
         )
-        # Save event (assuming EventScheduler has a save method)
-        event_scheduler._save_event(new_event)
+        # Save event
+        event_scheduler._save_scheduled_event(new_event)
         await message.channel.send(f"✅ Event **{name}** created! ID: `{event_id}`. Use `!join {event_id}` to join.")
         return True
 
