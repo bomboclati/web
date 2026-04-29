@@ -1338,6 +1338,21 @@ class ModmailConfigView(ConfigPanelView):
 class TicketsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "tickets")
+        # Set initial toggle button state
+        c = self.get_config(guild_id)
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_tickets_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "tickets")
 
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
@@ -1350,9 +1365,23 @@ class TicketsConfigView(ConfigPanelView):
         embed.add_field(name="📊 Stats", value=f"Total: {stats['total']} | Open: {stats['open']} | Closed: {stats['closed']}", inline=False)
         return embed
 
-    @ui.button(label="Toggle System", style=discord.ButtonStyle.success, row=0, custom_id="cfg_tickets_toggle")
+    @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_tickets_toggle")
     async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
+        log_panel_action(i.guild_id, i.user.id, f"Toggled tickets to {c.get('enabled')}")
+        # Update toggle button label and style
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_tickets_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
+        await self.update_panel(i)
 
     @ui.button(label="Set Category", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_tickets_set_cat")
     async def set_cat(self, i, b):
