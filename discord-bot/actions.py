@@ -5911,7 +5911,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
     async def handle_verification_verify(self, message: discord.Message) -> bool:
         from modules.verification import VerifyView
         embed = discord.Embed(title="Verification Required", description="Click the button below to verify.", color=discord.Color.blue())
-        await message.channel.send(embed=embed, view=VerifyView())
+        await message.channel.send(embed=embed, view=VerifyView(self.bot.verification))
         return True
 
     async def handle_set_verify_channel(self, message: discord.Message) -> bool:
