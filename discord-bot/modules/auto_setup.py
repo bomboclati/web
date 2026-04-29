@@ -1536,7 +1536,6 @@ class AutoSetup(commands.Cog):
                 "unverified_role_id": unverified_role.id if unverified_role else None,
                 "method": "button",
                 "captcha_enabled": False,
-                "phone_required": False,
                 "min_account_age_days": 0,
                 "verification_log": []
             }

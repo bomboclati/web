@@ -123,14 +123,12 @@ Setup creates:
 · Verified role (or uses existing one)
 · Optional: CAPTCHA‑style text input modal before granting role
 · Optional: minimum account age check (saves to config, rejects accounts younger than X days)
-· Optional: phone verification gate (saves phone_required: true to config)
 · Gate: unverified members cannot see any channel except #verify and #rules
 
 Verify Button behavior:
 → Checks account age if configured → if too new, sends ephemeral rejection with account age
 → Checks if already verified → if yes, ephemeral "already verified"
 → If CAPTCHA enabled → opens modal with random math question (e.g. "What is 7 + 3?") → validates answer
-→ If phone required → sends ephemeral message explaining requirement
 → On success → adds Verified role → removes Unverified role if exists → sends welcome DM if configured
 → Logs verification: user ID, timestamp, method used → saves to guild_data.verification_log
 
@@ -142,7 +140,6 @@ Admin panel !verificationpanel buttons:
 · ⏱️ Set Min Account Age (modal: days) → saves to config
 · 📋 View Verification Log (shows last 20 verifications with user, time, method)
 · 🧮 Toggle CAPTCHA (enables/disables math CAPTCHA modal)
-· 📱 Toggle Phone Gate (enables/disables phone‑verified requirement)
 · 📊 Stats (total verified this week/month, pending count)
 · 📣 Set Verification Channel (select from channels)
 · 🗑️ Reset Verification Log (confirmation modal)

@@ -389,7 +389,6 @@ class VerificationConfigView(ConfigPanelView):
         embed.add_field(name="Channel", value=f"<#{c.get('channel_id')}>" if c.get('channel_id') else "_None_", inline=True)
         embed.add_field(name="CAPTCHA", value="🧮 On" if c.get("captcha_enabled") else "Off", inline=True)
         embed.add_field(name="Min Age", value=f"{c.get('min_account_age_days', 0)}d", inline=True)
-        embed.add_field(name="Phone", value="📱 Required" if c.get("phone_required") else "Off", inline=True)
         embed.add_field(name="Log Count", value=str(len(c.get("verification_log", []))), inline=True)
         return embed
 
@@ -430,10 +429,6 @@ class VerificationConfigView(ConfigPanelView):
     @ui.button(label="Toggle CAPTCHA", emoji="🧮", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_verify_toggle_c")
     async def toggle_c(self, i, b):
         c = self.get_config(i.guild_id); c["captcha_enabled"] = not c.get("captcha_enabled", False); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
-
-    @ui.button(label="Toggle Phone Gate", emoji="📱", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_verify_toggle_p")
-    async def toggle_p(self, i, b):
-        c = self.get_config(i.guild_id); c["phone_required"] = not c.get("phone_required", False); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
 
     @ui.button(label="Set Welcome DM", emoji="📩", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_verify_set_dm")
     async def set_dm(self, i, b):
