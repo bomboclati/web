@@ -149,3 +149,40 @@ class Verification:
     async def setup_interaction(self, interaction):
         await self.setup(interaction.guild)
         await interaction.followup.send("Verification System Setup Complete.")
+
+    async def set_verify_channel(self, message, args: list):
+        """Handle !setverifychannel command to set the verification channel"""
+        # Check admin permissions
+        if not message.author.guild_permissions.administrator:
+            return await message.channel.send("❌ You need Administrator permissions to use this command.")
+        
+        # Get target channel
+        target_channel = None
+        if message.channel_mentions:
+            target_channel = message.channel_mentions[0]
+        elif args and len(args) > 1:
+            try:
+                channel_id = int(args[1].strip("<#>"))
+                target_channel = message.guild.get_channel(channel_id)
+            except (ValueError, IndexError):
+                pass
+        
+        if not target_channel:
+            target_channel = message.channel
+        
+        if not isinstance(target_channel, discord.TextChannel):
+            return await message.channel.send("❌ Please specify a valid text channel.")
+        
+        # Update config
+        config = self._get_admin_config(message.guild.id)
+        config["channel_id"] = target_channel.id
+        dm.update_guild_data(message.guild.id, "verification_config", config)
+        
+        # Post verify embed and button
+        embed = discord.Embed(
+            title="🛡️ Verification Required",
+            description=f"Welcome to **{message.guild.name}**. Click below to verify.",
+            color=discord.Color.blue()
+        )
+        await target_channel.send(embed=embed, view=VerifyView(self))
+        await message.channel.send(f"✅ Verification channel set to {target_channel.mention}. Verify button posted.")

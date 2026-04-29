@@ -525,6 +525,12 @@ Respond with JSON only:
         custom_cmds["events"] = json.dumps({
             "command_type": "list_events"
         })
+        custom_cmds["evenf"] = json.dumps({
+            "command_type": "list_events"
+        })
+        custom_cmds["evenf create"] = json.dumps({
+            "command_type": "create_event"
+        })
         custom_cmds["help events"] = json.dumps({
             "command_type": "help_embed",
             "title": "📅 Smart Event Scheduler",

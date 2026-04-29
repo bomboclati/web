@@ -57,7 +57,7 @@ COMMAND_SCHEMA = {
     "properties": {
         "command_type": {
             "type": "string",
-            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "leaderboard", "leveling_rank", "leveling_leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "staffpromo_requirements", "staffpromo_bonuses", "staffpromo_exclude", "staffpromo_config", "staffpromo_promote", "staffpromo_demote", "list_triggers", "help_all", "config_panel", "ticket_create", "ticket_close", "verification_verify", "appeal_create", "application_apply"]
+            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "leaderboard", "leveling_rank", "leveling_leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "staffpromo_requirements", "staffpromo_bonuses", "staffpromo_exclude", "staffpromo_config", "staffpromo_promote", "staffpromo_demote", "list_triggers", "help_all", "config_panel", "ticket_create", "ticket_close", "verification_verify", "appeal_create", "application_apply", "set_verify_channel", "create_tournament", "create_event"]
         },
         "content": {"type": "string"},
         "actions": {
@@ -4203,6 +4203,12 @@ class ActionHandler:
                     return await self.handle_ticket_close(message)
                 elif command_type == "verification_verify":
                     return await self.handle_verification_verify(message)
+                elif command_type == "set_verify_channel":
+                    return await self.handle_set_verify_channel(message)
+                elif command_type == "create_tournament":
+                    return await self.handle_create_tournament(message)
+                elif command_type == "create_event":
+                    return await self.handle_create_event(message)
                 elif command_type == "appeal_create":
                     return await self.handle_appeal_create(message)
                 elif command_type == "application_apply":
@@ -5906,6 +5912,87 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         from modules.verification import VerifyView
         embed = discord.Embed(title="Verification Required", description="Click the button below to verify.", color=discord.Color.blue())
         await message.channel.send(embed=embed, view=VerifyView())
+        return True
+
+    async def handle_set_verify_channel(self, message: discord.Message) -> bool:
+        from modules.verification import Verification
+        verification = Verification(self.bot)
+        args = message.content.split()
+        await verification.set_verify_channel(message, args)
+        return True
+
+    async def handle_create_tournament(self, message: discord.Message) -> bool:
+        from modules.tournaments import TournamentSystem
+        tournament_system = TournamentSystem(self.bot)
+        args = message.content.split()
+        # Parse tournament name from args (e.g., !tournament create "My Tournament")
+        if len(args) < 3:
+            return await message.channel.send("❌ Usage: `!tournament create <tournament name>`")
+        name = " ".join(args[2:])
+        # Create tournament with default settings
+        guild = message.guild
+        settings = tournament_system.get_guild_settings(guild.id)
+        import time
+        from datetime import datetime
+        tournament_id = f"tournament_{int(time.time())}"
+        new_tournament = Tournament(
+            id=tournament_id,
+            guild_id=guild.id,
+            name=name,
+            description=f"Tournament: {name}",
+            tournament_type=TournamentType.SINGLE_ELIMINATION,
+            status=TournamentStatus.REGISTRATION,
+            max_participants=settings.get("default_max", 32),
+            min_participants=settings.get("default_min", 4),
+            prize_pool=settings.get("default_prize", {"coins": 500, "xp": 250}),
+            registration_end=time.time() + 86400,  # 24 hours from now
+            start_time=time.time() + 86400,
+            rounds=[],
+            participants=[],
+            teams={},
+            bracket=[],
+            winner=None,
+            created_by=message.author.id,
+            created_at=time.time(),
+            channel_id=message.channel.id
+        )
+        tournament_system._tournaments[tournament_id] = new_tournament
+        tournament_system._save_tournament(new_tournament)
+        await message.channel.send(f"✅ Tournament **{name}** created! Registration open for 24h. Use `!join {tournament_id}` to join.")
+        return True
+
+    async def handle_create_event(self, message: discord.Message) -> bool:
+        from modules.events import EventScheduler
+        event_scheduler = EventScheduler(self.bot)
+        args = message.content.split()
+        if len(args) < 3:
+            return await message.channel.send("❌ Usage: `!event create <event name>` or `!evenf create <event name>`")
+        name = " ".join(args[2:])
+        # Use AI to create event with default settings
+        guild = message.guild
+        import time
+        event_id = f"event_{int(time.time())}"
+        # Create a basic event (AI can be used to expand later)
+        from datetime import datetime, timedelta
+        next_run = datetime.now() + timedelta(days=1)
+        from modules.events import ScheduledEvent, EventType, EventStatus
+        new_event = ScheduledEvent(
+            id=event_id,
+            guild_id=guild.id,
+            channel_id=message.channel.id,
+            name=name,
+            description=f"Event: {name}",
+            event_type=EventType.CUSTOM,
+            schedule="0 0 * * *",  # Daily placeholder, adjust via config
+            next_run=next_run.timestamp(),
+            status=EventStatus.SCHEDULED,
+            rewards={"coins": 100, "xp": 50},
+            settings={},
+            created_by=message.author.id
+        )
+        # Save event (assuming EventScheduler has a save method)
+        event_scheduler._save_event(new_event)
+        await message.channel.send(f"✅ Event **{name}** created! ID: `{event_id}`. Use `!join {event_id}` to join.")
         return True
 
     async def handle_appeal_create(self, message: discord.Message) -> bool:

@@ -182,6 +182,9 @@ class TournamentSystem:
         custom_cmds["tournamentleaderboard"] = json.dumps({
             "command_type": "tournament_leaderboard"
         })
+        custom_cmds["tournament create"] = json.dumps({
+            "command_type": "create_tournament"
+        })
         custom_cmds["help tournaments"] = json.dumps({
             "command_type": "help_embed",
             "title": "🏆 Tournament System",
