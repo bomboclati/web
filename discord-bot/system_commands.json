@@ -3,98 +3,84 @@
         "command_type": "simple",
         "content": "Welcome system is active! New members will receive automated welcome messages."
     },
+    "verify": {
+        "command_type": "verification_verify",
+        "content": "Click the button below to verify your account."
+    },
     "verification": {
+        "command_type": "verification_verify",
+        "content": "Use /verify or click below to verify."
+    },
+    "balance": {
+        "command_type": "economy_balance",
+        "content": "Check your current balance with !balance"
+    },
+    "daily": {
+        "command_type": "economy_daily",
+        "content": "Claim your daily reward with !daily"
+    },
+    "work": {
+        "command_type": "economy_work",
+        "content": "Work to earn coins!"
+    },
+    "beg": {
+        "command_type": "economy_beg",
+        "content": "Beg for coins!"
+    },
+    "shop": {
+        "command_type": "economy_shop",
+        "content": "Browse the server shop."
+    },
+    "buy": {
+        "command_type": "economy_buy",
+        "content": "Usage: !buy <item>"
+    },
+    "leaderboard": {
+        "command_type": "leveling_leaderboard",
+        "content": "View top members with !leaderboard"
+    },
+    "economylb": {
+        "command_type": "economy_leaderboard",
+        "content": "View top members by coins with !economylb"
+    },
+    "rank": {
+        "command_type": "leveling_rank",
+        "content": "Check your current level and XP with !rank"
+    },
+    "ticket": {
+        "command_type": "ticket_create",
+        "content": "Create a support ticket with !ticket"
+    },
+    "close": {
+        "command_type": "ticket_close",
+        "content": "Close the current ticket."
+    },
+    "warn": {
         "command_type": "simple",
-        "content": "Use `/verify` to verify your account and gain access to the server."
+        "content": "Usage: !warn @user <reason>"
     },
-    "economy": {
-        "balance": {
-            "command_type": "economy_balance",
-            "content": "Check your current balance with !balance"
-        },
-        "daily": {
-            "command_type": "economy_daily",
-            "content": "Claim your daily reward with !daily"
-        },
-        "work": {
-            "command_type": "economy_work",
-            "content": "Work to earn coins!"
-        },
-        "beg": {
-            "command_type": "economy_beg",
-            "content": "Beg for coins!"
-        },
-        "shop": {
-            "command_type": "simple",
-            "content": "Use !shop to see available items."
-        },
-        "leaderboard": {
-            "command_type": "economy_leaderboard",
-            "content": "View top members by coins with !leaderboard"
-        }
-    },
-    "leveling": {
-        "rank": {
-            "command_type": "simple",
-            "content": "Check your current level and XP with !rank"
-        },
-        "leaderboard": {
-            "command_type": "simple",
-            "content": "View top members with !leaderboard"
-        }
-    },
-    "tickets": {
-        "ticket": {
-            "command_type": "simple",
-            "content": "Create a support ticket with !ticket"
-        }
-    },
-    "moderation": {
-        "report": {
-            "command_type": "simple",
-            "content": "Report a user with !report <user> <reason>"
-        },
-        "warn": {
-            "command_type": "simple",
-            "content": "Warn a user (Staff only)"
-        },
-        "warnings": {
-            "command_type": "simple",
-            "content": "Check user warnings."
-        }
-    },
-    "staff_system": {
-        "shift": {
-            "command_type": "simple",
-            "content": "Start or end your staff shift with !shift"
-        }
-    },
-    "starboard": {
+    "warnings": {
         "command_type": "simple",
-        "content": "View the top starred messages in this server."
+        "content": "Check user warnings."
     },
-    "suggestions": {
-        "suggest": {
-            "command_type": "simple",
-            "content": "Submit a suggestion for the server."
-        }
+    "staffpromo_status": {
+        "command_type": "staffpromo_status",
+        "content": "Check your staff promotion eligibility."
     },
-    "giveaways": {
+    "staffpromo_leaderboard": {
+        "command_type": "staffpromo_leaderboard",
+        "content": "View staff activity leaderboard."
+    },
+    "suggest": {
         "command_type": "simple",
-        "content": "Manage giveaways with !giveaway create/end/reroll"
+        "content": "Submit a suggestion for the server."
     },
-    "modmail": {
-        "command_type": "simple",
-        "content": "DM the bot to contact the server staff."
+    "appeal": {
+        "command_type": "appeal_create",
+        "content": "Open an appeal form."
     },
-    "anti_raid": {
-        "raidstatus": {
-            "command_type": "simple",
-            "content": "Check the current server security status."
-        }
-    },
-    "guardian": {
-        "command_type": "simple",
-        "content": "View AI protection analytics."
+    "apply": {
+        "command_type": "application_apply",
+        "content": "Open a staff application form."
     }
 }

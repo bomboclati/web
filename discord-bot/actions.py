@@ -57,7 +57,7 @@ COMMAND_SCHEMA = {
     "properties": {
         "command_type": {
             "type": "string",
-            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "leaderboard", "leveling_rank", "leveling_leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "staffpromo_requirements", "staffpromo_bonuses", "staffpromo_exclude", "staffpromo_config", "staffpromo_promote", "staffpromo_demote", "list_triggers", "help_all", "config_panel"]
+            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "leaderboard", "leveling_rank", "leveling_leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "staffpromo_requirements", "staffpromo_bonuses", "staffpromo_exclude", "staffpromo_config", "staffpromo_promote", "staffpromo_demote", "list_triggers", "help_all", "config_panel", "ticket_create", "ticket_close", "verification_verify", "appeal_create", "application_apply"]
         },
         "content": {"type": "string"},
         "actions": {
@@ -4197,6 +4197,16 @@ class ActionHandler:
                     return await self.handle_staffpromo_requirements(message)
                 elif command_type == "staffpromo_bonuses":
                     return await self.handle_staffpromo_bonuses(message)
+                elif command_type == "ticket_create":
+                    return await self.handle_ticket_create(message)
+                elif command_type == "ticket_close":
+                    return await self.handle_ticket_close(message)
+                elif command_type == "verification_verify":
+                    return await self.handle_verification_verify(message)
+                elif command_type == "appeal_create":
+                    return await self.handle_appeal_create(message)
+                elif command_type == "application_apply":
+                    return await self.handle_application_apply(message)
                 else:
                     # Unknown dict type, fall back to sending as string
                     await message.channel.send(content=code)
@@ -5857,3 +5867,73 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             for channel in guild.channels:
                 if channel.name == channel_identifier or channel.name == channel_identifier.lstrip('#'):
                     return channel
+
+    async def handle_ticket_create(self, message: discord.Message) -> bool:
+        from modules.auto_setup import CreateTicketButton
+        view = CreateTicketButton(message.guild.id)
+        await message.channel.send("Click below to open a ticket!", view=view)
+        return True
+
+    async def handle_ticket_close(self, message: discord.Message) -> bool:
+        if not message.guild: return False
+        # Check if it's a ticket channel
+        if not message.channel.name.startswith("ticket-"):
+            await message.channel.send("❌ This command can only be used inside a ticket channel.")
+            return True
+
+        system = getattr(self.bot, "tickets", None)
+        if system:
+            # We need to find the ticket object
+            tickets_data = dm.load_json("tickets", default={})
+            target_ticket = None
+            for tid, t in tickets_data.items():
+                if t.get("channel_id") == message.channel.id:
+                    target_ticket = t
+                    break
+
+            if target_ticket:
+                await message.channel.send("🔒 Closing ticket...")
+                await asyncio.sleep(2)
+                await message.channel.delete()
+                target_ticket["status"] = "closed"
+                dm.save_json("tickets", tickets_data)
+                return True
+
+        await message.channel.send("❌ Failed to close ticket automatically.")
+        return True
+
+    async def handle_verification_verify(self, message: discord.Message) -> bool:
+        from modules.verification import VerifyView
+        embed = discord.Embed(title="Verification Required", description="Click the button below to verify.", color=discord.Color.blue())
+        await message.channel.send(embed=embed, view=VerifyView())
+        return True
+
+    async def handle_appeal_create(self, message: discord.Message) -> bool:
+        from modules.appeals import AppealPersistentView
+        await message.channel.send("Submit your appeal here.", view=AppealPersistentView())
+        return True
+
+    async def handle_application_apply(self, message: discord.Message) -> bool:
+        from modules.applications import ApplicationPersistentView
+        await message.channel.send("Apply for staff using the button below!", view=ApplicationPersistentView())
+        return True
+
+    async def handle_staffpromo_bonuses(self, message: discord.Message) -> bool:
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+        config = staff_promo._get_full_config(guild.id)
+        metrics = config.get("metrics", staff_promo._default_metrics)
+
+        embed = discord.Embed(title="🌟 Staff Promotion Metrics & Bonuses", color=discord.Color.gold())
+
+        desc = "The following activity metrics are tracked for staff promotions:\n\n"
+        for name, data in metrics.items():
+            if data.get("enabled", True):
+                weight = data.get("weight", 1.0)
+                desc += f"• **{name.replace('_', ' ').title()}**: Weight {weight}x\n"
+
+        embed.description = desc
+        embed.set_footer(text="Higher weights mean the metric is more important for promotion.")
+
+        await message.channel.send(embed=embed)
+        return True

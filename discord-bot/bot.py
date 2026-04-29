@@ -631,6 +631,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
 
         # 1. Passive Systems (XP & Triggers) - wrapped to prevent cascade failures
         await self._safe_call(self.leveling.handle_message(message), "leveling")
+        await self._safe_call(self.economy.handle_message(message), "economy")
         await self._safe_call(self.trigger_roles.handle_message(message), "trigger_roles")
         await self._safe_call(self.moderation.analyze_message(message), "moderation")
         await self._safe_call(self.automod.handle_message(message), "automod")

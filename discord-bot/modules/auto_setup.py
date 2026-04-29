@@ -1803,12 +1803,21 @@ class AutoSetup(commands.Cog):
                 custom_cmds.setdefault("beg", json.dumps({"command_type": "economy_beg"}))
                 custom_cmds.setdefault("economylb", json.dumps({"command_type": "economy_leaderboard"}))
                 custom_cmds.setdefault("shop", json.dumps({"command_type": "economy_shop"}))
+                custom_cmds.setdefault("buy", json.dumps({"command_type": "economy_buy"}))
+                custom_cmds.setdefault("rob", json.dumps({"command_type": "economy_rob"}))
+                custom_cmds.setdefault("transfer", json.dumps({"command_type": "economy_transfer"}))
             elif system_name == "leveling":
                 custom_cmds.setdefault("rank", json.dumps({"command_type": "leveling_rank"}))
                 custom_cmds.setdefault("leaderboard", json.dumps({"command_type": "leveling_leaderboard"}))
             elif system_name == "tickets":
                 custom_cmds.setdefault("ticket", json.dumps({"command_type": "ticket_create"}))
                 custom_cmds.setdefault("close", json.dumps({"command_type": "ticket_close"}))
+            elif system_name == "verification":
+                custom_cmds.setdefault("verify", json.dumps({"command_type": "verification_verify"}))
+            elif system_name == "appeals":
+                custom_cmds.setdefault("appeal", json.dumps({"command_type": "appeal_create"}))
+            elif system_name == "applications":
+                custom_cmds.setdefault("apply", json.dumps({"command_type": "application_apply"}))
         
         dm.update_guild_data(guild_id, "custom_commands", custom_cmds)
 

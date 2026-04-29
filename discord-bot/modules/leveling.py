@@ -120,26 +120,43 @@ class Leveling:
         config[name] = enabled
         dm.update_guild_data(guild_id, "xp_multipliers", config)
     
-    def calculate_xp(self, guild_id: int, user_id: int, base_xp: int) -> tuple:
+    def calculate_xp(self, guild_id: int, member: discord.Member, base_xp: int) -> tuple:
         """Calculate XP with all multipliers. Returns (final_xp, multipliers_applied)."""
-        final = base_xp
+        config = dm.get_guild_data(guild_id, "leveling_config", {})
+        final = float(base_xp)
         applied = []
         
-        # Weekend bonus
+        # 1. Global Multiplier / Double XP
+        if config.get("double_xp_enabled"):
+            final *= 2.0
+            applied.append("Double XP (2x)")
+
+        # 2. Weekend bonus
         if datetime.datetime.now().weekday() >= 5:
             final *= 2.0
             applied.append("weekend (2x)")
         
-        # Active multipliers
+        # 3. Role Multipliers
+        role_mults = config.get("xp_multiplier_roles", {})
+        highest_mult = 1.0
+        for role_id_str, mult in role_mults.items():
+            if any(str(r.id) == role_id_str for r in member.roles):
+                highest_mult = max(highest_mult, float(mult))
+
+        if highest_mult > 1.0:
+            final *= highest_mult
+            applied.append(f"Role Bonus ({highest_mult}x)")
+
+        # 4. Active multipliers (manual event toggles)
         for name, mult in self.get_active_multipliers(guild_id):
             final *= mult
             applied.append(f"{name} ({mult}x)")
         
-        # Streak bonus
-        streak_bonus = self.get_streak_bonus(guild_id, user_id)
+        # 5. Streak bonus
+        streak_bonus = self.get_streak_bonus(guild_id, member.id)
         if streak_bonus > 1.0:
-            final = int(final * streak_bonus)
-            applied.append(f"streak {self.get_streak(guild_id, user_id)} ({streak_bonus}x)")
+            final *= streak_bonus
+            applied.append(f"streak {self.get_streak(guild_id, member.id)} ({streak_bonus}x)")
         
         return int(final), applied
     
@@ -148,21 +165,80 @@ class Leveling:
         if message.author.bot or not message.guild:
             return
         
-        base_xp = random.randint(5, 15)
-        final_xp, applied = self.calculate_xp(message.guild.id, message.author.id, base_xp)
+        config = dm.get_guild_data(message.guild.id, "leveling_config", {})
+        if not config.get("enabled", True):
+            return
+
+        # Check for no-XP channels
+        if message.channel.id in config.get("no_xp_channel_ids", []):
+            return
+
+        # Check for no-XP roles
+        if any(r.id in config.get("no_xp_role_ids", []) for r in message.author.roles):
+            return
+
+        # XP Cooldown check
+        user_id = message.author.id
+        guild_id = message.guild.id
+        cooldown = config.get("xp_cooldown_seconds", 60)
+
+        # We can store last XP gain in a temp cache or guild data
+        last_xp_key = f"last_xp_{user_id}"
+        last_xp_time = dm.get_guild_data(guild_id, last_xp_key, 0)
+        if time.time() - last_xp_time < cooldown:
+            return
+
+        xp_min = config.get("xp_per_message_min", 15)
+        xp_max = config.get("xp_per_message_max", 25)
+        base_xp = random.randint(xp_min, xp_max)
+
+        final_xp, applied = self.calculate_xp(guild_id, message.author, base_xp)
         
-        new_level = self.add_xp(message.guild.id, message.author.id, final_xp)
+        new_level = self.add_xp(guild_id, user_id, final_xp)
+        dm.update_guild_data(guild_id, last_xp_key, time.time())
         
-        if new_level:
+        if new_level and config.get("level_up_announcements", True):
             bonus_text = " + ".join(applied) if applied else ""
+
+            # Use custom level up message if set
+            msg_template = config.get("level_up_message", "Congratulations {user}, you leveled up to level {level}!")
+            content = msg_template.replace("{user}", message.author.mention).replace("{level}", str(new_level))
+
             embed = discord.Embed(
                 title="Level Up!",
-                description=f"🎉 {message.author.mention} reached level {new_level}!",
+                description=content,
                 color=discord.Color.gold()
             )
             if bonus_text:
                 embed.add_field(name="Bonuses", value=bonus_text, inline=False)
-            await message.channel.send(embed=embed)
+
+            # Send to specific channel if configured
+            target_ch_id = config.get("level_up_channel_id")
+            target_ch = message.guild.get_channel(target_ch_id) if target_ch_id else message.channel
+
+            try:
+                await target_ch.send(embed=embed)
+            except:
+                pass
+
+            # Role rewards logic
+            rewards = dm.get_guild_data(guild_id, "level_rewards", {})
+            role_to_give_id = rewards.get(str(new_level))
+            if role_to_give_id:
+                role = message.guild.get_role(int(role_to_give_id))
+                if role:
+                    try:
+                        # Optional: remove previous roles
+                        if config.get("remove_previous_roles"):
+                            for lvl, rid in rewards.items():
+                                if int(lvl) < new_level:
+                                    prev_role = message.guild.get_role(int(rid))
+                                    if prev_role and prev_role in message.author.roles:
+                                        await message.author.remove_roles(prev_role)
+
+                        await message.author.add_roles(role)
+                    except:
+                        pass
     
     """Leaderboard with streaks"""
     def get_leaderboard(self, guild_id: int, limit: int = 10) -> list:
