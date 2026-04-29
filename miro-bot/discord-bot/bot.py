@@ -665,7 +665,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             return  # Don't process as command if mentioned
 
         # 4. Prefix Commands
-        prefix = await self.get_dynamic_prefix(self, message)
+        prefix = await self.get_dynamic_prefix(message)
         if message.content.startswith(prefix):
             cmd_content = message.content[len(prefix):].strip()
             
