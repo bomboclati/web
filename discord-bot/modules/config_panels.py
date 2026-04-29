@@ -34,6 +34,7 @@ class ConfigPanelView(ui.View):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.system_name = system_name
+        self.panel_message = None  # Store the message object of this config panel
 
     def _storage_key(self) -> str:
         return self._config_key or f"{self.system_name}_config"
@@ -189,6 +190,14 @@ class _GenericRoleSelect(ui.RoleSelect):
         self.config_panel.save_config(config, interaction.guild_id, interaction.client)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {self.values[0].name}")
         await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to {self.values[0].mention}", ephemeral=True)
+        # Update the original config panel
+        if self.config_panel.panel_message:
+            try:
+                new_embed = self.config_panel.create_embed(guild_id=interaction.guild_id, guild=interaction.guild)
+                await self.config_panel.panel_message.edit(embed=new_embed, view=self.config_panel)
+            except Exception as e:
+                from logger import logger
+                logger.error(f"Failed to update config panel after role select: {e}")
 
 class _GenericChannelSelect(ui.ChannelSelect):
     def __init__(self, parent: ConfigPanelView, key: str, placeholder: str, channel_types=None):
@@ -206,6 +215,14 @@ class _GenericChannelSelect(ui.ChannelSelect):
         self.config_panel.save_config(config, interaction.guild_id, interaction.client)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to #{self.values[0].name}")
         await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to <#{self.values[0].id}>", ephemeral=True)
+        # Update the original config panel
+        if self.config_panel.panel_message:
+            try:
+                new_embed = self.config_panel.create_embed(guild_id=interaction.guild_id, guild=interaction.guild)
+                await self.config_panel.panel_message.edit(embed=new_embed, view=self.config_panel)
+            except Exception as e:
+                from logger import logger
+                logger.error(f"Failed to update config panel after channel select: {e}")
 
 class _NumberModal(ui.Modal):
     value_input = ui.TextInput(label="Value", required=True, max_length=15)
@@ -345,6 +362,19 @@ def _picker_view(component: ui.Item) -> ui.View:
 class VerificationConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "verification")
+        # Set initial toggle button label and style
+        c = self.get_config(guild_id)
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_verify_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
 
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
@@ -363,10 +393,22 @@ class VerificationConfigView(ConfigPanelView):
         embed.add_field(name="Log Count", value=str(len(c.get("verification_log", []))), inline=True)
         return embed
 
-    @ui.button(label="Toggle System", emoji="✅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_verify_toggle")
+    @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_verify_toggle")
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, f"Toggled verification to {c.get('enabled')}")
+        # Update toggle button label and style
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_verify_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
         await self.update_panel(i)
 
     @ui.button(label="Set Verified Role", emoji="🔢", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_verify_set_v")
@@ -438,6 +480,19 @@ class AntiRaidConfigView(ConfigPanelView):
     _config_key = "anti_raid_config"  # auto_setup writes here
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "antiraid")
+        # Set initial toggle button state
+        c = self.get_config(guild_id)
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_antiraid_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
 
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
@@ -465,9 +520,22 @@ class AntiRaidConfigView(ConfigPanelView):
         embed.add_field(name="Whitelist", value=f"{len(c.get('whitelist', []))} users", inline=True)
         return embed
 
-    @ui.button(label="Toggle Anti-Raid", emoji="🛡️", style=discord.ButtonStyle.success, row=0, custom_id="cfg_antiraid_toggle")
+    @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_antiraid_toggle")
     async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
+        # Update toggle button label and style
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_antiraid_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
+        await self.update_panel(i)
 
     @ui.button(label="Set Join Threshold", emoji="👥", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_antiraid_set_thresh")
     async def set_thresh(self, i, b):
@@ -4726,7 +4794,9 @@ def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
 async def handle_config_panel_command(message: discord.Message, system: str):
     view = get_config_panel(message.guild.id, system)
     if not view: return await message.channel.send(f"❌ System '{system}' not found.")
-    await message.channel.send(embed=view.create_embed(guild_id=message.guild.id, guild=message.guild), view=view)
+    embed = view.create_embed(guild_id=message.guild.id, guild=message.guild)
+    sent_msg = await message.channel.send(embed=embed, view=view)
+    view.panel_message = sent_msg
 
 def register_all_persistent_views(bot: discord.Client):
     # Config Panels
