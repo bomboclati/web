@@ -45,6 +45,7 @@ class GuardianSystem(commands.Cog):
         self.bot = bot
         self._dm_tracking: Dict[int, Dict[int, list]] = {}
         self._typing_patterns: Dict[int, Dict[int, list]] = {}
+        self._deletion_tracking: Dict[int, Dict[int, list]] = {}
 
     def get_config(self, guild_id: int) -> dict:
         return dm.get_guild_data(guild_id, "guardian_config", DEFAULT_GUARDIAN_CONFIG.copy())
@@ -176,7 +177,45 @@ class GuardianSystem(commands.Cog):
             return
         # Nuke protection: rapid channel/role deletions
         if entry.action in [discord.AuditLogAction.channel_delete, discord.AuditLogAction.role_delete]:
-            pass  # TODO: implement rapid-deletion tracking
+            if not entry.user or entry.user.bot:
+                return
+            user_id = entry.user.id
+            now = time.time()
+            guild_id = guild.id
+            
+            # Initialize tracking for guild
+            if guild_id not in self._deletion_tracking:
+                self._deletion_tracking[guild_id] = {}
+            if user_id not in self._deletion_tracking[guild_id]:
+                self._deletion_tracking[guild_id][user_id] = []
+            
+            # Add current deletion timestamp
+            self._deletion_tracking[guild_id][user_id].append(now)
+            
+            # Clean up timestamps older than 60 seconds
+            self._deletion_tracking[guild_id][user_id] = [
+                ts for ts in self._deletion_tracking[guild_id][user_id]
+                if now - ts <= 60
+            ]
+            
+            # Check for rapid deletions: 3+ deletions in 10 seconds
+            recent_deletions = [
+                ts for ts in self._deletion_tracking[guild_id][user_id]
+                if now - ts <= 10
+            ]
+            
+            if len(recent_deletions) >= 3:
+                # Nuke detected
+                member = guild.get_member(user_id)
+                if member:
+                    nuke_level = config.get("nuke_level", "BAN")
+                    await self._take_action(member, nuke_level, "Rapid channel/role deletion (nuke detected)")
+                    self._log_incident(
+                        guild_id, "nuke_attack", user_id, nuke_level,
+                        f"3+ deletions in <10s by {member.display_name}"
+                    )
+                # Clear tracking for this user to prevent repeat alerts
+                self._deletion_tracking[guild_id][user_id] = []
 
     async def _take_action(self, member: discord.Member, level: str, reason: str):
         if level in ("OFF", None):

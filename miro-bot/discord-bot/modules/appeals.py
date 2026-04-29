@@ -379,4 +379,4 @@ class Appeals:
         return True
 
 async def setup(bot):
-    pass # Managed by bot.py
+    await bot.add_cog(AppealsSystem(bot))
