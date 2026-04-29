@@ -112,9 +112,8 @@ class ServerAnalytics:
                         metrics["unique_chatters"] = hour_data.get("unique_chatters", 0)
                         metrics["xp_gained"] = hour_data.get("xp_gained", 0)
             
-            # Get voice minutes from voice system
-            if hasattr(self.bot, 'voice_system'):
-                metrics["voice_minutes"] = self.bot.voice_system.get_hourly_voice_minutes(guild.id)
+            # Voice minutes metric removed - voice_system has been deleted
+            metrics["voice_minutes"] = 0
             
             # Convert set to count for JSON serialization (already an int now)
                 

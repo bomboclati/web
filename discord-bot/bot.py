@@ -34,7 +34,6 @@ from modules.events import EventScheduler
 from modules.intelligence import ServerIntelligence
 from modules.gamification import AdaptiveGamification
 from modules.tickets import AdvancedTickets
-from modules.voice_system import VoiceActivitySystem
 from modules.content_generator import ContentGenerator
 from modules.tournaments import TournamentSystem
 from modules.chat_channels import AIChatSystem
@@ -114,7 +113,6 @@ class MiroBot(commands.Bot):
         self.intelligence = ServerIntelligence(self)
         self.gamification = AdaptiveGamification(self)
         self.tickets = AdvancedTickets(self)
-        self.voice_system = VoiceActivitySystem(self)
         self.content_generator = ContentGenerator(self)
         self.tournaments = TournamentSystem(self)
         self.chat_channels = AIChatSystem(self)
@@ -185,7 +183,6 @@ class MiroBot(commands.Bot):
             self.reminders.start_reminder_loop()
             self.staff_reviews.start_tasks()
             self.staff_shift.start_tasks()
-            self.voice_system.start_voice_monitoring()
             if hasattr(self, 'analytics') and self.analytics:
                 self.analytics.start_monitoring_loop()
         except Exception as e:
