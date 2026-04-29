@@ -104,12 +104,9 @@ class ServerAnalytics:
             # Note: get_hourly_stats is not implemented in Leveling class, so we skip this for now
             # The metrics will remain at 0 until the method is added to Leveling
             
-            # Get voice minutes from voice system
-            if hasattr(self.bot, 'voice_system'):
-                metrics["voice_minutes"] = self.bot.voice_system.get_hourly_voice_minutes(guild.id)
+            # Voice minutes metric removed with voice_system deletion
+            metrics["voice_minutes"] = 0
             
-            # Convert set to count for JSON serialization (already an int now)
-                
         except Exception as e:
             logger.error(f"Error collecting metrics for guild {guild.id}: {e}")
         

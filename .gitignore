@@ -8,25 +8,36 @@ data/.encryption_key
 # Database files
 *.db
 
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-
-# Editors
-.vscode/
-.idea/
-
 # Dependencies
 node_modules/
 .venv/
 venv/
 __pycache__/
-.mypy_cache/
-.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
 
 # Build artifacts
 dist/
 build/
 target/
+.mypy_cache/
+.pytest_cache/
+.coverage
+coverage/
+htmlcov/
 ```
