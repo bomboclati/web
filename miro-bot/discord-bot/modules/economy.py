@@ -26,6 +26,39 @@ class Economy:
     def __init__(self, bot):
         self.bot = bot
     
+    async def handle_message(self, message: discord.Message):
+        """Handle message events for economy (earn coins per message)."""
+        if not message.guild or message.author.bot:
+            return
+        
+        guild_id = message.guild.id
+        user_id = message.author.id
+        
+        # Check if economy is enabled
+        config = dm.get_guild_data(guild_id, "economy_config", {"enabled": True})
+        if not config.get("enabled", True):
+            return
+        
+        # Cooldown check (60 seconds)
+        last_earn = dm.get_guild_data(guild_id, "last_message_earn", {})
+        user_last = last_earn.get(str(user_id), 0)
+        now = time.time()
+        
+        if now - user_last < 60:
+            return
+        
+        # Earn coins
+        earn_rate = config.get("earn_rate", 2)
+        self.add_coins(guild_id, user_id, earn_rate)
+        
+        # Update last earn time
+        last_earn[str(user_id)] = now
+        dm.update_guild_data(guild_id, "last_message_earn", last_earn)
+        
+        # Small chance to earn gems (1%)
+        if random.random() < 0.01:
+            self.add_gems(guild_id, user_id, 1)
+    
     def get_coins(self, guild_id: int, user_id: int) -> int:
         balances = dm.get_guild_data(guild_id, "economy_balances", {})
         return balances.get(str(user_id), 0)

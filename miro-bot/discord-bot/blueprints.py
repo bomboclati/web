@@ -99,7 +99,7 @@ Members: set_nickname, mute_member, unmute_member, kick_member, ban_member, unba
 Server: set_server_name, set_server_icon, configure_logging
 Commands: create_prefix_command, delete_prefix_command
 Scheduling: schedule_ai_action, remove_ai_task
-Systems: setup_staff_system, setup_economy, setup_trigger_role, setup_verification, setup_tickets, setup_welcome, setup_leveling, setup_giveaway, setup_starboard, setup_moderation, setup_anti_raid, setup_appeals, setup_role_menu, setup_application, setup_feedback, setup_suggestions, setup_achievements, setup_reminders, setup_auto_publisher, setup_voice_system, setup_auto_roles, bulk_create_channels, bulk_create_roles
+Systems: setup_staff_system, setup_economy, setup_trigger_role, setup_verification, setup_tickets, setup_welcome, setup_leveling, setup_giveaway, setup_starboard, setup_moderation, setup_anti_raid, setup_appeals, setup_role_menu, setup_application, setup_feedback, setup_suggestions, setup_achievements, setup_reminders, setup_auto_publisher, setup_auto_roles, bulk_create_channels, bulk_create_roles
 
 ---
 
