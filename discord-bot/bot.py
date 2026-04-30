@@ -2332,54 +2332,56 @@ async def _process_ai_turn(bot, interaction: discord.Interaction, user_input: st
         """Pre-process AI response to handle corrupted JSON and extract valid JSON."""
         if not text:
             return {"summary": "I had trouble understanding. Please rephrase."}
-        
+
         # Remove stray ?, ??, ? characters at start/end
         text = text.strip()
         while text.startswith(('?', '??', '？')):
             text = text[1:].strip()
         while text.endswith(('?', '??', '？')):
             text = text[:-1].strip()
-        
-        # Extract JSON using regex r'(\{.*\}|\[.*\])' with re.DOTALL
-        import re
-        json_match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1)
-            try:
-                # Try to parse JSON directly
-                parsed = json.loads(json_str)
-                # Validate it has the required structure
-                if isinstance(parsed, dict) and "summary" in parsed:
-                    return parsed
-            except json.JSONDecodeError:
-                # Attempt to repair JSON using json_repair if available, else manual fixes
+
+        # If the text starts with {, try to parse as JSON
+        if text.startswith('{'):
+            # Extract JSON using regex r'(\{.*\}|\[.*\])' with re.DOTALL
+            import re
+            json_match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
                 try:
-                    # Try to use json_repair if installed
+                    # Try to parse JSON directly
+                    parsed = json.loads(json_str)
+                    # Validate it has the required structure
+                    if isinstance(parsed, dict) and "summary" in parsed:
+                        return parsed
+                except json.JSONDecodeError:
+                    # Attempt to repair JSON using json_repair if available, else manual fixes
                     try:
-                        from json_repair import repair_json
-                        repaired = repair_json(json_str)
-                        parsed = json.loads(repaired)
-                        if isinstance(parsed, dict) and "summary" in parsed:
-                            return parsed
-                    except ImportError:
-                        # Manual JSON repair
-                        # Fix common issues like missing quotes, trailing commas
-                        repaired = json_str
-                        # Fix trailing commas before closing braces/brackets
-                        repaired = re.sub(r',\s*([\]}])(?=\s*[}\]])', r'\1', repaired)
-                        # Fix missing quotes around keys
-                        repaired = re.sub(r'([{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1 "\2":', repaired)
-                        # Fix single quotes to double quotes
-                        repaired = repaired.replace("'", '"')
-                        # Try parsing again
-                        parsed = json.loads(repaired)
-                        if isinstance(parsed, dict) and "summary" in parsed:
-                            return parsed
-                except Exception:
-                    pass
-        
-        # Return safe fallback on failure
-        return {"summary": "I had trouble understanding. Please rephrase."}
+                        # Try to use json_repair if installed
+                        try:
+                            from json_repair import repair_json
+                            repaired = repair_json(json_str)
+                            parsed = json.loads(repaired)
+                            if isinstance(parsed, dict) and "summary" in parsed:
+                                return parsed
+                        except ImportError:
+                            # Manual JSON repair
+                            # Fix common issues like missing quotes, trailing commas
+                            repaired = json_str
+                            # Fix trailing commas before closing braces/brackets
+                            repaired = re.sub(r',\s*([\]}])(?=\s*[}\]])', r'\1', repaired)
+                            # Fix missing quotes around keys
+                            repaired = re.sub(r'([{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1 "\2":', repaired)
+                            # Fix single quotes to double quotes
+                            repaired = repaired.replace("'", '"')
+                            # Try parsing again
+                            parsed = json.loads(repaired)
+                            if isinstance(parsed, dict) and "summary" in parsed:
+                                return parsed
+                    except Exception:
+                        pass
+
+        # If no valid JSON found, treat the entire text as a summary
+        return {"summary": text}
 
     # ── Resolve Discord <@ID> mentions in the user's text before sending to AI ──
     # When a user types /bot and uses Discord's mention autocomplete, the text arrives
@@ -2434,7 +2436,13 @@ CRITICAL INSTRUCTIONS:
         )
 
     res = await bot.ai.safe_chat(guild_id, user_id, enriched_input, SYSTEM_PROMPT + server_context + memory_context + mention_context)
-    
+
+    # Handle error responses from AI
+    if isinstance(res, dict) and "error" in res:
+        summary = res["error"]
+        await interaction.followup.send(summary, ephemeral=False)
+        return
+
     # Pre-process AI response to fix corrupted responses
     if isinstance(res, dict) and ("summary" in res or "message" in res or "response" in res or "question" in res):
         # Extract the text content to preprocess
