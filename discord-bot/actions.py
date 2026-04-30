@@ -1,4 +1,4 @@
-import discord
+﻿import discord
 import json
 import asyncio
 import time
@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Tuple, Optional
 from data_manager import dm
 from logger import logger
 from utils.deduplicator import deduplicator
+from ui_components import *
 
 # Color name to integer mapping for embeds
 COLOR_MAP = {
@@ -100,43 +101,6 @@ def validate_command_json(data: dict) -> Tuple[bool, str]:
                 return False, f"Disallowed action in command: {action['name']}"
 
     return True, ""
-
-class EditCommandModal(discord.ui.Modal):
-    def __init__(self, cmd_name: str, user_id: int):
-        super().__init__(title=f"Edit: !{cmd_name}")
-        self.cmd_name = cmd_name
-        self.user_id = user_id
-
-        self.code_input = discord.ui.TextInput(
-            label="Command Code (JSON)",
-            style=discord.TextStyle.paragraph,
-            placeholder='{"command_type": "..."}',
-            required=True
-        )
-        self.add_item(self.code_input)
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-
-        new_code = self.code_input.value
-
-        try:
-            data = json.loads(new_code)
-        except json.JSONDecodeError:
-            await interaction.response.send_message("❌ Invalid JSON! Please enter valid JSON.", ephemeral=True)
-            return
-
-        valid, error_msg = validate_command_json(data)
-        if not valid:
-            await interaction.response.send_message(f"❌ {error_msg}", ephemeral=True)
-            return
-
-        custom_cmds = dm.get_guild_data(interaction.guild.id, "custom_commands", {})
-        custom_cmds[self.cmd_name] = new_code
-        dm.update_guild_data(interaction.guild.id, "custom_commands", custom_cmds)
-
-        await interaction.response.edit_message(content=f"? Command `!{self.cmd_name}` updated!", view=None)
 
 class ActionHandler:
     ALLOWED_ACTIONS = {
@@ -244,7 +208,7 @@ class ActionHandler:
 
                 custom_cmds[help_cmd_name] = json.dumps({
                     "command_type": "help_embed",
-                    "title": f"🛡️ {system_type.replace('_', ' ').title()} System",
+                    "title": f"ðŸ›¡ï¸ {system_type.replace('_', ' ').title()} System",
                     "description": f"Documentation for the {system_type} system.",
                     "fields": fields
                 })
@@ -276,7 +240,7 @@ class ActionHandler:
 
                     if help_channel:
                         embed = discord.Embed(
-                            title=f"✅ {system_type.replace('_', ' ').title()} System Deployed",
+                            title=f"âœ… {system_type.replace('_', ' ').title()} System Deployed",
                             description=(
                                 f"The {system_type} system has been successfully built and documented. "
                                 f"New commands available: {', '.join(f'`!{c}`' for c in created_commands if not c.startswith('help'))}\n\n"
@@ -284,7 +248,7 @@ class ActionHandler:
                             ),
                             color=discord.Color.green()
                         )
-                        embed.set_footer(text="Miro AI • Infrastructure as Code")
+                        embed.set_footer(text="Miro AI â€¢ Infrastructure as Code")
                         await help_channel.send(embed=embed)
         except Exception as e:
             logger.error(f"Error in _auto_document_system: {e}")
@@ -862,7 +826,7 @@ class ActionHandler:
             return
 
         embed = discord.Embed(
-            title=f"📢 {channel_name}",
+            title=f"ðŸ“¢ {channel_name}",
             description=guide["description"],
             color=discord.Color.blue()
         )
@@ -1038,7 +1002,7 @@ class ActionHandler:
                 break
 
         embed = discord.Embed(
-            title=f"🎭 Role: {role_name}",
+            title=f"ðŸŽ­ Role: {role_name}",
             description=description,
             color=discord.Color.blue()
         )
@@ -1558,7 +1522,7 @@ class ActionHandler:
         embed_data = params["embed_data"]
         guild = interaction.guild
 
-        # ── 0. Parse user_id from Discord mention format (e.g. <@!123456789> or <@123456789>) ─────
+        # â”€â”€ 0. Parse user_id from Discord mention format (e.g. <@!123456789> or <@123456789>) â”€â”€â”€â”€â”€
         if user_id:
             try:
                 # Handle both <@! and <@ mention formats
@@ -1577,7 +1541,7 @@ class ActionHandler:
             except (ValueError, TypeError):
                 user_id = None
 
-        # ── 1. Resolve user_id from username ──────────────────────────────────
+        # â”€â”€ 1. Resolve user_id from username â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if not user_id and username:
             # Handle Discord mention format <@!123456789> or <@123456789> (extract numeric ID directly)
             if isinstance(username, str) and username.startswith("<@"):
@@ -1651,7 +1615,7 @@ class ActionHandler:
 
         # f) Last resort: extract a Discord snowflake embedded in the username string.
         #    Discord's pomelo auto-usernames look like "user<snowflake>" e.g. user1357317173470564433.
-        #    We pull out any 17–20 digit number and call fetch_user() directly — no guild cache needed.
+        #    We pull out any 17â€“20 digit number and call fetch_user() directly â€” no guild cache needed.
         if not user_id and username:
             import re as _re_dm
             snowflake_match = _re_dm.search(r'\b(\d{17,20})\b', str(username))
@@ -1661,28 +1625,28 @@ class ActionHandler:
                     fetched_user = await self.bot.fetch_user(potential_id)
                     if fetched_user:
                         user_id = fetched_user.id
-                        logger.info(f"[send_dm] Resolved snowflake from username string: {username!r} → {user_id}")
+                        logger.info(f"[send_dm] Resolved snowflake from username string: {username!r} â†’ {user_id}")
                 except Exception:
                     pass
 
-        # ── 2. No user resolved — return failure so action sequence stops ──
+        # â”€â”€ 2. No user resolved â€” return failure so action sequence stops â”€â”€
         if not user_id:
             logger.warning(f"[send_dm] Could not resolve user from username={username!r}")
             try:
                 await interaction.channel.send(
-                    f"⚠️ Could not find user **{username}** to send them a DM.", delete_after=10
+                    f"âš ï¸ Could not find user **{username}** to send them a DM.", delete_after=10
                 )
             except Exception:
                 pass
             return False, None
 
-        # ── 3. Deduplication ──────────────────────────────────────────────────
+        # â”€â”€ 3. Deduplication â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         dedup_key = f"dm_{user_id}_{hash(content or '')}_{hash(str(embed_data) if embed_data else '')}"
         if not deduplicator.should_send(dedup_key, interval=3):
             logger.info(f"[send_dm] Deduplicated DM to user {user_id}")
             return True, None
 
-        # ── 4. Fetch the User object ──────────────────────────────────────────
+        # â”€â”€ 4. Fetch the User object â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         try:
             user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
         except discord.NotFound:
@@ -1695,7 +1659,7 @@ class ActionHandler:
         if not user:
             return False, None
 
-        # ── 5. Build embed ────────────────────────────────────────────────────
+        # â”€â”€ 5. Build embed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         embed = None
         if embed_data:
             embed = discord.Embed(
@@ -1710,17 +1674,17 @@ class ActionHandler:
                     inline=field.get("inline", False)
                 )
 
-        # ── 6. Send the DM ────────────────────────────────────────────────────
+        # â”€â”€ 6. Send the DM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         try:
             await user.send(content=content, embed=embed)
             logger.info(f"[send_dm] DM sent to {user} ({user_id})")
             return True, None
         except discord.Forbidden:
-            # User has DMs disabled — NOT a soft pass - this is a genuine failure
+            # User has DMs disabled â€” NOT a soft pass - this is a genuine failure
             logger.warning(f"[send_dm] {user} ({user_id}) has DMs disabled")
             try:
                 await interaction.channel.send(
-                    f"⚠️ Could not DM **{user.display_name}** — they have DMs disabled.",
+                    f"âš ï¸ Could not DM **{user.display_name}** â€” they have DMs disabled.",
                     delete_after=10
                 )
             except Exception:
@@ -1743,12 +1707,12 @@ class ActionHandler:
         username = params["username"]
         guild = interaction.guild
 
-        # ── Resolve member from username ──────────────────────────────────────
+        # â”€â”€ Resolve member from username â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         member = None
 
         if not user_id and not username:
             try:
-                await interaction.channel.send("⚠️ No user specified to ping.", delete_after=8)
+                await interaction.channel.send("âš ï¸ No user specified to ping.", delete_after=8)
             except Exception:
                 pass
             return True, None
@@ -1836,35 +1800,35 @@ class ActionHandler:
                     if not member:
                         member = await guild.fetch_member(potential_id)
                     if member:
-                        logger.info(f"[ping] Resolved snowflake from username string: {username!r} → {member.id}")
+                        logger.info(f"[ping] Resolved snowflake from username string: {username!r} â†’ {member.id}")
                 except Exception:
                     pass
 
-        # ── Member not found — soft pass ──────────────────────────────────────
+        # â”€â”€ Member not found â€” soft pass â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if not member:
             logger.warning(f"[ping] Could not find member: username={username!r} user_id={user_id!r}")
             try:
                 await interaction.channel.send(
-                    f"⚠️ Could not find member **{username or user_id}** to ping.", delete_after=8
+                    f"âš ï¸ Could not find member **{username or user_id}** to ping.", delete_after=8
                 )
             except Exception:
                 pass
             return True, None
 
-        # ── Build and send the ping embed ─────────────────────────────────────
+        # â”€â”€ Build and send the ping embed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         latency = round(self.bot.latency * 1000, 1) if self.bot.latency else 0
 
         status_map = {
             "online": "U0001f7e2 Online",
             "idle": "U0001f7e1 Idle",
             "dnd": "U0001f7e0 Do Not Disturb",
-            "offline": "⚫ Offline",
+            "offline": "âš« Offline",
         }
         status_text = status_map.get(str(member.status), str(member.status).title())
         joined = member.joined_at.strftime("%Y-%m-%d") if member.joined_at else "Unknown"
 
         embed = discord.Embed(
-            title=f"📣 {member.display_name}",
+            title=f"ðŸ“£ {member.display_name}",
             description=f"{status_text}\nBot Latency: {latency}ms\nJoined: {joined}",
             color=member.color if member.color != discord.Color.default() else discord.Color.blurple()
         )
@@ -1932,7 +1896,7 @@ class ActionHandler:
                 "beg_min": 10,
                 "beg_max": 50,
                 "currency_name": "coins",
-                "currency_symbol": "💰"
+                "currency_symbol": "ðŸ’°"
             }
             dm.update_guild_data(guild.id, "economy_config", economy_config)
             
@@ -2149,7 +2113,7 @@ class ActionHandler:
             await self._auto_document_system(guild.id, "welcome")
         return success, {"action": "undo_welcome", "guild_id": guild.id}
 
-    # --- Aliases: create_*_system → setup_* (AI may use either name) ---
+    # --- Aliases: create_*_system â†’ setup_* (AI may use either name) ---
 
     async def action_create_verify_system(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         return await self.action_setup_verification(interaction, params)
@@ -2781,19 +2745,19 @@ class ActionHandler:
 
     async def action_query_channels(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         channels = await self.bot.server_query.query_channels(interaction.guild.id, params.get("type"))
-        text = "\n".join([f"• {c['name']} ({c['type']})" for c in channels[:30]])
+        text = "\n".join([f"â€¢ {c['name']} ({c['type']})" for c in channels[:30]])
         await self._send_query_result(interaction, "Server Channels", text or "No channels found")
         return True, None
 
     async def action_query_roles(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         roles = await self.bot.server_query.query_roles(interaction.guild.id)
-        text = "\n".join([f"• {r['name']} (ID: {r['id']})" for r in roles if r['name'] != "@everyone"][:30])
+        text = "\n".join([f"â€¢ {r['name']} (ID: {r['id']})" for r in roles if r['name'] != "@everyone"][:30])
         await self._send_query_result(interaction, "Server Roles", text or "No roles found")
         return True, None
 
     async def action_query_members(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         members = await self.bot.server_query.query_members(interaction.guild.id, params.get("query"), params.get("limit", 20))
-        text = "\n".join([f"• {m['name']} ({m['status']})" for m in members])
+        text = "\n".join([f"â€¢ {m['name']} ({m['status']})" for m in members])
         await self._send_query_result(interaction, "Members Search", text or "No members found")
         return True, None
 
@@ -2826,13 +2790,13 @@ class ActionHandler:
 
     async def action_query_pending_applications(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         apps = await self.bot.server_query.query_pending_applications(interaction.guild.id)
-        text = "\n".join([f"• {a['username']} (Applied: {a['applied_at']})" for a in apps])
+        text = "\n".join([f"â€¢ {a['username']} (Applied: {a['applied_at']})" for a in apps])
         await self._send_query_result(interaction, "Pending Staff Applications", text or "No pending applications")
         return True, None
 
     async def action_query_active_shifts(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         shifts = await self.bot.server_query.query_active_shifts(interaction.guild.id)
-        text = "\n".join([f"• {s['username']} (Started: {s['start_time']})" for s in shifts])
+        text = "\n".join([f"â€¢ {s['username']} (Started: {s['start_time']})" for s in shifts])
         await self._send_query_result(interaction, "Active Staff Shifts", text or "No active shifts")
         return True, None
 
@@ -2868,7 +2832,7 @@ class ActionHandler:
         for g in active:
             lines.append(f"**{g.prize}** (ID: `{g.id}`) - Ends <t:{int(g.ends_at)}:R>")
 
-        embed = discord.Embed(title="🎁 Active Giveaways", description="\n".join(lines), color=discord.Color.gold())
+        embed = discord.Embed(title="ðŸŽ Active Giveaways", description="\n".join(lines), color=discord.Color.gold())
         await interaction.channel.send(embed=embed)
         return True, None
 
@@ -2938,7 +2902,7 @@ class ActionHandler:
             logger.info("Issued warning to %s in guild %d: %s", member.display_name, guild_id, reason)
 
             try:
-                embed = discord.Embed(title="⚠️ Warning Issued", color=discord.Color.gold())
+                embed = discord.Embed(title="âš ï¸ Warning Issued", color=discord.Color.gold())
                 embed.add_field(name="Server", value=interaction.guild.name)
                 embed.add_field(name="Reason", value=reason)
                 embed.timestamp = dt.datetime.now(dt.timezone.utc)
@@ -3375,7 +3339,7 @@ class ActionHandler:
             return False, None
 
     async def action_create_category(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Alias for create_category_channel — supports name, private, allowed_roles, denied_roles."""
+        """Alias for create_category_channel â€” supports name, private, allowed_roles, denied_roles."""
         return await self.action_create_category_channel(interaction, params)
 
     async def action_edit_channel_bitrate(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
@@ -3774,7 +3738,7 @@ class ActionHandler:
 
         if not channel_name:
             try:
-                await interaction.channel.send("⚠️ No channel name specified for make_channel_private.", delete_after=10)
+                await interaction.channel.send("âš ï¸ No channel name specified for make_channel_private.", delete_after=10)
             except Exception:
                 pass
             return False, None
@@ -3788,7 +3752,7 @@ class ActionHandler:
             logger.error(f"make_channel_private: '{channel_name}' not found")
             try:
                 await interaction.channel.send(
-                    f"⚠️ Could not find channel **{channel_name}**.", delete_after=10
+                    f"âš ï¸ Could not find channel **{channel_name}**.", delete_after=10
                 )
             except Exception:
                 pass
@@ -3810,7 +3774,7 @@ class ActionHandler:
             logger.error(f"make_channel_private: bot lacks Manage Channels permission in guild {guild.id}")
             try:
                 await interaction.channel.send(
-                    "⚠️ I don't have permission to manage channel permissions. "
+                    "âš ï¸ I don't have permission to manage channel permissions. "
                     "Please grant me the **Manage Channels** permission.", delete_after=15
                 )
             except Exception:
@@ -3819,7 +3783,7 @@ class ActionHandler:
         except Exception as e:
             logger.error(f"make_channel_private: unexpected error: {e}", exc_info=True)
             try:
-                await interaction.channel.send(f"⚠️ Error making channel private: {e}", delete_after=10)
+                await interaction.channel.send(f"âš ï¸ Error making channel private: {e}", delete_after=10)
             except Exception:
                 pass
             return False, None
@@ -3832,7 +3796,7 @@ class ActionHandler:
 
         if not category_name:
             try:
-                await interaction.channel.send("⚠️ No category name specified for make_category_private.", delete_after=10)
+                await interaction.channel.send("âš ï¸ No category name specified for make_category_private.", delete_after=10)
             except Exception:
                 pass
             return False, None
@@ -3847,7 +3811,7 @@ class ActionHandler:
             logger.error(f"make_category_private: '{category_name}' not found. Available: {[c.name for c in guild.categories]}")
             try:
                 await interaction.channel.send(
-                    f"⚠️ Could not find category **{category_name}**. "
+                    f"âš ï¸ Could not find category **{category_name}**. "
                     f"Available categories: {available}", delete_after=15
                 )
             except Exception:
@@ -3885,7 +3849,7 @@ class ActionHandler:
             logger.error(f"make_category_private: bot lacks Manage Channels permission in guild {guild.id}")
             try:
                 await interaction.channel.send(
-                    "⚠️ I don't have permission to manage channel permissions. "
+                    "âš ï¸ I don't have permission to manage channel permissions. "
                     "Please grant me the **Manage Channels** permission.", delete_after=15
                 )
             except Exception:
@@ -3894,7 +3858,7 @@ class ActionHandler:
         except Exception as e:
             logger.error(f"make_category_private: unexpected error: {e}", exc_info=True)
             try:
-                await interaction.channel.send(f"⚠️ Error making category private: {e}", delete_after=10)
+                await interaction.channel.send(f"âš ï¸ Error making category private: {e}", delete_after=10)
             except Exception:
                 pass
             return False, None
@@ -4101,7 +4065,7 @@ class ActionHandler:
         if cooldown_key in self._custom_cmd_cooldowns:
             remaining = self._custom_cmd_cooldown_seconds - (now - self._custom_cmd_cooldowns[cooldown_key])
             if remaining > 0:
-                await message.channel.send(f"⏳ Command on cooldown. Wait {int(remaining)}s.", delete_after=2)
+                await message.channel.send(f"â³ Command on cooldown. Wait {int(remaining)}s.", delete_after=2)
                 return None
         self._custom_cmd_cooldowns[cooldown_key] = now
 
@@ -4126,7 +4090,7 @@ class ActionHandler:
                      # although now we prefer JSON, we still support plain text
                      await message.channel.send(code.replace("{args}", args_str) if args_str else code)
                      return True
-                await message.channel.send(f"❌ {error_msg}")
+                await message.channel.send(f"âŒ {error_msg}")
                 return False
 
             if isinstance(data, list):
@@ -4142,7 +4106,7 @@ class ActionHandler:
                 # Handle action-style JSON: {"action": "...", "parameters": {...}}
                 # or {"actions": [{"name": "...", "parameters": {...}}]}
                 if not command_type and (data.get("action") or data.get("actions")):
-                    await message.channel.send(f"⚙️ Running **!{cmd_name}**...")
+                    await message.channel.send(f"âš™ï¸ Running **!{cmd_name}**...")
                     # Define MockInteraction inline
                     class MockInteraction:
                         def __init__(self, bot, guild, user):
@@ -4178,9 +4142,9 @@ class ActionHandler:
 
                     result = await self.execute_sequence(fake, actions)
                     if result["success"]:
-                        await message.channel.send(f"✅ **!{cmd_name}** completed!")
+                        await message.channel.send(f"âœ… **!{cmd_name}** completed!")
                     else:
-                        await message.channel.send(f"❌ **!{cmd_name}** failed: {result.get('error', 'Unknown error')}")
+                        await message.channel.send(f"âŒ **!{cmd_name}** failed: {result.get('error', 'Unknown error')}")
                     return True
 
                 if command_type == "simple":
@@ -4333,25 +4297,25 @@ class ActionHandler:
             
             # Provide helpful error message based on the actual error
             if "not found" in error_str.lower() or "no result" in error_str.lower():
-                user_msg = f"❌ {cmd_name} could not find the requested resource. Please check your input and try again."
+                user_msg = f"âŒ {cmd_name} could not find the requested resource. Please check your input and try again."
             elif "permission" in error_str.lower():
-                user_msg = f"❌ {cmd_name} failed due to insufficient permissions. Please contact an administrator."
+                user_msg = f"âŒ {cmd_name} failed due to insufficient permissions. Please contact an administrator."
             elif "cooldown" in error_str.lower() or "rate limit" in error_str.lower():
-                user_msg = f"❌ {cmd_name} is on cooldown. Please wait a moment and try again."
+                user_msg = f"âŒ {cmd_name} is on cooldown. Please wait a moment and try again."
             elif "invalid" in error_str.lower() or "missing" in error_str.lower():
-                user_msg = f"❌ Invalid input for {cmd_name}. Please check the command usage and try again."
+                user_msg = f"âŒ Invalid input for {cmd_name}. Please check the command usage and try again."
             elif "has no attribute" in error_str:
                 # AttributeError - likely missing attribute on ActionHandler or bot
                 logger.error(f"AttributeError in command '{cmd_name}': {error_str}")
                 # Check if it's a bot attribute that's missing
                 if "self.bot" in error_str and "None" in error_str:
-                    user_msg = f"❌ Error executing `{cmd_name}`: Bot not properly initialized. Please contact an administrator."
+                    user_msg = f"âŒ Error executing `{cmd_name}`: Bot not properly initialized. Please contact an administrator."
                 else:
-                    user_msg = f"❌ Error executing `{cmd_name}`: Internal error (missing attribute). Please contact an administrator."
+                    user_msg = f"âŒ Error executing `{cmd_name}`: Internal error (missing attribute). Please contact an administrator."
             else:
                 # Generic error with actual error info (sanitized)
                 safe_error = error_str[:200] if error_str else "Unknown error"
-                user_msg = f"❌ Error executing `{cmd_name}`: {safe_error}\nPlease try again or contact an administrator."
+                user_msg = f"âŒ Error executing `{cmd_name}`: {safe_error}\nPlease try again or contact an administrator."
 
             # Check for error prevention
             prevention = self._get_error_prevention(guild_id, cmd_name, cmd_data_obj, error_str)
@@ -4426,7 +4390,7 @@ class ActionHandler:
 
             if now - last_time < cooldown:
                 remaining = int(cooldown - (now - last_time))
-                await message.channel.send(f"❌ You're too tired! Wait **{remaining // 60}m {remaining % 60}s**.")
+                await message.channel.send(f"âŒ You're too tired! Wait **{remaining // 60}m {remaining % 60}s**.")
                 return True
 
             reward = random.randint(min_reward, max_reward)
@@ -4435,11 +4399,11 @@ class ActionHandler:
             dm.update_guild_data(guild_id, "last_work", last_work)
 
             jobs = ["Developer", "Artist", "Doctor", "Chef", "Discord Mod", "Farmer"]
-            await message.channel.send(f"💼 You worked as a **{random.choice(jobs)}** and earned **{reward} coins**!")
+            await message.channel.send(f"ðŸ’¼ You worked as a **{random.choice(jobs)}** and earned **{reward} coins**!")
             return True
         except Exception as e:
             logger.error(f"Error in handle_economy_work: {e}")
-            await message.channel.send("❌ Unable to work right now. Please try again.")
+            await message.channel.send("âŒ Unable to work right now. Please try again.")
             return False
 
     async def handle_appeal_status(self, message: discord.Message) -> bool:
@@ -4512,7 +4476,7 @@ class ActionHandler:
             return True
         except Exception as e:
             logger.error(f"Error in list_triggers: {e}")
-            await message.channel.send("❌ Unable to list trigger words. Please try again.")
+            await message.channel.send("âŒ Unable to list trigger words. Please try again.")
             return False
 
     async def handle_economy_daily(self, message: discord.Message) -> bool:
@@ -4530,7 +4494,7 @@ class ActionHandler:
                 import datetime
                 last_date = datetime.datetime.fromisoformat(last_time)
                 if (datetime.datetime.now() - last_date).days < 1:
-                    await message.channel.send("🎉 Daily reward already claimed today!")
+                    await message.channel.send("ðŸŽ‰ Daily reward already claimed today!")
                     return True
 
             reward = 100
@@ -4538,18 +4502,18 @@ class ActionHandler:
             last_daily[str(user_id)] = str(datetime.datetime.now())
             dm.update_guild_data(guild_id, "last_daily", last_daily)
 
-            await message.channel.send(f"🎉 You claimed **{reward} coins**!")
+            await message.channel.send(f"ðŸŽ‰ You claimed **{reward} coins**!")
             return True
         except Exception as e:
             logger.error(f"Error in handle_economy_daily: {e}")
-            await message.channel.send("❌ Unable to claim daily reward. Please try again later.")
+            await message.channel.send("âŒ Unable to claim daily reward. Please try again later.")
             return False
 
     async def handle_economy_buy(self, message: discord.Message) -> bool:
         """!buy <item_name_or_id>"""
         parts = message.content.split(maxsplit=1)
         if len(parts) < 2:
-            await message.channel.send("❌ Usage: `!buy <item_name_or_id>`")
+            await message.channel.send("âŒ Usage: `!buy <item_name_or_id>`")
             return True
 
         query = parts[1].strip()
@@ -4563,7 +4527,7 @@ class ActionHandler:
                 break
 
         if not target_item:
-            await message.channel.send(f"❌ Item '**{query}**' not found in the shop.")
+            await message.channel.send(f"âŒ Item '**{query}**' not found in the shop.")
             return True
 
         from modules.economy import Economy
@@ -4573,13 +4537,13 @@ class ActionHandler:
         price = target_item.get("price", 0)
 
         if balance < price:
-            await message.channel.send(f"❌ You don't have enough coins! (Need {price}, have {balance})")
+            await message.channel.send(f"âŒ You don't have enough coins! (Need {price}, have {balance})")
             return True
 
         # Check stock
         stock = target_item.get("stock", -1)
         if stock == 0:
-            await message.channel.send("❌ This item is out of stock!")
+            await message.channel.send("âŒ This item is out of stock!")
             return True
 
         # Give item (role)
@@ -4590,10 +4554,10 @@ class ActionHandler:
                 try:
                     await message.author.add_roles(role)
                 except:
-                    await message.channel.send("❌ I couldn't assign you the role. Please contact staff.")
+                    await message.channel.send("âŒ I couldn't assign you the role. Please contact staff.")
                     return True
             else:
-                await message.channel.send("❌ The role for this item no longer exists.")
+                await message.channel.send("âŒ The role for this item no longer exists.")
                 return True
 
         # Deduct coins
@@ -4604,52 +4568,52 @@ class ActionHandler:
             target_item["stock"] -= 1
             dm.update_guild_data(guild_id, "shop_items", items)
 
-        await message.channel.send(f"🛍️ You bought **{target_item['name']}** for **{price} coins**!")
+        await message.channel.send(f"ðŸ›ï¸ You bought **{target_item['name']}** for **{price} coins**!")
         return True
 
     async def handle_economy_transfer(self, message: discord.Message) -> bool:
         """!transfer <user> <amount>"""
         parts = message.content.split()
         if len(parts) < 3:
-            await message.channel.send("❌ Usage: `!transfer @user <amount>`")
+            await message.channel.send("âŒ Usage: `!transfer @user <amount>`")
             return True
 
         target = message.mentions[0] if message.mentions else None
         if not target:
-            await message.channel.send("❌ Please mention a user to transfer coins to.")
+            await message.channel.send("âŒ Please mention a user to transfer coins to.")
             return True
 
         try:
             amount = int(parts[2])
         except ValueError:
-            await message.channel.send("❌ Invalid amount.")
+            await message.channel.send("âŒ Invalid amount.")
             return True
 
         from modules.economy import Economy
         eco = Economy(self.bot)
 
         if amount <= 0:
-            await message.channel.send("❌ Amount must be positive.")
+            await message.channel.send("âŒ Amount must be positive.")
             return True
 
         if eco.get_coins(message.guild.id, message.author.id) < amount:
-            await message.channel.send("❌ Insufficient funds.")
+            await message.channel.send("âŒ Insufficient funds.")
             return True
 
         eco.add_coins(message.guild.id, message.author.id, -amount)
         eco.add_coins(message.guild.id, target.id, amount)
-        await message.channel.send(f"💸 Transferred **{amount} coins** to {target.mention}.")
+        await message.channel.send(f"ðŸ’¸ Transferred **{amount} coins** to {target.mention}.")
         return True
 
     async def handle_economy_rob(self, message: discord.Message) -> bool:
         """!rob <user>"""
         if not message.mentions:
-            await message.channel.send("❌ Mention someone to rob!")
+            await message.channel.send("âŒ Mention someone to rob!")
             return True
 
         target = message.mentions[0]
         if target.id == message.author.id:
-            await message.channel.send("❌ You can't rob yourself!")
+            await message.channel.send("âŒ You can't rob yourself!")
             return True
 
         from modules.economy import Economy
@@ -4663,12 +4627,12 @@ class ActionHandler:
         now = time.time()
         if now - last_rob.get(str(author_id), 0) < 3600:
             rem = int(3600 - (now - last_rob.get(str(author_id), 0)))
-            await message.channel.send(f"❌ You're laying low. Try again in **{rem//60}m {rem%60}s**.")
+            await message.channel.send(f"âŒ You're laying low. Try again in **{rem//60}m {rem%60}s**.")
             return True
 
         target_bal = eco.get_coins(guild_id, target.id)
         if target_bal < 100:
-            await message.channel.send("❌ They're too poor to rob. Have some heart!")
+            await message.channel.send("âŒ They're too poor to rob. Have some heart!")
             return True
 
         last_rob[str(author_id)] = now
@@ -4679,11 +4643,11 @@ class ActionHandler:
             stolen = random.randint(10, int(target_bal * 0.3))
             eco.add_coins(guild_id, target.id, -stolen)
             eco.add_coins(guild_id, author_id, stolen)
-            await message.channel.send(f"💰 **Success!** You robbed {target.mention} and made off with **{stolen} coins**!")
+            await message.channel.send(f"ðŸ’° **Success!** You robbed {target.mention} and made off with **{stolen} coins**!")
         else:
             fine = random.randint(50, 200)
             eco.add_coins(guild_id, author_id, -fine)
-            await message.channel.send(f"👮 **Caught!** You were caught trying to rob {target.mention} and fined **{fine} coins**.")
+            await message.channel.send(f"ðŸ‘® **Caught!** You were caught trying to rob {target.mention} and fined **{fine} coins**.")
         return True
 
     async def handle_economy_balance(self, message: discord.Message) -> bool:
@@ -4701,20 +4665,20 @@ class ActionHandler:
             xp = leveling.get_xp(guild_id, user_id)
             level = leveling.get_level_from_xp(xp)
 
-            embed = discord.Embed(title=f"💰 {message.author.name}'s Balance", color=discord.Color.gold())
-            embed.add_field(name="💰 Coins", value=f"{coins:,}", inline=True)
-            embed.add_field(name="💎 Gems", value=str(gems), inline=True)
-            embed.add_field(name="🆙 Level", value=f"{level} ({xp:,} XP)", inline=True)
+            embed = discord.Embed(title=f"ðŸ’° {message.author.name}'s Balance", color=discord.Color.gold())
+            embed.add_field(name="ðŸ’° Coins", value=f"{coins:,}", inline=True)
+            embed.add_field(name="ðŸ’Ž Gems", value=str(gems), inline=True)
+            embed.add_field(name="ðŸ†™ Level", value=f"{level} ({xp:,} XP)", inline=True)
 
             await message.channel.send(embed=embed)
             return True
         except Exception as e:
             logger.error(f"Error in handle_economy_balance: {e}")
-            await message.channel.send("❌ Unable to retrieve your balance. Please contact an administrator.")
+            await message.channel.send("âŒ Unable to retrieve your balance. Please contact an administrator.")
             return False
 
     async def handle_economy_beg(self, message: discord.Message) -> bool:
-        """!beg — small random coin reward with a short cooldown. Mirrors handle_economy_work."""
+        """!beg â€” small random coin reward with a short cooldown. Mirrors handle_economy_work."""
         try:
             from modules.economy import Economy
             economy = Economy(self.bot)
@@ -4732,14 +4696,14 @@ class ActionHandler:
 
             if now - last_time < cooldown:
                 remaining = int(cooldown - (now - last_time))
-                await message.channel.send(f"❌ Nobody feels generous right now. Try again in **{remaining // 60}m {remaining % 60}s**.")
+                await message.channel.send(f"âŒ Nobody feels generous right now. Try again in **{remaining // 60}m {remaining % 60}s**.")
                 return True
 
-            # 25% chance of getting nothing — keeps it fun.
+            # 25% chance of getting nothing â€” keeps it fun.
             if random.random() < 0.25:
                 last_beg[str(user_id)] = now
                 dm.update_guild_data(guild_id, "last_beg", last_beg)
-                await message.channel.send("🥲 Nobody gave you anything this time. Try again later!")
+                await message.channel.send("ðŸ¥² Nobody gave you anything this time. Try again later!")
                 return True
 
             reward = random.randint(min_reward, max_reward)
@@ -4748,15 +4712,15 @@ class ActionHandler:
             dm.update_guild_data(guild_id, "last_beg", last_beg)
 
             donors = ["a kind stranger", "an old wizard", "a tired developer", "a passing knight", "a generous shopkeeper"]
-            await message.channel.send(f"🙇 You begged and received **{reward} coins** from {random.choice(donors)}!")
+            await message.channel.send(f"ðŸ™‡ You begged and received **{reward} coins** from {random.choice(donors)}!")
             return True
         except Exception as e:
             logger.error(f"Error in handle_economy_beg: {e}")
-            await message.channel.send("❌ Unable to beg right now. Please try again.")
+            await message.channel.send("âŒ Unable to beg right now. Please try again.")
             return False
 
     async def handle_economy_leaderboard(self, message: discord.Message) -> bool:
-        """!economylb — top balances in the guild."""
+        """!economylb â€” top balances in the guild."""
         try:
             from modules.economy import Economy
             economy = Economy(self.bot)
@@ -4764,19 +4728,19 @@ class ActionHandler:
 
             balances = dm.get_guild_data(guild_id, "economy_balances", {})
             if not balances:
-                await message.channel.send("💰 Nobody has any coins yet!")
+                await message.channel.send("ðŸ’° Nobody has any coins yet!")
                 return True
 
             sorted_lb = sorted(balances.items(), key=lambda x: x[1], reverse=True)[:10]
 
-            medals = ["🥇", "🥈", "🥉"]
+            medals = ["ðŸ¥‡", "ðŸ¥ˆ", "ðŸ¥‰"]
             lines = []
             for i, (uid, amt) in enumerate(sorted_lb):
                 medal = medals[i] if i < 3 else f"**{i+1}.**"
-                lines.append(f"{medal} <@{uid}> — {amt:,} 💰")
+                lines.append(f"{medal} <@{uid}> â€” {amt:,} ðŸ’°")
 
             embed = discord.Embed(
-                title=f"💰 {message.guild.name} — Economy Leaderboard",
+                title=f"ðŸ’° {message.guild.name} â€” Economy Leaderboard",
                 description="\n".join(lines),
                 color=discord.Color.gold(),
             )
@@ -4784,7 +4748,7 @@ class ActionHandler:
             return True
         except Exception as e:
             logger.error(f"Error in handle_economy_leaderboard: {e}")
-            await message.channel.send("❌ Unable to load leaderboard. Please try again.")
+            await message.channel.send("âŒ Unable to load leaderboard. Please try again.")
             return False
 
     async def handle_economy_shop(self, message: discord.Message) -> bool:
@@ -4794,22 +4758,22 @@ class ActionHandler:
             items = dm.get_guild_data(guild_id, "shop_items", [])
 
             if not items:
-                await message.channel.send("🛒 The shop is currently empty.")
+                await message.channel.send("ðŸ›’ The shop is currently empty.")
                 return True
 
-            embed = discord.Embed(title=f"🛒 {message.guild.name} Shop", color=discord.Color.green())
+            embed = discord.Embed(title=f"ðŸ›’ {message.guild.name} Shop", color=discord.Color.green())
             for item in items[:25]:
-                embed.add_field(name=f"{item['name']} — {item['price']} Credits", value=item.get('description', 'No description'), inline=False)
+                embed.add_field(name=f"{item['name']} â€” {item['price']} Credits", value=item.get('description', 'No description'), inline=False)
 
             await message.channel.send(embed=embed)
             return True
         except Exception as e:
             logger.error(f"Error in handle_economy_shop: {e}")
-            await message.channel.send("❌ Unable to load shop. Please try again.")
+            await message.channel.send("âŒ Unable to load shop. Please try again.")
             return False
 
     async def handle_leveling_rank(self, message: discord.Message) -> bool:
-        """!rank — show the invoker's current XP, level, gems and streak."""
+        """!rank â€” show the invoker's current XP, level, gems and streak."""
         try:
             from modules.leveling import Leveling
             leveling = Leveling(self.bot)
@@ -4828,25 +4792,25 @@ class ActionHandler:
             xp_to_next = max(0, xp_for_next - xp)
 
             embed = discord.Embed(
-                title=f"📊 {message.author.display_name}'s Rank",
+                title=f"ðŸ“Š {message.author.display_name}'s Rank",
                 color=discord.Color.purple(),
             )
             embed.set_thumbnail(url=message.author.display_avatar.url)
             embed.add_field(name="Level", value=str(level), inline=True)
             embed.add_field(name="Total XP", value=f"{xp:,}", inline=True)
             embed.add_field(name="Gems", value=str(gems), inline=True)
-            embed.add_field(name="Streak", value=f"🔥 {streak} day(s)", inline=True)
+            embed.add_field(name="Streak", value=f"ðŸ”¥ {streak} day(s)", inline=True)
             embed.add_field(name="XP to next level", value=f"{xp_to_next:,} XP", inline=True)
 
             await message.channel.send(embed=embed)
             return True
         except Exception as e:
             logger.error(f"Error in handle_leveling_rank: {e}")
-            await message.channel.send("❌ Unable to retrieve your rank. Please try again.")
+            await message.channel.send("âŒ Unable to retrieve your rank. Please try again.")
             return False
 
     async def handle_leveling_leaderboard(self, message: discord.Message) -> bool:
-        """!leaderboard / !rank top — top XP earners in the guild."""
+        """!leaderboard / !rank top â€” top XP earners in the guild."""
         try:
             from modules.leveling import Leveling
             leveling = Leveling(self.bot)
@@ -4854,34 +4818,59 @@ class ActionHandler:
 
             board = leveling.get_leaderboard(guild_id, limit=10)
             if not board:
-                await message.channel.send("📉 Nobody has earned any XP yet. Start chatting!")
+                await message.channel.send("ðŸ“‰ Nobody has earned any XP yet. Start chatting!")
                 return True
 
-            medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+            medals = {1: "ðŸ¥‡", 2: "ðŸ¥ˆ", 3: "ðŸ¥‰"}
             lines = []
             for entry in board:
                 rank = entry["rank"]
                 badge = medals.get(rank, f"`#{rank:>2}`")
                 mention = f"<@{entry['user_id']}>"
-                streak_txt = f" 🔥{entry['streak']}" if entry.get("streak") else ""
+                streak_txt = f" ðŸ”¥{entry['streak']}" if entry.get("streak") else ""
                 lines.append(
-                    f"{badge} {mention} — Lvl **{entry['level']}** · {entry['xp']:,} XP{streak_txt}"
+                    f"{badge} {mention} â€” Lvl **{entry['level']}** Â· {entry['xp']:,} XP{streak_txt}"
                 )
 
             embed = discord.Embed(
-                title=f"🏆 {message.guild.name} — XP Leaderboard",
+                title=f"ðŸ† {message.guild.name} â€” XP Leaderboard",
                 description="\n".join(lines),
                 color=discord.Color.gold(),
             )
             if message.guild.icon:
                 embed.set_thumbnail(url=message.guild.icon.url)
-            embed.set_footer(text=f"Top {len(board)} of all members • Earn XP by chatting!")
+            embed.set_footer(text=f"Top {len(board)} of all members â€¢ Earn XP by chatting!")
 
             await message.channel.send(embed=embed)
             return True
         except Exception as e:
             logger.error(f"Error in handle_leveling_leaderboard: {e}")
-            await message.channel.send("❌ Unable to load XP leaderboard. Please try again.")
+            await message.channel.send("âŒ Unable to load XP leaderboard. Please try again.")
+            return False
+
+
+    async def undo_last_actions(self, interaction: discord.Interaction, count: int = 1) -> List[Tuple[str, bool]]:
+        """Undo the last N action groups for the guild."""
+        guild_id = interaction.guild.id
+        action_logs = dm.get_guild_data(guild_id, "action_logs", [])
+
+        if not action_logs:
+            return [("No actions to undo", False)]
+
+        to_undo = action_logs[-count:]
+        remaining = action_logs[:-count]
+        dm.update_guild_data(guild_id, "action_logs", remaining)
+
+        results = []
+        for log_entry in reversed(to_undo):
+            undo_data = log_entry.get("undo_data", {})
+            undo_action = undo_data.get("action")
+            success = await self._execute_undo(interaction, undo_action, undo_data)
+            results.append((loend(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leveling_leaderboard: {e}")
+            await message.channel.send("âŒ Unable to load XP leaderboard. Please try again.")
             return False
 
 
@@ -5000,7 +4989,7 @@ class ActionHandler:
     async def handle_config_panel_redirect(self, message: discord.Message, data: dict) -> bool:
         """Handle custom commands that open config panels, with permission check."""
         if not message.author.guild_permissions.administrator and message.author.id != message.guild.owner_id:
-            await message.channel.send("❌ Only administrators can access configuration panels.")
+            await message.channel.send("âŒ Only administrators can access configuration panels.")
             return True
 
         system = data.get("system")
@@ -5035,280 +5024,6 @@ class ActionHandler:
             await send_help(message.channel, message.guild.id, message.author, system_query=system, bot=self.bot)
         return True
 
-
-class HelpCategoryView(discord.ui.View):
-    """Interactive view with category buttons for help system"""
-    def __init__(self, handler, guild_id: int, user_id: int):
-        super().__init__(timeout=300)
-        self.handler = handler
-        self.guild_id = guild_id
-        self.user_id = user_id
-    
-    @discord.ui.button(label="🛡️ Security", style=discord.ButtonStyle.primary, custom_id="help_sec")
-    async def security_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id: return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        await self._show_category(interaction, "Security & Verification", [
-            ("verification", "🛡️", "Instant member onboarding and gates."),
-            ("anti_raid", "⚔️", "Mass-join and spam detection logic."),
-            ("guardian", "👁️", "AI-powered token and scam link detection."),
-            ("automod", "🤖", "Keyword, caps, and mention filtering."),
-            ("warnings", "⚠️", "Strike system with auto-escalation.")
-        ], discord.Color.red())
-    
-    @discord.ui.button(label="📈 Engagement", style=discord.ButtonStyle.success, custom_id="help_eng")
-    async def engagement_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id: return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        await self._show_category(interaction, "Economy & Engagement", [
-            ("economy", "💰", "Advanced currency and shop system."),
-            ("leveling", "⬆️", "XP, roles, and multipliers for activity."),
-            ("giveaways", "🎁", "Automated prize hosting and entry."),
-            ("gamification", "🎮", "Prestige, quests, and daily challenges."),
-            ("starboard", "⭐", "Hall of fame for best messages.")
-        ], discord.Color.green())
-    
-    @discord.ui.button(label="⚖️ Staff", style=discord.ButtonStyle.secondary, custom_id="help_staff")
-    async def staff_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id: return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        await self._show_category(interaction, "Staff & Admin Hub", [
-            ("staff_promo", "🌟", "Automated staff performance & hierarchy."),
-            ("staff_shifts", "🕒", "On-duty tracking and idle monitor."),
-            ("staff_reviews", "📝", "Peer and admin evaluation cycles."),
-            ("applications", "📋", "Recruitment and interview management."),
-            ("modmail", "📬", "Direct staff communication channel.")
-        ], discord.Color.blue())
-    
-    @discord.ui.button(label="🤖 Automation", style=discord.ButtonStyle.primary, custom_id="help_auto", row=1)
-    async def automation_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id: return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        await self._show_category(interaction, "Smart Automation", [
-            ("welcome", "👋", "Custom greet/leave messages and DMs."),
-            ("tickets", "🎫", "Interactive support ticket system."),
-            ("reminders", "⏰", "Personal and server-wide scheduled alerts."),
-            ("auto_responder", "💬", "Automated replies for common questions."),
-            ("chat_channels", "🧠", "AI-powered chat channels and personas.")
-        ], discord.Color.teal())
-    
-    @discord.ui.button(label="🌐 Community", style=discord.ButtonStyle.secondary, custom_id="help_comm", row=1)
-    async def community_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id: return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        await self._show_category(interaction, "Community Tools", [
-            ("reaction_roles", "🎭", "Bind roles to message reactions."),
-            ("reaction_menus", "📋", "Organized role selection views."),
-            ("role_buttons", "🔘", "Button-based role assignment."),
-            ("suggestions", "💡", "Community feedback and voting."),
-            ("events", "📅", "Server events and participant logging.")
-        ], discord.Color.gold())
-
-    @discord.ui.button(label="🔍 Search", style=discord.ButtonStyle.secondary, custom_id="help_search", row=1)
-    async def search_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id: return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        
-        class SearchModal(discord.ui.Modal, title="Search Miro Systems"):
-            query = discord.ui.TextInput(label="System Name", placeholder="e.g. Economy, AutoMod...")
-            def __init__(self, handler):
-                super().__init__()
-                self.handler = handler
-            async def on_submit(self, it):
-                await self.handler.handle_help_system(it, self.query.value)
-
-        await interaction.response.send_modal(SearchModal(self.handler))
-
-    @discord.ui.button(label="🏠 Home", style=discord.ButtonStyle.secondary, custom_id="help_home", row=1)
-    async def home_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id: return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        # Use interaction directly since handle_help_all handles both message and interaction
-        await self.handler.handle_help_all(interaction)
-
-    async def _show_category(self, interaction: discord.Interaction, title: str, systems: List[tuple], color: discord.Color):
-        guild_id = self.guild_id
-        embed = discord.Embed(title=f"📋 Category: {title}", description="━━━━━━━━━━━━━━", color=color)
-        
-        for sys_id, emoji, desc in systems:
-            status = "🔴"
-            if dm.get_guild_data(guild_id, f"{sys_id}_config") or dm.get_guild_data(guild_id, f"{sys_id}_settings"):
-                status = "🟢"
-
-            embed.add_field(
-                name=f"{status} {emoji} {sys_id.replace('_', ' ').title()}",
-                value=f"{desc}\n`!configpanel {sys_id}` | `!help {sys_id}`",
-                inline=False
-            )
-        
-        embed.set_footer(text="🟢 = Installed | 🔴 = Not Setup")
-        await interaction.response.edit_message(embed=embed, view=self)
-
-
-class CommandsListView(discord.ui.View):
-    """Interactive view for listing and editing all custom commands"""
-
-    def __init__(self, all_commands: dict, command_groups: dict, user_id: int, parent: str = None, page: int = 0):
-        super().__init__(timeout=180)
-        self.all_commands = all_commands
-        self.command_groups = command_groups
-        self.user_id = user_id
-        self.parent = parent
-        self.page = page
-        self.commands_per_page = 10
-
-        if parent is None:
-            parent_commands = [p for p in command_groups.keys() if not command_groups[p]]
-            parent_commands.extend([p for p in command_groups.keys() if command_groups[p]])
-            start_idx = page * self.commands_per_page
-            end_idx = start_idx + self.commands_per_page
-            page_commands = parent_commands[start_idx:end_idx]
-
-            for cmd in page_commands:
-                btn = discord.ui.Button(label=f"!{cmd}", custom_id=f"view_{cmd}", style=discord.ButtonStyle.secondary)
-                btn.callback = self.create_view_callback(cmd)
-                self.add_item(btn)
-
-            total = len(parent_commands)
-            total_pages = (total + self.commands_per_page - 1) // self.commands_per_page
-
-            if page > 0:
-                prev_btn = discord.ui.Button(label="? Prev", custom_id=f"prev_{page}", style=discord.ButtonStyle.primary)
-                prev_btn.callback = self.create_parent_prev_callback(page)
-                self.add_item(prev_btn)
-
-            if page < total_pages - 1:
-                next_btn = discord.ui.Button(label="Next ?", custom_id=f"next_{page}", style=discord.ButtonStyle.primary)
-                next_btn.callback = self.create_parent_next_callback(page)
-                self.add_item(next_btn)
-
-            back_btn = discord.ui.Button(label="? Close", custom_id="close", style=discord.ButtonStyle.danger)
-            back_btn.callback = self.close_callback
-            self.add_item(back_btn)
-        else:
-            subcommands = command_groups.get(parent, [])
-            if parent not in subcommands:
-                subcommands = [parent] + subcommands
-
-            start_idx = page * self.commands_per_page
-            end_idx = start_idx + self.commands_per_page
-            page_subs = subcommands[start_idx:end_idx]
-
-            for sub in page_subs:
-                is_parent = (sub == parent)
-                btn = discord.ui.Button(
-                    label=f"!{sub}" + (" (parent)" if is_parent else ""),
-                    custom_id=f"edit_{sub}",
-                    style=discord.ButtonStyle.success if is_parent else discord.ButtonStyle.secondary
-                )
-                btn.callback = self.create_edit_callback(sub)
-                self.add_item(btn)
-
-            total_pages = (len(subcommands) + self.commands_per_page - 1) // self.commands_per_page
-
-            if page > 0:
-                prev_btn = discord.ui.Button(label="? Prev", custom_id=f"prev_{page}", style=discord.ButtonStyle.primary)
-                prev_btn.callback = self.create_sub_prev_callback(page)
-                self.add_item(prev_btn)
-
-            if page < total_pages - 1:
-                next_btn = discord.ui.Button(label="Next ?", custom_id=f"next_{page}", style=discord.ButtonStyle.primary)
-                next_btn.callback = self.create_sub_next_callback(page)
-                self.add_item(next_btn)
-
-            back_btn = discord.ui.Button(label="? Back", custom_id="back", style=discord.ButtonStyle.primary)
-            back_btn.callback = self.back_callback
-            self.add_item(back_btn)
-
-    def create_view_callback(self, parent: str):
-        async def callback(interaction: discord.Interaction):
-            if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-            view = CommandsListView(self.all_commands, self.command_groups, self.user_id, parent, 0)
-            subcommands = self.command_groups.get(parent, [])
-            if parent not in subcommands:
-                subcommands = [parent] + subcommands
-            total = len(subcommands)
-
-            embed = discord.Embed(
-                title=f"📋 Command: !{parent}",
-                description=f"Subcommands: {total}\n\nClick to edit each command's code.",
-                color=discord.Color.orange()
-            )
-            await interaction.response.edit_message(embed=embed, view=view)
-        return callback
-
-    def create_edit_callback(self, cmd_name: str):
-        async def callback(interaction: discord.Interaction):
-            if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-
-            cmd_code = self.all_commands.get(cmd_name, "")
-
-            embed = discord.Embed(
-                title=f"✏️ Edit Command: !{cmd_name}",
-                description=f"Current code:\n```json\n{cmd_code[:1500]}\n```",
-                color=discord.Color.orange()
-            )
-
-            modal = EditCommandModal(cmd_name, self.user_id)
-            await interaction.response.send_modal(modal)
-        return callback
-
-    def create_parent_prev_callback(self, page: int):
-        async def callback(interaction: discord.Interaction):
-            if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-            view = CommandsListView(self.all_commands, self.command_groups, self.user_id, None, page - 1)
-            await interaction.response.edit_message(view=view)
-        return callback
-
-    def create_parent_next_callback(self, page: int):
-        async def callback(interaction: discord.Interaction):
-            if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-            view = CommandsListView(self.all_commands, self.command_groups, self.user_id, None, page + 1)
-            await interaction.response.edit_message(view=view)
-        return callback
-
-    def create_sub_prev_callback(self, page: int):
-        async def callback(interaction: discord.Interaction):
-            if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-            view = CommandsListView(self.all_commands, self.command_groups, self.user_id, self.parent, page - 1)
-            await interaction.response.edit_message(view=view)
-        return callback
-
-    def create_sub_next_callback(self, page: int):
-        async def callback(interaction: discord.Interaction):
-            if interaction.user.id != self.user_id:
-                return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-            view = CommandsListView(self.all_commands, self.command_groups, self.user_id, self.parent, page + 1)
-            await interaction.response.edit_message(view=view)
-        return callback
-
-    async def back_callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        view = CommandsListView(self.all_commands, self.command_groups, self.user_id, None, 0)
-        custom_cmds = self.all_commands
-        command_groups = self.command_groups
-
-        command_list = []
-        for parent in sorted(command_groups.keys()):
-            subcount = len(command_groups[parent])
-            if subcount > 0:
-                command_list.append(f"**!{parent}** ({subcount} subcommands)")
-            else:
-                command_list.append(f"**!{parent}**")
-
-        embed = discord.Embed(
-            title="📋 All Custom Commands",
-            description=f"Total: {len(custom_cmds)} commands\n\nClick a command to view/edit its subcommands.",
-            color=discord.Color.blue()
-        )
-        embed.add_field(name="📋 Commands", value="\n".join(command_list[:25]), inline=False)
-
-        await interaction.response.edit_message(embed=embed, view=view)
-
-    async def close_callback(self, interaction: discord.Interaction):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("❌ Not your session.", ephemeral=True)
-        await interaction.response.edit_message(content="?? Commands closed.", view=None)
-
     async def handle_staffpromo_status(self, message: discord.Message) -> bool:
         try:
             guild = message.guild
@@ -5329,7 +5044,7 @@ class CommandsListView(discord.ui.View):
                     current_tier = tier["name"]
                     break
 
-            embed = discord.Embed(title="?? Your Staff Promotion Status", color=discord.Color.blue())
+            embed = discord.Embed(title="ðŸ“Š Your Staff Promotion Status", color=discord.Color.blue())
             embed.add_field(name="Current Role", value=current_tier, inline=True)
             embed.add_field(name="Score", value=f"{score*100:.1f}%", inline=True)
 
@@ -5348,7 +5063,7 @@ class CommandsListView(discord.ui.View):
             return True
         except Exception as e:
             logger.error(f"Error in handle_staffpromo_status: {e}")
-            await message.channel.send("❌ Unable to retrieve your promotion status. Please contact staff.")
+            await message.channel.send("âŒ Unable to retrieve your promotion status. Please contact staff.")
             return False
 
     async def handle_staffpromo_leaderboard(self, message: discord.Message) -> bool:
@@ -5369,7 +5084,7 @@ class CommandsListView(discord.ui.View):
         scores.sort(key=lambda x: x[1], reverse=True)
         top_10 = scores[:10]
 
-        embed = discord.Embed(title="?? Staff Promotion Leaderboard", color=discord.Color.gold())
+        embed = discord.Embed(title="ðŸ“Š Staff Promotion Leaderboard", color=discord.Color.gold())
 
         if not top_10:
             embed.add_field(name="No data", value="No staff members evaluated yet", inline=False)
@@ -5382,7 +5097,7 @@ class CommandsListView(discord.ui.View):
 
     async def handle_staffpromo_config(self, message: discord.Message) -> bool:
         if not message.author.guild_permissions.administrator:
-            await message.channel.send("? This command is only for administrators.")
+            await message.channel.send("âŒ This command is only for administrators.")
             return True
 
         guild = message.guild
@@ -5392,14 +5107,14 @@ class CommandsListView(discord.ui.View):
         settings = config.get("settings", staff_promo._default_settings)
         tiers = config.get("tiers", staff_promo._default_tiers)
 
-        embed = discord.Embed(title="?? Staff Promo Configuration", color=discord.Color.orange())
+        embed = discord.Embed(title="âš™ï¸ Staff Promo Configuration", color=discord.Color.orange())
 
         embed.add_field(name="Auto Promote", value=str(settings.get("auto_promote", True)), inline=True)
         embed.add_field(name="Auto Demote", value=str(settings.get("auto_demote", False)), inline=True)
         embed.add_field(name="Min Tenure", value=f"{settings.get('min_tenure_hours', 72)} hours", inline=True)
         embed.add_field(name="Cooldown", value=f"{settings.get('promotion_cooldown_hours', 24)} hours", inline=True)
 
-        tiers_text = "\n".join([f". {t['name']}: {int(t['threshold']*100)}%" for t in tiers])
+        tiers_text = "\n".join([f"â€¢ {t['name']}: {int(t['threshold']*100)}%" for t in tiers])
         embed.add_field(name="Tiers", value=tiers_text or "None", inline=False)
 
         await message.channel.send(embed=embed)
@@ -5428,7 +5143,7 @@ class CommandsListView(discord.ui.View):
         score = promotion_service._compute_score(guild.id, member.id, member, metrics)
         current_index = staff_promo._get_current_tier_index(member, tiers, role_ids)
 
-        embed = discord.Embed(title="?? Your Promotion Progress", color=discord.Color.blue())
+        embed = discord.Embed(title="ðŸ“Š Your Promotion Progress", color=discord.Color.blue())
         embed.add_field(name="Current Score", value=f"{score*100:.1f}%", inline=True)
 
         if current_index < len(tiers) - 1:
@@ -5439,11 +5154,11 @@ class CommandsListView(discord.ui.View):
             embed.add_field(name="Next Tier", value=next_tier.get("name"), inline=True)
             embed.add_field(name="Progress", value=f"{percent_away:.1f}% away", inline=True)
 
-            progress_bar = "?" * int(score * 10) + "?" * (10 - int(score * 10))
+            progress_bar = "â–°" * int(score * 10) + "â–±" * (10 - int(score * 10))
             embed.add_field(name="Progress Bar", value=f"`{progress_bar}` {score*100:.0f}%", inline=False)
 
             if percent_away <= 5:
-                embed.add_field(name="?? Almost there!", value="You're very close to your next promotion!", inline=False)
+                embed.add_field(name="ðŸš€ Almost there!", value="You're very close to your next promotion!", inline=False)
         else:
             embed.add_field(name="Status", value="You've reached the highest tier!", inline=True)
 
@@ -5453,7 +5168,7 @@ class CommandsListView(discord.ui.View):
 
     async def handle_staffpromo_promote(self, message: discord.Message) -> bool:
         if not message.author.guild_permissions.administrator:
-            await message.channel.send("? This command is only for administrators.")
+            await message.channel.send("âŒ This command is only for administrators.")
             return True
 
         guild = message.guild
@@ -5469,7 +5184,7 @@ class CommandsListView(discord.ui.View):
             target_member = await guild.fetch_member(user_id)
         except (ValueError, IndexError, discord.NotFound) as e:
             logger.debug("User lookup failed in promote: %s", e)
-            await message.channel.send("? Could not find user. Use `@user` format.")
+            await message.channel.send("âŒ Could not find user. Use `@user` format.")
             return True
 
         tier_name = " ".join(parts[3:])
@@ -5478,14 +5193,14 @@ class CommandsListView(discord.ui.View):
         success, result = await staff_promo.manual_promote(guild, target_member, tier_name, config)
 
         if success:
-            await message.channel.send(f"? {target_member.mention} {result}")
+            await message.channel.send(f"âœ… {target_member.mention} {result}")
         else:
-            await message.channel.send(f"? {result}")
+            await message.channel.send(f"âŒ {result}")
         return True
 
     async def handle_staffpromo_demote(self, message: discord.Message) -> bool:
         if not message.author.guild_permissions.administrator:
-            await message.channel.send("? This command is only for administrators.")
+            await message.channel.send("âŒ This command is only for administrators.")
             return True
 
         guild = message.guild
@@ -5501,7 +5216,7 @@ class CommandsListView(discord.ui.View):
             target_member = await guild.fetch_member(user_id)
         except (ValueError, IndexError, discord.NotFound) as e:
             logger.debug("User lookup failed in demote: %s", e)
-            await message.channel.send("? Could not find user. Use `@user` format.")
+            await message.channel.send("âŒ Could not find user. Use `@user` format.")
             return True
 
         tier_name = " ".join(parts[3:])
@@ -5510,14 +5225,14 @@ class CommandsListView(discord.ui.View):
         success, result = await staff_promo.manual_demote(guild, target_member, tier_name, config)
 
         if success:
-            await message.channel.send(f"? {target_member.mention} {result}")
+            await message.channel.send(f"âœ… {target_member.mention} {result}")
         else:
-            await message.channel.send(f"? {result}")
+            await message.channel.send(f"âŒ {result}")
         return True
 
     async def handle_staffpromo_exclude(self, message: discord.Message) -> bool:
         if not message.author.guild_permissions.administrator:
-            await message.channel.send("? This command is only for administrators.")
+            await message.channel.send("âŒ This command is only for administrators.")
             return True
 
         guild = message.guild
@@ -5538,7 +5253,7 @@ class CommandsListView(discord.ui.View):
             target_member = await guild.fetch_member(user_id)
         except (ValueError, IndexError, discord.NotFound) as e:
             logger.debug("User lookup failed in exclude: %s", e)
-            await message.channel.send("? Could not find user. Use `@user` format.")
+            await message.channel.send("âŒ Could not find user. Use `@user` format.")
             return True
 
         config = staff_promo._get_full_config(guild.id)
@@ -5548,15 +5263,15 @@ class CommandsListView(discord.ui.View):
         if action == "add":
             if user_id not in excluded:
                 excluded.append(user_id)
-                await message.channel.send(f"? {target_member.mention} added to exclusion list.")
+                await message.channel.send(f"âœ… {target_member.mention} added to exclusion list.")
             else:
-                await message.channel.send(f"?? {target_member.mention} is already excluded.")
+                await message.channel.send(f"âš ï¸ {target_member.mention} is already excluded.")
         else:
             if user_id in excluded:
                 excluded.remove(user_id)
-                await message.channel.send(f"? {target_member.mention} removed from exclusion list.")
+                await message.channel.send(f"âœ… {target_member.mention} removed from exclusion list.")
             else:
-                await message.channel.send(f"?? {target_member.mention} is not in the exclusion list.")
+                await message.channel.send(f"âš ï¸ {target_member.mention} is not in the exclusion list.")
 
         settings["excluded_users"] = excluded
         config["settings"] = settings
@@ -5564,165 +5279,10 @@ class CommandsListView(discord.ui.View):
 
         return True
 
-class TierManagementView(discord.ui.View):
-    def __init__(self, guild: discord.Guild, staff_promo, config: dict):
-        super().__init__(timeout=300)  # 5 minute timeout
-        self.guild = guild
-        self.staff_promo = staff_promo
-        self.config = config
-
-    @discord.ui.button(label="Add Tier", style=discord.ButtonStyle.success, emoji="?", custom_id="help_tier_add_tier")
-    async def add_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(AddTierModal(self.guild, self.staff_promo, self.config))
-
-    @discord.ui.button(label="Edit Tier", style=discord.ButtonStyle.primary, emoji="??", custom_id="help_tier_edit_tier")
-    async def edit_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(EditTierModal(self.guild, self.staff_promo, self.config))
-
-    @discord.ui.button(label="Remove Tier", style=discord.ButtonStyle.danger, emoji="???", custom_id="help_tier_remove_tier")
-    async def remove_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(RemoveTierModal(self.guild, self.staff_promo, self.config))
-
-class AddTierModal(discord.ui.Modal, title="Add Promotion Tier"):
-    def __init__(self, guild: discord.Guild, staff_promo, config: dict):
-        super().__init__()
-        self.guild = guild
-        self.staff_promo = staff_promo
-        self.config = config
-
-    name = discord.ui.TextInput(label="Tier Name", placeholder="e.g., Senior Moderator", required=True)
-    threshold = discord.ui.TextInput(label="Threshold (%)", placeholder="e.g., 75 for 75%", required=True)
-    role = discord.ui.TextInput(label="Role Name (Optional)", placeholder="Exact role name", required=False)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            threshold_val = float(self.threshold.value) / 100
-            if threshold_val < 0 or threshold_val > 1:
-                await interaction.response.send_message("? Threshold must be between 0 and 100", ephemeral=True)
-                return
-
-            tiers = self.config.get("tiers", self.staff_promo._default_tiers)
-            new_tier = {
-                "name": self.name.value,
-                "threshold": threshold_val,
-                "role_name": self.role.value if self.role.value else None
-            }
-            tiers.append(new_tier)
-            self.config["tiers"] = tiers
-
-            # Update the data manager
-            from data_manager import dm
-            dm.update_guild_data(self.guild.id, "staff_promo_config", self.config)
-
-            await interaction.response.send_message(f"? Added tier **{self.name.value}** with threshold {self.threshold.value}%", ephemeral=True)
-        except ValueError:
-            await interaction.response.send_message("? Invalid threshold value", ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message(f"? Error adding tier: {str(e)}", ephemeral=True)
-
-class EditTierModal(discord.ui.Modal, title="Edit Promotion Tier"):
-    def __init__(self, guild: discord.Guild, staff_promo, config: dict):
-        super().__init__()
-        self.guild = guild
-        self.staff_promo = staff_promo
-        self.config = config
-
-    tier_select = discord.ui.TextInput(
-        label="Tier Name to Edit",
-        placeholder="Enter exact tier name to edit",
-        required=True
-    )
-    new_name = discord.ui.TextInput(label="New Tier Name (Optional)", placeholder="Leave blank to keep current", required=False)
-    new_threshold = discord.ui.TextInput(label="New Threshold (%) (Optional)", placeholder="Leave blank to keep current", required=False)
-    new_role = discord.ui.TextInput(label="New Role Name (Optional)", placeholder="Leave blank to keep current", required=False)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            tiers = self.config.get("tiers", self.staff_promo._default_tiers)
-            tier_to_edit = None
-            for tier in tiers:
-                if tier.get("name", "").lower() == self.tier_select.value.lower():
-                    tier_to_edit = tier
-                    break
-
-            if not tier_to_edit:
-                await interaction.response.send_message(f"? Tier '{self.tier_select.value}' not found", ephemeral=True)
-                return
-
-            # Update fields if provided
-            if self.new_name.value:
-                tier_to_edit["name"] = self.new_name.value
-            if self.new_threshold.value:
-                threshold_val = float(self.new_threshold.value) / 100
-                if threshold_val < 0 or threshold_val > 1:
-                    await interaction.response.send_message("? Threshold must be between 0 and 100", ephemeral=True)
-                    return
-                tier_to_edit["threshold"] = threshold_val
-            if self.new_role.value is not None:  # Allow empty string to remove role
-                tier_to_edit["role_name"] = self.new_role.value if self.new_role.value else None
-
-            self.config["tiers"] = tiers
-
-            # Update the data manager
-            from data_manager import dm
-            dm.update_guild_data(self.guild.id, "staff_promo_config", self.config)
-
-            await interaction.response.send_message(f"? Updated tier **{self.tier_select.value}**", ephemeral=True)
-        except ValueError:
-            await interaction.response.send_message("? Invalid threshold value", ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message(f"? Error editing tier: {str(e)}", ephemeral=True)
-
-class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
-    def __init__(self, guild: discord.Guild, staff_promo, config: dict):
-        super().__init__()
-        self.guild = guild
-        self.staff_promo = staff_promo
-        self.config = config
-
-    tier_select = discord.ui.TextInput(
-        label="Tier Name to Remove",
-        placeholder="Enter exact tier name to remove",
-        required=True
-    )
-    confirm = discord.ui.TextInput(
-        label="Type 'CONFIRM' to delete",
-        placeholder="This action cannot be undone",
-        required=True
-    )
-
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            if self.confirm.value != "CONFIRM":
-                await interaction.response.send_message("? Confirmation failed. Type 'CONFIRM' to delete.", ephemeral=True)
-                return
-
-            tiers = self.config.get("tiers", self.staff_promo._default_tiers)
-            tier_to_remove = None
-            for i, tier in enumerate(tiers):
-                if tier.get("name", "").lower() == self.tier_select.value.lower():
-                    tier_to_remove = i
-                    break
-
-            if tier_to_remove is None:
-                await interaction.response.send_message(f"? Tier '{self.tier_select.value}' not found", ephemeral=True)
-                return
-
-            removed_tier = tiers.pop(tier_to_remove)
-            self.config["tiers"] = tiers
-
-            # Update the data manager
-            from data_manager import dm
-            dm.update_guild_data(self.guild.id, "staff_promo_config", self.config)
-
-            await interaction.response.send_message(f"? Removed tier **{removed_tier.get('name')}**", ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message(f"? Error removing tier: {str(e)}", ephemeral=True)
-
     async def handle_staffpromo_tiers(self, message: discord.Message) -> bool:
         """Handle !staffpromo tiers command - Interactive tier management"""
         if not message.author.guild_permissions.administrator:
-            await message.channel.send("? This command is only for administrators.")
+            await message.channel.send("âŒ This command is only for administrators.")
             return True
 
         guild = message.guild
@@ -5733,7 +5293,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
 
         # Create embed showing current tiers
         embed = discord.Embed(
-            title="?? Promotion Tiers Management",
+            title="ðŸ“Š Promotion Tiers Management",
             description="Manage promotion tiers for this server",
             color=discord.Color.blue()
         )
@@ -5745,7 +5305,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
                 threshold = int(tier.get("threshold", 0) * 100)
                 role_id = role_ids.get(name)
                 role_mention = f"<@&{role_id}>" if role_id and guild.get_role(role_id) else "Not set"
-                tiers_text += f"**{name}**: {threshold}% ? {role_mention}\n"
+                tiers_text += f"**{name}**: {threshold}% â†’ {role_mention}\n"
             embed.add_field(name="Current Tiers", value=tiers_text or "None", inline=False)
         else:
             embed.add_field(name="Current Tiers", value="No tiers configured", inline=False)
@@ -5757,7 +5317,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
 
     async def handle_staffpromo_roles(self, message: discord.Message) -> bool:
         if not message.author.guild_permissions.administrator:
-            await message.channel.send("? This command is only for administrators.")
+            await message.channel.send("âŒ This command is only for administrators.")
             return True
 
         guild = message.guild
@@ -5781,7 +5341,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             role_ids = config.get("roles_by_tier", {})
             tiers = config.get("tiers", staff_promo._default_tiers)
 
-            embed = discord.Embed(title="?? Role Mappings", color=discord.Color.orange())
+            embed = discord.Embed(title="âš™ï¸ Role Mappings", color=discord.Color.orange())
             for tier in tiers:
                 tier_name = tier.get("name")
                 rid = role_ids.get(tier_name)
@@ -5802,7 +5362,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             target_role = guild.get_role(role_id)
         except (ValueError, IndexError, discord.NotFound) as e:
             logger.debug("Role lookup failed: %s", e)
-            await message.channel.send("? Could not find role. Use `@role` format.")
+            await message.channel.send("âŒ Could not find role. Use `@role` format.")
             return True
 
         config = staff_promo._get_full_config(guild.id)
@@ -5813,16 +5373,16 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
 
         if tier_name.lower() not in valid_tiers:
             valid_list = ", ".join([t.get("name") for t in tiers])
-            await message.channel.send(f"? Invalid tier. Valid tiers: {valid_list}")
+            await message.channel.send(f"âŒ Invalid tier. Valid tiers: {valid_list}")
             return True
 
         if action == "add":
             role_ids[tier_name] = target_role.id
-            await message.channel.send(f"? Mapped **{tier_name}** to {target_role.mention}")
+            await message.channel.send(f"âœ… Mapped **{tier_name}** to {target_role.mention}")
         else:
             if tier_name in role_ids:
                 del role_ids[tier_name]
-            await message.channel.send(f"? Removed mapping for **{tier_name}**")
+            await message.channel.send(f"âœ… Removed mapping for **{tier_name}**")
 
         config["roles_by_tier"] = role_ids
         dm.update_guild_data(guild.id, "staff_promo_config", config)
@@ -5845,10 +5405,10 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             pending = config.get("pending_reviews", [])
 
             if not pending:
-                await message.channel.send("?? No pending promotion reviews.")
+                await message.channel.send("âš ï¸ No pending promotion reviews.")
                 return True
 
-            embed = discord.Embed(title="?? Pending Promotion Reviews", color=discord.Color.yellow())
+            embed = discord.Embed(title="ðŸ“ Pending Promotion Reviews", color=discord.Color.yellow())
             for review in pending:
                 user_id = review.get("user_id")
                 tier_name = review.get("tier_name")
@@ -5865,9 +5425,9 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             user_pending = [r for r in pending if r.get("user_id") == message.author.id]
             if user_pending:
                 for review in user_pending:
-                    await message.channel.send(f"?? Your promotion to **{review.get('tier_name')}** is pending review. Score: {review.get('score', 0)*100:.1f}%")
+                    await message.channel.send(f"â³ Your promotion to **{review.get('tier_name')}** is pending review. Score: {review.get('score', 0)*100:.1f}%")
             else:
-                await message.channel.send("?? You have no pending reviews.")
+                await message.channel.send("âŒ You have no pending reviews.")
             return True
 
     async def handle_promotion_decision(self, message: discord.Message, decision: str, parts: list) -> bool:
@@ -5883,7 +5443,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             target_member = await guild.fetch_member(user_id)
         except (ValueError, IndexError, discord.NotFound) as e:
             logger.debug("User lookup failed in promotion decision: %s", e)
-            await message.channel.send("? Could not find user. Use `@user` format.")
+            await message.channel.send("âŒ Could not find user. Use `@user` format.")
             return True
 
         config = staff_promo._get_full_config(guild.id)
@@ -5898,7 +5458,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
                 break
 
         if not review_to_remove:
-            await message.channel.send(f"? No pending review found for that user.")
+            await message.channel.send(f"âŒ No pending review found for that user.")
             return True
 
         pending = [r for r in pending if r.get("user_id") != user_id]
@@ -5923,13 +5483,13 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
                 current_index = staff_promo._get_current_tier_index(target_member, tiers, role_ids)
                 settings = config.get("settings", staff_promo._default_settings)
                 await staff_promo._promote_member(guild, target_member, tier, tiers, role_ids, current_index, settings, config)
-                await message.channel.send(f"? Approved! {target_member.mention} promoted to **{target_tier_name}**")
+                await message.channel.send(f"âœ… Approved! {target_member.mention} promoted to **{target_tier_name}**")
         else:
             try:
-                await target_member.send(f"? Your promotion to **{target_tier_name}** was rejected.")
+                await target_member.send(f"âŒ Your promotion to **{target_tier_name}** was rejected.")
             except Exception as e:
                 logger.debug("Could not DM user about rejected promotion: %s", e)
-            await message.channel.send(f"? Rejected promotion for {target_member.mention}")
+            await message.channel.send(f"âœ… Rejected promotion for {target_member.mention}")
 
         return True
 
@@ -5941,14 +5501,14 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         requirements = config.get("tier_requirements", staff_promo._default_tier_requirements)
         tiers = config.get("tiers", staff_promo._default_tiers)
 
-        embed = discord.Embed(title="?? Tier Requirements", color=discord.Color.blue())
+        embed = discord.Embed(title="ðŸ“‹ Tier Requirements", color=discord.Color.blue())
 
         for tier in tiers:
             tier_name = tier.get("name")
             tier_reqs = requirements.get(tier_name, {})
 
             if tier_reqs:
-                req_text = "\n".join([f". {k}: {v}" for k, v in tier_reqs.items()])
+                req_text = "\n".join([f"â€¢ {k}: {v}" for k, v in tier_reqs.items()])
             else:
                 req_text = "No requirements"
 
@@ -5957,6 +5517,25 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         await message.channel.send(embed=embed)
         return True
 
+    async def handle_staffpromo_bonuses(self, message: discord.Message) -> bool:
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+        config = staff_promo._get_full_config(guild.id)
+        metrics = config.get("metrics", staff_promo._default_metrics)
+
+        embed = discord.Embed(title="ðŸŒŸ Staff Promotion Metrics & Bonuses", color=discord.Color.gold())
+
+        desc = "The following activity metrics are tracked for staff promotions:\n\n"
+        for name, data in metrics.items():
+            if data.get("enabled", True):
+                weight = data.get("weight", 1.0)
+                desc += f"â€¢ **{name.replace('_', ' ').title()}**: Weight {weight}x\n"
+
+        embed.description = desc
+        embed.set_footer(text="Higher weights mean the metric is more important for promotion.")
+
+        await message.channel.send(embed=embed)
+        return True
 
     def _resolve_channel(self, channel_identifier):
         """Resolve a channel from the guild by name, ID, or mention format."""
@@ -6002,7 +5581,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         if not message.guild: return False
         # Check if it's a ticket channel
         if not message.channel.name.startswith("ticket-"):
-            await message.channel.send("❌ This command can only be used inside a ticket channel.")
+            await message.channel.send("âŒ This command can only be used inside a ticket channel.")
             return True
 
         system = getattr(self.bot, "tickets", None)
@@ -6016,20 +5595,21 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
                     break
 
             if target_ticket:
-                await message.channel.send("🔒 Closing ticket...")
+                await message.channel.send("ðŸ”’ Closing ticket...")
                 await asyncio.sleep(2)
                 await message.channel.delete()
                 target_ticket["status"] = "closed"
                 dm.save_json("tickets", tickets_data)
                 return True
 
-        await message.channel.send("❌ Failed to close ticket automatically.")
+        await message.channel.send("âŒ Failed to close ticket automatically.")
         return True
 
     async def handle_verification_verify(self, message: discord.Message) -> bool:
         from modules.verification import VerifyView
+        verification_system = getattr(self.bot, 'verification', None)
         embed = discord.Embed(title="Verification Required", description="Click the button below to verify.", color=discord.Color.blue())
-        await message.channel.send(embed=embed, view=VerifyView(self.bot.verification))
+        await message.channel.send(embed=embed, view=VerifyView(verification_system))
         return True
 
     async def handle_set_verify_channel(self, message: discord.Message) -> bool:
@@ -6045,7 +5625,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         args = message.content.split()
         # Parse tournament name from args (e.g., !tournament create "My Tournament")
         if len(args) < 3:
-            return await message.channel.send("❌ Usage: `!tournament create <tournament name>`")
+            return await message.channel.send("âŒ Usage: `!tournament create <tournament name>`")
         name = " ".join(args[2:])
         # Create tournament with default settings
         guild = message.guild
@@ -6076,7 +5656,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         )
         tournament_system._tournaments[tournament_id] = new_tournament
         tournament_system._save_tournament(new_tournament)
-        await message.channel.send(f"✅ Tournament **{name}** created! Registration open for 24h. Use `!join {tournament_id}` to join.")
+        await message.channel.send(f"âœ… Tournament **{name}** created! Registration open for 24h. Use `!join {tournament_id}` to join.")
         return True
 
     async def handle_create_event(self, message: discord.Message) -> bool:
@@ -6084,7 +5664,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         event_scheduler = EventScheduler(self.bot)
         args = message.content.split()
         if len(args) < 3:
-            return await message.channel.send("❌ Usage: `!event create <event name>` or `!evenf create <event name>`")
+            return await message.channel.send("âŒ Usage: `!event create <event name>` or `!evenf create <event name>`")
         name = " ".join(args[2:])
         # Use AI to create event with default settings
         guild = message.guild
@@ -6110,7 +5690,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         )
         # Save event
         event_scheduler._save_scheduled_event(new_event)
-        await message.channel.send(f"✅ Event **{name}** created! ID: `{event_id}`. Use `!join {event_id}` to join.")
+        await message.channel.send(f"âœ… Event **{name}** created! ID: `{event_id}`. Use `!join {event_id}` to join.")
         return True
 
     async def handle_appeal_create(self, message: discord.Message) -> bool:
@@ -6121,26 +5701,6 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
     async def handle_application_apply(self, message: discord.Message) -> bool:
         from modules.applications import ApplicationPersistentView
         await message.channel.send("Apply for staff using the button below!", view=ApplicationPersistentView())
-        return True
-
-    async def handle_staffpromo_bonuses(self, message: discord.Message) -> bool:
-        guild = message.guild
-        staff_promo = self.bot.staff_promo
-        config = staff_promo._get_full_config(guild.id)
-        metrics = config.get("metrics", staff_promo._default_metrics)
-
-        embed = discord.Embed(title="🌟 Staff Promotion Metrics & Bonuses", color=discord.Color.gold())
-
-        desc = "The following activity metrics are tracked for staff promotions:\n\n"
-        for name, data in metrics.items():
-            if data.get("enabled", True):
-                weight = data.get("weight", 1.0)
-                desc += f"• **{name.replace('_', ' ').title()}**: Weight {weight}x\n"
-
-        embed.description = desc
-        embed.set_footer(text="Higher weights mean the metric is more important for promotion.")
-
-        await message.channel.send(embed=embed)
         return True
 
     async def handle_list_quests(self, message: discord.Message) -> bool:
@@ -6154,14 +5714,14 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             user_quests = gamification.get_user_quests(guild_id, user_id)
 
             if not user_quests:
-                await message.channel.send("📋 You have no active quests. New quests will be assigned automatically!")
+                await message.channel.send("ðŸ“‹ You have no active quests. New quests will be assigned automatically!")
                 return True
 
-            embed = discord.Embed(title="🎯 Your Active Quests", color=discord.Color.purple())
+            embed = discord.Embed(title="ðŸŽ¯ Your Active Quests", color=discord.Color.purple())
             for quest_data in user_quests:
                 quest_id = quest_data.get("id", "unknown")
                 progress = gamification._check_quest_progress(guild_id, user_id, quest_id)
-                status = "✅ Complete!" if progress >= 100 else f"⏳ {progress}% complete"
+                status = "âœ… Complete!" if progress >= 100 else f"â³ {progress}% complete"
                 embed.add_field(
                     name=quest_data.get("name", "Unknown Quest"),
                     value=f"{quest_data.get('description', '')}\nReward: {quest_data.get('reward', {})}\nStatus: {status}",
@@ -6172,7 +5732,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             return True
         except Exception as e:
             logger.error(f"Error in handle_list_quests: {e}")
-            await message.channel.send(f"❌ Error listing quests. Please try again later.")
+            await message.channel.send(f"âŒ Error listing quests. Please try again later.")
             return False
 
     async def handle_prestige(self, message: discord.Message) -> bool:
@@ -6189,16 +5749,16 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             current_level = user_data.get("level", 0)
             current_prestige = user_data.get("prestige", 0)
 
-            embed = discord.Embed(title="🌟 Prestige System", color=discord.Color.purple())
+            embed = discord.Embed(title="ðŸŒŸ Prestige System", color=discord.Color.purple())
             embed.add_field(name="Current Status", value=f"Level: {current_level}\nPrestige: {current_prestige}", inline=False)
             embed.add_field(name="How it Works", value="Reach max level and prestige to reset your level but keep your rewards and gain a prestige bonus!", inline=False)
-            embed.add_field(name="Prestige Bonuses", value="• Prestige 1: 5% XP bonus\n• Prestige 2: 10% XP bonus\n• Prestige 3: 15% XP bonus\n• And more!", inline=False)
+            embed.add_field(name="Prestige Bonuses", value="â€¢ Prestige 1: 5% XP bonus\nâ€¢ Prestige 2: 10% XP bonus\nâ€¢ Prestige 3: 15% XP bonus\nâ€¢ And more!", inline=False)
 
             await message.channel.send(embed=embed)
             return True
         except Exception as e:
             logger.error(f"Error in handle_prestige: {e}")
-            await message.channel.send(f"❌ Error processing prestige. Please try again later.")
+            await message.channel.send(f"âŒ Error processing prestige. Please try again later.")
             return False
 
     async def handle_dice(self, message: discord.Message) -> bool:
@@ -6207,11 +5767,11 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             import random
             # Simple dice roll game
             result = random.randint(1, 6)
-            await message.channel.send(f"🎲 You rolled a **{result}**!")
+            await message.channel.send(f"ðŸŽ² You rolled a **{result}**!")
             return True
         except Exception as e:
             logger.error(f"Error in handle_dice: {e}")
-            await message.channel.send(f"❌ Error rolling dice. Please try again.")
+            await message.channel.send(f"âŒ Error rolling dice. Please try again.")
             return False
 
     async def handle_flip(self, message: discord.Message) -> bool:
@@ -6219,29 +5779,29 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
         try:
             import random
             result = random.choice(["Heads", "Tails"])
-            emoji = "🪙" if result == "Heads" else "🎯"
+            emoji = "ðŸª™" if result == "Heads" else "ðŸŽ¯"
             await message.channel.send(f"{emoji} You flipped **{result}**!")
             return True
         except Exception as e:
             logger.error(f"Error in handle_flip: {e}")
-            await message.channel.send(f"❌ Error flipping coin. Please try again.")
+            await message.channel.send(f"âŒ Error flipping coin. Please try again.")
             return False
 
     async def handle_slots(self, message: discord.Message) -> bool:
         """Handle !slots command - Slot machine game"""
         try:
             import random
-            symbols = ["🍒", "🍊", "🍇", "💎", "7️⃣"]
+            symbols = ["ðŸ’", "ðŸŠ", "ðŸ‡", "ðŸ’Ž", "7ï¸âƒ£"]
             slots = [random.choice(symbols) for _ in range(3)]
             if slots[0] == slots[1] == slots[2]:
-                result = f"{' '.join(slots)} - **Jackpot!** 🎉"
+                result = f"{' '.join(slots)} - **Jackpot!** ðŸŽ‰"
             else:
                 result = f"{' '.join(slots)} - Better luck next time!"
-            await message.channel.send(f"🎰 {result}")
+            await message.channel.send(f"ðŸŽ° {result}")
             return True
         except Exception as e:
             logger.error(f"Error in handle_slots: {e}")
-            await message.channel.send(f"❌ Error playing slots. Please try again.")
+            await message.channel.send(f"âŒ Error playing slots. Please try again.")
             return False
 
     async def handle_trivia(self, message: discord.Message) -> bool:
@@ -6254,12 +5814,12 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
                 ("What color is the sky?", "Blue"),
             ]
             q, a = random.choice(questions)
-            await message.channel.send(f"📝 **Trivia Question:** {q}\nReply with your answer!")
+            await message.channel.send(f"ðŸ“ **Trivia Question:** {q}\nReply with your answer!")
             # Note: Full trivia implementation would require waiting for reply
             return True
         except Exception as e:
             logger.error(f"Error in handle_trivia: {e}")
-            await message.channel.send(f"❌ Error starting trivia. Please try again.")
+            await message.channel.send(f"âŒ Error starting trivia. Please try again.")
             return False
 
     async def handle_starboard_leaderboard(self, message: discord.Message) -> bool:
@@ -6272,10 +5832,10 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             leaderboard = starboard.get_leaderboard(guild_id)
 
             if not leaderboard:
-                await message.channel.send("⭐ No starred messages yet! Start starring messages to see them here.")
+                await message.channel.send("â­ No starred messages yet! Start starring messages to see them here.")
                 return True
 
-            embed = discord.Embed(title="⭐ Starboard Leaderboard", color=discord.Color.gold())
+            embed = discord.Embed(title="â­ Starboard Leaderboard", color=discord.Color.gold())
             for i, entry in enumerate(leaderboard[:10]):  # Top 10
                 embed.add_field(
                     name=f"#{i+1} - {entry.get('star_count', 0)} stars",
@@ -6287,7 +5847,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             return True
         except Exception as e:
             logger.error(f"Error in handle_starboard_leaderboard: {e}")
-            await message.channel.send(f"❌ Error showing starboard. Please try again later.")
+            await message.channel.send(f"âŒ Error showing starboard. Please try again later.")
             return False
 
     async def handle_list_events(self, message: discord.Message) -> bool:
@@ -6301,10 +5861,10 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             scheduled_events = dm.get_guild_data(guild_id, "scheduled_events", {})
 
             if not scheduled_events:
-                await message.channel.send("📅 No events scheduled. Use `!event create <name>` to create one.")
+                await message.channel.send("ðŸ“… No events scheduled. Use `!event create <name>` to create one.")
                 return True
 
-            embed = discord.Embed(title="📅 Scheduled Events", color=discord.Color.blue())
+            embed = discord.Embed(title="ðŸ“… Scheduled Events", color=discord.Color.blue())
             for event_id, event_data in list(scheduled_events.items())[:10]:  # Top 10
                 embed.add_field(
                     name=event_data.get("name", "Unknown Event"),
@@ -6316,7 +5876,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             return True
         except Exception as e:
             logger.error(f"Error in handle_list_events: {e}")
-            await message.channel.send(f"❌ Error listing events. Please try again later.")
+            await message.channel.send(f"âŒ Error listing events. Please try again later.")
             return False
 
     async def handle_list_tournaments(self, message: discord.Message) -> bool:
@@ -6326,10 +5886,10 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             guild_id = message.guild.id
 
             if not tournaments._tournaments:
-                await message.channel.send("🏆 No tournaments created yet. Use `!tournament create <name>` to create one.")
+                await message.channel.send("ðŸ† No tournaments created yet. Use `!tournament create <name>` to create one.")
                 return True
 
-            embed = discord.Embed(title="🏆 Tournaments", color=discord.Color.gold())
+            embed = discord.Embed(title="ðŸ† Tournaments", color=discord.Color.gold())
             for t_id, t_data in list(tournaments._tournaments.items())[:10]:
                 status = t_data.get("status", "Unknown")
                 embed.add_field(
@@ -6342,7 +5902,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             return True
         except Exception as e:
             logger.error(f"Error in handle_list_tournaments: {e}")
-            await message.channel.send(f"❌ Error listing tournaments. Please try again later.")
+            await message.channel.send(f"âŒ Error listing tournaments. Please try again later.")
             return False
 
     async def handle_tournament_leaderboard(self, message: discord.Message) -> bool:
@@ -6351,18 +5911,18 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             tournaments = self.bot.tournaments
 
             if not tournaments._tournaments:
-                await message.channel.send("🏆 No tournaments yet. Use `!tournament create <name>` to create one.")
+                await message.channel.send("ðŸ† No tournaments yet. Use `!tournament create <name>` to create one.")
                 return True
 
             # Calculate leaderboard from tournament results
-            embed = discord.Embed(title="🏆 Tournament Leaderboard", color=discord.Color.gold())
+            embed = discord.Embed(title="ðŸ† Tournament Leaderboard", color=discord.Color.gold())
             # This is a simplified version - full implementation would track wins/losses
             embed.description = "Tournament leaderboard will be available after tournaments complete."
             await message.channel.send(embed=embed)
             return True
         except Exception as e:
             logger.error(f"Error in handle_tournament_leaderboard: {e}")
-            await message.channel.send(f"❌ Error showing leaderboard. Please try again later.")
+            await message.channel.send(f"âŒ Error showing leaderboard. Please try again later.")
             return False
 
     async def handle_tournament_join(self, message: discord.Message) -> bool:
@@ -6374,28 +5934,28 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             # Parse tournament ID from message
             args = message.content.split()
             if len(args) < 2:
-                await message.channel.send("❌ Usage: `!join <tournament_id>`")
+                await message.channel.send("âŒ Usage: `!join <tournament_id>`")
                 return True
 
             tournament_id = args[1]
             if tournament_id not in tournaments._tournaments:
-                await message.channel.send(f"❌ Tournament `{tournament_id}` not found.")
+                await message.channel.send(f"âŒ Tournament `{tournament_id}` not found.")
                 return True
 
             # Add user to tournament
             tournament = tournaments._tournaments[tournament_id]
             user_id = message.author.id
             if user_id in tournament.get("participants", []):
-                await message.channel.send("❌ You're already in this tournament!")
+                await message.channel.send("âŒ You're already in this tournament!")
                 return True
 
             tournament["participants"].append(user_id)
             tournaments._save_tournament(tournament)
-            await message.channel.send(f"✅ You joined the tournament! Participants: {len(tournament['participants'])}")
+            await message.channel.send(f"âœ… You joined the tournament! Participants: {len(tournament['participants'])}")
             return True
         except Exception as e:
             logger.error(f"Error in handle_tournament_join: {e}")
-            await message.channel.send(f"❌ Error joining tournament. Please try again.")
+            await message.channel.send(f"âŒ Error joining tournament. Please try again.")
             return False
 
     async def handle_server_stats(self, message: discord.Message) -> bool:
@@ -6405,7 +5965,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             guild = message.guild
 
             # Get basic server stats
-            embed = discord.Embed(title="📊 Server Statistics", color=discord.Color.blue())
+            embed = discord.Embed(title="ðŸ“Š Server Statistics", color=discord.Color.blue())
             embed.add_field(name="Server Name", value=guild.name, inline=True)
             embed.add_field(name="Members", value=guild.member_count, inline=True)
             embed.add_field(name="Channels", value=len(guild.channels), inline=True)
@@ -6415,7 +5975,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             return True
         except Exception as e:
             logger.error(f"Error in handle_server_stats: {e}")
-            await message.channel.send(f"❌ Error showing server stats. Please try again later.")
+            await message.channel.send(f"âŒ Error showing server stats. Please try again later.")
             return False
 
     async def handle_my_stats(self, message: discord.Message) -> bool:
@@ -6427,7 +5987,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             # Get user stats from various modules
             from data_manager import dm
 
-            embed = discord.Embed(title="📊 Your Stats", color=discord.Color.green())
+            embed = discord.Embed(title="ðŸ“Š Your Stats", color=discord.Color.green())
 
             # Leveling stats
             leveling_data = dm.get_guild_data(guild_id, "leveling_data", {})
@@ -6442,7 +6002,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             return True
         except Exception as e:
             logger.error(f"Error in handle_my_stats: {e}")
-            await message.channel.send(f"❌ Error showing your stats. Please try again later.")
+            await message.channel.send(f"âŒ Error showing your stats. Please try again later.")
             return False
 
     async def handle_at_risk(self, message: discord.Message) -> bool:
@@ -6452,7 +6012,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             guild_id = message.guild.id
 
             # Simple implementation - show users with low engagement
-            embed = discord.Embed(title="⚠️ At-Risk Users", color=discord.Color.orange())
+            embed = discord.Embed(title="âš ï¸ At-Risk Users", color=discord.Color.orange())
             embed.description = "Users who might be at risk of leaving the server (low activity)."
             embed.add_field(name="Note", value="Full implementation tracks activity and engagement metrics.", inline=False)
 
@@ -6460,7 +6020,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             return True
         except Exception as e:
             logger.error(f"Error in handle_at_risk: {e}")
-            await message.channel.send(f"❌ Error showing at-risk users. Please try again later.")
+            await message.channel.send(f"âŒ Error showing at-risk users. Please try again later.")
             return False
 
     async def handle_remind(self, message: discord.Message) -> bool:
@@ -6472,15 +6032,15 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             # Simple reminder: !remind 10m Check the oven
             match = re.search(r'!remind\s+(\d+[msh])\s+(.+)', content)
             if not match:
-                await message.channel.send("❌ Usage: `!remind <time> <message>`\nExample: `!remind 10m Check the oven`")
+                await message.channel.send("âŒ Usage: `!remind <time> <message>`\nExample: `!remind 10m Check the oven`")
                 return True
 
             time_str, reminder_msg = match.groups()
-            await message.channel.send(f"⏰ Reminder set! I'll remind you in {time_str}.")
+            await message.channel.send(f"â° Reminder set! I'll remind you in {time_str}.")
             return True
         except Exception as e:
             logger.error(f"Error in handle_remind: {e}")
-            await message.channel.send(f"❌ Error setting reminder. Please try again.")
+            await message.channel.send(f"âŒ Error setting reminder. Please try again.")
             return False
 
     async def handle_list_reminders(self, message: discord.Message) -> bool:
@@ -6492,10 +6052,10 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             user_reminders = [r for r in reminders.values() if r.get("user_id") == user_id]
 
             if not user_reminders:
-                await message.channel.send("⏰ No reminders set. Use `!remind <time> <message>` to set one.")
+                await message.channel.send("â° No reminders set. Use `!remind <time> <message>` to set one.")
                 return True
 
-            embed = discord.Embed(title="⏰ Your Reminders", color=discord.Color.blue())
+            embed = discord.Embed(title="â° Your Reminders", color=discord.Color.blue())
             for r in user_reminders[:10]:
                 embed.add_field(name=f"Reminder #{r.get('id', '?')}", value=r.get("message", "No message"), inline=False)
 
@@ -6503,7 +6063,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             return True
         except Exception as e:
             logger.error(f"Error in handle_list_reminders: {e}")
-            await message.channel.send(f"❌ Error listing reminders. Please try again later.")
+            await message.channel.send(f"âŒ Error listing reminders. Please try again later.")
             return False
 
     async def handle_mod_stats(self, message: discord.Message) -> bool:
@@ -6512,7 +6072,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             from data_manager import dm
             guild_id = message.guild.id
 
-            embed = discord.Embed(title="🔨 Moderation Stats", color=discord.Color.red())
+            embed = discord.Embed(title="ðŸ”¨ Moderation Stats", color=discord.Color.red())
             
             # Get mod actions from logging data
             mod_cases = dm.get_guild_data(guild_id, "mod_cases", {})
@@ -6522,7 +6082,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             return True
         except Exception as e:
             logger.error(f"Error in handle_mod_stats: {e}")
-            await message.channel.send(f"❌ Error showing mod stats. Please try again later.")
+            await message.channel.send(f"âŒ Error showing mod stats. Please try again later.")
             return False
 
     async def handle_shift_start(self, message: discord.Message) -> bool:
@@ -6536,16 +6096,16 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             from data_manager import dm
             shifts = dm.get_guild_data(guild_id, "staff_shifts", {})
             if str(user_id) in shifts and shifts[str(user_id)].get("status") == "active":
-                await message.channel.send("❌ You're already on shift!")
+                await message.channel.send("âŒ You're already on shift!")
                 return True
             
             shifts[str(user_id)] = {"status": "active", "start_time": time.time()}
             dm.update_guild_data(guild_id, "staff_shifts", shifts)
-            await message.channel.send("✅ Shift started! Use `!shift end` to end it.")
+            await message.channel.send("âœ… Shift started! Use `!shift end` to end it.")
             return True
         except Exception as e:
             logger.error(f"Error in handle_shift_start: {e}")
-            await message.channel.send(f"❌ Error starting shift. Please try again.")
+            await message.channel.send(f"âŒ Error starting shift. Please try again.")
             return False
 
     async def handle_shift_end(self, message: discord.Message) -> bool:
@@ -6557,7 +6117,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             
             shifts = dm.get_guild_data(guild_id, "staff_shifts", {})
             if str(user_id) not in shifts or shifts[str(user_id)].get("status") != "active":
-                await message.channel.send("❌ You're not on shift!")
+                await message.channel.send("âŒ You're not on shift!")
                 return True
             
             # Calculate shift duration
@@ -6568,11 +6128,11 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             shifts[str(user_id)]["duration"] = duration
             dm.update_guild_data(guild_id, "staff_shifts", shifts)
             
-            await message.channel.send(f"✅ Shift ended! Duration: {duration//60} minutes.")
+            await message.channel.send(f"âœ… Shift ended! Duration: {duration//60} minutes.")
             return True
         except Exception as e:
             logger.error(f"Error in handle_shift_end: {e}")
-            await message.channel.send(f"❌ Error ending shift. Please try again.")
+            await message.channel.send(f"âŒ Error ending shift. Please try again.")
             return False
 
     async def handle_shift_status(self, message: discord.Message) -> bool:
@@ -6584,30 +6144,30 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             
             shifts = dm.get_guild_data(guild_id, "staff_shifts", {})
             if user_id not in shifts or shifts[user_id].get("status") != "active":
-                await message.channel.send("❌ You're not currently on shift. Use `!shift start` to begin.")
+                await message.channel.send("âŒ You're not currently on shift. Use `!shift start` to begin.")
                 return True
             
             start_time = shifts[user_id].get("start_time", time.time())
             duration = int((time.time() - start_time) / 60)  # minutes
             
-            await message.channel.send(f"✅ You're on shift! Duration: {duration} minutes. Use `!shift end` to end.")
+            await message.channel.send(f"âœ… You're on shift! Duration: {duration} minutes. Use `!shift end` to end.")
             return True
         except Exception as e:
             logger.error(f"Error in handle_shift_status: {e}")
-            await message.channel.send(f"❌ Error showing shift status. Please try again later.")
+            await message.channel.send(f"âŒ Error showing shift status. Please try again later.")
             return False
 
     async def handle_staff_review_cmd(self, message: discord.Message) -> bool:
         """Handle !staffreview command"""
         try:
-            embed = discord.Embed(title="📝 Staff Reviews", color=discord.Color.blue())
+            embed = discord.Embed(title="ðŸ“ Staff Reviews", color=discord.Color.blue())
             embed.description = "Submit staff reviews and feedback."
             embed.add_field(name="How it Works", value="Staff reviews are managed through the admin panel.", inline=False)
             await message.channel.send(embed=embed)
             return True
         except Exception as e:
             logger.error(f"Error in handle_staff_review_cmd: {e}")
-            await message.channel.send(f"❌ Error processing staff review. Please try again later.")
+            await message.channel.send(f"âŒ Error processing staff review. Please try again later.")
             return False
 
     async def handle_announce(self, message: discord.Message) -> bool:
@@ -6617,16 +6177,16 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             content = message.content
             args = content.split(maxsplit=1)
             if len(args) < 2:
-                await message.channel.send("❌ Usage: `!announce <message>`")
+                await message.channel.send("âŒ Usage: `!announce <message>`")
                 return True
             
             announcement = args[1]
-            embed = discord.Embed(title="📢 Announcement", description=announcement, color=discord.Color.blue())
+            embed = discord.Embed(title="ðŸ“¢ Announcement", description=announcement, color=discord.Color.blue())
             await message.channel.send(embed=embed)
             return True
         except Exception as e:
             logger.error(f"Error in handle_announce: {e}")
-            await message.channel.send(f"❌ Error making announcement. Please try again.")
+            await message.channel.send(f"âŒ Error making announcement. Please try again.")
             return False
 
     async def handle_leveling_shop(self, message: discord.Message) -> bool:
@@ -6635,7 +6195,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             from data_manager import dm
             guild_id = message.guild.id
             
-            embed = discord.Embed(title="🎁 Leveling Shop", color=discord.Color.purple())
+            embed = discord.Embed(title="ðŸŽ Leveling Shop", color=discord.Color.purple())
             embed.description = "Spend your XP on perks and roles!"
             embed.add_field(name="How it Works", value="Earn XP by chatting. Use `!rank` to check your XP.", inline=False)
             
@@ -6643,7 +6203,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             return True
         except Exception as e:
             logger.error(f"Error in handle_leveling_shop: {e}")
-            await message.channel.send(f"❌ Error showing leveling shop. Please try again later.")
+            await message.channel.send(f"âŒ Error showing leveling shop. Please try again later.")
             return False
 
     async def handle_staffpromotion_history(self, message: discord.Message) -> bool:
@@ -6652,7 +6212,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             from data_manager import dm
             guild_id = message.guild.id
             
-            embed = discord.Embed(title="📈 Promotion History", color=discord.Color.gold())
+            embed = discord.Embed(title="ðŸ“ˆ Promotion History", color=discord.Color.gold())
             promo_history = dm.get_guild_data(guild_id, "promotion_history", [])
             
             if not promo_history:
@@ -6661,7 +6221,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
                 for entry in promo_history[-10:]:  # Last 10 entries
                     embed.add_field(
                         name=f"User: {entry.get('user_id', 'Unknown')}",
-                        value=f"From: {entry.get('from_tier', '?')} → To: {entry.get('to_tier', '?')}\nDate: {entry.get('timestamp', 'Unknown')}",
+                        value=f"From: {entry.get('from_tier', '?')} â†’ To: {entry.get('to_tier', '?')}\nDate: {entry.get('timestamp', 'Unknown')}",
                         inline=False
                     )
             
@@ -6669,7 +6229,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             return True
         except Exception as e:
             logger.error(f"Error in handle_staffpromotion_history: {e}")
-            await message.channel.send(f"❌ Error showing promotion history. Please try again later.")
+            await message.channel.send(f"âŒ Error showing promotion history. Please try again later.")
             return False
 
     async def handle_peer_vote(self, message: discord.Message) -> bool:
@@ -6680,7 +6240,7 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             
             # Check if user mentioned someone
             if not message.mentions:
-                await message.channel.send("❌ Usage: `!vote @user`")
+                await message.channel.send("âŒ Usage: `!vote @user`")
                 return True
             
             target = message.mentions[0]
@@ -6688,11 +6248,11 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             
             # Submit peer vote
             await staff_promo.submit_peer_vote(guild_id, message.author.id, target.id)
-            await message.channel.send(f"✅ Peer vote recorded for {target.mention}.")
+            await message.channel.send(f"âœ… Peer vote recorded for {target.mention}.")
             return True
         except Exception as e:
             logger.error(f"Error in handle_peer_vote: {e}")
-            await message.channel.send(f"❌ Error processing vote. Please try again.")
+            await message.channel.send(f"âŒ Error processing vote. Please try again.")
             return False
 
     async def handle_economy_challenge(self, message: discord.Message) -> bool:
@@ -6701,10 +6261,10 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             import random
             # Simple challenge: guess a number
             number = random.randint(1, 10)
-            await message.channel.send(f"🎯 **Challenge:** Guess a number between 1 and 10! Reply with your guess.")
+            await message.channel.send(f"ðŸŽ¯ **Challenge:** Guess a number between 1 and 10! Reply with your guess.")
             # Note: Full implementation would wait for reply
             return True
         except Exception as e:
             logger.error(f"Error in handle_economy_challenge: {e}")
-            await message.channel.send(f"❌ Error starting challenge. Please try again.")
+            await message.channel.send(f"âŒ Error starting challenge. Please try again.")
             return False
