@@ -4557,6 +4557,12 @@ class ActionHandler:
             guild_id = message.guild.id
             user_id = message.author.id
 
+            # Check if economy system is enabled
+            config = dm.get_guild_data(guild_id, "economy_config", {})
+            if not config.get("enabled", True):
+                await message.channel.send("❌ Economy system is disabled on this server.")
+                return True
+
             last_daily = dm.get_guild_data(guild_id, "last_daily", {})
             last_time = last_daily.get(str(user_id))
 
@@ -4564,19 +4570,21 @@ class ActionHandler:
                 import datetime
                 last_date = datetime.datetime.fromisoformat(last_time)
                 if (datetime.datetime.now() - last_date).days < 1:
-                    await message.channel.send("ðŸŽ‰ Daily reward already claimed today!")
+                    await message.channel.send("🎉 Daily reward already claimed today!")
                     return True
 
-            reward = 100
+            reward = config.get("daily_amount", 100)
             economy.add_coins(guild_id, user_id, reward)
             last_daily[str(user_id)] = str(datetime.datetime.now())
             dm.update_guild_data(guild_id, "last_daily", last_daily)
 
-            await message.channel.send(f"ðŸŽ‰ You claimed **{reward} coins**!")
+            currency_name = config.get("currency_name", "coins")
+            currency_emoji = config.get("currency_emoji", "🪙")
+            await message.channel.send(f"{currency_emoji} You claimed **{reward} {currency_name}**!")
             return True
         except Exception as e:
             logger.error(f"Error in handle_economy_daily: {e}")
-            await message.channel.send("âŒ Unable to claim daily reward. Please try again later.")
+            await message.channel.send("❌ Unable to claim daily reward. Please try again later.")
             return False
 
     async def handle_economy_buy(self, message: discord.Message) -> bool:
@@ -4643,20 +4651,27 @@ class ActionHandler:
 
     async def handle_economy_transfer(self, message: discord.Message) -> bool:
         """!transfer <user> <amount>"""
+        
+        # Check if economy system is enabled
+        config = dm.get_guild_data(message.guild.id, "economy_config", {})
+        if not config.get("enabled", True):
+            await message.channel.send("❌ Economy system is disabled on this server.")
+            return True
+        
         parts = message.content.split()
         if len(parts) < 3:
-            await message.channel.send("âŒ Usage: `!transfer @user <amount>`")
+            await message.channel.send("❌ Usage: `!transfer @user <amount>`")
             return True
 
         target = message.mentions[0] if message.mentions else None
         if not target:
-            await message.channel.send("âŒ Please mention a user to transfer coins to.")
+            await message.channel.send("❌ Please mention a user to transfer coins to.")
             return True
 
         try:
             amount = int(parts[2])
         except ValueError:
-            await message.channel.send("âŒ Invalid amount.")
+            await message.channel.send("❌ Invalid amount.")
             return True
 
         from modules.economy import Economy
@@ -4730,21 +4745,31 @@ class ActionHandler:
             guild_id = message.guild.id
             user_id = message.author.id
 
+            # Check if economy system is enabled
+            config = dm.get_guild_data(guild_id, "economy_config", {})
+            if not config.get("enabled", True):
+                await message.channel.send("❌ Economy system is disabled on this server.")
+                return True
+
             coins = economy.get_coins(guild_id, user_id)
             gems = leveling.get_gems(guild_id, user_id)
             xp = leveling.get_xp(guild_id, user_id)
             level = leveling.get_level_from_xp(xp)
 
-            embed = discord.Embed(title=f"ðŸ’° {message.author.name}'s Balance", color=discord.Color.gold())
-            embed.add_field(name="ðŸ’° Coins", value=f"{coins:,}", inline=True)
-            embed.add_field(name="ðŸ’Ž Gems", value=str(gems), inline=True)
-            embed.add_field(name="ðŸ†™ Level", value=f"{level} ({xp:,} XP)", inline=True)
+            currency_name = config.get("currency_name", "coins")
+            currency_emoji = config.get("currency_emoji", "🪙")
+            gem_name = config.get("gem_name", "gems")
+
+            embed = discord.Embed(title=f"{currency_emoji} {message.author.name}'s Balance", color=discord.Color.gold())
+            embed.add_field(name=f"{currency_emoji} {currency_name}", value=f"{coins:,}", inline=True)
+            embed.add_field(name=f"💎 {gem_name}", value=str(gems), inline=True)
+            embed.add_field(name="🆙 Level", value=f"{level} ({xp:,} XP)", inline=True)
 
             await message.channel.send(embed=embed)
             return True
         except Exception as e:
             logger.error(f"Error in handle_economy_balance: {e}")
-            await message.channel.send("âŒ Unable to retrieve your balance. Please contact an administrator.")
+            await message.channel.send("❌ Unable to retrieve your balance. Please contact an administrator.")
             return False
 
     async def handle_economy_beg(self, message: discord.Message) -> bool:
@@ -4756,6 +4781,10 @@ class ActionHandler:
             user_id = message.author.id
 
             c = dm.get_guild_data(guild_id, "economy_config", {})
+            if not c.get("enabled", True):
+                await message.channel.send("❌ Economy system is disabled on this server.")
+                return True
+
             min_reward = c.get("beg_min", 1)
             max_reward = c.get("beg_max", 25)
             cooldown = c.get("beg_cooldown_seconds", 300)
@@ -4849,6 +4878,12 @@ class ActionHandler:
             leveling = Leveling(self.bot)
             guild_id = message.guild.id
             user_id = message.author.id
+
+            # Check if leveling system is enabled
+            config = dm.get_guild_data(guild_id, "leveling_config", {})
+            if not config.get("enabled", True):
+                await message.channel.send("❌ Leveling system is disabled on this server.")
+                return True
 
             xp = leveling.get_xp(guild_id, user_id)
             level = leveling.get_level_from_xp(xp)
@@ -5078,6 +5113,12 @@ class ActionHandler:
             promotion_service = self.bot.promotion_service
 
             config = staff_promo._get_full_config(guild.id)
+            settings = config.get("settings", {})
+            
+            # Check if staff promotion system is enabled
+            if not settings.get("auto_promote", True):
+                await message.channel.send("❌ Staff promotion system is disabled on this server.")
+                return True
             metrics = config.get("metrics", staff_promo._default_metrics)
 
             score = promotion_service._compute_score(guild.id, member.id, member, metrics)
@@ -5619,6 +5660,13 @@ class ActionHandler:
 
     async def handle_ticket_create(self, message: discord.Message) -> bool:
         from modules.auto_setup import CreateTicketButton
+        
+        # Check if ticket system is enabled
+        config = dm.get_guild_data(message.guild.id, "tickets_config", {})
+        if not config.get("enabled", True):
+            await message.channel.send("❌ Ticket system is disabled on this server.")
+            return True
+        
         view = CreateTicketButton(message.guild.id)
         await message.channel.send("Click below to open a ticket!", view=view)
         return True
@@ -5654,6 +5702,13 @@ class ActionHandler:
     async def handle_verification_verify(self, message: discord.Message) -> bool:
         from modules.verification import VerifyView
         verification_system = getattr(self.bot, 'verification', None)
+        
+        # Check if verification system is enabled
+        config = dm.get_guild_data(message.guild.id, "verification_config", {})
+        if not config.get("enabled", True):
+            await message.channel.send("❌ Verification system is disabled on this server.")
+            return True
+        
         embed = discord.Embed(title="Verification Required", description="Click the button below to verify.", color=discord.Color.blue())
         await message.channel.send(embed=embed, view=VerifyView(verification_system))
         return True
