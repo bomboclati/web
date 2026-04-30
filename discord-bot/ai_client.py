@@ -687,9 +687,9 @@ Only suggest actions from this list. Do not invent new actions:
         except Exception:
             pass
                 
-        # Cannot parse as JSON - return clean valid JSON response
-        logger.warning(f"Could not parse AI response as JSON, using raw text. Preview: {text[:100]}")
-        return {"summary": text.strip()}
+        # Cannot parse as JSON - return a helpful fallback
+        logger.warning(f"Could not parse AI response as JSON, response appears truncated or malformed. Preview: {text[:100]}")
+        return {"summary": "I tried to generate a response, but it seems the output was cut off or malformed. Please try rephrasing your request or try again."}
         
     def _repair_json(self, content: str) -> str:
         """Repair common JSON formatting errors."""
