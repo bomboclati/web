@@ -197,6 +197,26 @@ def _build_category_embed(guild_id: int, cat_name: str, bot: discord.Client = No
     return embed
 
 
+def _build_system_embed(guild_id: int, sys_key: str, bot: discord.Client = None) -> discord.Embed:
+    if sys_key in _SYSTEM_LOOKUP:
+        emoji, desc, cat, cmd_examples = _SYSTEM_LOOKUP[sys_key]
+        status = _status_emoji(guild_id, sys_key)
+        embed = discord.Embed(
+            title=f"{emoji} {sys_key.replace('_', ' ').title()} System {status}",
+            description=f"**Category:** {cat}\n\n**Description:** {desc}\n\n**Configuration:** `!configpanel {sys_key}`",
+            color=CATEGORIES[cat]["color"]
+        )
+        embed.set_thumbnail(url=_bot_avatar_url(bot))
+        if cmd_examples:
+            embed.add_field(
+                name="⌨️ Available Commands",
+                value="\n".join([f"`{cmd}`" for cmd in cmd_examples]),
+                inline=False
+            )
+        embed.set_footer(text="Click '⚙️ Config Panel' to open settings")
+        return embed
+    return discord.Embed(title="System not found", color=RED)
+
 def _build_search_embed(guild_id: int, query: str, bot: discord.Client = None) -> discord.Embed:
     query_l = query.lower()
 
@@ -261,12 +281,32 @@ class _SearchModal(ui.Modal, title="Search Systems"):
 
 
 class HelpCategoryView(ui.View):
-    """Shown when user clicks a category button from the main help menu."""
+    """Shown when user selects a category from the main help menu."""
 
     def __init__(self, guild_id: int, cat_name: str):
         super().__init__(timeout=300)
         self.guild_id = guild_id
         self.cat_name = cat_name
+        self.selected_system = None
+
+        # Select menu for systems in the category
+        cat_data = CATEGORIES[cat_name]
+        options = []
+        for sys_key, emoji, desc, cmd_examples in cat_data["systems"]:
+            status = _status_emoji(guild_id, sys_key)
+            options.append(discord.SelectOption(
+                label=f"{sys_key.replace('_', ' ').title()} {status}",
+                value=sys_key,
+                description=desc[:100],
+                emoji=emoji
+            ))
+        self.system_select = ui.Select(
+            placeholder="Select a system for details...",
+            options=options,
+            custom_id="help_system_select"
+        )
+        self.system_select.callback = self._system_callback
+        self.add_item(self.system_select)
 
     @ui.button(label="🏠 Home", style=discord.ButtonStyle.secondary, custom_id="help_cat_back")
     async def back(self, interaction: Interaction, button: ui.Button):
@@ -278,56 +318,57 @@ class HelpCategoryView(ui.View):
     async def search(self, interaction: Interaction, button: ui.Button):
         await interaction.response.send_modal(_SearchModal(interaction.guild_id))
 
-    @ui.button(label="🔄 Refresh", style=discord.ButtonStyle.secondary, custom_id="help_cat_refresh")
-    async def refresh(self, interaction: Interaction, button: ui.Button):
-        embed = _build_category_embed(interaction.guild_id, self.cat_name, interaction.client)
+    @ui.button(label="⚙️ Config Panel", style=discord.ButtonStyle.primary, custom_id="help_cat_config", disabled=True)
+    async def config_panel(self, interaction: Interaction, button: ui.Button):
+        if self.selected_system:
+            # Send a message to open config panel
+            await interaction.response.send_message(f"Opening config panel for {self.selected_system}...", ephemeral=True)
+            # Note: Actually opening config panel would require calling the config panel command, but for now, just inform
+            # In real implementation, trigger the config panel command
+
+    async def _system_callback(self, interaction: Interaction):
+        sys_key = self.system_select.values[0]
+        self.selected_system = sys_key
+        # Enable the config panel button
+        self.config_panel.disabled = False
+        # Build detailed embed for the system
+        embed = _build_system_embed(self.guild_id, sys_key, interaction.client)
         await interaction.response.edit_message(embed=embed, view=self)
 
 
 class HelpMainView(ui.View):
-    """The main !help panel with category select buttons."""
+    """The main !help panel with category select menu."""
 
     def __init__(self, guild_id: int):
         super().__init__(timeout=300)
         self.guild_id = guild_id
-        # Dynamically add one button per category
-        for idx, cat_name in enumerate(CATEGORIES.keys()):
-            btn = ui.Button(
-                label=cat_name,
-                style=discord.ButtonStyle.primary,
-                custom_id=f"help_cat_{idx}",
-                row=idx // 3
-            )
-            # Closure to capture cat_name
-            btn.callback = self._make_callback(cat_name)
-            self.add_item(btn)
 
-        # Search button always last
+        # Select menu for categories
+        options = []
+        for cat_name in CATEGORIES.keys():
+            options.append(discord.SelectOption(label=cat_name, value=cat_name, emoji=list(CATEGORIES.keys()).index(cat_name) % 5 + 1))  # Placeholder emoji
+        self.category_select = ui.Select(
+            placeholder="Choose a category...",
+            options=options,
+            custom_id="help_category_select"
+        )
+        self.category_select.callback = self._category_callback
+        self.add_item(self.category_select)
+
+        # Search button
         search_btn = ui.Button(
             label="🔍 Search",
             style=discord.ButtonStyle.secondary,
-            custom_id="help_main_search",
-            row=3
+            custom_id="help_main_search"
         )
         search_btn.callback = self._search_callback
         self.add_item(search_btn)
 
-        # Quick "View All Commands" — lists every registered prefix command across systems.
-        cmds_btn = ui.Button(
-            label="📜 All Commands",
-            style=discord.ButtonStyle.success,
-            custom_id="help_main_cmds",
-            row=3
-        )
-        cmds_btn.callback = self._all_cmds_callback
-        self.add_item(cmds_btn)
-
-    def _make_callback(self, cat_name: str):
-        async def callback(interaction: Interaction):
-            view = HelpCategoryView(interaction.guild_id, cat_name)
-            embed = _build_category_embed(interaction.guild_id, cat_name, interaction.client)
-            await interaction.response.edit_message(embed=embed, view=view)
-        return callback
+    async def _category_callback(self, interaction: Interaction):
+        cat_name = self.category_select.values[0]
+        embed = _build_category_embed(interaction.guild_id, cat_name, interaction.client)
+        view = HelpCategoryView(interaction.guild_id, cat_name)
+        await interaction.response.edit_message(embed=embed, view=view)
 
     async def _search_callback(self, interaction: Interaction):
         await interaction.response.send_modal(_SearchModal(interaction.guild_id))

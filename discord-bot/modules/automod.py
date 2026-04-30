@@ -16,24 +16,24 @@ class AutoModSystem:
 
     def get_config(self, guild_id: int) -> dict:
         return dm.get_guild_data(guild_id, "automod_config", {
-            "enabled": True,
+            "enabled": False,
             "log_channel_id": None,
             "whitelist_channels": [],
             "whitelist_roles": [],
             "rules": {
-                "spam": {"enabled": True, "max_messages": 5, "window": 5, "action": "mute"},
-                "mentions": {"enabled": True, "max_mentions": 5, "window": 10, "action": "warn"},
-                "caps": {"enabled": True, "threshold_pct": 70, "min_chars": 20, "action": "warn"},
-                "emojis": {"enabled": True, "max_emojis": 10, "action": "warn"},
-                "links": {"enabled": True, "max_links": 3, "window": 10, "action": "warn", "whitelisted_domains": []},
-                "invites": {"enabled": True, "action": "warn"},
-                "banned_words": {"enabled": True, "words": [], "action": "warn"},
-                "zalgo": {"enabled": True, "action": "warn"},
-                "mass_ping": {"enabled": True, "action": "warn"},
-                "repeated_chars": {"enabled": True, "action": "delete"},
-                "new_account": {"enabled": True, "min_age_days": 3, "action": "flag"},
-                "attachments": {"enabled": True, "max_attachments": 5, "window": 10, "action": "warn"},
-                "newlines": {"enabled": True, "max_newlines": 15, "action": "delete"}
+                "spam": {"enabled": False, "max_messages": 5, "window": 5, "action": "mute"},
+                "mentions": {"enabled": False, "max_mentions": 5, "window": 10, "action": "warn"},
+                "caps": {"enabled": False, "threshold_pct": 70, "min_chars": 20, "action": "warn"},
+                "emojis": {"enabled": False, "max_emojis": 10, "action": "warn"},
+                "links": {"enabled": False, "max_links": 3, "window": 10, "action": "warn", "whitelisted_domains": []},
+                "invites": {"enabled": False, "action": "warn"},
+                "banned_words": {"enabled": False, "words": [], "action": "warn"},
+                "zalgo": {"enabled": False, "action": "warn"},
+                "mass_ping": {"enabled": False, "action": "warn"},
+                "repeated_chars": {"enabled": False, "action": "delete"},
+                "new_account": {"enabled": False, "min_age_days": 3, "action": "flag"},
+                "attachments": {"enabled": False, "max_attachments": 5, "window": 10, "action": "warn"},
+                "newlines": {"enabled": False, "max_newlines": 15, "action": "delete"}
             },
             "escalation": {
                 "1": "warn",

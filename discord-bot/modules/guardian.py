@@ -16,17 +16,17 @@ from data_manager import dm
 from logger import logger
 
 DEFAULT_GUARDIAN_CONFIG = {
-    "enabled": True,
+    "enabled": False,
     "alert_channel": None,
-    "toxicity_level": "WARN",    # OFF, WARN, MUTE, KICK, BAN
-    "scam_level": "MUTE",
-    "impersonation_level": "WARN",
+    "toxicity_level": "OFF",    # OFF, WARN, MUTE, KICK, BAN
+    "scam_level": "OFF",
+    "impersonation_level": "OFF",
     "mass_dm_threshold": 10,     # msgs/min
-    "nuke_level": "BAN",
-    "token_detection": True,
-    "malware_level": "WARN",
-    "selfbot_level": "MUTE",
-    "escalation": True,
+    "nuke_level": "OFF",
+    "token_detection": False,
+    "malware_level": "OFF",
+    "selfbot_level": "OFF",
+    "escalation": False,
     "whitelist": [],
     "guardian_log": []
 }

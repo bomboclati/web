@@ -53,10 +53,12 @@ def parse_color(color_val):
     # Default fallback
     return 0x3498DB
 def is_system_enabled(guild_id: int, system_name: str) -> bool:
-    """Check if a system is enabled for a guild."""
+    """Check if a system is enabled for a guild. Returns False if not installed."""
     config_key = f"{system_name}_config"
     config = dm.get_guild_data(guild_id, config_key, {})
-    return config.get("enabled", True)
+    if not config:
+        return False  # Not installed
+    return config.get("enabled", False)
 
 COMMAND_SCHEMA = {
     "type": "object",
@@ -1527,7 +1529,7 @@ class ActionHandler:
         embed_data = params["embed_data"]
         guild = interaction.guild
 
-        # â”€â”€ 0. Parse user_id from Discord mention format (e.g. <@!123456789> or <@123456789>) â”€â”€â”€â”€â”€
+        # —— 0. Parse user_id from Discord mention format (e.g. <@!123456789> or <@123456789>) —————
         if user_id:
             try:
                 # Handle both <@! and <@ mention formats
@@ -1546,7 +1548,7 @@ class ActionHandler:
             except (ValueError, TypeError):
                 user_id = None
 
-        # â”€â”€ 1. Resolve user_id from username â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # —— 1. Resolve user_id from username ——————————————————————————————————
         if not user_id and username:
             # Handle Discord mention format <@!123456789> or <@123456789> (extract numeric ID directly)
             if isinstance(username, str) and username.startswith("<@"):
@@ -1634,7 +1636,7 @@ class ActionHandler:
                 except Exception:
                     pass
 
-        # â”€â”€ 2. No user resolved â€” return failure so action sequence stops â”€â”€
+        # —— 2. No user resolved â€” return failure so action sequence stops ——
         if not user_id:
             logger.warning(f"[send_dm] Could not resolve user from username={username!r}")
             try:
@@ -1645,13 +1647,13 @@ class ActionHandler:
                 pass
             return False, None
 
-        # â”€â”€ 3. Deduplication â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # —— 3. Deduplication ——————————————————————————————————————————————————
         dedup_key = f"dm_{user_id}_{hash(content or '')}_{hash(str(embed_data) if embed_data else '')}"
         if not deduplicator.should_send(dedup_key, interval=3):
             logger.info(f"[send_dm] Deduplicated DM to user {user_id}")
             return True, None
 
-        # â”€â”€ 4. Fetch the User object â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # —— 4. Fetch the User object ——————————————————————————————————————————
         try:
             user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
         except discord.NotFound:
@@ -1664,7 +1666,7 @@ class ActionHandler:
         if not user:
             return False, None
 
-        # â”€â”€ 5. Build embed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # —— 5. Build embed ————————————————————————————————————————————————————
         embed = None
         if embed_data:
             embed = discord.Embed(
@@ -1679,7 +1681,7 @@ class ActionHandler:
                     inline=field.get("inline", False)
                 )
 
-        # â”€â”€ 6. Send the DM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # —— 6. Send the DM ————————————————————————————————————————————————————
         try:
             await user.send(content=content, embed=embed)
             logger.info(f"[send_dm] DM sent to {user} ({user_id})")
@@ -1712,7 +1714,7 @@ class ActionHandler:
         username = params["username"]
         guild = interaction.guild
 
-        # â”€â”€ Resolve member from username â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # —— Resolve member from username ——————————————————————————————————————
         member = None
 
         if not user_id and not username:
@@ -1809,7 +1811,7 @@ class ActionHandler:
                 except Exception:
                     pass
 
-        # â”€â”€ Member not found â€” soft pass â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # —— Member not found â€” soft pass ——————————————————————————————————————
         if not member:
             logger.warning(f"[ping] Could not find member: username={username!r} user_id={user_id!r}")
             try:
@@ -1820,7 +1822,7 @@ class ActionHandler:
                 pass
             return True, None
 
-        # â”€â”€ Build and send the ping embed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # —— Build and send the ping embed —————————————————————————————————————
         latency = round(self.bot.latency * 1000, 1) if self.bot.latency else 0
 
         status_map = {
