@@ -4106,8 +4106,17 @@ class ActionHandler:
         self._custom_cmd_cooldowns[cooldown_key] = now
 
         try:
-            data = json.loads(code)
-            cmd_data_obj = data
+            if isinstance(code, str):
+                data = json.loads(code)
+            elif isinstance(code, dict):
+                data = code
+            else:
+                await message.channel.send("Invalid command data type.")
+                return False
+
+            if not data.get("command_type"):
+                await message.channel.send("Command missing type.")
+                return False
 
             valid, error_msg = validate_command_json(data)
             if not valid:
@@ -4160,6 +4169,8 @@ class ActionHandler:
 
                     # Replace {args} in parameters
                     for action in actions:
+                        if not action.get('name'):
+                            continue
                         params = action.get("parameters", {})
                         for k, v in params.items():
                             if isinstance(v, str):
