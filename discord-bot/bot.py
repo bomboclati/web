@@ -865,6 +865,17 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 "announce": json.dumps({"command_type": "announce"}),
                 # Level shop command
                 "levelshop": json.dumps({"command_type": "leveling_shop"}),
+                # Additional commands
+                "raidstatus": json.dumps({"command_type": "raidstatus"}),
+                "guardian status": json.dumps({"command_type": "guardian_status"}),
+                "automod status": json.dumps({"command_type": "automod_status"}),
+                "modlog view": json.dumps({"command_type": "modlog_view"}),
+                "suggest": json.dumps({"command_type": "suggest"}),
+                "chatchannel add": json.dumps({"command_type": "chatchannel_add"}),
+                "autoresponder add": json.dumps({"command_type": "autoresponder_add"}),
+                "remindme": json.dumps({"command_type": "remindme"}),
+                "announcement create": json.dumps({"command_type": "announcement_create"}),
+                "giveaway create": json.dumps({"command_type": "giveaway_create"}),
             }
             updated = False
             for cmd, data in default_cmds.items():

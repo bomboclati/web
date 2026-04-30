@@ -58,7 +58,7 @@ COMMAND_SCHEMA = {
     "properties": {
         "command_type": {
             "type": "string",
-            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "economy_challenge", "leaderboard", "leveling_rank", "leveling_leaderboard", "leveling_shop", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "staffpromo_requirements", "staffpromo_bonuses", "staffpromo_exclude", "staffpromo_config", "staffpromo_promote", "staffpromo_demote", "staffpromotion_history", "peer_vote", "list_triggers", "help_all", "config_panel", "ticket_create", "ticket_close", "verification_verify", "appeal_create", "application_apply", "set_verify_channel", "create_tournament", "create_event", "list_quests", "prestige", "dice", "flip", "slots", "trivia", "starboard_leaderboard", "list_events", "list_tournaments", "tournament_leaderboard", "tournament_join", "server_stats", "my_stats", "at_risk", "remind", "list_reminders", "mod_stats", "shift_start", "shift_end", "shift_status", "staff_review", "announce", "list_quests"]
+            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "economy_challenge", "leaderboard", "leveling_rank", "leveling_leaderboard", "leveling_shop", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "staffpromo_requirements", "staffpromo_bonuses", "staffpromo_exclude", "staffpromo_config", "staffpromo_promote", "staffpromo_demote", "staffpromotion_history", "peer_vote", "list_triggers", "help_all", "config_panel", "ticket_create", "ticket_close", "verification_verify", "appeal_create", "application_apply", "set_verify_channel", "create_tournament", "create_event", "list_quests", "prestige", "dice", "flip", "slots", "trivia", "starboard_leaderboard", "list_events", "list_tournaments", "tournament_leaderboard", "tournament_join", "server_stats", "my_stats", "at_risk", "remind", "list_reminders", "mod_stats", "shift_start", "shift_end", "shift_status", "staff_review", "announce", "list_quests", "raidstatus", "guardian_status", "automod_status", "modlog_view", "suggest", "chatchannel_add", "autoresponder_add", "remindme", "announcement_create", "giveaway_create"]
         },
         "content": {"type": "string"},
         "actions": {
@@ -4212,6 +4212,76 @@ class ActionHandler:
                     return await self.handle_ticket_create(message)
                 elif command_type == "ticket_close":
                     return await self.handle_ticket_close(message)
+                elif command_type == "application_status":
+                    return await self.handle_application_status(message)
+                elif command_type == "appeal_status":
+                    return await self.handle_appeal_status(message)
+                elif command_type == "help_embed":
+                    return await self.handle_help_embed(message)
+                elif command_type == "simple":
+                    return await self.handle_simple(message)
+                elif command_type == "economy_daily":
+                    return await self.handle_economy_daily(message)
+                elif command_type == "economy_balance":
+                    return await self.handle_economy_balance(message)
+                elif command_type == "economy_work":
+                    return await self.handle_economy_work(message)
+                elif command_type == "economy_beg":
+                    return await self.handle_economy_beg(message)
+                elif command_type == "economy_leaderboard":
+                    return await self.handle_economy_leaderboard(message)
+                elif command_type == "economy_shop":
+                    return await self.handle_economy_shop(message)
+                elif command_type == "economy_transfer":
+                    return await self.handle_economy_transfer(message)
+                elif command_type == "economy_rob":
+                    return await self.handle_economy_rob(message)
+                elif command_type == "economy_buy":
+                    return await self.handle_economy_buy(message)
+                elif command_type == "leaderboard":
+                    return await self.handle_leaderboard(message)
+                elif command_type == "leveling_rank":
+                    return await self.handle_leveling_rank(message)
+                elif command_type == "leveling_leaderboard":
+                    return await self.handle_leveling_leaderboard(message)
+                elif command_type == "staffpromo_status":
+                    return await self.handle_staffpromo_status(message)
+                elif command_type == "staffpromo_leaderboard":
+                    return await self.handle_staffpromo_leaderboard(message)
+                elif command_type == "staffpromo_progress":
+                    return await self.handle_staffpromo_progress(message)
+                elif command_type == "staffpromo_tiers":
+                    return await self.handle_staffpromo_tiers(message)
+                elif command_type == "staffpromo_config":
+                    return await self.handle_staffpromo_config(message)
+                elif command_type == "staffpromo_promote":
+                    return await self.handle_staffpromo_promote(message)
+                elif command_type == "config_panel":
+                    return await self.handle_config_panel(message)
+                elif command_type == "list_triggers":
+                    return await self.handle_list_triggers(message)
+                elif command_type == "help_all":
+                    return await self.handle_help_all(message)
+                elif command_type == "raidstatus":
+                    return await self.handle_raidstatus(message)
+                elif command_type == "guardian_status":
+                    return await self.handle_guardian_status(message)
+                elif command_type == "automod_status":
+                    return await self.handle_automod_status(message)
+                elif command_type == "modlog_view":
+                    return await self.handle_modlog_view(message)
+                elif command_type == "suggest":
+                    return await self.handle_suggest(message)
+                elif command_type == "chatchannel_add":
+                    return await self.handle_chatchannel_add(message)
+                elif command_type == "autoresponder_add":
+                    return await self.handle_autoresponder_add(message)
+                elif command_type == "remindme":
+                    return await self.handle_remindme(message)
+                elif command_type == "announcement_create":
+                    return await self.handle_announcement_create(message)
+                elif command_type == "giveaway_create":
+                    return await self.handle_giveaway_create(message)
                 elif command_type == "verification_verify":
                     return await self.handle_verification_verify(message)
                 elif command_type == "set_verify_channel":
@@ -4848,30 +4918,6 @@ class ActionHandler:
             await message.channel.send("âŒ Unable to load XP leaderboard. Please try again.")
             return False
 
-
-    async def undo_last_actions(self, interaction: discord.Interaction, count: int = 1) -> List[Tuple[str, bool]]:
-        """Undo the last N action groups for the guild."""
-        guild_id = interaction.guild.id
-        action_logs = dm.get_guild_data(guild_id, "action_logs", [])
-
-        if not action_logs:
-            return [("No actions to undo", False)]
-
-        to_undo = action_logs[-count:]
-        remaining = action_logs[:-count]
-        dm.update_guild_data(guild_id, "action_logs", remaining)
-
-        results = []
-        for log_entry in reversed(to_undo):
-            undo_data = log_entry.get("undo_data", {})
-            undo_action = undo_data.get("action")
-            success = await self._execute_undo(interaction, undo_action, undo_data)
-            results.append((loend(embed=embed)
-            return True
-        except Exception as e:
-            logger.error(f"Error in handle_leveling_leaderboard: {e}")
-            await message.channel.send("âŒ Unable to load XP leaderboard. Please try again.")
-            return False
 
 
     async def undo_last_actions(self, interaction: discord.Interaction, count: int = 1) -> List[Tuple[str, bool]]:
@@ -6267,4 +6313,642 @@ class ActionHandler:
         except Exception as e:
             logger.error(f"Error in handle_economy_challenge: {e}")
             await message.channel.send(f"âŒ Error starting challenge. Please try again.")
+            return False
+
+    async def handle_application_status(self, message: discord.Message) -> bool:
+        """Handle !application status command"""
+        try:
+            config = dm.get_guild_data(message.guild.id, "application_config", {})
+            if not config.get("enabled", False):
+                await message.channel.send("❌ Applications system is not enabled.")
+                return True
+
+            apps = dm.get_guild_data(message.guild.id, "applications", {})
+            pending = 0
+            approved = 0
+            denied = 0
+            for user_apps in apps.values():
+                for app in user_apps:
+                    status = app.get("status", "pending")
+                    if status == "pending":
+                        pending += 1
+                    elif status == "approved":
+                        approved += 1
+                    elif status == "denied":
+                        denied += 1
+
+            embed = discord.Embed(title="📋 Applications Status", color=discord.Color.blue())
+            embed.add_field(name="System Enabled", value="✅ Yes" if config.get("enabled") else "❌ No", inline=True)
+            embed.add_field(name="Pending", value=pending, inline=True)
+            embed.add_field(name="Approved", value=approved, inline=True)
+            embed.add_field(name="Denied", value=denied, inline=True)
+            embed.set_footer(text=f"Total Applications: {pending + approved + denied}")
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_application_status: {e}")
+            await message.channel.send("❌ Unable to load application status. Please try again.")
+            return False
+
+    async def handle_appeal_status(self, message: discord.Message) -> bool:
+        """Handle !appeal status command"""
+        try:
+            config = dm.get_guild_data(message.guild.id, "appeal_config", {})
+            if not config.get("enabled", False):
+                await message.channel.send("❌ Appeals system is not enabled.")
+                return True
+
+            appeals = dm.get_guild_data(message.guild.id, "appeals", {})
+            pending = 0
+            accepted = 0
+            denied = 0
+            for user_appeals in appeals.values():
+                for appeal in user_appeals:
+                    status = appeal.get("status", "pending")
+                    if status == "pending":
+                        pending += 1
+                    elif status == "accepted":
+                        accepted += 1
+                    elif status == "denied":
+                        denied += 1
+
+            embed = discord.Embed(title="⚖️ Appeals Status", color=discord.Color.orange())
+            embed.add_field(name="System Enabled", value="✅ Yes" if config.get("enabled") else "❌ No", inline=True)
+            embed.add_field(name="Pending", value=pending, inline=True)
+            embed.add_field(name="Accepted", value=accepted, inline=True)
+            embed.add_field(name="Denied", value=denied, inline=True)
+            embed.set_footer(text=f"Total Appeals: {pending + accepted + denied}")
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_appeal_status: {e}")
+            await message.channel.send("❌ Unable to load appeal status. Please try again.")
+            return False
+
+    async def handle_help_embed(self, message: discord.Message) -> bool:
+        """Handle !help embed command"""
+        try:
+            from modules.help_system import HelpSystem
+            help_system = HelpSystem(self.bot)
+            await help_system.send_help_embed(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_help_embed: {e}")
+            await message.channel.send("❌ Unable to load help embed. Please try again.")
+            return False
+
+    async def handle_simple(self, message: discord.Message) -> bool:
+        """Handle simple command"""
+        try:
+            # Get the command data
+            cmd_name = message.content.split()[0][1:]  # remove !
+            cmds = dm.get_guild_data(message.guild.id, "custom_commands", {})
+            code = cmds.get(cmd_name)
+            if isinstance(code, str):
+                data = json.loads(code)
+            else:
+                data = code
+
+            content = data.get("content", "✅ Command executed.")
+            await message.channel.send(content)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_simple: {e}")
+            await message.channel.send("✅ Simple command executed.")
+            return True
+
+    async def handle_economy_daily(self, message: discord.Message) -> bool:
+        """Handle !economy daily command"""
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            await economy.daily(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_daily: {e}")
+            await message.channel.send("❌ Error claiming daily reward. Please try again.")
+            return False
+
+    async def handle_economy_balance(self, message: discord.Message) -> bool:
+        """Handle !economy balance command"""
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            await economy.balance(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_balance: {e}")
+            await message.channel.send("❌ Error checking balance. Please try again.")
+            return False
+
+    async def handle_economy_work(self, message: discord.Message) -> bool:
+        """Handle !economy work command"""
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            await economy.work(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_work: {e}")
+            await message.channel.send("❌ Error working. Please try again.")
+            return False
+
+    async def handle_economy_beg(self, message: discord.Message) -> bool:
+        """Handle !economy beg command"""
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            await economy.beg(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_beg: {e}")
+            await message.channel.send("❌ Error begging. Please try again.")
+            return False
+
+    async def handle_economy_leaderboard(self, message: discord.Message) -> bool:
+        """Handle !economy leaderboard command"""
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            await economy.leaderboard(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_leaderboard: {e}")
+            await message.channel.send("❌ Error loading leaderboard. Please try again.")
+            return False
+
+    async def handle_economy_shop(self, message: discord.Message) -> bool:
+        """Handle !economy shop command"""
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            await economy.shop(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_shop: {e}")
+            await message.channel.send("❌ Error loading shop. Please try again.")
+            return False
+
+    async def handle_economy_transfer(self, message: discord.Message) -> bool:
+        """Handle !economy transfer command"""
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            args = message.content.split()
+            await economy.transfer(message, args)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_transfer: {e}")
+            await message.channel.send("❌ Error transferring coins. Please try again.")
+            return False
+
+    async def handle_economy_rob(self, message: discord.Message) -> bool:
+        """Handle !economy rob command"""
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            args = message.content.split()
+            await economy.rob(message, args)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_rob: {e}")
+            await message.channel.send("❌ Error robbing. Please try again.")
+            return False
+
+    async def handle_economy_buy(self, message: discord.Message) -> bool:
+        """Handle !economy buy command"""
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            args = message.content.split()
+            await economy.buy(message, args)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_buy: {e}")
+            await message.channel.send("❌ Error buying item. Please try again.")
+            return False
+
+    async def handle_leaderboard(self, message: discord.Message) -> bool:
+        """Handle !leaderboard command"""
+        try:
+            from modules.leveling import Leveling
+            leveling = Leveling(self.bot)
+            await leveling.leaderboard(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leaderboard: {e}")
+            await message.channel.send("❌ Error loading leaderboard. Please try again.")
+            return False
+
+    async def handle_leveling_rank(self, message: discord.Message) -> bool:
+        """Handle !leveling rank command"""
+        try:
+            from modules.leveling import Leveling
+            leveling = Leveling(self.bot)
+            await leveling.rank(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leveling_rank: {e}")
+            await message.channel.send("❌ Error loading rank. Please try again.")
+            return False
+
+    async def handle_leveling_leaderboard(self, message: discord.Message) -> bool:
+        """Handle !leveling leaderboard command"""
+        try:
+            from modules.leveling import Leveling
+            leveling = Leveling(self.bot)
+            await leveling.leaderboard(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leveling_leaderboard: {e}")
+            await message.channel.send("❌ Error loading leveling leaderboard. Please try again.")
+            return False
+
+    async def handle_staffpromo_status(self, message: discord.Message) -> bool:
+        """Handle !staffpromo status command"""
+        try:
+            from modules.staff_promo import StaffPromo
+            staff_promo = StaffPromo(self.bot)
+            await staff_promo.status(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_staffpromo_status: {e}")
+            await message.channel.send("❌ Error loading staff promo status. Please try again.")
+            return False
+
+    async def handle_staffpromo_leaderboard(self, message: discord.Message) -> bool:
+        """Handle !staffpromo leaderboard command"""
+        try:
+            from modules.staff_promo import StaffPromo
+            staff_promo = StaffPromo(self.bot)
+            await staff_promo.leaderboard(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_staffpromo_leaderboard: {e}")
+            await message.channel.send("❌ Error loading staff promo leaderboard. Please try again.")
+            return False
+
+    async def handle_staffpromo_progress(self, message: discord.Message) -> bool:
+        """Handle !staffpromo progress command"""
+        try:
+            from modules.staff_promo import StaffPromo
+            staff_promo = StaffPromo(self.bot)
+            await staff_promo.progress(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_staffpromo_progress: {e}")
+            await message.channel.send("❌ Error loading progress. Please try again.")
+            return False
+
+    async def handle_staffpromo_tiers(self, message: discord.Message) -> bool:
+        """Handle !staffpromo tiers command"""
+        try:
+            from modules.staff_promo import StaffPromo
+            staff_promo = StaffPromo(self.bot)
+            await staff_promo.tiers(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_staffpromo_tiers: {e}")
+            await message.channel.send("❌ Error loading tiers. Please try again.")
+            return False
+
+    async def handle_staffpromo_config(self, message: discord.Message) -> bool:
+        """Handle !staffpromo config command"""
+        try:
+            from modules.staff_promo import StaffPromo
+            staff_promo = StaffPromo(self.bot)
+            await staff_promo.config(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_staffpromo_config: {e}")
+            await message.channel.send("❌ Error loading config. Please try again.")
+            return False
+
+    async def handle_staffpromo_promote(self, message: discord.Message) -> bool:
+        """Handle !staffpromo promote command"""
+        try:
+            from modules.staff_promo import StaffPromo
+            staff_promo = StaffPromo(self.bot)
+            args = message.content.split()
+            await staff_promo.promote(message, args)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_staffpromo_promote: {e}")
+            await message.channel.send("❌ Error promoting. Please try again.")
+            return False
+
+    async def handle_config_panel(self, message: discord.Message) -> bool:
+        """Handle !config panel command"""
+        try:
+            from modules.config_panels import ConfigPanels
+            config_panels = ConfigPanels(self.bot)
+            await config_panels.show_panel(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_config_panel: {e}")
+            await message.channel.send("❌ Error loading config panel. Please try again.")
+            return False
+
+    async def handle_list_triggers(self, message: discord.Message) -> bool:
+        """Handle !list triggers command"""
+        try:
+            triggers = dm.get_guild_data(message.guild.id, "triggers", {})
+            if not triggers:
+                await message.channel.send("📝 No triggers configured.")
+                return True
+
+            embed = discord.Embed(title="📝 Configured Triggers", color=discord.Color.green())
+            for trigger, response in triggers.items():
+                embed.add_field(name=trigger, value=response[:200] + "..." if len(response) > 200 else response, inline=False)
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_list_triggers: {e}")
+            await message.channel.send("❌ Error loading triggers. Please try again.")
+            return False
+
+    async def handle_help_all(self, message: discord.Message) -> bool:
+        """Handle !help all command"""
+        try:
+            from modules.help_system import HelpSystem
+            help_system = HelpSystem(self.bot)
+            await help_system.send_full_help(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_help_all: {e}")
+            await message.channel.send("❌ Error loading full help. Please try again.")
+            return False
+
+    async def handle_raidstatus(self, message: discord.Message) -> bool:
+        """Handle !raidstatus command"""
+        try:
+            settings = dm.get_guild_data(message.guild.id, "anti_raid_settings", {})
+            enabled = settings.get("enabled", False)
+            embed = discord.Embed(title="🛡️ Anti-Raid Status", color=discord.Color.blue())
+            embed.add_field(name="Enabled", value="✅ Yes" if enabled else "❌ No", inline=True)
+            if enabled:
+                embed.add_field(name="Join Rate Limit", value=settings.get("join_rate_limit", "Not set"), inline=True)
+                embed.add_field(name="Message Spam Limit", value=settings.get("message_spam_limit", "Not set"), inline=True)
+            embed.set_footer(text="Anti-raid protection status")
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_raidstatus: {e}")
+            await message.channel.send("❌ Error loading anti-raid status. Please try again.")
+            return False
+
+    async def handle_guardian_status(self, message: discord.Message) -> bool:
+        """Handle !guardian status command"""
+        try:
+            config = dm.get_guild_data(message.guild.id, "guardian_config", {})
+            enabled = config.get("enabled", False)
+            embed = discord.Embed(title="⚔️ Guardian Status", color=discord.Color.blue())
+            embed.add_field(name="Enabled", value="✅ Yes" if enabled else "❌ No", inline=True)
+            if enabled:
+                embed.add_field(name="Toxicity Filter", value="✅ On" if config.get("toxicity_enabled") else "❌ Off", inline=True)
+                embed.add_field(name="Scam Filter", value="✅ On" if config.get("scam_enabled") else "❌ Off", inline=True)
+                embed.add_field(name="Impersonation Detection", value="✅ On" if config.get("impersonation_enabled") else "❌ Off", inline=True)
+            embed.set_footer(text="AI-powered threat detection status")
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_guardian_status: {e}")
+            await message.channel.send("❌ Error loading guardian status. Please try again.")
+            return False
+
+    async def handle_automod_status(self, message: discord.Message) -> bool:
+        """Handle !automod status command"""
+        try:
+            config = dm.get_guild_data(message.guild.id, "automod_config", {})
+            enabled = config.get("enabled", False)
+            embed = discord.Embed(title="🤖 AutoMod Status", color=discord.Color.blue())
+            embed.add_field(name="Enabled", value="✅ Yes" if enabled else "❌ No", inline=True)
+            if enabled:
+                embed.add_field(name="Spam Filter", value="✅ On" if config.get("spam_filter") else "❌ Off", inline=True)
+                embed.add_field(name="Caps Filter", value="✅ On" if config.get("caps_filter") else "❌ Off", inline=True)
+                embed.add_field(name="Link Filter", value="✅ On" if config.get("link_filter") else "❌ Off", inline=True)
+            embed.set_footer(text="Automated moderation status")
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_automod_status: {e}")
+            await message.channel.send("❌ Error loading automod status. Please try again.")
+            return False
+
+    async def handle_modlog_view(self, message: discord.Message) -> bool:
+        """Handle !modlog view command"""
+        try:
+            logs = dm.get_guild_data(message.guild.id, "mod_logs", [])
+            if not logs:
+                await message.channel.send("📋 No moderation logs found.")
+                return True
+
+            recent_logs = logs[-10:][::-1]  # Last 10, newest first
+            embed = discord.Embed(title="📋 Recent Mod Logs", color=discord.Color.orange())
+            for log in recent_logs:
+                mod = f"<@{log.get('moderator_id', 'Unknown')}>"
+                action = log.get('action', 'Unknown')
+                target = f"<@{log.get('user_id', 'Unknown')}>"
+                reason = log.get('reason', 'No reason')
+                timestamp = f"<t:{int(log.get('timestamp', 0))}:R>"
+                embed.add_field(name=f"{action} by {mod}", value=f"Target: {target}\nReason: {reason}\nTime: {timestamp}", inline=False)
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_modlog_view: {e}")
+            await message.channel.send("❌ Error loading mod logs. Please try again.")
+            return False
+
+    async def handle_suggest(self, message: discord.Message) -> bool:
+        """Handle !suggest command"""
+        try:
+            args = message.content.split(maxsplit=1)
+            if len(args) < 2:
+                await message.channel.send("❌ Usage: !suggest <your suggestion>")
+                return True
+
+            suggestion_text = args[1]
+            # Store suggestion
+            suggestions = dm.get_guild_data(message.guild.id, "suggestions", [])
+            suggestion = {
+                "id": len(suggestions) + 1,
+                "user_id": message.author.id,
+                "text": suggestion_text,
+                "timestamp": time.time(),
+                "status": "pending"
+            }
+            suggestions.append(suggestion)
+            dm.update_guild_data(message.guild.id, "suggestions", suggestions)
+            await message.channel.send(f"✅ Suggestion submitted! ID: {suggestion['id']}")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_suggest: {e}")
+            await message.channel.send("❌ Error creating suggestion. Please try again.")
+            return False
+
+    async def handle_chatchannel_add(self, message: discord.Message) -> bool:
+        """Handle !chatchannel add command"""
+        try:
+            if not message.channel_mentions:
+                await message.channel.send("❌ Please mention a channel to add as chat channel.")
+                return True
+
+            channel = message.channel_mentions[0]
+            if not isinstance(channel, discord.TextChannel):
+                await message.channel.send("❌ Please specify a valid text channel.")
+                return True
+
+            config = dm.get_guild_data(message.guild.id, "chat_channels_config", {})
+            channels = config.get("channels", [])
+            if channel.id in channels:
+                await message.channel.send(f"❌ {channel.mention} is already a chat channel.")
+                return True
+
+            channels.append(channel.id)
+            config["channels"] = channels
+            dm.update_guild_data(message.guild.id, "chat_channels_config", config)
+            await message.channel.send(f"✅ Added {channel.mention} as a chat channel.")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_chatchannel_add: {e}")
+            await message.channel.send("❌ Error adding chat channel. Please try again.")
+            return False
+
+    async def handle_autoresponder_add(self, message: discord.Message) -> bool:
+        """Handle !autoresponder add command"""
+        try:
+            args = message.content.split(maxsplit=2)
+            if len(args) < 3:
+                await message.channel.send("❌ Usage: !autoresponder add <trigger> <response>")
+                return True
+
+            trigger = args[1].lower()
+            response = args[2]
+
+            responders = dm.get_guild_data(message.guild.id, "auto_responders", {})
+            if trigger in responders:
+                await message.channel.send(f"❌ Trigger '{trigger}' already exists.")
+                return True
+
+            responders[trigger] = response
+            dm.update_guild_data(message.guild.id, "auto_responders", responders)
+            await message.channel.send(f"✅ Added autoresponder for '{trigger}'.")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_autoresponder_add: {e}")
+            await message.channel.send("❌ Error adding autoresponder. Please try again.")
+            return False
+
+    async def handle_remindme(self, message: discord.Message) -> bool:
+        """Handle !remindme command"""
+        try:
+            args = message.content.split(maxsplit=2)
+            if len(args) < 3:
+                await message.channel.send("❌ Usage: !remindme <time> <message>\nExample: !remindme 1h Check the oven")
+                return True
+
+            time_str = args[1]
+            reminder_text = args[2]
+
+            # Parse time (simple: 1h, 30m, 1d, etc.)
+            import re
+            match = re.match(r'(\d+)([smhd])', time_str.lower())
+            if not match:
+                await message.channel.send("❌ Invalid time format. Use like 1h, 30m, 1d")
+                return True
+
+            amount = int(match.group(1))
+            unit = match.group(2)
+            multipliers = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}
+            delay = amount * multipliers[unit]
+
+            reminder_time = time.time() + delay
+
+            reminders = dm.get_guild_data(message.guild.id, "reminders", [])
+            reminder = {
+                "id": len(reminders) + 1,
+                "user_id": message.author.id,
+                "channel_id": message.channel.id,
+                "text": reminder_text,
+                "timestamp": reminder_time
+            }
+            reminders.append(reminder)
+            dm.update_guild_data(message.guild.id, "reminders", reminders)
+            await message.channel.send(f"✅ Reminder set for <t:{int(reminder_time)}:R>")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_remindme: {e}")
+            await message.channel.send("❌ Error setting reminder. Please try again.")
+            return False
+
+    async def handle_announcement_create(self, message: discord.Message) -> bool:
+        """Handle !announcement create command"""
+        try:
+            args = message.content.split(maxsplit=1)
+            if len(args) < 2:
+                await message.channel.send("❌ Usage: !announcement create <message>")
+                return True
+
+            announcement_text = args[1]
+            embed = discord.Embed(title="📢 Announcement", description=announcement_text, color=discord.Color.gold())
+            embed.set_footer(text=f"Announced by {message.author.display_name}")
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_announcement_create: {e}")
+            await message.channel.send("❌ Error creating announcement. Please try again.")
+            return False
+
+    async def handle_giveaway_create(self, message: discord.Message) -> bool:
+        """Handle !giveaway create command"""
+        try:
+            args = message.content.split()
+            if len(args) < 4:
+                await message.channel.send("❌ Usage: !giveaway create <duration> <winners> <prize>\nExample: !giveaway create 1h 1 Discord Nitro")
+                return True
+
+            duration_str = args[1]
+            winners = int(args[2])
+            prize = ' '.join(args[3:])
+
+            # Parse duration
+            import re
+            match = re.match(r'(\d+)([smhd])', duration_str.lower())
+            if not match:
+                await message.channel.send("❌ Invalid duration format. Use like 1h, 30m, 1d")
+                return True
+
+            amount = int(match.group(1))
+            unit = match.group(2)
+            multipliers = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}
+            duration = amount * multipliers[unit]
+
+            end_time = time.time() + duration
+
+            giveaways = dm.get_guild_data(message.guild.id, "giveaways", [])
+            giveaway = {
+                "id": len(giveaways) + 1,
+                "channel_id": message.channel.id,
+                "host_id": message.author.id,
+                "prize": prize,
+                "winners": winners,
+                "end_time": end_time,
+                "participants": [],
+                "active": True
+            }
+            giveaways.append(giveaway)
+            dm.update_guild_data(message.guild.id, "giveaways", giveaways)
+
+            embed = discord.Embed(title="🎉 Giveaway!", description=f"Prize: {prize}\nEnds: <t:{int(end_time)}:R>\nWinners: {winners}", color=discord.Color.green())
+            embed.set_footer(text="React with 🎉 to enter!")
+            msg = await message.channel.send(embed=embed)
+            await msg.add_reaction("🎉")
+
+            giveaway["message_id"] = msg.id
+            dm.update_guild_data(message.guild.id, "giveaways", giveaways)
+
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_giveaway_create: {e}")
+            await message.channel.send("❌ Error creating giveaway. Please try again.")
             return False
