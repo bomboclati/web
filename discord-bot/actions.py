@@ -230,7 +230,7 @@ class ActionHandler:
             for cmd_name, cmd_data in commands.items():
                 if cmd_name not in custom_cmds:
                     # Create command with fallback response
-                    custom_cmds[cmd_name] = cmd_data
+                    custom_cmds[cmd_name] = json.dumps(cmd_data)
                     created_commands.append(cmd_name)
                     logger.info(f"Created missing command: !{cmd_name} for system: {system_type}")
 
