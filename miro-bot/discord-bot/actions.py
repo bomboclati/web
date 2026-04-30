@@ -57,7 +57,7 @@ COMMAND_SCHEMA = {
     "properties": {
         "command_type": {
             "type": "string",
-            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "leaderboard", "leveling_rank", "leveling_leaderboard", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "list_triggers", "help_all", "config_panel"]
+            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "economy_challenge", "leaderboard", "leveling_rank", "leveling_leaderboard", "leveling_shop", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "staffpromo_requirements", "staffpromo_bonuses", "staffpromo_exclude", "staffpromo_config", "staffpromo_promote", "staffpromo_demote", "staffpromotion_history", "peer_vote", "list_triggers", "help_all", "config_panel", "ticket_create", "ticket_close", "verification_verify", "appeal_create", "application_apply", "set_verify_channel", "create_tournament", "create_event", "list_quests", "prestige", "dice", "flip", "slots", "trivia", "starboard_leaderboard", "list_events", "list_tournaments", "tournament_leaderboard", "tournament_join", "server_stats", "my_stats", "at_risk", "remind", "list_reminders", "mod_stats", "shift_start", "shift_end", "shift_status", "staff_review", "announce", "list_quests"]
         },
         "content": {"type": "string"},
         "actions": {
@@ -4213,6 +4213,74 @@ class ActionHandler:
                     return await self.handle_staffpromo_requirements(message)
                 elif command_type == "staffpromo_bonuses":
                     return await self.handle_staffpromo_bonuses(message)
+                elif command_type == "ticket_create":
+                    return await self.handle_ticket_create(message)
+                elif command_type == "ticket_close":
+                    return await self.handle_ticket_close(message)
+                elif command_type == "verification_verify":
+                    return await self.handle_verification_verify(message)
+                elif command_type == "set_verify_channel":
+                    return await self.handle_set_verify_channel(message)
+                elif command_type == "create_tournament":
+                    return await self.handle_create_tournament(message)
+                elif command_type == "create_event":
+                    return await self.handle_create_event(message)
+                elif command_type == "appeal_create":
+                    return await self.handle_appeal_create(message)
+                elif command_type == "application_apply":
+                    return await self.handle_application_apply(message)
+                elif command_type == "list_quests":
+                    return await self.handle_list_quests(message)
+                elif command_type == "prestige":
+                    return await self.handle_prestige(message)
+                elif command_type == "dice":
+                    return await self.handle_dice(message)
+                elif command_type == "flip":
+                    return await self.handle_flip(message)
+                elif command_type == "slots":
+                    return await self.handle_slots(message)
+                elif command_type == "trivia":
+                    return await self.handle_trivia(message)
+                elif command_type == "starboard_leaderboard":
+                    return await self.handle_starboard_leaderboard(message)
+                elif command_type == "list_events":
+                    return await self.handle_list_events(message)
+                elif command_type == "list_tournaments":
+                    return await self.handle_list_tournaments(message)
+                elif command_type == "tournament_leaderboard":
+                    return await self.handle_tournament_leaderboard(message)
+                elif command_type == "tournament_join":
+                    return await self.handle_tournament_join(message)
+                elif command_type == "server_stats":
+                    return await self.handle_server_stats(message)
+                elif command_type == "my_stats":
+                    return await self.handle_my_stats(message)
+                elif command_type == "at_risk":
+                    return await self.handle_at_risk(message)
+                elif command_type == "remind":
+                    return await self.handle_remind(message)
+                elif command_type == "list_reminders":
+                    return await self.handle_list_reminders(message)
+                elif command_type == "mod_stats":
+                    return await self.handle_mod_stats(message)
+                elif command_type == "shift_start":
+                    return await self.handle_shift_start(message)
+                elif command_type == "shift_end":
+                    return await self.handle_shift_end(message)
+                elif command_type == "shift_status":
+                    return await self.handle_shift_status(message)
+                elif command_type == "staff_review":
+                    return await self.handle_staff_review_cmd(message)
+                elif command_type == "announce":
+                    return await self.handle_announce(message)
+                elif command_type == "leveling_shop":
+                    return await self.handle_leveling_shop(message)
+                elif command_type == "staffpromotion_history":
+                    return await self.handle_staffpromotion_history(message)
+                elif command_type == "peer_vote":
+                    return await self.handle_peer_vote(message)
+                elif command_type == "economy_challenge":
+                    return await self.handle_economy_challenge(message)
                 else:
                     # Unknown dict type, fall back to sending as string
                     await message.channel.send(content=code)
@@ -4228,7 +4296,8 @@ class ActionHandler:
             await message.channel.send(content=code)
             return True
         except Exception as e:
-            logger.error("Error executing custom command %s: %s", cmd_name, e)
+            import traceback
+            logger.error(f"Error executing custom command {cmd_name}: {e}\n{traceback.format_exc()}")
 
             # Provide helpful error message based on the actual error
             error_str = str(e)
@@ -4300,34 +4369,39 @@ class ActionHandler:
 
     async def handle_economy_work(self, message: discord.Message) -> bool:
         """Handle !work command"""
-        from modules.economy import Economy
-        economy = Economy(self.bot)
-        guild_id = message.guild.id
-        user_id = message.author.id
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            guild_id = message.guild.id
+            user_id = message.author.id
 
-        c = dm.get_guild_data(guild_id, "economy_config", {})
-        min_reward = c.get("work_min", 50)
-        max_reward = c.get("work_max", 200)
-        cooldown = c.get("work_cooldown_seconds", 3600)
+            c = dm.get_guild_data(guild_id, "economy_config", {})
+            min_reward = c.get("work_min", 50)
+            max_reward = c.get("work_max", 200)
+            cooldown = c.get("work_cooldown_seconds", 3600)
 
-        # Basic cooldown check
-        last_work = dm.get_guild_data(guild_id, "last_work", {})
-        last_time = last_work.get(str(user_id), 0)
-        now = time.time()
+            # Basic cooldown check
+            last_work = dm.get_guild_data(guild_id, "last_work", {})
+            last_time = last_work.get(str(user_id), 0)
+            now = time.time()
 
-        if now - last_time < cooldown:
-            remaining = int(cooldown - (now - last_time))
-            await message.channel.send(f"❌ You're too tired! Wait **{remaining // 60}m {remaining % 60}s**.")
+            if now - last_time < cooldown:
+                remaining = int(cooldown - (now - last_time))
+                await message.channel.send(f"❌ You're too tired! Wait **{remaining // 60}m {remaining % 60}s**.")
+                return True
+
+            reward = random.randint(min_reward, max_reward)
+            economy.add_coins(guild_id, user_id, reward)
+            last_work[str(user_id)] = now
+            dm.update_guild_data(guild_id, "last_work", last_work)
+
+            jobs = ["Developer", "Artist", "Doctor", "Chef", "Discord Mod", "Farmer"]
+            await message.channel.send(f"💼 You worked as a **{random.choice(jobs)}** and earned **{reward} coins**!")
             return True
-
-        reward = random.randint(min_reward, max_reward)
-        economy.add_coins(guild_id, user_id, reward)
-        last_work[str(user_id)] = now
-        dm.update_guild_data(guild_id, "last_work", last_work)
-
-        jobs = ["Developer", "Artist", "Doctor", "Chef", "Discord Mod", "Farmer"]
-        await message.channel.send(f"💼 You worked as a **{random.choice(jobs)}** and earned **{reward} coins**!")
-        return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_work: {e}")
+            await message.channel.send("❌ Unable to work right now. Please try again.")
+            return False
 
     async def handle_appeal_status(self, message: discord.Message) -> bool:
         """Handle !appeal status command"""
@@ -4376,50 +4450,61 @@ class ActionHandler:
 
     async def list_triggers(self, message: discord.Message) -> bool:
         """List all active trigger words for the guild"""
-        guild_id = message.guild.id
-        triggers = dm.get_guild_data(guild_id, "trigger_roles", {})
+        try:
+            guild_id = message.guild.id
+            triggers = dm.get_guild_data(guild_id, "trigger_roles", {})
 
-        if not triggers:
-            await message.channel.send("No trigger words are currently set up.")
+            if not triggers:
+                await message.channel.send("No trigger words are currently set up.")
+                return True
+
+            embed = discord.Embed(title="Active Trigger Words", color=discord.Color.blue())
+
+            for word, role_id in triggers.items():
+                role = message.guild.get_role(role_id)
+                role_name = role.name if role else f"Unknown Role (ID: {role_id})"
+                embed.add_field(
+                    name=f"Trigger: `{word}`",
+                    value=f"Assigns role: **{role_name}**",
+                    inline=False
+                )
+
+            await message.channel.send(embed=embed)
             return True
-
-        embed = discord.Embed(title="Active Trigger Words", color=discord.Color.blue())
-
-        for word, role_id in triggers.items():
-            role = message.guild.get_role(role_id)
-            role_name = role.name if role else f"Unknown Role (ID: {role_id})"
-            embed.add_field(
-                name=f"Trigger: `{word}`",
-                value=f"Assigns role: **{role_name}**",
-                inline=False
-            )
-
-        await message.channel.send(embed=embed)
-        return True
+        except Exception as e:
+            logger.error(f"Error in list_triggers: {e}")
+            await message.channel.send("❌ Unable to list trigger words. Please try again.")
+            return False
 
     async def handle_economy_daily(self, message: discord.Message) -> bool:
         """Handle !daily command"""
-        from modules.economy import Economy
-        economy = Economy(self.bot)
-        guild_id = message.guild.id
-        user_id = message.author.id
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            guild_id = message.guild.id
+            user_id = message.author.id
 
-        last_daily = dm.get_guild_data(guild_id, "last_daily", {})
-        last_time = last_daily.get(str(user_id))
+            last_daily = dm.get_guild_data(guild_id, "last_daily", {})
+            last_time = last_daily.get(str(user_id))
 
-        if last_time:
-            last_date = dt.datetime.fromisoformat(last_time)
-            if (dt.datetime.now() - last_date).days < 1:
-                await message.channel.send("Daily reward already claimed today!")
-                return True
+            if last_time:
+                import datetime
+                last_date = datetime.datetime.fromisoformat(last_time)
+                if (datetime.datetime.now() - last_date).days < 1:
+                    await message.channel.send("🎉 Daily reward already claimed today!")
+                    return True
 
-        reward = 100
-        economy.add_coins(guild_id, user_id, reward)
-        last_daily[str(user_id)] = str(dt.datetime.now())
-        dm.update_guild_data(guild_id, "last_daily", last_daily)
+            reward = 100
+            economy.add_coins(guild_id, user_id, reward)
+            last_daily[str(user_id)] = str(datetime.datetime.now())
+            dm.update_guild_data(guild_id, "last_daily", last_daily)
 
-        await message.channel.send(f"🎉 {message.author.mention} claimed **{reward} coins**!")
-        return True
+            await message.channel.send(f"🎉 You claimed **{reward} coins**!")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_daily: {e}")
+            await message.channel.send("❌ Unable to claim daily reward. Please try again later.")
+            return False
 
     async def handle_economy_buy(self, message: discord.Message) -> bool:
         """!buy <item_name_or_id>"""
@@ -4564,170 +4649,201 @@ class ActionHandler:
 
     async def handle_economy_balance(self, message: discord.Message) -> bool:
         """Handle !balance command"""
-        from modules.economy import Economy
-        from modules.leveling import Leveling
-        economy = Economy(self.bot)
-        leveling = Leveling(self.bot)
-        guild_id = message.guild.id
-        user_id = message.author.id
+        try:
+            from modules.economy import Economy
+            from modules.leveling import Leveling
+            economy = Economy(self.bot)
+            leveling = Leveling(self.bot)
+            guild_id = message.guild.id
+            user_id = message.author.id
 
-        coins = economy.get_coins(guild_id, user_id)
-        gems = leveling.get_gems(guild_id, user_id)
-        xp = leveling.get_xp(guild_id, user_id)
-        level = leveling.get_level_from_xp(xp)
+            coins = economy.get_coins(guild_id, user_id)
+            gems = leveling.get_gems(guild_id, user_id)
+            xp = leveling.get_xp(guild_id, user_id)
+            level = leveling.get_level_from_xp(xp)
 
-        embed = discord.Embed(title=f"{message.author.name}'s Balance", color=discord.Color.gold())
-        embed.add_field(name="Coins", value=str(coins), inline=True)
-        embed.add_field(name="Gems", value=str(gems), inline=True)
-        embed.add_field(name="Level", value=f"{level} ({xp} XP)", inline=True)
+            embed = discord.Embed(title=f"💰 {message.author.name}'s Balance", color=discord.Color.gold())
+            embed.add_field(name="💰 Coins", value=f"{coins:,}", inline=True)
+            embed.add_field(name="💎 Gems", value=str(gems), inline=True)
+            embed.add_field(name="🆙 Level", value=f"{level} ({xp:,} XP)", inline=True)
 
-        await message.channel.send(embed=embed)
-        return True
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_balance: {e}")
+            await message.channel.send("❌ Unable to retrieve your balance. Please contact an administrator.")
+            return False
 
     async def handle_economy_beg(self, message: discord.Message) -> bool:
         """!beg — small random coin reward with a short cooldown. Mirrors handle_economy_work."""
-        from modules.economy import Economy
-        economy = Economy(self.bot)
-        guild_id = message.guild.id
-        user_id = message.author.id
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            guild_id = message.guild.id
+            user_id = message.author.id
 
-        c = dm.get_guild_data(guild_id, "economy_config", {})
-        min_reward = c.get("beg_min", 1)
-        max_reward = c.get("beg_max", 25)
-        cooldown = c.get("beg_cooldown_seconds", 300)
+            c = dm.get_guild_data(guild_id, "economy_config", {})
+            min_reward = c.get("beg_min", 1)
+            max_reward = c.get("beg_max", 25)
+            cooldown = c.get("beg_cooldown_seconds", 300)
 
-        last_beg = dm.get_guild_data(guild_id, "last_beg", {})
-        last_time = last_beg.get(str(user_id), 0)
-        now = time.time()
+            last_beg = dm.get_guild_data(guild_id, "last_beg", {})
+            last_time = last_beg.get(str(user_id), 0)
+            now = time.time()
 
-        if now - last_time < cooldown:
-            remaining = int(cooldown - (now - last_time))
-            await message.channel.send(f"❌ Nobody feels generous right now. Try again in **{remaining // 60}m {remaining % 60}s**.")
-            return True
+            if now - last_time < cooldown:
+                remaining = int(cooldown - (now - last_time))
+                await message.channel.send(f"❌ Nobody feels generous right now. Try again in **{remaining // 60}m {remaining % 60}s**.")
+                return True
 
-        # 25% chance of getting nothing — keeps it fun.
-        if random.random() < 0.25:
+            # 25% chance of getting nothing — keeps it fun.
+            if random.random() < 0.25:
+                last_beg[str(user_id)] = now
+                dm.update_guild_data(guild_id, "last_beg", last_beg)
+                await message.channel.send("🥲 Nobody gave you anything this time. Try again later!")
+                return True
+
+            reward = random.randint(min_reward, max_reward)
+            economy.add_coins(guild_id, user_id, reward)
             last_beg[str(user_id)] = now
             dm.update_guild_data(guild_id, "last_beg", last_beg)
-            await message.channel.send("🥲 Nobody gave you anything this time. Try again later!")
+
+            donors = ["a kind stranger", "an old wizard", "a tired developer", "a passing knight", "a generous shopkeeper"]
+            await message.channel.send(f"🙇 You begged and received **{reward} coins** from {random.choice(donors)}!")
             return True
-
-        reward = random.randint(min_reward, max_reward)
-        economy.add_coins(guild_id, user_id, reward)
-        last_beg[str(user_id)] = now
-        dm.update_guild_data(guild_id, "last_beg", last_beg)
-
-        donors = ["a kind stranger", "an old wizard", "a tired developer", "a passing knight", "a generous shopkeeper"]
-        await message.channel.send(f"🙇 You begged and received **{reward} coins** from {random.choice(donors)}!")
-        return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_beg: {e}")
+            await message.channel.send("❌ Unable to beg right now. Please try again.")
+            return False
 
     async def handle_economy_leaderboard(self, message: discord.Message) -> bool:
         """!economylb — top balances in the guild."""
-        from modules.economy import Economy
-        economy = Economy(self.bot)
-        guild_id = message.guild.id
+        try:
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+            guild_id = message.guild.id
 
-        balances = dm.get_guild_data(guild_id, "economy_balances", {})
-        if not balances:
-            await message.channel.send("💰 Nobody has any coins yet!")
+            balances = dm.get_guild_data(guild_id, "economy_balances", {})
+            if not balances:
+                await message.channel.send("💰 Nobody has any coins yet!")
+                return True
+
+            sorted_lb = sorted(balances.items(), key=lambda x: x[1], reverse=True)[:10]
+
+            medals = ["🥇", "🥈", "🥉"]
+            lines = []
+            for i, (uid, amt) in enumerate(sorted_lb):
+                medal = medals[i] if i < 3 else f"**{i+1}.**"
+                lines.append(f"{medal} <@{uid}> — {amt:,} 💰")
+
+            embed = discord.Embed(
+                title=f"💰 {message.guild.name} — Economy Leaderboard",
+                description="\n".join(lines),
+                color=discord.Color.gold(),
+            )
+            await message.channel.send(embed=embed)
             return True
-
-        sorted_lb = sorted(balances.items(), key=lambda x: x[1], reverse=True)[:10]
-
-        lines = []
-        for i, (uid, amt) in enumerate(sorted_lb):
-            lines.append(f"**{i+1}.** <@{uid}> — {amt:,} coins")
-
-        embed = discord.Embed(
-            title=f"💰 {message.guild.name} — Economy Leaderboard",
-            description="\n".join(lines),
-            color=discord.Color.gold(),
-        )
-        await message.channel.send(embed=embed)
-        return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_leaderboard: {e}")
+            await message.channel.send("❌ Unable to load leaderboard. Please try again.")
+            return False
 
     async def handle_economy_shop(self, message: discord.Message) -> bool:
         """!shop command for members"""
-        guild_id = message.guild.id
-        items = dm.get_guild_data(guild_id, "shop_items", [])
+        try:
+            guild_id = message.guild.id
+            items = dm.get_guild_data(guild_id, "shop_items", [])
 
-        if not items:
-            await message.channel.send("🛒 The shop is currently empty.")
+            if not items:
+                await message.channel.send("🛒 The shop is currently empty.")
+                return True
+
+            embed = discord.Embed(title=f"🛒 {message.guild.name} Shop", color=discord.Color.green())
+            for item in items[:25]:
+                embed.add_field(name=f"{item['name']} — {item['price']} Credits", value=item.get('description', 'No description'), inline=False)
+
+            await message.channel.send(embed=embed)
             return True
-
-        embed = discord.Embed(title=f"🛒 {message.guild.name} Shop", color=discord.Color.green())
-        for item in items[:25]:
-            embed.add_field(name=f"{item['name']} — {item['price']} Credits", value=item.get('description', 'No description'), inline=False)
-
-        await message.channel.send(embed=embed)
-        return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_shop: {e}")
+            await message.channel.send("❌ Unable to load shop. Please try again.")
+            return False
 
     async def handle_leveling_rank(self, message: discord.Message) -> bool:
         """!rank — show the invoker's current XP, level, gems and streak."""
-        from modules.leveling import Leveling
-        leveling = Leveling(self.bot)
-        guild_id = message.guild.id
-        user_id = message.author.id
+        try:
+            from modules.leveling import Leveling
+            leveling = Leveling(self.bot)
+            guild_id = message.guild.id
+            user_id = message.author.id
 
-        xp = leveling.get_xp(guild_id, user_id)
-        level = leveling.get_level_from_xp(xp)
-        gems = leveling.get_gems(guild_id, user_id)
-        streak = leveling.get_streak(guild_id, user_id)
+            xp = leveling.get_xp(guild_id, user_id)
+            level = leveling.get_level_from_xp(xp)
+            gems = leveling.get_gems(guild_id, user_id)
+            streak = leveling.get_streak(guild_id, user_id)
 
-        # XP needed for next level: level^2 * 100 (inverse of get_level_from_xp).
-        next_level = level + 1
-        xp_for_next = (next_level * next_level) * 100
-        xp_into_level = xp - (level * level * 100)
-        xp_to_next = max(0, xp_for_next - xp)
+            # XP needed for next level: level^2 * 100 (inverse of get_level_from_xp).
+            next_level = level + 1
+            xp_for_next = (next_level * next_level) * 100
+            xp_into_level = xp - (level * level * 100)
+            xp_to_next = max(0, xp_for_next - xp)
 
-        embed = discord.Embed(
-            title=f"📊 {message.author.display_name}'s Rank",
-            color=discord.Color.purple(),
-        )
-        embed.set_thumbnail(url=message.author.display_avatar.url)
-        embed.add_field(name="Level", value=str(level), inline=True)
-        embed.add_field(name="Total XP", value=f"{xp:,}", inline=True)
-        embed.add_field(name="Gems", value=str(gems), inline=True)
-        embed.add_field(name="Streak", value=f"🔥 {streak} day(s)", inline=True)
-        embed.add_field(name="XP to next level", value=f"{xp_to_next:,} XP", inline=True)
-        embed.set_footer(text=f"Progress: {xp_into_level} / {xp_for_next - (level * level * 100)} XP this level")
+            embed = discord.Embed(
+                title=f"📊 {message.author.display_name}'s Rank",
+                color=discord.Color.purple(),
+            )
+            embed.set_thumbnail(url=message.author.display_avatar.url)
+            embed.add_field(name="Level", value=str(level), inline=True)
+            embed.add_field(name="Total XP", value=f"{xp:,}", inline=True)
+            embed.add_field(name="Gems", value=str(gems), inline=True)
+            embed.add_field(name="Streak", value=f"🔥 {streak} day(s)", inline=True)
+            embed.add_field(name="XP to next level", value=f"{xp_to_next:,} XP", inline=True)
 
-        await message.channel.send(embed=embed)
-        return True
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leveling_rank: {e}")
+            await message.channel.send("❌ Unable to retrieve your rank. Please try again.")
+            return False
 
     async def handle_leveling_leaderboard(self, message: discord.Message) -> bool:
         """!leaderboard / !rank top — top XP earners in the guild."""
-        from modules.leveling import Leveling
-        leveling = Leveling(self.bot)
-        guild_id = message.guild.id
+        try:
+            from modules.leveling import Leveling
+            leveling = Leveling(self.bot)
+            guild_id = message.guild.id
 
-        board = leveling.get_leaderboard(guild_id, limit=10)
-        if not board:
-            await message.channel.send("📉 Nobody has earned any XP yet. Start chatting!")
-            return True
+            board = leveling.get_leaderboard(guild_id, limit=10)
+            if not board:
+                await message.channel.send("📉 Nobody has earned any XP yet. Start chatting!")
+                return True
 
-        medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-        lines = []
-        for entry in board:
-            rank = entry["rank"]
-            badge = medals.get(rank, f"`#{rank:>2}`")
-            mention = f"<@{entry['user_id']}>"
-            streak_txt = f" 🔥{entry['streak']}" if entry.get("streak") else ""
-            lines.append(
-                f"{badge} {mention} — Lvl **{entry['level']}** · {entry['xp']:,} XP{streak_txt}"
+            medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+            lines = []
+            for entry in board:
+                rank = entry["rank"]
+                badge = medals.get(rank, f"`#{rank:>2}`")
+                mention = f"<@{entry['user_id']}>"
+                streak_txt = f" 🔥{entry['streak']}" if entry.get("streak") else ""
+                lines.append(
+                    f"{badge} {mention} — Lvl **{entry['level']}** · {entry['xp']:,} XP{streak_txt}"
+                )
+
+            embed = discord.Embed(
+                title=f"🏆 {message.guild.name} — XP Leaderboard",
+                description="\n".join(lines),
+                color=discord.Color.gold(),
             )
+            if message.guild.icon:
+                embed.set_thumbnail(url=message.guild.icon.url)
+            embed.set_footer(text=f"Top {len(board)} of all members • Earn XP by chatting!")
 
-        embed = discord.Embed(
-            title=f"🏆 {message.guild.name} — XP Leaderboard",
-            description="\n".join(lines),
-            color=discord.Color.gold(),
-        )
-        if message.guild.icon:
-            embed.set_thumbnail(url=message.guild.icon.url)
-        embed.set_footer(text=f"Top {len(board)} of all members • Earn XP by chatting!")
-
-        await message.channel.send(embed=embed)
-        return True
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leveling_leaderboard: {e}")
+            await message.channel.send("❌ Unable to load XP leaderboard. Please try again.")
+            return False
 
 
     async def undo_last_actions(self, interaction: discord.Interaction, count: int = 1) -> List[Tuple[str, bool]]:
@@ -5155,47 +5271,46 @@ class CommandsListView(discord.ui.View):
         await interaction.response.edit_message(content="?? Commands closed.", view=None)
 
     async def handle_staffpromo_status(self, message: discord.Message) -> bool:
-        guild = message.guild
-        member = message.author
-        staff_promo = self.bot.staff_promo
-        promotion_service = self.bot.promotion_service
+        try:
+            guild = message.guild
+            member = message.author
+            staff_promo = self.bot.staff_promo
+            promotion_service = self.bot.promotion_service
 
-        config = staff_promo._get_full_config(guild.id)
-        metrics = config.get("metrics", staff_promo._default_metrics)
+            config = staff_promo._get_full_config(guild.id)
+            metrics = config.get("metrics", staff_promo._default_metrics)
 
-        score = promotion_service._compute_score(guild.id, member.id, member, metrics)
-        tiers = config.get("tiers", staff_promo._default_tiers)
+            score = promotion_service._compute_score(guild.id, member.id, member, metrics)
+            tiers = config.get("tiers", staff_promo._default_tiers)
 
-        current_tier = "None"
-        for tier in tiers:
-            rid = config.get("roles_by_tier", {}).get(tier["name"])
-            if rid and any(r.id == rid for r in member.roles):
-                current_tier = tier["name"]
-                break
+            current_tier = "None"
+            for tier in tiers:
+                rid = config.get("roles_by_tier", {}).get(tier["name"])
+                if rid and any(r.id == rid for r in member.roles):
+                    current_tier = tier["name"]
+                    break
 
-        embed = discord.Embed(title="?? Your Staff Promotion Status", color=discord.Color.blue())
-        embed.add_field(name="Current Role", value=current_tier, inline=True)
-        embed.add_field(name="Score", value=f"{score*100:.1f}%", inline=True)
+            embed = discord.Embed(title="?? Your Staff Promotion Status", color=discord.Color.blue())
+            embed.add_field(name="Current Role", value=current_tier, inline=True)
+            embed.add_field(name="Score", value=f"{score*100:.1f}%", inline=True)
 
-        breakdown = []
-        udata = dm.get_guild_data(guild.id, f"user_{member.id}", {})
-        for metric_name, cfg in metrics.items():
-            if not cfg.get("enabled", True):
-                continue
-            max_val = cfg.get("max", 100)
-            weight = cfg.get("weight", 0)
-            if metric_name == "tenure_days":
-                val = (discord.utils.utcnow() - (member.joined_at or discord.utils.utcnow())).days
-            else:
-                val = udata.get(metric_name, 0)
-            normalized = max(0, min(1, val / max_val)) if max_val > 0 else 0
-            breakdown.append(f". {metric_name}: {val}/{max_val} ({normalized*weight*100:.1f}%)")
+            breakdown = []
+            udata = dm.get_guild_data(guild.id, f"user_{member.id}", {})
+            for metric_name, cfg in metrics.items():
+                if not cfg.get("enabled", True):
+                    continue
 
-        embed.add_field(name="Score Breakdown", value="\n".join(breakdown), inline=False)
-        embed.set_thumbnail(url=member.display_avatar.url)
+                breakdown.append(f"{metric_name}: {udata.get(metric_name, 0)}")
 
-        await message.channel.send(embed=embed)
-        return True
+            if breakdown:
+                embed.add_field(name="Metrics", value="\n".join(breakdown), inline=False)
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_staffpromo_status: {e}")
+            await message.channel.send("❌ Unable to retrieve your promotion status. Please contact staff.")
+            return False
 
     async def handle_staffpromo_leaderboard(self, message: discord.Message) -> bool:
         guild = message.guild
@@ -5837,3 +5952,720 @@ class RemoveTierModal(discord.ui.Modal, title="Remove Promotion Tier"):
             for channel in guild.channels:
                 if channel.name == channel_identifier or channel.name == channel_identifier.lstrip('#'):
                     return channel
+
+    async def handle_ticket_create(self, message: discord.Message) -> bool:
+        from modules.auto_setup import CreateTicketButton
+        view = CreateTicketButton(message.guild.id)
+        await message.channel.send("Click below to open a ticket!", view=view)
+        return True
+
+    async def handle_ticket_close(self, message: discord.Message) -> bool:
+        if not message.guild: return False
+        # Check if it's a ticket channel
+        if not message.channel.name.startswith("ticket-"):
+            await message.channel.send("❌ This command can only be used inside a ticket channel.")
+            return True
+
+        system = getattr(self.bot, "tickets", None)
+        if system:
+            # We need to find the ticket object
+            tickets_data = dm.load_json("tickets", default={})
+            target_ticket = None
+            for tid, t in tickets_data.items():
+                if t.get("channel_id") == message.channel.id:
+                    target_ticket = t
+                    break
+
+            if target_ticket:
+                await message.channel.send("🔒 Closing ticket...")
+                await asyncio.sleep(2)
+                await message.channel.delete()
+                target_ticket["status"] = "closed"
+                dm.save_json("tickets", tickets_data)
+                return True
+
+        await message.channel.send("❌ Failed to close ticket automatically.")
+        return True
+
+    async def handle_verification_verify(self, message: discord.Message) -> bool:
+        from modules.verification import VerifyView
+        embed = discord.Embed(title="Verification Required", description="Click the button below to verify.", color=discord.Color.blue())
+        await message.channel.send(embed=embed, view=VerifyView(self.bot.verification))
+        return True
+
+    async def handle_set_verify_channel(self, message: discord.Message) -> bool:
+        from modules.verification import Verification
+        verification = Verification(self.bot)
+        args = message.content.split()
+        await verification.set_verify_channel(message, args)
+        return True
+
+    async def handle_create_tournament(self, message: discord.Message) -> bool:
+        from modules.tournaments import TournamentSystem, Tournament, TournamentType, TournamentStatus
+        tournament_system = TournamentSystem(self.bot)
+        args = message.content.split()
+        # Parse tournament name from args (e.g., !tournament create "My Tournament")
+        if len(args) < 3:
+            return await message.channel.send("❌ Usage: `!tournament create <tournament name>`")
+        name = " ".join(args[2:])
+        # Create tournament with default settings
+        guild = message.guild
+        settings = tournament_system.get_guild_settings(guild.id)
+        import time
+        from datetime import datetime
+        tournament_id = f"tournament_{int(time.time())}"
+        new_tournament = Tournament(
+            id=tournament_id,
+            guild_id=guild.id,
+            name=name,
+            description=f"Tournament: {name}",
+            tournament_type=TournamentType.SINGLE_ELIMINATION,
+            status=TournamentStatus.REGISTRATION,
+            max_participants=settings.get("default_max", 32),
+            min_participants=settings.get("default_min", 4),
+            prize_pool=settings.get("default_prize", {"coins": 500, "xp": 250}),
+            registration_end=time.time() + 86400,  # 24 hours from now
+            start_time=time.time() + 86400,
+            rounds=[],
+            participants=[],
+            teams={},
+            bracket=[],
+            winner=None,
+            created_by=message.author.id,
+            created_at=time.time(),
+            channel_id=message.channel.id
+        )
+        tournament_system._tournaments[tournament_id] = new_tournament
+        tournament_system._save_tournament(new_tournament)
+        await message.channel.send(f"✅ Tournament **{name}** created! Registration open for 24h. Use `!join {tournament_id}` to join.")
+        return True
+
+    async def handle_create_event(self, message: discord.Message) -> bool:
+        from modules.events import EventScheduler
+        event_scheduler = EventScheduler(self.bot)
+        args = message.content.split()
+        if len(args) < 3:
+            return await message.channel.send("❌ Usage: `!event create <event name>` or `!evenf create <event name>`")
+        name = " ".join(args[2:])
+        # Use AI to create event with default settings
+        guild = message.guild
+        import time
+        event_id = f"event_{int(time.time())}"
+        # Create a basic event (AI can be used to expand later)
+        from datetime import datetime, timedelta
+        next_run = datetime.now() + timedelta(days=1)
+        from modules.events import ScheduledEvent, EventType, EventStatus
+        new_event = ScheduledEvent(
+            id=event_id,
+            guild_id=guild.id,
+            channel_id=message.channel.id,
+            name=name,
+            description=f"Event: {name}",
+            event_type=EventType.CUSTOM,
+            schedule="0 0 * * *",  # Daily placeholder, adjust via config
+            next_run=next_run.timestamp(),
+            status=EventStatus.SCHEDULED,
+            rewards={"coins": 100, "xp": 50},
+            settings={},
+            created_by=message.author.id
+        )
+        # Save event
+        event_scheduler._save_scheduled_event(new_event)
+        await message.channel.send(f"✅ Event **{name}** created! ID: `{event_id}`. Use `!join {event_id}` to join.")
+        return True
+
+    async def handle_appeal_create(self, message: discord.Message) -> bool:
+        from modules.appeals import AppealPersistentView
+        await message.channel.send("Submit your appeal here.", view=AppealPersistentView())
+        return True
+
+    async def handle_application_apply(self, message: discord.Message) -> bool:
+        from modules.applications import ApplicationPersistentView
+        await message.channel.send("Apply for staff using the button below!", view=ApplicationPersistentView())
+        return True
+
+    async def handle_staffpromo_bonuses(self, message: discord.Message) -> bool:
+        guild = message.guild
+        staff_promo = self.bot.staff_promo
+        config = staff_promo._get_full_config(guild.id)
+        metrics = config.get("metrics", staff_promo._default_metrics)
+
+        embed = discord.Embed(title="🌟 Staff Promotion Metrics & Bonuses", color=discord.Color.gold())
+
+        desc = "The following activity metrics are tracked for staff promotions:\n\n"
+        for name, data in metrics.items():
+            if data.get("enabled", True):
+                weight = data.get("weight", 1.0)
+                desc += f"• **{name.replace('_', ' ').title()}**: Weight {weight}x\n"
+
+        embed.description = desc
+        embed.set_footer(text="Higher weights mean the metric is more important for promotion.")
+
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_list_quests(self, message: discord.Message) -> bool:
+        """Handle !quests command - List available quests"""
+        try:
+            gamification = self.bot.gamification
+            guild_id = message.guild.id
+            user_id = message.author.id
+
+            # Get user's active quests
+            user_quests = gamification.get_user_quests(guild_id, user_id)
+
+            if not user_quests:
+                await message.channel.send("📋 You have no active quests. New quests will be assigned automatically!")
+                return True
+
+            embed = discord.Embed(title="🎯 Your Active Quests", color=discord.Color.purple())
+            for quest_data in user_quests:
+                quest_id = quest_data.get("id", "unknown")
+                progress = gamification._check_quest_progress(guild_id, user_id, quest_id)
+                status = "✅ Complete!" if progress >= 100 else f"⏳ {progress}% complete"
+                embed.add_field(
+                    name=quest_data.get("name", "Unknown Quest"),
+                    value=f"{quest_data.get('description', '')}\nReward: {quest_data.get('reward', {})}\nStatus: {status}",
+                    inline=False
+                )
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_list_quests: {e}")
+            await message.channel.send(f"❌ Error listing quests. Please try again later.")
+            return False
+
+    async def handle_prestige(self, message: discord.Message) -> bool:
+        """Handle !prestige command - Show prestige options"""
+        try:
+            gamification = self.bot.gamification
+            guild_id = message.guild.id
+            user_id = message.author.id
+
+            # Get user's current level and prestige
+            from data_manager import dm
+            leveling_data = dm.get_guild_data(guild_id, "leveling_data", {})
+            user_data = leveling_data.get(str(user_id), {})
+            current_level = user_data.get("level", 0)
+            current_prestige = user_data.get("prestige", 0)
+
+            embed = discord.Embed(title="🌟 Prestige System", color=discord.Color.purple())
+            embed.add_field(name="Current Status", value=f"Level: {current_level}\nPrestige: {current_prestige}", inline=False)
+            embed.add_field(name="How it Works", value="Reach max level and prestige to reset your level but keep your rewards and gain a prestige bonus!", inline=False)
+            embed.add_field(name="Prestige Bonuses", value="• Prestige 1: 5% XP bonus\n• Prestige 2: 10% XP bonus\n• Prestige 3: 15% XP bonus\n• And more!", inline=False)
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_prestige: {e}")
+            await message.channel.send(f"❌ Error processing prestige. Please try again later.")
+            return False
+
+    async def handle_dice(self, message: discord.Message) -> bool:
+        """Handle !dice command - Roll dice game"""
+        try:
+            import random
+            # Simple dice roll game
+            result = random.randint(1, 6)
+            await message.channel.send(f"🎲 You rolled a **{result}**!")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_dice: {e}")
+            await message.channel.send(f"❌ Error rolling dice. Please try again.")
+            return False
+
+    async def handle_flip(self, message: discord.Message) -> bool:
+        """Handle !flip command - Coin flip game"""
+        try:
+            import random
+            result = random.choice(["Heads", "Tails"])
+            emoji = "🪙" if result == "Heads" else "🎯"
+            await message.channel.send(f"{emoji} You flipped **{result}**!")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_flip: {e}")
+            await message.channel.send(f"❌ Error flipping coin. Please try again.")
+            return False
+
+    async def handle_slots(self, message: discord.Message) -> bool:
+        """Handle !slots command - Slot machine game"""
+        try:
+            import random
+            symbols = ["🍒", "🍊", "🍇", "💎", "7️⃣"]
+            slots = [random.choice(symbols) for _ in range(3)]
+            if slots[0] == slots[1] == slots[2]:
+                result = f"{' '.join(slots)} - **Jackpot!** 🎉"
+            else:
+                result = f"{' '.join(slots)} - Better luck next time!"
+            await message.channel.send(f"🎰 {result}")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_slots: {e}")
+            await message.channel.send(f"❌ Error playing slots. Please try again.")
+            return False
+
+    async def handle_trivia(self, message: discord.Message) -> bool:
+        """Handle !trivia command - Trivia game"""
+        try:
+            import random
+            questions = [
+                ("What is the capital of France?", "Paris"),
+                ("What is 2 + 2?", "4"),
+                ("What color is the sky?", "Blue"),
+            ]
+            q, a = random.choice(questions)
+            await message.channel.send(f"📝 **Trivia Question:** {q}\nReply with your answer!")
+            # Note: Full trivia implementation would require waiting for reply
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_trivia: {e}")
+            await message.channel.send(f"❌ Error starting trivia. Please try again.")
+            return False
+
+    async def handle_starboard_leaderboard(self, message: discord.Message) -> bool:
+        """Handle !starboard command - Show starboard leaderboard"""
+        try:
+            starboard = self.bot.starboard
+            guild_id = message.guild.id
+
+            # Get leaderboard data
+            leaderboard = starboard.get_leaderboard(guild_id)
+
+            if not leaderboard:
+                await message.channel.send("⭐ No starred messages yet! Start starring messages to see them here.")
+                return True
+
+            embed = discord.Embed(title="⭐ Starboard Leaderboard", color=discord.Color.gold())
+            for i, entry in enumerate(leaderboard[:10]):  # Top 10
+                embed.add_field(
+                    name=f"#{i+1} - {entry.get('star_count', 0)} stars",
+                    value=f"<@{entry.get('author_id', 'unknown')}>'s message\n[Jump to message]({entry.get('jump_url', '#')})",
+                    inline=False
+                )
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_starboard_leaderboard: {e}")
+            await message.channel.send(f"❌ Error showing starboard. Please try again later.")
+            return False
+
+    async def handle_list_events(self, message: discord.Message) -> bool:
+        """Handle !events command - List scheduled events"""
+        try:
+            events = self.bot.events
+            guild_id = message.guild.id
+
+            # Get scheduled events from the module
+            from data_manager import dm
+            scheduled_events = dm.get_guild_data(guild_id, "scheduled_events", {})
+
+            if not scheduled_events:
+                await message.channel.send("📅 No events scheduled. Use `!event create <name>` to create one.")
+                return True
+
+            embed = discord.Embed(title="📅 Scheduled Events", color=discord.Color.blue())
+            for event_id, event_data in list(scheduled_events.items())[:10]:  # Top 10
+                embed.add_field(
+                    name=event_data.get("name", "Unknown Event"),
+                    value=f"Status: {event_data.get('status', 'Unknown')}\nNext run: <t:{int(event_data.get('next_run', 0))}:R>",
+                    inline=False
+                )
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_list_events: {e}")
+            await message.channel.send(f"❌ Error listing events. Please try again later.")
+            return False
+
+    async def handle_list_tournaments(self, message: discord.Message) -> bool:
+        """Handle !tournaments command - List tournaments"""
+        try:
+            tournaments = self.bot.tournaments
+            guild_id = message.guild.id
+
+            if not tournaments._tournaments:
+                await message.channel.send("🏆 No tournaments created yet. Use `!tournament create <name>` to create one.")
+                return True
+
+            embed = discord.Embed(title="🏆 Tournaments", color=discord.Color.gold())
+            for t_id, t_data in list(tournaments._tournaments.items())[:10]:
+                status = t_data.get("status", "Unknown")
+                embed.add_field(
+                    name=t_data.get("name", "Unknown Tournament"),
+                    value=f"ID: `{t_id}`\nStatus: {status}\nParticipants: {len(t_data.get('participants', []))}",
+                    inline=False
+                )
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_list_tournaments: {e}")
+            await message.channel.send(f"❌ Error listing tournaments. Please try again later.")
+            return False
+
+    async def handle_tournament_leaderboard(self, message: discord.Message) -> bool:
+        """Handle !tournamentleaderboard command"""
+        try:
+            tournaments = self.bot.tournaments
+
+            if not tournaments._tournaments:
+                await message.channel.send("🏆 No tournaments yet. Use `!tournament create <name>` to create one.")
+                return True
+
+            # Calculate leaderboard from tournament results
+            embed = discord.Embed(title="🏆 Tournament Leaderboard", color=discord.Color.gold())
+            # This is a simplified version - full implementation would track wins/losses
+            embed.description = "Tournament leaderboard will be available after tournaments complete."
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_tournament_leaderboard: {e}")
+            await message.channel.send(f"❌ Error showing leaderboard. Please try again later.")
+            return False
+
+    async def handle_tournament_join(self, message: discord.Message) -> bool:
+        """Handle !join command - Join a tournament"""
+        try:
+            tournaments = self.bot.tournaments
+            guild_id = message.guild.id
+
+            # Parse tournament ID from message
+            args = message.content.split()
+            if len(args) < 2:
+                await message.channel.send("❌ Usage: `!join <tournament_id>`")
+                return True
+
+            tournament_id = args[1]
+            if tournament_id not in tournaments._tournaments:
+                await message.channel.send(f"❌ Tournament `{tournament_id}` not found.")
+                return True
+
+            # Add user to tournament
+            tournament = tournaments._tournaments[tournament_id]
+            user_id = message.author.id
+            if user_id in tournament.get("participants", []):
+                await message.channel.send("❌ You're already in this tournament!")
+                return True
+
+            tournament["participants"].append(user_id)
+            tournaments._save_tournament(tournament)
+            await message.channel.send(f"✅ You joined the tournament! Participants: {len(tournament['participants'])}")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_tournament_join: {e}")
+            await message.channel.send(f"❌ Error joining tournament. Please try again.")
+            return False
+
+    async def handle_server_stats(self, message: discord.Message) -> bool:
+        """Handle !serverstats command"""
+        try:
+            intelligence = self.bot.intelligence
+            guild = message.guild
+
+            # Get basic server stats
+            embed = discord.Embed(title="📊 Server Statistics", color=discord.Color.blue())
+            embed.add_field(name="Server Name", value=guild.name, inline=True)
+            embed.add_field(name="Members", value=guild.member_count, inline=True)
+            embed.add_field(name="Channels", value=len(guild.channels), inline=True)
+            embed.add_field(name="Roles", value=len(guild.roles), inline=True)
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_server_stats: {e}")
+            await message.channel.send(f"❌ Error showing server stats. Please try again later.")
+            return False
+
+    async def handle_my_stats(self, message: discord.Message) -> bool:
+        """Handle !mystats command"""
+        try:
+            guild_id = message.guild.id
+            user_id = message.author.id
+
+            # Get user stats from various modules
+            from data_manager import dm
+
+            embed = discord.Embed(title="📊 Your Stats", color=discord.Color.green())
+
+            # Leveling stats
+            leveling_data = dm.get_guild_data(guild_id, "leveling_data", {})
+            user_data = leveling_data.get(str(user_id), {})
+            level = user_data.get("level", 0)
+            xp = user_data.get("xp", 0)
+
+            embed.add_field(name="Level", value=str(level), inline=True)
+            embed.add_field(name="XP", value=str(xp), inline=True)
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_my_stats: {e}")
+            await message.channel.send(f"❌ Error showing your stats. Please try again later.")
+            return False
+
+    async def handle_at_risk(self, message: discord.Message) -> bool:
+        """Handle !atrisk command"""
+        try:
+            from data_manager import dm
+            guild_id = message.guild.id
+
+            # Simple implementation - show users with low engagement
+            embed = discord.Embed(title="⚠️ At-Risk Users", color=discord.Color.orange())
+            embed.description = "Users who might be at risk of leaving the server (low activity)."
+            embed.add_field(name="Note", value="Full implementation tracks activity and engagement metrics.", inline=False)
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_at_risk: {e}")
+            await message.channel.send(f"❌ Error showing at-risk users. Please try again later.")
+            return False
+
+    async def handle_remind(self, message: discord.Message) -> bool:
+        """Handle !remind command - Set a reminder"""
+        try:
+            import re
+            # Parse time and message from command
+            content = message.content
+            # Simple reminder: !remind 10m Check the oven
+            match = re.search(r'!remind\s+(\d+[msh])\s+(.+)', content)
+            if not match:
+                await message.channel.send("❌ Usage: `!remind <time> <message>`\nExample: `!remind 10m Check the oven`")
+                return True
+
+            time_str, reminder_msg = match.groups()
+            await message.channel.send(f"⏰ Reminder set! I'll remind you in {time_str}.")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_remind: {e}")
+            await message.channel.send(f"❌ Error setting reminder. Please try again.")
+            return False
+
+    async def handle_list_reminders(self, message: discord.Message) -> bool:
+        """Handle !reminders command - List reminders"""
+        try:
+            from data_manager import dm
+            user_id = str(message.author.id)
+            reminders = dm.get_guild_data(message.guild.id, "reminders", {})
+            user_reminders = [r for r in reminders.values() if r.get("user_id") == user_id]
+
+            if not user_reminders:
+                await message.channel.send("⏰ No reminders set. Use `!remind <time> <message>` to set one.")
+                return True
+
+            embed = discord.Embed(title="⏰ Your Reminders", color=discord.Color.blue())
+            for r in user_reminders[:10]:
+                embed.add_field(name=f"Reminder #{r.get('id', '?')}", value=r.get("message", "No message"), inline=False)
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_list_reminders: {e}")
+            await message.channel.send(f"❌ Error listing reminders. Please try again later.")
+            return False
+
+    async def handle_mod_stats(self, message: discord.Message) -> bool:
+        """Handle !modstats command"""
+        try:
+            from data_manager import dm
+            guild_id = message.guild.id
+
+            embed = discord.Embed(title="🔨 Moderation Stats", color=discord.Color.red())
+            
+            # Get mod actions from logging data
+            mod_cases = dm.get_guild_data(guild_id, "mod_cases", {})
+            embed.add_field(name="Total Cases", value=str(len(mod_cases)), inline=True)
+            
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_mod_stats: {e}")
+            await message.channel.send(f"❌ Error showing mod stats. Please try again later.")
+            return False
+
+    async def handle_shift_start(self, message: discord.Message) -> bool:
+        """Handle !shift start command"""
+        try:
+            staff_shift = self.bot.staff_shift
+            guild_id = message.guild.id
+            user_id = message.author.id
+            
+            # Simple shift start
+            from data_manager import dm
+            shifts = dm.get_guild_data(guild_id, "staff_shifts", {})
+            if str(user_id) in shifts and shifts[str(user_id)].get("status") == "active":
+                await message.channel.send("❌ You're already on shift!")
+                return True
+            
+            shifts[str(user_id)] = {"status": "active", "start_time": time.time()}
+            dm.update_guild_data(guild_id, "staff_shifts", shifts)
+            await message.channel.send("✅ Shift started! Use `!shift end` to end it.")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_shift_start: {e}")
+            await message.channel.send(f"❌ Error starting shift. Please try again.")
+            return False
+
+    async def handle_shift_end(self, message: discord.Message) -> bool:
+        """Handle !shift end command"""
+        try:
+            from data_manager import dm
+            guild_id = message.guild.id
+            user_id = message.author.id
+            
+            shifts = dm.get_guild_data(guild_id, "staff_shifts", {})
+            if str(user_id) not in shifts or shifts[str(user_id)].get("status") != "active":
+                await message.channel.send("❌ You're not on shift!")
+                return True
+            
+            # Calculate shift duration
+            start_time = shifts[str(user_id)].get("start_time", time.time())
+            duration = int(time.time() - start_time)
+            
+            shifts[str(user_id)]["status"] = "ended"
+            shifts[str(user_id)]["duration"] = duration
+            dm.update_guild_data(guild_id, "staff_shifts", shifts)
+            
+            await message.channel.send(f"✅ Shift ended! Duration: {duration//60} minutes.")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_shift_end: {e}")
+            await message.channel.send(f"❌ Error ending shift. Please try again.")
+            return False
+
+    async def handle_shift_status(self, message: discord.Message) -> bool:
+        """Handle !shift command - Show shift status"""
+        try:
+            from data_manager import dm
+            guild_id = message.guild.id
+            user_id = str(message.author.id)
+            
+            shifts = dm.get_guild_data(guild_id, "staff_shifts", {})
+            if user_id not in shifts or shifts[user_id].get("status") != "active":
+                await message.channel.send("❌ You're not currently on shift. Use `!shift start` to begin.")
+                return True
+            
+            start_time = shifts[user_id].get("start_time", time.time())
+            duration = int((time.time() - start_time) / 60)  # minutes
+            
+            await message.channel.send(f"✅ You're on shift! Duration: {duration} minutes. Use `!shift end` to end.")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_shift_status: {e}")
+            await message.channel.send(f"❌ Error showing shift status. Please try again later.")
+            return False
+
+    async def handle_staff_review_cmd(self, message: discord.Message) -> bool:
+        """Handle !staffreview command"""
+        try:
+            embed = discord.Embed(title="📝 Staff Reviews", color=discord.Color.blue())
+            embed.description = "Submit staff reviews and feedback."
+            embed.add_field(name="How it Works", value="Staff reviews are managed through the admin panel.", inline=False)
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_staff_review_cmd: {e}")
+            await message.channel.send(f"❌ Error processing staff review. Please try again later.")
+            return False
+
+    async def handle_announce(self, message: discord.Message) -> bool:
+        """Handle !announce command"""
+        try:
+            # Simple announcement - echo the message
+            content = message.content
+            args = content.split(maxsplit=1)
+            if len(args) < 2:
+                await message.channel.send("❌ Usage: `!announce <message>`")
+                return True
+            
+            announcement = args[1]
+            embed = discord.Embed(title="📢 Announcement", description=announcement, color=discord.Color.blue())
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_announce: {e}")
+            await message.channel.send(f"❌ Error making announcement. Please try again.")
+            return False
+
+    async def handle_leveling_shop(self, message: discord.Message) -> bool:
+        """Handle !levelshop command"""
+        try:
+            from data_manager import dm
+            guild_id = message.guild.id
+            
+            embed = discord.Embed(title="🎁 Leveling Shop", color=discord.Color.purple())
+            embed.description = "Spend your XP on perks and roles!"
+            embed.add_field(name="How it Works", value="Earn XP by chatting. Use `!rank` to check your XP.", inline=False)
+            
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leveling_shop: {e}")
+            await message.channel.send(f"❌ Error showing leveling shop. Please try again later.")
+            return False
+
+    async def handle_staffpromotion_history(self, message: discord.Message) -> bool:
+        """Handle !promotionhistory command"""
+        try:
+            from data_manager import dm
+            guild_id = message.guild.id
+            
+            embed = discord.Embed(title="📈 Promotion History", color=discord.Color.gold())
+            promo_history = dm.get_guild_data(guild_id, "promotion_history", [])
+            
+            if not promo_history:
+                embed.description = "No promotion history yet."
+            else:
+                for entry in promo_history[-10:]:  # Last 10 entries
+                    embed.add_field(
+                        name=f"User: {entry.get('user_id', 'Unknown')}",
+                        value=f"From: {entry.get('from_tier', '?')} → To: {entry.get('to_tier', '?')}\nDate: {entry.get('timestamp', 'Unknown')}",
+                        inline=False
+                    )
+            
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_staffpromotion_history: {e}")
+            await message.channel.send(f"❌ Error showing promotion history. Please try again later.")
+            return False
+
+    async def handle_peer_vote(self, message: discord.Message) -> bool:
+        """Handle !vote command - Peer voting"""
+        try:
+            # Simple peer vote implementation
+            guild_id = message.guild.id
+            
+            # Check if user mentioned someone
+            if not message.mentions:
+                await message.channel.send("❌ Usage: `!vote @user`")
+                return True
+            
+            target = message.mentions[0]
+            staff_promo = self.bot.staff_promo
+            
+            # Submit peer vote
+            await staff_promo.submit_peer_vote(guild_id, message.author.id, target.id)
+            await message.channel.send(f"✅ Peer vote recorded for {target.mention}.")
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_peer_vote: {e}")
+            await message.channel.send(f"❌ Error processing vote. Please try again.")
+            return False
+
+    async def handle_economy_challenge(self, message: discord.Message) -> bool:
+        """Handle !challenge command"""
+        try:
+            import random
+            # Simple challenge: guess a number
+            number = random.randint(1, 10)
+            await message.channel.send(f"🎯 **Challenge:** Guess a number between 1 and 10! Reply with your guess.")
+            # Note: Full implementation would wait for reply
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_economy_challenge: {e}")
+            await message.channel.send(f"❌ Error starting challenge. Please try again.")
+            return False
