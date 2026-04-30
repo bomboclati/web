@@ -5334,6 +5334,10 @@ class ActionHandler:
         return True
 
     async def handle_staffpromo_promote(self, message: discord.Message) -> bool:
+        guild_id = message.guild.id
+        if not is_system_enabled(guild_id, "staffpromo"):
+            await message.channel.send("❌ The staff promotion system is currently disabled on this server.")
+            return False
         if not message.author.guild_permissions.administrator:
             await message.channel.send("❌ This command is only for administrators.")
             return True
@@ -5366,6 +5370,10 @@ class ActionHandler:
         return True
 
     async def handle_staffpromo_demote(self, message: discord.Message) -> bool:
+        guild_id = message.guild.id
+        if not is_system_enabled(guild_id, "staffpromo"):
+            await message.channel.send("❌ The staff promotion system is currently disabled on this server.")
+            return False
         if not message.author.guild_permissions.administrator:
             await message.channel.send("❌ This command is only for administrators.")
             return True
@@ -5398,6 +5406,10 @@ class ActionHandler:
         return True
 
     async def handle_staffpromo_exclude(self, message: discord.Message) -> bool:
+        guild_id = message.guild.id
+        if not is_system_enabled(guild_id, "staffpromo"):
+            await message.channel.send("❌ The staff promotion system is currently disabled on this server.")
+            return False
         if not message.author.guild_permissions.administrator:
             await message.channel.send("❌ This command is only for administrators.")
             return True
@@ -5448,6 +5460,10 @@ class ActionHandler:
 
     async def handle_staffpromo_tiers(self, message: discord.Message) -> bool:
         """Handle !staffpromo tiers command - Interactive tier management"""
+        guild_id = message.guild.id
+        if not is_system_enabled(guild_id, "staffpromo"):
+            await message.channel.send("❌ The staff promotion system is currently disabled on this server.")
+            return False
         if not message.author.guild_permissions.administrator:
             await message.channel.send("❌ This command is only for administrators.")
             return True
@@ -5483,6 +5499,10 @@ class ActionHandler:
         return True
 
     async def handle_staffpromo_roles(self, message: discord.Message) -> bool:
+        guild_id = message.guild.id
+        if not is_system_enabled(guild_id, "staffpromo"):
+            await message.channel.send("❌ The staff promotion system is currently disabled on this server.")
+            return False
         if not message.author.guild_permissions.administrator:
             await message.channel.send("❌ This command is only for administrators.")
             return True
@@ -5557,6 +5577,10 @@ class ActionHandler:
         return True
 
     async def handle_staffpromo_review(self, message: discord.Message) -> bool:
+        guild_id = message.guild.id
+        if not is_system_enabled(guild_id, "staffpromo"):
+            await message.channel.send("❌ The staff promotion system is currently disabled on this server.")
+            return False
         guild = message.guild
         staff_promo = self.bot.staff_promo
 
@@ -5661,6 +5685,10 @@ class ActionHandler:
         return True
 
     async def handle_staffpromo_requirements(self, message: discord.Message) -> bool:
+        guild_id = message.guild.id
+        if not is_system_enabled(guild_id, "staffpromo"):
+            await message.channel.send("❌ The staff promotion system is currently disabled on this server.")
+            return False
         guild = message.guild
         staff_promo = self.bot.staff_promo
 
@@ -5685,6 +5713,10 @@ class ActionHandler:
         return True
 
     async def handle_staffpromo_bonuses(self, message: discord.Message) -> bool:
+        guild_id = message.guild.id
+        if not is_system_enabled(guild_id, "staffpromo"):
+            await message.channel.send("❌ The staff promotion system is currently disabled on this server.")
+            return False
         guild = message.guild
         staff_promo = self.bot.staff_promo
         config = staff_promo._get_full_config(guild.id)
@@ -5808,6 +5840,10 @@ class ActionHandler:
         return True
 
     async def handle_set_verify_channel(self, message: discord.Message) -> bool:
+        guild_id = message.guild.id
+        if not is_system_enabled(guild_id, "verification"):
+            await message.channel.send("❌ The verification system is currently disabled on this server.")
+            return False
         from modules.verification import Verification
         verification = Verification(self.bot)
         args = message.content.split()
@@ -5815,6 +5851,10 @@ class ActionHandler:
         return True
 
     async def handle_create_tournament(self, message: discord.Message) -> bool:
+        guild_id = message.guild.id
+        if not is_system_enabled(guild_id, "tournaments"):
+            await message.channel.send("❌ The tournaments system is currently disabled on this server.")
+            return False
         from modules.tournaments import TournamentSystem, Tournament, TournamentType, TournamentStatus
         tournament_system = TournamentSystem(self.bot)
         args = message.content.split()
@@ -6090,9 +6130,12 @@ class ActionHandler:
 
     async def handle_list_tournaments(self, message: discord.Message) -> bool:
         """Handle !tournaments command - List tournaments"""
+        guild_id = message.guild.id
+        if not is_system_enabled(guild_id, "tournaments"):
+            await message.channel.send("❌ The tournaments system is currently disabled on this server.")
+            return False
         try:
             tournaments = self.bot.tournaments
-            guild_id = message.guild.id
 
             if not tournaments._tournaments:
                 await message.channel.send("🏆 No tournaments created yet. Use `!tournament create <name>` to create one.")
