@@ -48,6 +48,13 @@ def parse_color(color_val):
             if color_val.startswith("#"):
                 return int(color_val[1:], 16)
             return int(color_val, 16)
+
+
+def is_system_enabled(guild_id: int, system_name: str) -> bool:
+    """Check if a system is enabled for a guild."""
+    config_key = f"{system_name}_config"
+    config = dm.get_guild_data(guild_id, config_key, {})
+    return config.get("enabled", True)
         except ValueError:
             pass
     # Default fallback
@@ -4443,9 +4450,15 @@ class ActionHandler:
     async def handle_economy_work(self, message: discord.Message) -> bool:
         """Handle !work command"""
         try:
+            guild_id = message.guild.id
+            
+            # Check if economy system is enabled
+            if not is_system_enabled(guild_id, "economy"):
+                await message.channel.send("âŒ The economy system is currently disabled on this server.")
+                return False
+            
             from modules.economy import Economy
             economy = Economy(self.bot)
-            guild_id = message.guild.id
             user_id = message.author.id
 
             c = dm.get_guild_data(guild_id, "economy_config", {})
@@ -4478,6 +4491,13 @@ class ActionHandler:
 
     async def handle_appeal_status(self, message: discord.Message) -> bool:
         """Handle !appeal status command"""
+        guild_id = message.guild.id
+        
+        # Check if appeals system is enabled
+        if not is_system_enabled(guild_id, "appeals"):
+            await message.channel.send("âŒ The appeals system is currently disabled on this server.")
+            return False
+        
         appeals = dm.load_json("appeals", default={})
         user_id = str(message.author.id)
 
@@ -4552,9 +4572,15 @@ class ActionHandler:
     async def handle_economy_daily(self, message: discord.Message) -> bool:
         """Handle !daily command"""
         try:
+            guild_id = message.guild.id
+            
+            # Check if economy system is enabled
+            if not is_system_enabled(guild_id, "economy"):
+                await message.channel.send("âŒ The economy system is currently disabled on this server.")
+                return False
+            
             from modules.economy import Economy
             economy = Economy(self.bot)
-            guild_id = message.guild.id
             user_id = message.author.id
 
             # Check if economy system is enabled
@@ -4589,13 +4615,19 @@ class ActionHandler:
 
     async def handle_economy_buy(self, message: discord.Message) -> bool:
         """!buy <item_name_or_id>"""
+        guild_id = message.guild.id
+        
+        # Check if economy system is enabled
+        if not is_system_enabled(guild_id, "economy"):
+            await message.channel.send("âŒ The economy system is currently disabled on this server.")
+            return False
+        
         parts = message.content.split(maxsplit=1)
         if len(parts) < 2:
             await message.channel.send("âŒ Usage: `!buy <item_name_or_id>`")
             return True
 
         query = parts[1].strip()
-        guild_id = message.guild.id
         items = dm.get_guild_data(guild_id, "shop_items", [])
 
         target_item = None
@@ -4681,17 +4713,24 @@ class ActionHandler:
             await message.channel.send("âŒ Amount must be positive.")
             return True
 
-        if eco.get_coins(message.guild.id, message.author.id) < amount:
+        if eco.get_coins(guild_id, message.author.id) < amount:
             await message.channel.send("âŒ Insufficient funds.")
             return True
 
-        eco.add_coins(message.guild.id, message.author.id, -amount)
-        eco.add_coins(message.guild.id, target.id, amount)
+        eco.add_coins(guild_id, message.author.id, -amount)
+        eco.add_coins(guild_id, target.id, amount)
         await message.channel.send(f"ðŸ’¸ Transferred **{amount} coins** to {target.mention}.")
         return True
 
     async def handle_economy_rob(self, message: discord.Message) -> bool:
         """!rob <user>"""
+        guild_id = message.guild.id
+        
+        # Check if economy system is enabled
+        if not is_system_enabled(guild_id, "economy"):
+            await message.channel.send("âŒ The economy system is currently disabled on this server.")
+            return False
+        
         if not message.mentions:
             await message.channel.send("âŒ Mention someone to rob!")
             return True
@@ -4704,7 +4743,6 @@ class ActionHandler:
         from modules.economy import Economy
         eco = Economy(self.bot)
 
-        guild_id = message.guild.id
         author_id = message.author.id
 
         # Cooldown check
@@ -4738,11 +4776,17 @@ class ActionHandler:
     async def handle_economy_balance(self, message: discord.Message) -> bool:
         """Handle !balance command"""
         try:
+            guild_id = message.guild.id
+            
+            # Check if economy system is enabled
+            if not is_system_enabled(guild_id, "economy"):
+                await message.channel.send("âŒ The economy system is currently disabled on this server.")
+                return False
+            
             from modules.economy import Economy
             from modules.leveling import Leveling
             economy = Economy(self.bot)
             leveling = Leveling(self.bot)
-            guild_id = message.guild.id
             user_id = message.author.id
 
             # Check if economy system is enabled
@@ -4821,9 +4865,15 @@ class ActionHandler:
     async def handle_economy_leaderboard(self, message: discord.Message) -> bool:
         """!economylb â€” top balances in the guild."""
         try:
+            guild_id = message.guild.id
+            
+            # Check if economy system is enabled
+            if not is_system_enabled(guild_id, "economy"):
+                await message.channel.send("âŒ The economy system is currently disabled on this server.")
+                return False
+            
             from modules.economy import Economy
             economy = Economy(self.bot)
-            guild_id = message.guild.id
 
             balances = dm.get_guild_data(guild_id, "economy_balances", {})
             if not balances:
@@ -4854,6 +4904,12 @@ class ActionHandler:
         """!shop command for members"""
         try:
             guild_id = message.guild.id
+            
+            # Check if economy system is enabled
+            if not is_system_enabled(guild_id, "economy"):
+                await message.channel.send("âŒ The economy system is currently disabled on this server.")
+                return False
+            
             items = dm.get_guild_data(guild_id, "shop_items", [])
 
             if not items:
@@ -4874,9 +4930,15 @@ class ActionHandler:
     async def handle_leveling_rank(self, message: discord.Message) -> bool:
         """!rank â€” show the invoker's current XP, level, gems and streak."""
         try:
+            guild_id = message.guild.id
+            
+            # Check if leveling system is enabled
+            if not is_system_enabled(guild_id, "leveling"):
+                await message.channel.send("âŒ The leveling system is currently disabled on this server.")
+                return False
+            
             from modules.leveling import Leveling
             leveling = Leveling(self.bot)
-            guild_id = message.guild.id
             user_id = message.author.id
 
             # Check if leveling system is enabled
@@ -4917,9 +4979,15 @@ class ActionHandler:
     async def handle_leveling_leaderboard(self, message: discord.Message) -> bool:
         """!leaderboard / !rank top â€” top XP earners in the guild."""
         try:
+            guild_id = message.guild.id
+            
+            # Check if leveling system is enabled
+            if not is_system_enabled(guild_id, "leveling"):
+                await message.channel.send("âŒ The leveling system is currently disabled on this server.")
+                return False
+            
             from modules.leveling import Leveling
             leveling = Leveling(self.bot)
-            guild_id = message.guild.id
 
             board = leveling.get_leaderboard(guild_id, limit=10)
             if not board:
@@ -4950,7 +5018,7 @@ class ActionHandler:
             return True
         except Exception as e:
             logger.error(f"Error in handle_leveling_leaderboard: {e}")
-            await message.channel.send("âŒ Unable to load XP leaderboard. Please try again.")
+            await message.channel.send("âŒ Unable to load leaderboard. Please try again.")
             return False
 
 
@@ -5107,6 +5175,13 @@ class ActionHandler:
 
     async def handle_staffpromo_status(self, message: discord.Message) -> bool:
         try:
+            guild_id = message.guild.id
+            
+            # Check if staff promotion system is enabled
+            if not is_system_enabled(guild_id, "staffpromo"):
+                await message.channel.send("âŒ The staff promotion system is currently disabled on this server.")
+                return False
+            
             guild = message.guild
             member = message.author
             staff_promo = self.bot.staff_promo
@@ -5154,6 +5229,13 @@ class ActionHandler:
             return False
 
     async def handle_staffpromo_leaderboard(self, message: discord.Message) -> bool:
+        guild_id = message.guild.id
+        
+        # Check if staff promotion system is enabled
+        if not is_system_enabled(guild_id, "staffpromo"):
+            await message.channel.send("âŒ The staff promotion system is currently disabled on this server.")
+            return False
+        
         guild = message.guild
         staff_promo = self.bot.staff_promo
         promotion_service = self.bot.promotion_service
@@ -5659,6 +5741,13 @@ class ActionHandler:
                     return channel
 
     async def handle_ticket_create(self, message: discord.Message) -> bool:
+        guild_id = message.guild.id
+        
+        # Check if ticket system is enabled
+        if not is_system_enabled(guild_id, "tickets"):
+            await message.channel.send("âŒ The ticket system is currently disabled on this server.")
+            return False
+        
         from modules.auto_setup import CreateTicketButton
         
         # Check if ticket system is enabled
@@ -5700,6 +5789,13 @@ class ActionHandler:
         return True
 
     async def handle_verification_verify(self, message: discord.Message) -> bool:
+        guild_id = message.guild.id
+        
+        # Check if verification system is enabled
+        if not is_system_enabled(guild_id, "verification"):
+            await message.channel.send("âŒ The verification system is currently disabled on this server.")
+            return False
+        
         from modules.verification import VerifyView
         verification_system = getattr(self.bot, 'verification', None)
         
@@ -5795,11 +5891,25 @@ class ActionHandler:
         return True
 
     async def handle_appeal_create(self, message: discord.Message) -> bool:
+        guild_id = message.guild.id
+        
+        # Check if appeals system is enabled
+        if not is_system_enabled(guild_id, "appeals"):
+            await message.channel.send("âŒ The appeals system is currently disabled on this server.")
+            return False
+        
         from modules.appeals import AppealPersistentView
         await message.channel.send("Submit your appeal here.", view=AppealPersistentView())
         return True
 
     async def handle_application_apply(self, message: discord.Message) -> bool:
+        guild_id = message.guild.id
+        
+        # Check if applications system is enabled
+        if not is_system_enabled(guild_id, "applications"):
+            await message.channel.send("âŒ The applications system is currently disabled on this server.")
+            return False
+        
         from modules.applications import ApplicationPersistentView
         await message.channel.send("Apply for staff using the button below!", view=ApplicationPersistentView())
         return True
@@ -6359,6 +6469,13 @@ class ActionHandler:
     async def handle_economy_challenge(self, message: discord.Message) -> bool:
         """Handle !challenge command"""
         try:
+            guild_id = message.guild.id
+            
+            # Check if economy system is enabled
+            if not is_system_enabled(guild_id, "economy"):
+                await message.channel.send("âŒ The economy system is currently disabled on this server.")
+                return False
+            
             import random
             # Simple challenge: guess a number
             number = random.randint(1, 10)
@@ -6900,6 +7017,13 @@ class ActionHandler:
     async def handle_suggest(self, message: discord.Message) -> bool:
         """Handle !suggest command"""
         try:
+            guild_id = message.guild.id
+            
+            # Check if suggestions system is enabled
+            if not is_system_enabled(guild_id, "suggestions"):
+                await message.channel.send("❌ The suggestions system is currently disabled on this server.")
+                return False
+            
             args = message.content.split(maxsplit=1)
             if len(args) < 2:
                 await message.channel.send("❌ Usage: !suggest <your suggestion>")
@@ -6907,7 +7031,7 @@ class ActionHandler:
 
             suggestion_text = args[1]
             # Store suggestion
-            suggestions = dm.get_guild_data(message.guild.id, "suggestions", [])
+            suggestions = dm.get_guild_data(guild_id, "suggestions", [])
             suggestion = {
                 "id": len(suggestions) + 1,
                 "user_id": message.author.id,
@@ -6916,7 +7040,7 @@ class ActionHandler:
                 "status": "pending"
             }
             suggestions.append(suggestion)
-            dm.update_guild_data(message.guild.id, "suggestions", suggestions)
+            dm.update_guild_data(guild_id, "suggestions", suggestions)
             await message.channel.send(f"✅ Suggestion submitted! ID: {suggestion['id']}")
             return True
         except Exception as e:
