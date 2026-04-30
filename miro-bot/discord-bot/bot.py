@@ -62,7 +62,7 @@ from modules.embed_system import EmbedSystem
 from modules.reaction_roles import ReactionRoles
 from modules.logging import LoggingSystem
 from modules.mod_logging import ModLogging
-from modules.reaction_menus import ReactionMenus
+from modules.reaction_menus import ReactionMenus, ReactionMenuPersistentView
 from modules.role_buttons import RoleButtons
 from modules.config_panels import handle_config_panel_command, register_all_persistent_views
 
@@ -233,6 +233,7 @@ class MiroBot(commands.Bot):
         self.add_view(EmbedVerifyView(guild_id=0))  # Guild ID will be determined from interaction
         self.add_view(EmbedApplyStaffView(guild_id=0))
         self.add_view(EmbedCreateTicketView(guild_id=0))
+        self.add_view(ReactionMenuPersistentView(0))
         
         # Support for Manual Sync (Prefix command !sync)
         # Standard implementation for syncing slash commands as a prefix command
@@ -627,6 +628,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
 
         # 1. Passive Systems (XP & Triggers) - wrapped to prevent cascade failures
         await self._safe_call(self.leveling.handle_message(message), "leveling")
+        await self._safe_call(self.economy.handle_message(message), "economy")
         await self._safe_call(self.trigger_roles.handle_message(message), "trigger_roles")
         await self._safe_call(self.moderation.analyze_message(message), "moderation")
         await self._safe_call(self.automod.handle_message(message), "automod")
@@ -662,9 +664,9 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             return  # Don't process as command if mentioned
 
         # 4. Prefix Commands
-        prefix = await self.get_dynamic_prefix(message)
+        prefix = await self.get_dynamic_prefix(self, message)
         if message.content.startswith(prefix):
-            cmd_content = message.content[len(prefix):].strip()
+            cmd_content = " ".join(message.content[len(prefix):].split()).strip()
             
             # Handle !suggest command
             if cmd_content.startswith("suggest"):
@@ -736,10 +738,10 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 return
 
             # Handle staff commands
-            if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "trainingtasks", "appeal"]) or cmd_content.startswith("shift"):
+            if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "staffpromotionhistory", "trainingtasks", "appeal"]) or cmd_content.startswith("shift"):
                 await self._handle_staff_command(message, cmd_content)
                 return
-             
+            
             guild_cmds = dm.get_guild_data(message.guild.id, "custom_commands", {})
 
             # Add default commands if not present
@@ -754,6 +756,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 "buy": json.dumps({"command_type": "economy_buy"}),
                 "transfer": json.dumps({"command_type": "economy_transfer"}),
                 "rob": json.dumps({"command_type": "economy_rob"}),
+                "challenge": json.dumps({"command_type": "economy_challenge"}),
                 # Leveling commands
                 "rank": json.dumps({"command_type": "leveling_rank"}),
                 "leveling_leaderboard": json.dumps({"command_type": "leveling_leaderboard"}),
@@ -774,8 +777,13 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 "staffpromotion": json.dumps({"command_type": "staffpromo_status"}),
                 "promotionhistory": json.dumps({"command_type": "staffpromotion_history"}),
                 "staffpromotionhistory": json.dumps({"command_type": "staffpromotion_history"}),
+                "vote": json.dumps({"command_type": "peer_vote"}),
+                "tiers": json.dumps({"command_type": "staffpromo_tiers"}),
+                "staffpromo approve": json.dumps({"command_type": "staffpromo_review"}),
+                "staffpromo reject": json.dumps({"command_type": "staffpromo_review"}),
                 # Trigger roles commands
                 "list_triggers": json.dumps({"command_type": "list_triggers"}),
+                "triggers": json.dumps({"command_type": "help_embed", "title": "Trigger Roles", "description": "Automatically assign roles based on keywords.", "fields": [{"name": "!triggers", "value": "List all trigger roles.", "inline": False}, {"name": "!help triggerroles", "value": "View help.", "inline": False}]}),
                 # Application commands
                 "application_status": json.dumps({"command_type": "application_status"}),
                 "apply": json.dumps({"command_type": "application_apply"}),
@@ -799,17 +807,65 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 "trivia": json.dumps({"command_type": "trivia"}),
                 # Giveaway commands
                 "giveaway": json.dumps({"command_type": "simple", "content": "Use !giveawaypanel to manage giveaways."}),
+                "giveawaypanel": json.dumps({"command_type": "config_panel", "panel": "giveaway"}),
+                "gend": json.dumps({"actions": [{"name": "giveaway_end", "parameters": {"giveaway_id": "{args}"}}]}),
+                "greroll": json.dumps({"actions": [{"name": "giveaway_reroll", "parameters": {"giveaway_id": "{args}"}}]}),
+                "glist": json.dumps({"actions": [{"name": "giveaway_list", "parameters": {}}]}),
                 # Event commands
                 "events": json.dumps({"command_type": "list_events"}),
+                "evenf": json.dumps({"command_type": "list_events"}),
+                "evenf create": json.dumps({"command_type": "create_event"}),
                 "event create": json.dumps({"command_type": "create_event"}),
+                "event list": json.dumps({"command_type": "list_events"}),
                 # Tournament commands
                 "tournaments": json.dumps({"command_type": "list_tournaments"}),
+                "tournamentleaderboard": json.dumps({"command_type": "tournament_leaderboard"}),
                 "tournament create": json.dumps({"command_type": "create_tournament"}),
+                "join": json.dumps({"command_type": "tournament_join"}),
                 # Help commands
                 "help": json.dumps({"command_type": "help_all"}),
                 "configpanel": json.dumps({"command_type": "config_panel"}),
+                "help staffapply": json.dumps({"command_type": "help_embed", "title": "Staff Applications", "description": "Apply for staff positions.", "fields": [{"name": "!apply", "value": "Submit an application.", "inline": False}]}),
+                "help triggerroles": json.dumps({"command_type": "help_embed", "title": "Trigger Roles", "description": "Keyword-based role assignment.", "fields": [{"name": "!triggers", "value": "List trigger roles.", "inline": False}]}),
+                "help starboard": json.dumps({"command_type": "help_embed", "title": "Starboard", "description": "Star messages to highlight them.", "fields": [{"name": "!starboard", "value": "View starred messages.", "inline": False}]}),
+                "help reminders": json.dumps({"command_type": "help_embed", "title": "Reminders", "description": "Set personal or server reminders.", "fields": [{"name": "!remind <time> <message>", "value": "Set a reminder.", "inline": False}, {"name": "!reminders", "value": "View your reminders.", "inline": False}]}),
+                "help intelligence": json.dumps({"command_type": "help_embed", "title": "Server Intelligence", "description": "AI-powered server insights.", "fields": [{"name": "!serverstats", "value": "View server statistics.", "inline": False}, {"name": "!mystats", "value": "View your stats.", "inline": False}]}),
+                "help moderation": json.dumps({"command_type": "help_embed", "title": "Moderation", "description": "Moderation commands and tools.", "fields": [{"name": "!modstats", "value": "View moderation stats.", "inline": False}, {"name": "!appeal", "value": "Submit an appeal.", "inline": False}]}),
+                "help economy": json.dumps({"command_type": "help_embed", "title": "Economy System", "description": "Earn and spend coins.", "fields": [{"name": "!daily", "value": "Claim daily reward.", "inline": False}, {"name": "!balance", "value": "Check your balance.", "inline": False}]}),
+                "help leveling": json.dumps({"command_type": "help_embed", "title": "Leveling System", "description": "Gain XP and level up.", "fields": [{"name": "!rank", "value": "Check your rank.", "inline": False}, {"name": "!leaderboard", "value": "View leaderboard.", "inline": False}]}),
+                "help events": json.dumps({"command_type": "help_embed", "title": "Events System", "description": "Create and manage events.", "fields": [{"name": "!events", "value": "List events.", "inline": False}, {"name": "!event create <name>", "value": "Create an event.", "inline": False}]}),
+                "help tournaments": json.dumps({"command_type": "help_embed", "title": "Tournaments", "description": "Create bracket tournaments.", "fields": [{"name": "!tournaments", "value": "List tournaments.", "inline": False}, {"name": "!tournament create <name>", "value": "Create tournament.", "inline": False}]}),
+                "help staffpromo": json.dumps({"command_type": "help_embed", "title": "Staff Promotion", "description": "Auto-promotion based on activity.", "fields": [{"name": "!staffpromo", "value": "Check your status.", "inline": False}, {"name": "!staffpromo leaderboard", "value": "View leaderboard.", "inline": False}]}),
+                "help aichat": json.dumps({"command_type": "help_embed", "title": "AI Chat Channels", "description": "Chat with AI in designated channels.", "fields": [{"name": "!help aichat", "value": "View AI chat help.", "inline": False}]}),
+                "help content": json.dumps({"command_type": "help_embed", "title": "Content Generator", "description": "Generate content with AI.", "fields": [{"name": "!help content", "value": "View content generator help.", "inline": False}]}),
+                "help autorespond": json.dumps({"command_type": "help_embed", "title": "Auto Responder", "description": "Automatic keyword responses.", "fields": [{"name": "!help autorespond", "value": "View auto responder help.", "inline": False}]}),
+                # Intelligence commands
+                "serverstats": json.dumps({"command_type": "server_stats"}),
+                "mystats": json.dumps({"command_type": "my_stats"}),
+                "atrisk": json.dumps({"command_type": "at_risk"}),
+                # Reminder commands
+                "remind": json.dumps({"command_type": "remind"}),
+                "reminders": json.dumps({"command_type": "list_reminders"}),
+                # Moderation commands
+                "modstats": json.dumps({"command_type": "mod_stats"}),
+                # Staff shift commands
+                "shift start": json.dumps({"command_type": "shift_start"}),
+                "shift end": json.dumps({"command_type": "shift_end"}),
+                "shift": json.dumps({"command_type": "shift_status"}),
+                # Staff review commands
+                "staffreview": json.dumps({"command_type": "staff_review"}),
+                # Reaction roles panel
+                "reactionrolespanel": json.dumps({"command_type": "config_panel", "panel": "reactionroles"}),
+                "rolebuttonspanel": json.dumps({"command_type": "config_panel", "panel": "rolebuttons"}),
+                "loggingpanel": json.dumps({"command_type": "config_panel", "panel": "logging"}),
+                "gamificationpanel": json.dumps({"command_type": "config_panel", "panel": "gamification"}),
+                "reactionmenuspanel": json.dumps({"command_type": "config_panel", "panel": "reactionmenus"}),
+                "menupanel": json.dumps({"command_type": "config_panel", "panel": "reactionmenus"}),
+                # Announce commands
+                "announce": json.dumps({"command_type": "announce"}),
+                # Level shop command
+                "levelshop": json.dumps({"command_type": "leveling_shop"}),
             }
-
             updated = False
             for cmd, data in default_cmds.items():
                 if cmd not in guild_cmds:
@@ -820,13 +876,10 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
 
             matched_cmd = None
             matched_data = None
-            
-            matched_cmd = None
-            matched_data = None
-            
+
             for cmd_name in list(guild_cmds.keys()):
-                if cmd_name is None or not isinstance(cmd_name, str):
-                    logger.warning("Found None or non-string key in custom_commands for guild %s", message.guild.id)
+                if cmd_name is None or not isinstance(cmd_name, str) or cmd_name == "":
+                    logger.warning("Found None, empty, or non-string key in custom_commands for guild %s", message.guild.id)
                     # Cleanup: remove invalid keys
                     if cmd_name in guild_cmds:
                         del guild_cmds[cmd_name]
@@ -842,15 +895,15 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 cooldown_key = (message.guild.id, message.author.id, matched_cmd)
                 now = time.time()
                 if cooldown_key in self._cmd_cooldowns:
-                    remaining = self._cmd_cooldown_seconds - (now - self._cmd_cooldowns[cooldown_key])
+                    remaining = self._cmd_cooldowns[cooldown_key]
                     if remaining > 0:
-                        await message.channel.send(f"?? Wait **{int(remaining)}s** before using `!{matched_cmd}` again.")
+                        await message.channel.send(f"⏳ Command on cooldown. Wait {int(remaining)}s.", delete_after=2)
                         return
-                
                 self._cmd_cooldowns[cooldown_key] = now
-                
+
                 parts = cmd_content.split()
-                cmd_name = matched_cmd
+                # Use matched_cmd for consistency
+                cmd_name = str(matched_cmd) if matched_cmd else "unknown"
                 # Track command chain (what was run before this)
                 prev_cmd = self.track_command_chain(message.author.id, cmd_name)
                 
@@ -1239,7 +1292,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             "announce": self.auto_announcer.handle_announce_create,
             "announces": self.auto_announcer.handle_announce_list,
             "remind": self.auto_announcer.handle_remind,
-            "remindme": self.auto_announcer.handle_reminders_list,
+            "remindme": self.auto_announcer.handle_remind,
             "remind_user": self.auto_announcer.handle_remind_user,
         }
         
@@ -1275,6 +1328,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         staff_commands = {
             "staffleaderboard": self.staff_extras.handle_staff_leaderboard,
             "promotionhistory": self.staff_extras.handle_promotion_history,
+            "staffpromotionhistory": self.staff_extras.handle_promotion_history,
             "trainingtasks": self.staff_extras.handle_training_tasks,
             "appeal": self.staff_extras.handle_appeal,
             "staffstats": self.staff_reviews.handle_myreview,
@@ -1291,6 +1345,59 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         if command == "myshifts":
             await self.staff_shift.handle_myshifts(message, parts)
             return
+    
+    async def _handle_suggest_command(self, message, cmd_content):
+        """Handle !suggest command with voting system"""
+        parts = cmd_content.split(maxsplit=1)
+        if len(parts) < 2:
+            return await message.channel.send("❌ Usage: `!suggest <title> | <description>` (separate title and description with |)")
+        
+        content = parts[1]
+        if "|" not in content:
+            return await message.channel.send("❌ Please separate title and description with | (e.g., `!suggest Add dark mode | Make the UI dark`)")
+        
+        title, desc = content.split("|", 1)
+        title = title.strip()
+        desc = desc.strip()
+        
+        if not title or not desc:
+            return await message.channel.send("❌ Title and description cannot be empty.")
+        
+        # Create suggestion embed
+        embed = discord.Embed(
+            title=f"💡 Suggestion: {title}",
+            description=desc,
+            color=discord.Color.blurple()
+        )
+        embed.set_author(name=message.author.display_name, icon_url=message.author.avatar.url)
+        embed.add_field(name="Status", value="Pending Review", inline=True)
+        embed.add_field(name="Upvotes", value="0", inline=True)
+        embed.add_field(name="Downvotes", value="0", inline=True)
+        embed.set_footer(text=f"Suggestion ID: {message.id}")
+        
+        # Send to suggestions channel or current channel
+        suggestions_ch = discord.utils.get(message.guild.text_channels, name="suggestions")
+        target_ch = suggestions_ch or message.channel
+        
+        suggest_msg = await target_ch.send(embed=embed)
+        await suggest_msg.add_reaction("👍")
+        await suggest_msg.add_reaction("👎")
+        
+        # Save suggestion data
+        suggest_data = {
+            "id": suggest_msg.id,
+            "author_id": message.author.id,
+            "title": title,
+            "description": desc,
+            "status": "pending",
+            "upvotes": 0,
+            "downvotes": 0,
+            "channel_id": target_ch.id,
+            "created_at": time.time()
+        }
+        dm.update_guild_data(message.guild.id, f"suggestion_{suggest_msg.id}", suggest_data)
+        
+        await message.channel.send(f"✅ Suggestion submitted! View it here: {suggest_msg.jump_url}")
     
     async def analyze_command_usage_and_suggest_improvements(self):
         """Periodically analyze command usage and suggest improvements."""
@@ -3195,9 +3302,7 @@ async def on_command_error(ctx, error):
     error = getattr(error, 'original', error)
     
     if isinstance(error, commands.CommandNotFound):
-        # Try to give a helpful suggestion
-        cmd_name = ctx.message.content.split()[0] if ctx.message.content else "unknown"
-        await ctx.send(f"❌ Command `{cmd_name}` not found. Use `!help` to see available commands.", suppress_embeds=True)
+        await ctx.send("❌ Command not found. Use `!help` to see available commands.", suppress_embeds=True)
         return
     
     if isinstance(error, commands.MissingPermissions):

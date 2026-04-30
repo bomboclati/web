@@ -878,8 +878,8 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             matched_data = None
 
             for cmd_name in list(guild_cmds.keys()):
-                if cmd_name is None or not isinstance(cmd_name, str):
-                    logger.warning("Found None or non-string key in custom_commands for guild %s", message.guild.id)
+                if cmd_name is None or not isinstance(cmd_name, str) or cmd_name == "":
+                    logger.warning("Found None, empty, or non-string key in custom_commands for guild %s", message.guild.id)
                     # Cleanup: remove invalid keys
                     if cmd_name in guild_cmds:
                         del guild_cmds[cmd_name]
@@ -895,15 +895,15 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 cooldown_key = (message.guild.id, message.author.id, matched_cmd)
                 now = time.time()
                 if cooldown_key in self._cmd_cooldowns:
-                    remaining = self._cmd_cooldown_seconds - (now - self._cmd_cooldowns[cooldown_key])
+                    remaining = self._cmd_cooldowns[cooldown_key]
                     if remaining > 0:
-                        await message.channel.send(f"?? Wait **{int(remaining)}s** before using `!{matched_cmd}` again.")
+                        await message.channel.send(f"⏳ Command on cooldown. Wait {int(remaining)}s.", delete_after=2)
                         return
-                
                 self._cmd_cooldowns[cooldown_key] = now
-                
+
                 parts = cmd_content.split()
-                cmd_name = matched_cmd
+                # Use matched_cmd for consistency
+                cmd_name = str(matched_cmd) if matched_cmd else "unknown"
                 # Track command chain (what was run before this)
                 prev_cmd = self.track_command_chain(message.author.id, cmd_name)
                 
