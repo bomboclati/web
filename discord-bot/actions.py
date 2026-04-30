@@ -48,17 +48,15 @@ def parse_color(color_val):
             if color_val.startswith("#"):
                 return int(color_val[1:], 16)
             return int(color_val, 16)
-
-
+        except ValueError:
+            pass
+    # Default fallback
+    return 0x3498DB
 def is_system_enabled(guild_id: int, system_name: str) -> bool:
     """Check if a system is enabled for a guild."""
     config_key = f"{system_name}_config"
     config = dm.get_guild_data(guild_id, config_key, {})
     return config.get("enabled", True)
-        except ValueError:
-            pass
-    # Default fallback
-    return 0x3498DB
 
 COMMAND_SCHEMA = {
     "type": "object",
