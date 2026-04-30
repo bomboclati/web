@@ -351,8 +351,8 @@ Only suggest actions from this list. Do not invent new actions:
             try:
                 return await self._chat_internal(guild_id, user_id, user_input, system_prompt, api_key, provider, enhanced_input)
             except AIClientError as e:
-                # If it's a quota (429) or access (403) error, try the next provider in the guild's list
-                if e.status in [429, 403]:
+                # If it's a quota (429), access (403), or auth (401) error, try the next provider in the guild's list
+                if e.status in [401, 429, 403]:
                     logger.warning(f"[AI FALLBACK] Provider {provider} failed with {e.status}. Trying next available fallback...")
                     last_error = e
                     continue
