@@ -180,11 +180,26 @@ class ActionHandler:
     }
 
     def __init__(self, bot):
+        if bot is None:
+            logger.error("ActionHandler initialized with None bot instance!")
         self.bot = bot
         self._action_log = []
         self._setup_id = None
         self._artifacts = []
         self._guild_context = None
+
+    def _ensure_bot(self):
+        """Ensure bot is set; raise informative error if not."""
+        if self.bot is None:
+            raise AttributeError("ActionHandler 'bot' attribute is None. ActionHandler was not properly initialized with a bot instance.")
+        return True
+
+    def _ensure_bot_attr(self, attr_name, default=None):
+        """Safely get a bot attribute, with informative error if missing."""
+        self._ensure_bot()
+        if not hasattr(self.bot, attr_name):
+            raise AttributeError(f"ActionHandler's bot instance (MiroBot) is missing required attribute '{attr_name}'.")
+        return getattr(self.bot, attr_name)
 
     def set_guild_context(self, guild):
         """Set the guild context for help and other commands"""
@@ -4066,6 +4081,11 @@ class ActionHandler:
         user_id = message.author.id
         cmd_data_obj = None
 
+        # Handle None or empty cmd_name
+        if not cmd_name or not isinstance(cmd_name, str) or cmd_name == "":
+            cmd_name = "unknown"
+            logger.warning(f"execute_custom_command called with empty cmd_name, using 'unknown'")
+
         # Extract arguments
         full_content = message.content
         prefix = "!" # Fallback
@@ -4073,7 +4093,7 @@ class ActionHandler:
              prefix = dm.get_guild_data(message.guild.id, "prefix", "!")
 
         args_str = ""
-        if cmd_name and full_content.startswith(f"{prefix}{cmd_name} "):
+        if cmd_name != "unknown" and full_content.startswith(f"{prefix}{cmd_name} "):
             args_str = full_content[len(prefix) + len(cmd_name) + 1:].strip()
 
         cooldown_key = (guild_id, user_id, cmd_name)
@@ -4297,10 +4317,10 @@ class ActionHandler:
             return True
         except Exception as e:
             import traceback
-            logger.error(f"Error executing custom command {cmd_name}: {e}\n{traceback.format_exc()}")
-
-            # Provide helpful error message based on the actual error
             error_str = str(e)
+            logger.error(f"Error executing custom command '{cmd_name}': {e}\n{traceback.format_exc()}")
+            
+            # Provide helpful error message based on the actual error
             if "not found" in error_str.lower() or "no result" in error_str.lower():
                 user_msg = f"❌ {cmd_name} could not find the requested resource. Please check your input and try again."
             elif "permission" in error_str.lower():
@@ -4309,6 +4329,14 @@ class ActionHandler:
                 user_msg = f"❌ {cmd_name} is on cooldown. Please wait a moment and try again."
             elif "invalid" in error_str.lower() or "missing" in error_str.lower():
                 user_msg = f"❌ Invalid input for {cmd_name}. Please check the command usage and try again."
+            elif "has no attribute" in error_str:
+                # AttributeError - likely missing attribute on ActionHandler or bot
+                logger.error(f"AttributeError in command '{cmd_name}': {error_str}")
+                # Check if it's a bot attribute that's missing
+                if "self.bot" in error_str and "None" in error_str:
+                    user_msg = f"❌ Error executing `{cmd_name}`: Bot not properly initialized. Please contact an administrator."
+                else:
+                    user_msg = f"❌ Error executing `{cmd_name}`: Internal error (missing attribute). Please contact an administrator."
             else:
                 # Generic error with actual error info (sanitized)
                 safe_error = error_str[:200] if error_str else "Unknown error"
