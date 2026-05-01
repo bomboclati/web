@@ -606,6 +606,7 @@ class AutoSetup(commands.Cog):
         self.bot = bot
         self._pending_setups: Dict[int, ServerSetup] = self._load_pending_setups()
         self._setup_messages: Dict[int, int] = {}
+        self._status_messages: Dict[int, int] = {}  # guild_id -> message_id for live status embed
         self._startup_guilds = set()
     
     def create_welcome_embed(self, guild: discord.Guild, selected_systems: List[str] = None) -> discord.Embed:
@@ -662,7 +663,53 @@ class AutoSetup(commands.Cog):
     def _has_animated_emoji(self, guild: discord.Guild, name: str) -> bool:
         """Check if guild has an animated emoji with given name"""
         return any(e.animated and e.name == name for e in guild.emojis)
-    
+
+    def create_system_status_embed(self, guild: discord.Guild) -> discord.Embed:
+        """Create live status embed showing all systems and their status."""
+        embed = discord.Embed(
+            title="🔄 Live System Status",
+            description="Real-time status of all server systems. Updates automatically when changes occur.",
+            color=discord.Color.blue()
+        )
+
+        categories = SystemCategory.get_all_categories()
+        for cat in categories:
+            systems_status = []
+            for sys in cat["systems"]:
+                config_key = f"{sys}_config"
+                config = dm.get_guild_data(guild.id, config_key, {})
+                enabled = config.get("enabled", False)
+                status = "✅ Enabled" if enabled else "❌ Disabled"
+                systems_status.append(f"{sys.replace('_', ' ').title()}: {status}")
+
+            embed.add_field(
+                name=f"{cat['emoji']} {cat['name']}",
+                value="\n".join(systems_status) if systems_status else "No systems",
+                inline=False
+            )
+
+        embed.set_footer(text="Use !configpanel <system> to configure | Updates live")
+        return embed
+
+    async def update_system_status_embed(self, guild_id: int):
+        """Update the live status embed for a guild."""
+        if guild_id not in self._status_messages or guild_id not in self._status_channels:
+            return
+        message_id = self._status_messages[guild_id]
+        channel_id = self._status_channels[guild_id]
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            return
+        channel = guild.get_channel(channel_id)
+        if not channel:
+            return
+        embed = self.create_system_status_embed(guild)
+        try:
+            message = await channel.fetch_message(message_id)
+            await message.edit(embed=embed)
+        except Exception as e:
+            logger.warning(f"Failed to update status embed for guild {guild_id}: {e}")
+
     def create_category_embed(self, category: dict) -> discord.Embed:
         """Create embed for a specific category"""
         systems = category["systems"]
@@ -841,65 +888,12 @@ class AutoSetup(commands.Cog):
         # Send celebratory embed
         await self._send_celebratory_embed(guild, user, results, channel_id, self._created_channels)
     
-    async def _send_celebratory_embed(self, guild: discord.Guild, user: discord.Member, results: List[Tuple[str, bool, Optional[str]]], channel_id: Optional[int] = None, created_channels: List[int] = None):
-        """Send celebratory post-install embed with confetti emojis"""
+    async def _send_status_embed(self, guild: discord.Guild, user: discord.Member, results: List[Tuple[str, bool, Optional[str]]], channel_id: Optional[int] = None, created_channels: List[int] = None):
+        """Send live status embed showing system states"""
+        embed = self.create_system_status_embed(guild)
+        
+        # Store installed systems
         success_systems = [name for name, success, _ in results if success]
-        failed_systems = [(name, error) for name, success, error in results if not success]
-        
-        # Confetti emojis
-        confetti = "🎊🎉✨🎆🎇"
-        
-        embed = discord.Embed(
-            title=f"{confetti} Setup Complete! {confetti}",
-            description=f"Successfully deployed **{len(success_systems)}** systems to **{guild.name}**!",
-            color=discord.Color.green()
-        )
-        
-        embed.add_field(
-            name="📊 Deployment Summary",
-            value=f"Installed **{len(success_systems)}** / **{len(results)}** selected systems.",
-            inline=False
-        )
-        
-        if success_systems:
-            embed.add_field(
-                name="✅ Successfully Installed",
-                value="\n".join(f"• {sys}" for sys in success_systems[:20]),
-                inline=False
-            )
-        
-        if failed_systems:
-            failed_text = "\n".join(f"• {name} (Error: {error})" for name, error in failed_systems[:10])
-            embed.add_field(
-                name="❌ Failed",
-                value=failed_text,
-                inline=False
-            )
-        
-        # Example commands for installed systems
-        example_cmds = self._get_example_commands(success_systems)
-        if example_cmds:
-            embed.add_field(
-                name="⌨️ Try These Commands",
-                value="\n".join(example_cmds[:10]),
-                inline=False
-            )
-        
-        embed.add_field(
-            name="📚 Next Steps",
-            value=(
-                "• Use `!help` to see all installed commands\n"
-                "• Use `!help <system>` for system-specific help\n"
-                "• Use `!configpanel <system>` to configure any system\n"
-                "• All systems are now active in this server!"
-            ),
-            inline=False
-        )
-        
-        embed.set_footer(text="Need help? Type !help | Enjoy your new systems! 🎮")
-    
-        # Build a PostInstallView with one Configure button per installed system,
-        # so users can jump straight into each config panel from the success embed.
         installed_keys: List[str] = []
         try:
             display_to_key = {display: key for key, (display, _func) in self._get_system_map().items()}
@@ -908,43 +902,47 @@ class AutoSetup(commands.Cog):
                 if key:
                     installed_keys.append(key)
         except Exception as e:
-            logger.debug(f"Could not build PostInstallView mapping: {e}")
+            logger.debug(f"Could not build installed keys: {e}")
         
-        # Store installed keys for persistent view registration across restarts
         if installed_keys:
             dm.update_guild_data(guild.id, "installed_systems", installed_keys)
-    
+        
         view: Optional[discord.ui.View] = PostInstallView(installed_keys) if installed_keys else None
-    
+        
         sent = False
         if channel_id:
             target_channel = guild.get_channel(channel_id)
             if target_channel:
                 try:
                     if view is not None:
-                        await target_channel.send(f"{user.mention}", embed=embed, view=view)
+                        message = await target_channel.send(f"{user.mention}", embed=embed, view=view)
                     else:
-                        await target_channel.send(f"{user.mention}", embed=embed)
+                        message = await target_channel.send(f"{user.mention}", embed=embed)
+                    self._status_messages[guild.id] = message.id
+                    self._status_channels[guild.id] = target_channel.id
                     sent = True
                 except Exception as e:
-                    logger.warning(f"Failed to send celebratory embed to channel: {e}")
-    
+                    logger.warning(f"Failed to send status embed to channel: {e}")
+        
         if not sent:
             try:
                 if view is not None:
-                    await user.send(embed=embed, view=view)
+                    message = await user.send(embed=embed, view=view)
                 else:
-                    await user.send(embed=embed)
+                    message = await user.send(embed=embed)
+                # DM not stored for updates
             except discord.Forbidden:
                 system_channel = guild.system_channel
                 if system_channel:
                     try:
                         if view is not None:
-                            await system_channel.send(f"{user.mention}", embed=embed, view=view)
+                            message = await system_channel.send(f"{user.mention}", embed=embed, view=view)
                         else:
-                            await system_channel.send(f"{user.mention}", embed=embed)
+                            message = await system_channel.send(f"{user.mention}", embed=embed)
+                        self._status_messages[guild.id] = message.id
+                        self._status_channels[guild.id] = system_channel.id
                     except Exception as e:
-                        logger.warning(f"Failed to send celebratory embed to system channel: {e}")
+                        logger.warning(f"Failed to send status embed to system channel: {e}")
     
     def _get_example_commands(self, installed_systems: List[str]) -> List[str]:
         """Get example commands for installed systems"""
@@ -1709,6 +1707,16 @@ class AutoSetup(commands.Cog):
                 dm.update_guild_data(guild.id, "leveling_data", {})
             if dm.get_guild_data(guild.id, "leveling_xp", None) is None:
                 dm.update_guild_data(guild.id, "leveling_xp", {})
+
+            # Register custom commands
+            custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
+            custom_cmds["rank"] = json.dumps({"command_type": "leveling_rank"})
+            custom_cmds["leaderboard"] = json.dumps({"command_type": "leveling_leaderboard"})
+            custom_cmds["levels"] = json.dumps({"command_type": "leveling_levels"})
+            custom_cmds["rewards"] = json.dumps({"command_type": "leveling_rewards"})
+            custom_cmds["levelshop"] = json.dumps({"command_type": "leveling_shop"})
+            dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
+
             return True
         except Exception as e:
             logger.error(f"Failed to setup leveling: {e}")

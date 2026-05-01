@@ -169,34 +169,6 @@ class CoreCommands(commands.Cog):
         dm.update_guild_data(interaction.guild.id, "memory_depth", depth)
         await interaction.response.send_message(f"✅ Memory depth set to **{depth}**.", ephemeral=True)
 
-    @app_commands.command(name="setup", description="Configure various systems")
-    @app_commands.describe(system="Which system to setup")
-    @app_commands.choices(
-        system=[
-            app_commands.Choice(name="Moderation System", value="moderation"),
-            app_commands.Choice(name="Economy System", value="economy"),
-            app_commands.Choice(name="Leveling System", value="leveling"),
-            app_commands.Choice(name="Ticket System", value="tickets"),
-            app_commands.Choice(name="Modmail System", value="modmail"),
-            app_commands.Choice(name="Welcome/Goodbye", value="welcome"),
-            app_commands.Choice(name="Auto-Setup Wizard", value="wizard")
-        ]
-    )
-    async def setup_command(self, interaction: discord.Interaction, system: str = None):
-        """Configure various systems"""
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("Only Administrators can use setup commands.", ephemeral=True)
-            return
-
-        await interaction.response.defer()
-        
-        if system == "wizard" or not system:
-            from modules.auto_setup import AutoSetup
-            setup_helper = AutoSetup(self.bot)
-            await setup_helper.autosetup(interaction)
-        else:
-            await interaction.followup.send(f"⚙️ Setting up {system} system...\n\n*This system is being initialized.*")
-
     @app_commands.command(name="disable", description="Disable a bot feature or scheduled task")
     @app_commands.describe(feature="Feature or task to disable")
     async def disable_command(self, interaction: discord.Interaction, feature: str):
@@ -218,6 +190,8 @@ class CoreCommands(commands.Cog):
         if feature.lower() in modules:
             dm.update_guild_data(interaction.guild.id, f"{feature.lower()}_enabled", False)
             await interaction.response.send_message(f"✅ Disabled module: **{feature}**", ephemeral=True)
+            # Update live status embed
+            await self.bot.get_cog('AutoSetup').update_system_status_embed(interaction.guild.id)
             return
 
         await interaction.response.send_message(f"❌ Feature or task '**{feature}**' not found.", ephemeral=True)
@@ -229,12 +203,10 @@ class CoreCommands(commands.Cog):
         from modules.leveling import Leveling
         economy = Economy(self.bot)
         leveling = Leveling(self.bot)
-        guild_id = interaction.guild.id
-        user_id = interaction.user.id
 
-        coins = economy.get_coins(guild_id, user_id)
-        gems = leveling.get_gems(guild_id, user_id)
-        xp = leveling.get_xp(guild_id, user_id)
+        coins = economy.get_coins(interaction.guild.id, interaction.user.id)
+        gems = leveling.get_gems(interaction.guild.id, interaction.user.id)
+        xp = leveling.get_xp(interaction.guild.id, interaction.user.id)
         level = leveling.get_level_from_xp(xp)
 
         embed = discord.Embed(title=f"💰 {interaction.user.name}'s Balance", color=discord.Color.gold())
@@ -243,6 +215,31 @@ class CoreCommands(commands.Cog):
         embed.add_field(name="🆙 Level", value=f"{level} ({xp:,} XP)", inline=True)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="daily", description="Claim your daily coin reward")
+    async def daily_command(self, interaction: discord.Interaction):
+        """Slash command for !daily"""
+        from modules.economy import Economy
+        economy = Economy(self.bot)
+        guild_id = interaction.guild.id
+        user_id = interaction.user.id
+
+        last_daily = dm.get_guild_data(guild_id, "last_daily", {})
+        last_time = last_daily.get(str(user_id))
+
+        if last_time:
+            import datetime
+            last_date = datetime.datetime.fromisoformat(last_time)
+            if (datetime.datetime.now() - last_date).days < 1:
+                await interaction.response.send_message("🎉 Daily reward already claimed today!", ephemeral=True)
+                return
+
+        reward = 100
+        economy.add_coins(guild_id, user_id, reward)
+        last_daily[str(user_id)] = str(datetime.datetime.now())
+        dm.update_guild_data(guild_id, "last_daily", last_daily)
+
+        await interaction.response.send_message(f"🎉 You claimed **{reward} coins**!", ephemeral=True)
 
     @app_commands.command(name="daily", description="Claim your daily coin reward")
     async def daily_command(self, interaction: discord.Interaction):

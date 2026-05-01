@@ -89,6 +89,11 @@ class Verification:
         config["channel_id"] = verify_ch.id
         dm.update_guild_data(guild.id, "verification_config", config)
 
+        # Register custom commands
+        custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
+        custom_cmds["setverifychannel"] = json.dumps({"command_type": "set_verify_channel"})
+        dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
+
         # Post button
         embed = discord.Embed(title="🛡️ Verification Required", description=f"Welcome to **{guild.name}**. Click below to verify.", color=discord.Color.blue())
         await verify_ch.send(embed=embed, view=VerifyView(self))

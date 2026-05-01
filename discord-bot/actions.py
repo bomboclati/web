@@ -4338,6 +4338,80 @@ class ActionHandler:
                     return await self.handle_my_stats(message)
                 elif command_type == "at_risk":
                     return await self.handle_at_risk(message)
+                elif command_type == "gamification_quests":
+                    return await self.handle_gamification_quests(message)
+                elif command_type == "gamification_prestige":
+                    return await self.handle_gamification_prestige(message)
+                elif command_type == "gamification_dice":
+                    return await self.handle_gamification_dice(message)
+                elif command_type == "gamification_flip":
+                    return await self.handle_gamification_flip(message)
+                elif command_type == "events_create":
+                    return await self.handle_events_create(message)
+                elif command_type == "events_list":
+                    return await self.handle_events_list(message)
+                elif command_type == "tournaments_create":
+                    return await self.handle_tournaments_create(message)
+                elif command_type == "tournaments_join":
+                    return await self.handle_tournaments_join(message)
+                elif command_type == "tournaments_leaderboard":
+                    return await self.handle_tournaments_leaderboard(message)
+                elif command_type == "reminders":
+                    return await self.handle_reminders(message)
+                elif command_type == "remind":
+                    return await self.handle_remind(message)
+                elif command_type == "announcements_create":
+                    return await self.handle_announcements_create(message)
+                elif command_type == "giveaways_create":
+                    return await self.handle_giveaways_create(message)
+                elif command_type == "giveaways_list":
+                    return await self.handle_giveaways_list(message)
+                elif command_type == "serverstats":
+                    return await self.handle_serverstats(message)
+                elif command_type == "mystats":
+                    return await self.handle_mystats(message)
+                elif command_type == "atrisk":
+                    return await self.handle_atrisk(message)
+                elif command_type == "automod_status":
+                    return await self.handle_automod_status(message)
+                elif command_type == "guardian_status":
+                    return await self.handle_guardian_status(message)
+                elif command_type == "chatchannel_add":
+                    return await self.handle_chatchannel_add(message)
+                elif command_type == "suggest":
+                    return await self.handle_suggest(message)
+                elif command_type == "ticket":
+                    return await self.handle_ticket(message)
+                elif command_type == "appeal":
+                    return await self.handle_appeal(message)
+                elif command_type == "apply":
+                    return await self.handle_apply(message)
+                elif command_type == "verify":
+                    return await self.handle_verify(message)
+                elif command_type == "modlog_view":
+                    return await self.handle_modlog_view(message)
+                elif command_type == "warn":
+                    return await self.handle_warn(message)
+                elif command_type == "warnings":
+                    return await self.handle_warnings(message)
+                elif command_type == "clearwarn":
+                    return await self.handle_clearwarn(message)
+                elif command_type == "clearallwarns":
+                    return await self.handle_clearallwarns(message)
+                elif command_type == "kick":
+                    return await self.handle_kick(message)
+                elif command_type == "ban":
+                    return await self.handle_ban(message)
+                elif command_type == "mute":
+                    return await self.handle_mute(message)
+                elif command_type == "modstats":
+                    return await self.handle_modstats(message)
+                elif command_type == "leveling_levels":
+                    return await self.handle_leveling_levels(message)
+                elif command_type == "leveling_rewards":
+                    return await self.handle_leveling_rewards(message)
+                elif command_type == "leveling_shop":
+                    return await self.handle_leveling_shop(message)
                 elif command_type == "remind":
                     return await self.handle_remind(message)
                 elif command_type == "list_reminders":
@@ -5562,6 +5636,757 @@ class ActionHandler:
             logger.error(f"Error in handle_economy_shop: {e}")
             await message.channel.send("❌ Unable to load shop. Please try again.")
             return False
+
+    async def handle_economy_transfer(self, message: discord.Message) -> bool:
+        """!transfer — transfer coins to another user"""
+        try:
+            guild_id = message.guild.id
+            author_id = message.author.id
+
+            # Check if economy system is enabled
+            if not is_system_enabled(guild_id, "economy"):
+                await message.channel.send("❌ The economy system is currently disabled on this server.")
+                return False
+
+            parts = message.content.split()
+            if len(parts) < 3:
+                await message.channel.send("Usage: `!transfer @user amount`")
+                return False
+
+            try:
+                # Parse target
+                target_part = parts[1]
+                if target_part.startswith("<@") and target_part.endswith(">"):
+                    target_id = target_part.strip("<@!>")
+                else:
+                    target_id = target_part
+
+                target = message.guild.get_member(int(target_id))
+                if not target:
+                    await message.channel.send("❌ User not found in this server.")
+                    return False
+
+                if target.id == author_id:
+                    await message.channel.send("❌ You cannot transfer coins to yourself.")
+                    return False
+
+                amount = int(parts[2])
+                if amount <= 0:
+                    await message.channel.send("❌ Amount must be positive.")
+                    return False
+
+                from modules.economy import Economy
+                economy = Economy(self.bot)
+
+                current_balance = economy.get_coins(guild_id, author_id)
+                if current_balance < amount:
+                    await message.channel.send(f"❌ Insufficient funds. You have {current_balance:,} coins.")
+                    return False
+
+                # Perform transfer
+                economy.add_coins(guild_id, author_id, -amount)
+                economy.add_coins(guild_id, target.id, amount)
+                economy.log_transaction(guild_id, author_id, amount, "transfer", f"to {target.id}")
+
+                embed = discord.Embed(
+                    title="💸 Coin Transfer Successful",
+                    description=f"**{message.author.display_name}** transferred **{amount:,} coins** to **{target.display_name}**!",
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="Sender", value=f"{message.author.mention}\nBalance: {current_balance - amount:,}", inline=True)
+                embed.add_field(name="Recipient", value=f"{target.mention}\nBalance: {economy.get_coins(guild_id, target.id):,}", inline=True)
+                embed.set_footer(text="Economy System • Secure transactions")
+
+                await message.channel.send(embed=embed)
+                return True
+
+            except ValueError:
+                await message.channel.send("❌ Invalid amount. Please use a number.")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error in handle_economy_transfer: {e}")
+            await message.channel.send("❌ Transfer failed. Please try again.")
+            return False
+
+    async def handle_economy_buy(self, message: discord.Message) -> bool:
+        """!buy — purchase an item from the shop"""
+        try:
+            guild_id = message.guild.id
+            author_id = message.author.id
+
+            # Check if economy system is enabled
+            if not is_system_enabled(guild_id, "economy"):
+                await message.channel.send("❌ The economy system is currently disabled on this server.")
+                return False
+
+            parts = message.content.split()
+            if len(parts) < 2:
+                await message.channel.send("Usage: `!buy <item_name>`")
+                return False
+
+            item_name = " ".join(parts[1:]).lower()
+            items = dm.get_guild_data(guild_id, "shop_items", [])
+
+            item = None
+            for i in items:
+                if i["name"].lower() == item_name:
+                    item = i
+                    break
+
+            if not item:
+                await message.channel.send("❌ Item not found in the shop.")
+                return False
+
+            price = item["price"]
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+
+            if economy.get_coins(guild_id, author_id) < price:
+                await message.channel.send(f"❌ Insufficient funds. You need {price:,} coins.")
+                return False
+
+            # Deduct coins
+            economy.add_coins(guild_id, author_id, -price)
+            economy.log_transaction(guild_id, author_id, price, "purchase", f"bought {item['name']}")
+
+            # Give role if applicable
+            role_given = False
+            if item.get("role_id"):
+                role = message.guild.get_role(int(item["role_id"]))
+                if role:
+                    try:
+                        await message.author.add_roles(role)
+                        role_given = True
+                    except:
+                        pass
+
+            embed = discord.Embed(
+                title="🛒 Purchase Successful!",
+                description=f"You bought **{item['name']}** for **{price:,} coins**!",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="Item", value=item["name"], inline=True)
+            embed.add_field(name="Cost", value=f"{price:,} coins", inline=True)
+            if role_given:
+                embed.add_field(name="Role Granted", value=role.name, inline=True)
+            embed.set_footer(text="Thank you for your purchase!")
+
+            await message.channel.send(embed=embed)
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in handle_economy_buy: {e}")
+            await message.channel.send("❌ Purchase failed. Please try again.")
+            return False
+
+    async def handle_gamification_quests(self, message: discord.Message) -> bool:
+        """!quests — list available quests"""
+        try:
+            guild_id = message.guild.id
+
+            if not is_system_enabled(guild_id, "gamification"):
+                await message.channel.send("❌ The gamification system is currently disabled.")
+                return False
+
+            # Placeholder for quests
+            embed = discord.Embed(
+                title="🎯 Available Quests",
+                description="Complete quests to earn rewards!",
+                color=discord.Color.purple()
+            )
+            embed.add_field(name="Daily Login", value="Log in daily - Reward: 100 XP", inline=False)
+            embed.add_field(name="Chat Master", value="Send 100 messages - Reward: 500 XP", inline=False)
+            embed.add_field(name="Voice Veteran", value="Spend 1 hour in voice - Reward: 200 XP", inline=False)
+            embed.set_footer(text="More quests coming soon!")
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_gamification_quests: {e}")
+            return False
+
+    async def handle_gamification_prestige(self, message: discord.Message) -> bool:
+        """!prestige — prestige system"""
+        try:
+            guild_id = message.guild.id
+
+            if not is_system_enabled(guild_id, "gamification"):
+                await message.channel.send("❌ The gamification system is currently disabled.")
+                return False
+
+            embed = discord.Embed(
+                title="⭐ Prestige System",
+                description="Reset your progress for permanent bonuses!",
+                color=discord.Color.gold()
+            )
+            embed.add_field(name="Requirements", value="Reach max level and have gems", inline=False)
+            embed.add_field(name="Benefits", value="Permanent XP multipliers", inline=False)
+            embed.set_footer(text="Prestige when ready!")
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_gamification_prestige: {e}")
+            return False
+
+    async def handle_gamification_dice(self, message: discord.Message) -> bool:
+        """!dice — roll dice"""
+        try:
+            import random
+            result = random.randint(1, 6)
+            embed = discord.Embed(
+                title="🎲 Dice Roll",
+                description=f"{message.author.mention} rolled a **{result}**!",
+                color=discord.Color.blue()
+            )
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            return False
+
+    async def handle_gamification_flip(self, message: discord.Message) -> bool:
+        """!flip — coin flip"""
+        try:
+            import random
+            result = random.choice(["Heads", "Tails"])
+            embed = discord.Embed(
+                title="🪙 Coin Flip",
+                description=f"{message.author.mention} got **{result}**!",
+                color=discord.Color.green()
+            )
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            return False
+
+    async def handle_events_create(self, message: discord.Message) -> bool:
+        """!event create — create event (placeholder)"""
+        await message.channel.send("📅 Event creation: Use `/setup` to configure events.")
+        return True
+
+    async def handle_events_list(self, message: discord.Message) -> bool:
+        """!event list — list events"""
+        embed = discord.Embed(
+            title="📅 Upcoming Events",
+            description="No events scheduled.",
+            color=discord.Color.blue()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_tournaments_create(self, message: discord.Message) -> bool:
+        """!tournament create — create tournament"""
+        await message.channel.send("🏆 Tournament creation: Use `/setup` to configure tournaments.")
+        return True
+
+    async def handle_tournaments_join(self, message: discord.Message) -> bool:
+        """!join <tournament> — join tournament"""
+        await message.channel.send("🏆 Tournament joining: Feature coming soon!")
+        return True
+
+    async def handle_tournaments_leaderboard(self, message: discord.Message) -> bool:
+        """!tournamentleaderboard — tournament leaderboard"""
+        embed = discord.Embed(
+            title="🏆 Tournament Leaderboard",
+            description="Top tournament players.",
+            color=discord.Color.gold()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_reminders(self, message: discord.Message) -> bool:
+        """!reminders — list reminders"""
+        embed = discord.Embed(
+            title="⏰ Your Reminders",
+            description="No active reminders.",
+            color=discord.Color.blue()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_remind(self, message: discord.Message) -> bool:
+        """!remind — set reminder (placeholder)"""
+        await message.channel.send("⏰ Reminder: Use `/remindme` for slash command.")
+        return True
+
+    async def handle_announcements_create(self, message: discord.Message) -> bool:
+        """!announcement create — create announcement"""
+        await message.channel.send("📢 Announcement: Use `/setup` to configure announcements.")
+        return True
+
+    async def handle_giveaways_create(self, message: discord.Message) -> bool:
+        """!giveaway create — create giveaway"""
+        await message.channel.send("🎉 Giveaway: Use `/setup` to configure giveaways.")
+        return True
+
+    async def handle_giveaways_list(self, message: discord.Message) -> bool:
+        """!giveaway list — list giveaways"""
+        embed = discord.Embed(
+            title="🎉 Active Giveaways",
+            description="No active giveaways.",
+            color=discord.Color.purple()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_serverstats(self, message: discord.Message) -> bool:
+        """!serverstats — server statistics"""
+        guild = message.guild
+        embed = discord.Embed(
+            title=f"📊 {guild.name} Stats",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Members", value=guild.member_count, inline=True)
+        embed.add_field(name="Channels", value=len(guild.channels), inline=True)
+        embed.add_field(name="Roles", value=len(guild.roles), inline=True)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_mystats(self, message: discord.Message) -> bool:
+        """!mystats — user statistics"""
+        embed = discord.Embed(
+            title=f"📈 {message.author.display_name}'s Stats",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Joined", value=message.author.joined_at.strftime("%Y-%m-%d"), inline=True)
+        embed.add_field(name="Roles", value=len(message.author.roles), inline=True)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_atrisk(self, message: discord.Message) -> bool:
+        """!atrisk — at-risk users"""
+        embed = discord.Embed(
+            title="⚠️ At-Risk Users",
+            description="Users needing attention.",
+            color=discord.Color.red()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_automod_status(self, message: discord.Message) -> bool:
+        """!automod status — automod status"""
+        embed = discord.Embed(
+            title="🤖 AutoMod Status",
+            description="AutoMod is active.",
+            color=discord.Color.green()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_guardian_status(self, message: discord.Message) -> bool:
+        """!guardian status — guardian status"""
+        embed = discord.Embed(
+            title="⚔️ Guardian Status",
+            description="Guardian is protecting the server.",
+            color=discord.Color.blue()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_chatchannel_add(self, message: discord.Message) -> bool:
+        """!chatchannel add — add chat channel"""
+        await message.channel.send("🧠 Chat channel: Use `/setup` to configure AI chat channels.")
+        return True
+
+    async def handle_suggest(self, message: discord.Message) -> bool:
+        """!suggest — submit suggestion"""
+        parts = message.content.split(None, 1)
+        if len(parts) < 2:
+            await message.channel.send("Usage: `!suggest <your suggestion>`")
+            return False
+
+        suggestion = parts[1]
+        embed = discord.Embed(
+            title="💡 New Suggestion",
+            description=suggestion,
+            color=discord.Color.yellow()
+        )
+        embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_ticket(self, message: discord.Message) -> bool:
+        """!ticket — create ticket"""
+        await message.channel.send("🎫 Ticket: Use buttons or `/setup` to configure tickets.")
+        return True
+
+    async def handle_appeal(self, message: discord.Message) -> bool:
+        """!appeal — create appeal"""
+        await message.channel.send("⚖️ Appeal: Use `/setup` to configure appeals.")
+        return True
+
+    async def handle_apply(self, message: discord.Message) -> bool:
+        """!apply — apply for staff"""
+        await message.channel.send("📋 Application: Use buttons or `/setup` to configure applications.")
+        return True
+
+    async def handle_verify(self, message: discord.Message) -> bool:
+        """!verify — verify user"""
+        await message.channel.send("🛡️ Verification: Use buttons in verify channel.")
+        return True
+
+    async def handle_modlog_view(self, message: discord.Message) -> bool:
+        """!modlog view — view mod logs"""
+        embed = discord.Embed(
+            title="📋 Moderation Logs",
+            description="Recent mod actions.",
+            color=discord.Color.red()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_kick(self, message: discord.Message) -> bool:
+        """!kick — kick user"""
+        if not message.author.guild_permissions.kick_members:
+            await message.channel.send("❌ No permission.")
+            return False
+        await message.channel.send("🔨 Kick: Use `/kick` slash command.")
+        return True
+
+    async def handle_ban(self, message: discord.Message) -> bool:
+        """!ban — ban user"""
+        if not message.author.guild_permissions.ban_members:
+            await message.channel.send("❌ No permission.")
+            return False
+        await message.channel.send("🔨 Ban: Use `/ban` slash command.")
+        return True
+
+    async def handle_mute(self, message: discord.Message) -> bool:
+        """!mute — mute user"""
+        if not message.author.guild_permissions.moderate_members:
+            await message.channel.send("❌ No permission.")
+            return False
+        await message.channel.send("🔇 Mute: Use timeout feature.")
+        return True
+
+    async def handle_modstats(self, message: discord.Message) -> bool:
+        """!modstats — moderation stats"""
+        embed = discord.Embed(
+            title="📊 Mod Stats",
+            description="Moderation statistics.",
+            color=discord.Color.red()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_leveling_levels(self, message: discord.Message) -> bool:
+        """!levels — show leveling system info"""
+        try:
+            guild_id = message.guild.id
+
+            if not is_system_enabled(guild_id, "leveling"):
+                await message.channel.send("❌ The leveling system is currently disabled.")
+                return False
+
+            from modules.leveling import Leveling
+            leveling = Leveling(self.bot)
+
+            embed = discord.Embed(
+                title="🆙 Leveling System Info",
+                description="Earn XP by chatting and level up for rewards!",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="XP per Message", value="15-25 XP", inline=True)
+            embed.add_field(name="Level Formula", value="Level = √(XP / 100)", inline=True)
+            embed.add_field(name="Gems", value="XP / 10", inline=True)
+            embed.add_field(name="Commands", value="`!rank`, `!leaderboard`", inline=False)
+            embed.set_footer(text="Keep chatting to level up!")
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leveling_levels: {e}")
+            return False
+
+    async def handle_leveling_rewards(self, message: discord.Message) -> bool:
+        """!rewards — show level rewards"""
+        try:
+            guild_id = message.guild.id
+
+            if not is_system_enabled(guild_id, "leveling"):
+                await message.channel.send("❌ The leveling system is currently disabled.")
+                return False
+
+            rewards = dm.get_guild_data(guild_id, "level_rewards", {})
+            if not rewards:
+                await message.channel.send("No level rewards set up yet.")
+                return True
+
+            embed = discord.Embed(title="🎁 Level Rewards", color=discord.Color.purple())
+            for level, role_id in sorted(rewards.items(), key=lambda x: int(x[0])):
+                role = message.guild.get_role(int(role_id))
+                role_name = role.name if role else "Unknown Role"
+                embed.add_field(name=f"Level {level}", value=role_name, inline=True)
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leveling_rewards: {e}")
+            return False
+
+    async def handle_leveling_shop(self, message: discord.Message) -> bool:
+        """!levelshop — shop for leveling perks (placeholder)"""
+        await message.channel.send("🛍️ Level shop coming soon! Use your gems here.")
+        return True
+
+    async def handle_verify(self, message: discord.Message) -> bool:
+        """!verify — manually verify a user (admin only)"""
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ Only administrators can use this command.")
+            return False
+
+        config = dm.get_guild_data(message.guild.id, "verification_config", {})
+        role_id = config.get("verified_role_id")
+        if not role_id:
+            await message.channel.send("❌ Verification role not set.")
+            return False
+
+        role = message.guild.get_role(role_id)
+        if not role:
+            await message.channel.send("❌ Verification role not found.")
+            return False
+
+        parts = message.content.split()
+        if len(parts) > 1:
+            try:
+                user_id = int(parts[1].strip("<@!>"))
+                member = message.guild.get_member(user_id)
+                if member:
+                    await member.add_roles(role)
+                    await message.channel.send(f"✅ Verified {member.mention}")
+                else:
+                    await message.channel.send("❌ User not found.")
+            except ValueError:
+                await message.channel.send("❌ Invalid user.")
+        else:
+            await message.author.add_roles(role)
+            await message.channel.send("✅ You are now verified.")
+        return True
+
+    async def handle_kick(self, message: discord.Message) -> bool:
+        """!kick — kick a user"""
+        if not message.author.guild_permissions.kick_members:
+            await message.channel.send("❌ No permission.")
+            return False
+
+        parts = message.content.split()
+        if len(parts) < 2:
+            await message.channel.send("Usage: !kick @user [reason]")
+            return False
+
+        try:
+            user_id = int(parts[1].strip("<@!>"))
+            member = message.guild.get_member(user_id)
+            if not member:
+                await message.channel.send("❌ User not found.")
+                return False
+
+            reason = " ".join(parts[2:]) if len(parts) > 2 else "No reason"
+            await member.kick(reason=reason)
+            await message.channel.send(f"✅ Kicked {member.mention} for {reason}")
+        except Exception as e:
+            await message.channel.send(f"❌ Error: {e}")
+        return True
+
+    async def handle_ban(self, message: discord.Message) -> bool:
+        """!ban — ban a user"""
+        if not message.author.guild_permissions.ban_members:
+            await message.channel.send("❌ No permission.")
+            return False
+
+        parts = message.content.split()
+        if len(parts) < 2:
+            await message.channel.send("Usage: !ban @user [reason]")
+            return False
+
+        try:
+            user_id = int(parts[1].strip("<@!>"))
+            member = message.guild.get_member(user_id)
+            if not member:
+                await message.channel.send("❌ User not found.")
+                return False
+
+            reason = " ".join(parts[2:]) if len(parts) > 2 else "No reason"
+            await member.ban(reason=reason)
+            await message.channel.send(f"✅ Banned {member.mention} for {reason}")
+        except Exception as e:
+            await message.channel.send(f"❌ Error: {e}")
+        return True
+
+    async def handle_mute(self, message: discord.Message) -> bool:
+        """!mute — timeout a user"""
+        if not message.author.guild_permissions.moderate_members:
+            await message.channel.send("❌ No permission.")
+            return False
+
+        parts = message.content.split()
+        if len(parts) < 3:
+            await message.channel.send("Usage: !mute @user duration reason (e.g. 1h spam)")
+            return False
+
+        try:
+            user_id = int(parts[1].strip("<@!>"))
+            member = message.guild.get_member(user_id)
+            if not member:
+                await message.channel.send("❌ User not found.")
+                return False
+
+            duration_str = parts[2]
+            import re
+            match = re.match(r'(\d+)([smhd])', duration_str)
+            if not match:
+                await message.channel.send("❌ Invalid duration. Use format like 1h, 30m, 10s")
+                return False
+
+            amount = int(match.group(1))
+            unit = match.group(2)
+            seconds = amount * {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}[unit]
+            reason = " ".join(parts[3:]) if len(parts) > 3 else "No reason"
+
+            await member.timeout(discord.utils.utcnow() + datetime.timedelta(seconds=seconds), reason=reason)
+            await message.channel.send(f"✅ Muted {member.mention} for {duration_str} - {reason}")
+        except Exception as e:
+            await message.channel.send(f"❌ Error: {e}")
+        return True
+
+    async def handle_modstats(self, message: discord.Message) -> bool:
+        """!modstats — moderation statistics"""
+        embed = discord.Embed(title="📊 Mod Stats", description="Moderation statistics.", color=discord.Color.red())
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_warn(self, message: discord.Message) -> bool:
+        """!warn — warn a user"""
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ No permission.")
+            return False
+
+        parts = message.content.split(None, 2)
+        if len(parts) < 2:
+            await message.channel.send("Usage: !warn @user reason")
+            return False
+
+        try:
+            user_id = int(parts[1].strip("<@!>"))
+            member = message.guild.get_member(user_id)
+            if not member:
+                await message.channel.send("❌ User not found.")
+                return False
+
+            reason = parts[2] if len(parts) > 2 else "No reason"
+            warnings = dm.get_guild_data(message.guild.id, "warnings", {})
+            user_warnings = warnings.get(str(user_id), [])
+            user_warnings.append({"reason": reason, "by": message.author.id, "at": time.time()})
+            warnings[str(user_id)] = user_warnings
+            dm.update_guild_data(message.guild.id, "warnings", warnings)
+            await message.channel.send(f"⚠️ Warned {member.mention} for {reason}")
+        except Exception as e:
+            await message.channel.send(f"❌ Error: {e}")
+        return True
+
+    async def handle_warnings(self, message: discord.Message) -> bool:
+        """!warnings — view warnings"""
+        parts = message.content.split()
+        if len(parts) > 1:
+            try:
+                user_id = int(parts[1].strip("<@!>"))
+                warnings_list = dm.get_guild_data(message.guild.id, "warnings", {}).get(str(user_id), [])
+                embed = discord.Embed(title=f"⚠️ Warnings for <@{user_id}>", color=discord.Color.orange())
+                if warnings_list:
+                    for i, w in enumerate(warnings_list):
+                        embed.add_field(name=f"Warning {i+1}", value=f"Reason: {w['reason']}\nBy: <@{w['by']}>\nAt: <t:{int(w['at'])}:f>", inline=False)
+                else:
+                    embed.description = "No warnings."
+                await message.channel.send(embed=embed)
+            except ValueError:
+                await message.channel.send("❌ Invalid user.")
+        else:
+            warnings_list = dm.get_guild_data(message.guild.id, "warnings", {}).get(str(message.author.id), [])
+            embed = discord.Embed(title="⚠️ Your Warnings", color=discord.Color.orange())
+            if warnings_list:
+                for i, w in enumerate(warnings_list):
+                    embed.add_field(name=f"Warning {i+1}", value=f"Reason: {w['reason']}\nBy: <@{w['by']}>\nAt: <t:{int(w['at'])}:f>", inline=False)
+            else:
+                embed.description = "No warnings."
+            await message.channel.send(embed=embed)
+        return True
+
+    async def handle_clearwarn(self, message: discord.Message) -> bool:
+        """!clearwarn — clear warnings for a user"""
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ No permission.")
+            return False
+
+        parts = message.content.split()
+        if len(parts) < 2:
+            await message.channel.send("Usage: !clearwarn @user")
+            return False
+
+        try:
+            user_id = int(parts[1].strip("<@!>"))
+            warnings = dm.get_guild_data(message.guild.id, "warnings", {})
+            if str(user_id) in warnings:
+                del warnings[str(user_id)]
+                dm.update_guild_data(message.guild.id, "warnings", warnings)
+                await message.channel.send(f"✅ Cleared warnings for <@{user_id}>")
+            else:
+                await message.channel.send("❌ No warnings found.")
+        except ValueError:
+            await message.channel.send("❌ Invalid user.")
+        return True
+
+    async def handle_clearallwarns(self, message: discord.Message) -> bool:
+        """!clearallwarns — clear all warnings"""
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ No permission.")
+            return False
+
+        dm.update_guild_data(message.guild.id, "warnings", {})
+        await message.channel.send("✅ Cleared all warnings.")
+        return True
+
+    async def handle_raidstatus(self, message: discord.Message) -> bool:
+        """!raidstatus — check anti-raid status"""
+        config = dm.get_guild_data(message.guild.id, "anti_raid_config", {})
+        enabled = config.get("enabled", False)
+        status = "✅ Enabled" if enabled else "❌ Disabled"
+        embed = discord.Embed(title="🚨 Anti-Raid Status", description=f"Status: {status}", color=discord.Color.red() if enabled else discord.Color.green())
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_guardian_status(self, message: discord.Message) -> bool:
+        """!guardian status — check guardian status"""
+        config = dm.get_guild_data(message.guild.id, "guardian_config", {})
+        enabled = config.get("enabled", False)
+        status = "✅ Enabled" if enabled else "❌ Disabled"
+        embed = discord.Embed(title="⚔️ Guardian Status", description=f"Status: {status}", color=discord.Color.blue() if enabled else discord.Color.red())
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_automod_status(self, message: discord.Message) -> bool:
+        """!automod status — check automod status"""
+        config = dm.get_guild_data(message.guild.id, "automod_config", {})
+        enabled = config.get("enabled", False)
+        status = "✅ Enabled" if enabled else "❌ Disabled"
+        embed = discord.Embed(title="🤖 AutoMod Status", description=f"Status: {status}", color=discord.Color.green() if enabled else discord.Color.red())
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_reactionrolespanel(self, message: discord.Message) -> bool:
+        """!reactionrolespanel — open reaction roles panel"""
+        await message.channel.send("🎭 Reaction roles panel: Use `/setup` to configure.")
+        return True
+
+    async def handle_reactionmenuspanel(self, message: discord.Message) -> bool:
+        """!reactionmenuspanel — open reaction menus panel"""
+        await message.channel.send("📌 Reaction menus panel: Use `/setup` to configure.")
+        return True
+
+    async def handle_rolebuttonspanel(self, message: discord.Message) -> bool:
+        """!rolebuttonspanel — open role buttons panel"""
+        await message.channel.send("🔘 Role buttons panel: Use `/setup` to configure.")
+        return True
 
     async def handle_leveling_rank(self, message: discord.Message) -> bool:
         """!rank — show the invoker's current XP, level, gems and streak."""
@@ -8568,26 +9393,6 @@ class ActionHandler:
 
 
 
-
-
-
-    async def handle_economy_beg(self, message: discord.Message) -> bool:
-        """Handle !economy beg command"""
-        try:
-            import random
-            if random.random() < 0.7:  # 70% success
-                beg_coins = random.randint(1, 20)
-                balance = dm.get_user_data(message.author.id, "balance", 0) + beg_coins
-                dm.update_user_data(message.author.id, "balance", balance)
-                embed = discord.Embed(title="Begging", description=f"Someone gave you **{beg_coins}** coins!\nTotal balance: **{balance}** coins", color=discord.Color.green())
-            else:
-                embed = discord.Embed(title="Begging", description="Nobody gave you anything. Try again later.", color=discord.Color.red())
-            await message.channel.send(embed=embed)
-            return True
-        except Exception as e:
-            logger.error(f"Error in handle_economy_beg: {e}")
-            await message.channel.send("❌ Error begging. Please try again.")
-            return False
 
 
 

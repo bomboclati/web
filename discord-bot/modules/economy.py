@@ -274,11 +274,15 @@ class Economy:
                 {"name": "!challenge", "value": "View today's challenge progress.", "inline": False}
             ]
         })
-        
+
+        custom_cmds["buy"] = json.dumps({"command_type": "economy_buy"})
+
+        custom_cmds["give"] = json.dumps({"command_type": "economy_transfer"})
+
         custom_cmds["help"] = json.dumps({
             "command_type": "help_all"
         })
-        
+
         custom_cmds["shop"] = json.dumps({
             "command_type": "help_embed",
             "title": "Premium Shop",

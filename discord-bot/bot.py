@@ -268,26 +268,6 @@ class MiroBot(commands.Bot):
                 await ctx.send(f"Synced {len(synced)} global commands.")
 
 
-        # Embed System Example Command
-        @self.tree.command(name="create_example_embed", description="Create an example embed with buttons")
-        @app_commands.checks.has_permissions(administrator=True)
-        async def create_example_embed(interaction: discord.Interaction):
-            """Create an example embed with Verify, Apply Staff, and Create Ticket buttons"""
-            try:
-                if not interaction.guild:
-                    await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-                    return
-
-                await interaction.response.defer(ephemeral=True)
-
-                message = await self.embed_system.create_example_embed(interaction.channel, interaction.guild.id)
-
-                await interaction.followup.send("✅ Example embed created!", ephemeral=True)
-
-            except Exception as e:
-                logger.error(f"Error creating example embed: {e}")
-                await interaction.followup.send("❌ Failed to create embed.", ephemeral=True)
-
         # Final sync after all commands and cogs are loaded
         if os.getenv("SYNC_COMMANDS", "false").lower() == "true":
             logger.info("Syncing slash commands...")
@@ -601,9 +581,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             logger.error("Error in %s handler: %s", label, e)
 
     async def on_message(self, message):
-        print(f"DEBUG: on_message fired for '{message.content}' from {message.author}")
         if message.author.bot:
-            print("DEBUG: Ignoring bot message")
             return
 
         # 0. General Logging - Message Delete is handled in its own event, but edit/delete can be here too
@@ -670,7 +648,6 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         print(f"DEBUG: message='{message.content}', prefix='{prefix}', starts_with={message.content.startswith(prefix)}")
         if message.content.startswith(prefix):
             cmd_content = " ".join(message.content[len(prefix):].split()).strip()
-            print(f"DEBUG: cmd_content='{cmd_content}'")
             
             # Handle !suggest command
             if cmd_content.startswith("suggest"):
@@ -749,19 +726,24 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 await economy.handle_balance(message)
                 return
             elif cmd_content.strip() == "daily":
-                from modules.economy import Economy
-                economy = Economy(self)
-                await economy.handle_daily(message)
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                await handler.handle_economy_daily(message)
                 return
             elif cmd_content.strip() == "work":
-                from modules.economy import Economy
-                economy = Economy(self)
-                await economy.handle_work(message)
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                await handler.handle_economy_work(message)
                 return
             elif cmd_content.strip() == "ecoleaderboard":
-                from modules.economy import Economy
-                economy = Economy(self)
-                await economy.handle_economy_leaderboard(message)
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                await handler.handle_economy_leaderboard(message)
+                return
+            elif cmd_content.startswith("transfer"):
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                await handler.handle_economy_transfer(message)
                 return
 
             # Handle leveling commands
@@ -805,7 +787,109 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "staffpromotionhistory", "trainingtasks", "appeal"]) or cmd_content.startswith("shift"):
                 await self._handle_staff_command(message, cmd_content)
                 return
-            
+
+            # Handle staffpromo subcommands
+            if cmd_content.startswith("staffpromo"):
+                await self._handle_staffpromo_command(message, cmd_content)
+                return
+
+            # Direct command handlers for all systems
+            economy_commands = {
+                "balance": "handle_economy_balance",
+                "daily": "handle_economy_daily",
+                "work": "handle_economy_work",
+                "ecoleaderboard": "handle_economy_leaderboard",
+                "challenge": "handle_economy_challenge",
+                "shop": "handle_economy_shop",
+                "buy": "handle_economy_buy",
+                "transfer": "handle_economy_transfer",
+                "give": "handle_economy_transfer",
+                "beg": "handle_economy_beg",
+                "rob": "handle_economy_rob",
+            }
+
+            leveling_commands = {
+                "rank": "handle_leveling_rank",
+                "leaderboard": "handle_leveling_leaderboard",
+                "levels": "handle_leveling_levels",
+                "rewards": "handle_leveling_rewards",
+                "levelshop": "handle_leveling_shop",
+            }
+
+            verification_commands = {
+                "setverifychannel": "handle_set_verify_channel",
+                "verify": "handle_verify",
+            }
+
+            staff_commands = {
+                "apply": "handle_application_apply",
+                "appeal": "handle_appeal_create",
+                "ticket": "handle_ticket_create",
+            }
+
+            gamification_commands = {
+                "quests": "handle_gamification_quests",
+                "prestige": "handle_gamification_prestige",
+                "dice": "handle_gamification_dice",
+                "flip": "handle_gamification_flip",
+                "events": "handle_events_create",
+                "tournaments": "handle_tournaments_create",
+                "reminders": "handle_reminders",
+                "giveaways": "handle_giveaways_create",
+                "suggestions": "handle_suggest",
+                "serverstats": "handle_serverstats",
+                "mystats": "handle_mystats",
+                "atrisk": "handle_atrisk",
+                "automod status": "handle_automod_status",
+                "guardian status": "handle_guardian_status",
+                "chatchannel add": "handle_chatchannel_add",
+                "autoresponder add": "handle_autoresponder_add",
+                "announcements create": "handle_announcements_create",
+                "reactionrolespanel": "handle_reactionrolespanel",
+                "reactionmenuspanel": "handle_reactionmenuspanel",
+                "rolebuttonspanel": "handle_rolebuttonspanel",
+            }
+
+            # Check economy commands
+            if cmd_content in economy_commands:
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                method = getattr(handler, economy_commands[cmd_content])
+                await method(message)
+                return
+
+            # Check leveling commands
+            if cmd_content in leveling_commands:
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                method = getattr(handler, leveling_commands[cmd_content])
+                await method(message)
+                return
+
+            # Check verification commands
+            if cmd_content in verification_commands:
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                method = getattr(handler, verification_commands[cmd_content])
+                await method(message)
+                return
+
+            # Check staff commands
+            if cmd_content in staff_commands:
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                method = getattr(handler, staff_commands[cmd_content])
+                await method(message)
+                return
+
+            # Check gamification commands
+            if cmd_content in gamification_commands:
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                method = getattr(handler, gamification_commands[cmd_content])
+                await method(message)
+                return
+
             # Handle remaining prefix commands via custom commands system
             guild_cmds = dm.get_guild_data(message.guild.id, "custom_commands", {})
 
@@ -826,7 +910,6 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                     break
             
             if matched_cmd:
-                print(f"DEBUG: Executing custom command '{matched_cmd}'")
                 # Rate limiting check
                 cooldown_key = (message.guild.id, message.author.id, matched_cmd)
                 now = time.time()
@@ -1276,12 +1359,105 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         if command in staff_commands:
             cmd_func = staff_commands[command]
             await cmd_func(message, parts)
+
+    async def _handle_staffpromo_command(self, message, cmd_content):
+        """Handle !staffpromo subcommands"""
+        parts = cmd_content.split()
+        if len(parts) < 2:
+            # Default to opening the main staffpromo panel
+            from modules.config_panels import get_config_panel
+            view = get_config_panel(message.guild.id, "staffpromo")
+            if view:
+                embed = view.create_embed(message.guild.id)
+                await message.channel.send(embed=embed, view=view)
+            else:
+                await message.channel.send("Staff promotion system not configured.")
             return
 
-        if command == "myshifts":
-            await self.staff_shift.handle_myshifts(message, parts)
-            return
-    
+        subcommand = parts[1].lower()
+
+        if subcommand == "tiers":
+            # Interactive hierarchy management
+            from modules.staff_promo import StaffPromoTiersView
+            view = StaffPromoTiersView(message.guild.id)
+            embed = view.create_embed()
+            await message.channel.send(embed=embed, view=view)
+        elif subcommand == "requirements":
+            # Per-tier criteria editor
+            from modules.staff_promo import StaffPromoRequirementsView
+            view = StaffPromoRequirementsView(message.guild.id)
+            embed = view.create_embed()
+            await message.channel.send(embed=embed, view=view)
+        elif subcommand == "status":
+            # Check staff promotion status
+            from modules.staff_promo import StaffPromoStatusView
+            view = StaffPromoStatusView(message.guild.id)
+            embed = view.create_embed()
+            await message.channel.send(embed=embed, view=view)
+        elif subcommand == "leaderboard":
+            # Staff leaderboard
+            from modules.staff_promo import StaffPromoLeaderboardView
+            view = StaffPromoLeaderboardView(message.guild.id)
+            embed = view.create_embed()
+            await message.channel.send(embed=embed, view=view)
+        elif subcommand == "progress":
+            # Personal progress
+            from modules.staff_promo import StaffPromoProgressView
+            view = StaffPromoProgressView(message.guild.id, message.author.id)
+            embed = view.create_embed()
+            await message.channel.send(embed=embed, view=view)
+        elif subcommand == "tiers":
+            # Tiers management
+            from modules.staff_promo import StaffPromoTiersView
+            view = StaffPromoTiersView(message.guild.id)
+            embed = view.create_embed()
+            await message.channel.send(embed=embed, view=view)
+        elif subcommand == "bonuses":
+            # Bonuses management
+            from modules.staff_promo import StaffPromoBonusesView
+            view = StaffPromoBonusesView(message.guild.id)
+            embed = view.create_embed()
+            await message.channel.send(embed=embed, view=view)
+        elif subcommand == "exclude":
+            # Exclude management
+            if len(parts) > 2:
+                action = parts[2].lower()
+                if action == "add" and len(parts) > 3:
+                    # Add user to exclude
+                    try:
+                        user_id = int(parts[3].strip("<@!>"))
+                        config = dm.get_guild_data(message.guild.id, "staffpromo_config", {})
+                        excluded = config.get("excluded_users", [])
+                        if user_id not in excluded:
+                            excluded.append(user_id)
+                            config["excluded_users"] = excluded
+                            dm.update_guild_data(message.guild.id, "staffpromo_config", config)
+                            await message.channel.send(f"✅ User <@{user_id}> excluded from promotions.")
+                        else:
+                            await message.channel.send("User already excluded.")
+                    except ValueError:
+                        await message.channel.send("Invalid user ID.")
+                elif action == "remove" and len(parts) > 3:
+                    try:
+                        user_id = int(parts[3].strip("<@!>"))
+                        config = dm.get_guild_data(message.guild.id, "staffpromo_config", {})
+                        excluded = config.get("excluded_users", [])
+                        if user_id in excluded:
+                            excluded.remove(user_id)
+                            config["excluded_users"] = excluded
+                            dm.update_guild_data(message.guild.id, "staffpromo_config", config)
+                            await message.channel.send(f"✅ User <@{user_id}> removed from exclusions.")
+                        else:
+                            await message.channel.send("User not excluded.")
+                    except ValueError:
+                        await message.channel.send("Invalid user ID.")
+                else:
+                    await message.channel.send("Usage: `!staffpromo exclude add @user` or `!staffpromo exclude remove @user`")
+            else:
+                await message.channel.send("Usage: `!staffpromo exclude add @user` or `!staffpromo exclude remove @user`")
+        else:
+            await message.channel.send(f"Unknown subcommand '{subcommand}'. Available: tiers, requirements, status, leaderboard, progress, bonuses, exclude.")
+
     async def _handle_suggest_command(self, message, cmd_content):
         """Handle !suggest command with voting system"""
         parts = cmd_content.split(maxsplit=1)
