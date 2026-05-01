@@ -284,7 +284,7 @@ class HelpCategoryView(ui.View):
     """Shown when user selects a category from the main help menu."""
 
     def __init__(self, guild_id: int, cat_name: str):
-        super().__init__(timeout=300)
+        super().__init__(timeout=None)  # Make persistent
         self.guild_id = guild_id
         self.cat_name = cat_name
         self.selected_system = None
@@ -340,7 +340,7 @@ class HelpMainView(ui.View):
     """The main !help panel with category buttons."""
 
     def __init__(self, guild_id: int):
-        super().__init__(timeout=300)
+        super().__init__(timeout=None)  # Make persistent
         self.guild_id = guild_id
 
         # Add buttons for each category (up to 4 categories per row, max 5 rows)
@@ -368,13 +368,21 @@ class HelpMainView(ui.View):
 
     def _make_callback(self, cat_name: str):
         async def callback(interaction: Interaction):
-            embed = _build_category_embed(interaction.guild_id, cat_name, interaction.client)
-            view = HelpCategoryView(interaction.guild_id, cat_name)
-            await interaction.response.edit_message(embed=embed, view=view)
+            try:
+                embed = _build_category_embed(interaction.guild_id, cat_name, interaction.client)
+                view = HelpCategoryView(interaction.guild_id, cat_name)
+                await interaction.response.edit_message(embed=embed, view=view)
+            except Exception as e:
+                print(f"Error in help category callback: {e}")
+                await interaction.response.send_message("Error loading category. Please try again.", ephemeral=True)
         return callback
 
     async def _search_callback(self, interaction: Interaction):
-        await interaction.response.send_modal(_SearchModal(interaction.guild_id))
+        try:
+            await interaction.response.send_modal(_SearchModal(interaction.guild_id))
+        except Exception as e:
+            print(f"Error in help search callback: {e}")
+            await interaction.response.send_message("Search is currently unavailable.", ephemeral=True)
 
     async def _all_cmds_callback(self, interaction: Interaction):
         # Builds an embed listing every example command from CATEGORIES plus the
