@@ -949,7 +949,6 @@ class AutoSetup(commands.Cog):
     def _get_example_commands(self, installed_systems: List[str]) -> List[str]:
         """Get example commands for installed systems"""
         cmd_map = {
-            "verification": "`!verify` - Verify yourself",
             "tickets": "`!ticket` - Create a ticket | `!close` - Close ticket",
             "economy": "`!daily` - Claim daily coins | `!balance` - Check wallet | `!shop` - Open shop",
             "leveling": "`!rank` - Check your level | `!leaderboard` - Top members",
@@ -1774,7 +1773,6 @@ class AutoSetup(commands.Cog):
         custom_cmds = dm.get_guild_data(guild_id, "custom_commands", {})
         
         help_data = {
-            "verification": {"title": "🛡️ Verification System", "desc": "Member verification with roles.", "cmds": [("!verify", "Open verification prompt")]},
             "anti_raid": {"title": "⚔️ Anti-Raid System", "desc": "Protects against mass joins and spam.", "cmds": [("!raidstatus", "Check security status")]},
             "tickets": {"title": "🎫 Ticket System", "desc": "Private support ticket channels.", "cmds": [("!ticket", "Create ticket"), ("!close", "Close ticket")]},
             "economy": {"title": "💰 Economy System", "desc": "Virtual currency and engagement.", "cmds": [("!daily", "Claim daily coins"), ("!balance", "Check wallet")]},

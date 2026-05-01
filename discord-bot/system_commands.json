@@ -12,7 +12,6 @@
             "lvlleaderboard": "modules/leveling.py - handle_leveling_leaderboard()"
         },
         "verification": {
-            "verify": "actions.py - handle_verification_verify()",
             "setverifychannel": "actions.py - handle_set_verify_channel()"
         },
         "security": {

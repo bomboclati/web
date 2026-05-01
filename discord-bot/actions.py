@@ -62,11 +62,11 @@ def is_system_enabled(guild_id: int, system_name: str) -> bool:
 
 COMMAND_SCHEMA = {
     "type": "object",
-    "properties": {
-        "command_type": {
+        "properties": {
+          "command_type": {
             "type": "string",
-            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "economy_challenge", "leaderboard", "leveling_rank", "leveling_leaderboard", "leveling_shop", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "staffpromo_requirements", "staffpromo_bonuses", "staffpromo_exclude", "staffpromo_config", "staffpromo_promote", "staffpromo_demote", "staffpromotion_history", "peer_vote", "list_triggers", "help_all", "config_panel", "ticket_create", "ticket_close", "verification_verify", "appeal_create", "application_apply", "set_verify_channel", "create_tournament", "create_event", "list_quests", "prestige", "dice", "flip", "slots", "trivia", "starboard_leaderboard", "list_events", "list_tournaments", "tournament_leaderboard", "tournament_join", "server_stats", "my_stats", "at_risk", "remind", "list_reminders", "mod_stats", "shift_start", "shift_end", "shift_status", "staff_review", "announce", "list_quests", "raidstatus", "guardian_status", "automod_status", "modlog_view", "suggest", "chatchannel_add", "autoresponder_add", "remindme", "announcement_create", "giveaway_create"]
-        },
+            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "economy_challenge", "leaderboard", "leveling_rank", "leveling_leaderboard", "leveling_shop", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "staffpromo_requirements", "staffpromo_bonuses", "staffpromo_exclude", "staffpromo_config", "staffpromo_promote", "staffpromo_demote", "staffpromotion_history", "peer_vote", "list_triggers", "help_all", "config_panel", "ticket_create", "ticket_close", "appeal_create", "application_apply", "set_verify_channel", "create_tournament", "create_event", "list_quests", "prestige", "dice", "flip", "slots", "trivia", "starboard_leaderboard", "list_events", "list_tournaments", "tournament_leaderboard", "tournament_join", "server_stats", "my_stats", "at_risk", "remind", "list_reminders", "mod_stats", "shift_start", "shift_end", "shift_status", "staff_review", "announce", "list_quests", "raidstatus", "guardian_status", "automod_status", "modlog_view", "suggest", "chatchannel_add", "autoresponder_add", "remindme", "announcement_create", "giveaway_create"]
+          },
         "content": {"type": "string"},
         "actions": {
             "type": "array",
@@ -4290,8 +4290,6 @@ class ActionHandler:
                     return await self.handle_announcement_create(message)
                 elif command_type == "giveaway_create":
                     return await self.handle_giveaway_create(message)
-                elif command_type == "verification_verify":
-                    return await self.handle_verification_verify(message)
                 elif command_type == "set_verify_channel":
                     return await self.handle_set_verify_channel(message)
                 elif command_type == "create_tournament":

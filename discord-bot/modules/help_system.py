@@ -23,7 +23,7 @@ CATEGORIES = {
     "🛡️ Security": {
         "color": RED,
         "systems": [
-            ("verification",   "🛡️", "Captcha verification for new members", ["!verify", "!setverifychannel"]),
+            ("verification",   "🛡️", "Captcha verification for new members", ["!setverifychannel"]),
             ("antiraid",       "🚨", "Mass-join detection & server lockdown", ["!raidstatus", "!configpanel antiraid"]),
             ("guardian",       "⚔️", "AI threat detection (scam, token, nuke)", ["!guardian status", "!configpanel guardian"]),
             ("automod",        "🤖", "Spam, caps, invite & link filters", ["!automod status", "!configpanel automod"]),
