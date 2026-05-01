@@ -431,31 +431,31 @@ async def send_help(channel: discord.TextChannel, guild_id: int, invoker: discor
 
 
         if system_query:
-        system_key = system_query.lower().replace("_", "").replace("system", "").strip()
-        if system_key in _SYSTEM_LOOKUP:
-            # _SYSTEM_LOOKUP stores 4-tuples: (emoji, desc, category, cmd_examples).
-            emoji, desc, cat, cmd_examples = _SYSTEM_LOOKUP[system_key]
-            embed = discord.Embed(
-                title=f"{emoji} System Guide: {system_key.title()}",
-                color=CATEGORIES[cat]["color"],
-            )
-            embed.set_thumbnail(url=_bot_avatar_url(bot))
-            embed.description = (
-                f"**Description:** {desc}\n\n"
-                f"**Category:** {cat}\n"
-                f"**Configuration:** `!configpanel {system_key}`"
-            )
-
-            if cmd_examples:
-                embed.add_field(
-                    name="⌨️ Example Commands",
-                    value="\n".join([f"`{cmd}`" for cmd in cmd_examples[:5]]),
-                    inline=False,
+            system_key = system_query.lower().replace("_", "").replace("system", "").strip()
+            if system_key in _SYSTEM_LOOKUP:
+                # _SYSTEM_LOOKUP stores 4-tuples: (emoji, desc, category, cmd_examples).
+                emoji, desc, cat, cmd_examples = _SYSTEM_LOOKUP[system_key]
+                embed = discord.Embed(
+                    title=f"{emoji} System Guide: {system_key.title()}",
+                    color=CATEGORIES[cat]["color"],
+                )
+                embed.set_thumbnail(url=_bot_avatar_url(bot))
+                embed.description = (
+                    f"**Description:** {desc}\n\n"
+                    f"**Category:** {cat}\n"
+                    f"**Configuration:** `!configpanel {system_key}`"
                 )
 
-            embed.set_footer(text=f"Requested by {invoker.display_name if invoker else 'User'}")
-            await channel.send(embed=embed)
-            return
+                if cmd_examples:
+                    embed.add_field(
+                        name="⌨️ Example Commands",
+                        value="\n".join([f"`{cmd}`" for cmd in cmd_examples[:5]]),
+                        inline=False,
+                    )
+
+                embed.set_footer(text=f"Requested by {invoker.display_name if invoker else 'User'}")
+                await channel.send(embed=embed)
+                return
 
         # Check custom commands if system not found in built-in systems
         try:
