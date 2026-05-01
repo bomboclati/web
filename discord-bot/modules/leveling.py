@@ -295,3 +295,15 @@ class Leveling:
         from actions import ActionHandler
         handler = ActionHandler(message.guild._state._get_client())
         return await handler.handle_leveling_leaderboard(message)
+
+    async def handle_levels(self, message):
+        """Handle !levels prefix command"""
+        from actions import ActionHandler
+        handler = ActionHandler(message.guild._state._get_client())
+        return await handler.handle_leveling_levels(message)
+
+    async def handle_rewards(self, message):
+        """Handle !rewards prefix command"""
+        from actions import ActionHandler
+        handler = ActionHandler(message.guild._state._get_client())
+        return await handler.handle_leveling_rewards(message)

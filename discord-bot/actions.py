@@ -65,7 +65,7 @@ COMMAND_SCHEMA = {
         "properties": {
           "command_type": {
             "type": "string",
-            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "economy_challenge", "leaderboard", "leveling_rank", "leveling_leaderboard", "leveling_shop", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "staffpromo_requirements", "staffpromo_bonuses", "staffpromo_exclude", "staffpromo_config", "staffpromo_promote", "staffpromo_demote", "staffpromotion_history", "peer_vote", "list_triggers", "help_all", "config_panel", "ticket_create", "ticket_close", "appeal_create", "application_apply", "set_verify_channel", "create_tournament", "create_event", "list_quests", "prestige", "dice", "flip", "slots", "trivia", "starboard_leaderboard", "list_events", "list_tournaments", "tournament_leaderboard", "tournament_join", "server_stats", "my_stats", "at_risk", "remind", "list_reminders", "mod_stats", "shift_start", "shift_end", "shift_status", "staff_review", "announce", "list_quests", "raidstatus", "guardian_status", "automod_status", "modlog_view", "suggest", "chatchannel_add", "autoresponder_add", "remindme", "announcement_create", "giveaway_create"]
+            "enum": ["application_status", "appeal_status", "help_embed", "simple", "economy_daily", "economy_balance", "economy_work", "economy_beg", "economy_leaderboard", "economy_shop", "economy_transfer", "economy_rob", "economy_buy", "economy_challenge", "leaderboard", "leveling_rank", "leveling_leaderboard", "leveling_levels", "leveling_rewards", "leveling_shop", "staffpromo_status", "staffpromo_leaderboard", "staffpromo_progress", "staffpromo_tiers", "staffpromo_roles", "staffpromo_review", "staffpromo_requirements", "staffpromo_bonuses", "staffpromo_exclude", "staffpromo_config", "staffpromo_promote", "staffpromo_demote", "staffpromotion_history", "peer_vote", "list_triggers", "help_all", "config_panel", "ticket_create", "ticket_close", "appeal_create", "application_apply", "set_verify_channel", "create_tournament", "create_event", "list_quests", "prestige", "dice", "flip", "slots", "trivia", "starboard_leaderboard", "list_events", "list_tournaments", "tournament_leaderboard", "tournament_join", "server_stats", "my_stats", "at_risk", "remind", "list_reminders", "mod_stats", "shift_start", "shift_end", "shift_status", "staff_review", "announce", "list_quests", "raidstatus", "guardian_status", "automod_status", "modlog_view", "suggest", "chatchannel_add", "autoresponder_add", "remindme", "announcement_create", "giveaway_create"]
           },
         "content": {"type": "string"},
         "actions": {
@@ -2084,7 +2084,9 @@ class ActionHandler:
             custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
             custom_cmds["rank"] = json.dumps({"command_type": "leveling_rank"})
             custom_cmds["leaderboard"] = json.dumps({"command_type": "leveling_leaderboard"})
-            custom_cmds["help leveling"] = json.dumps({"command_type": "help_embed", "title": "Leveling System Help", "description": "Earn XP by chatting and level up!", "fields": [{"name": "!rank", "value": "Check your current level and XP.", "inline": False}, {"name": "!leaderboard", "value": "View the top members.", "inline": False}]})
+            custom_cmds["levels"] = json.dumps({"command_type": "leveling_levels"})
+            custom_cmds["rewards"] = json.dumps({"command_type": "leveling_rewards"})
+            custom_cmds["help leveling"] = json.dumps({"command_type": "help_embed", "title": "Leveling System Help", "description": "Earn XP by chatting and level up!", "fields": [{"name": "!rank", "value": "Check your current level and XP.", "inline": False}, {"name": "!leaderboard", "value": "View the top members.", "inline": False}, {"name": "!levels", "value": "View level progression info.", "inline": False}, {"name": "!rewards", "value": "View leveling rewards.", "inline": False}]})
             custom_cmds["help"] = json.dumps({"command_type": "help_all"})
             dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
 
@@ -4189,6 +4191,10 @@ class ActionHandler:
                     return await self.handle_leveling_rank(message)
                 elif command_type == "leveling_leaderboard" or command_type == "leaderboard":
                     return await self.handle_leveling_leaderboard(message)
+                elif command_type == "leveling_levels":
+                    return await self.handle_leveling_levels(message)
+                elif command_type == "leveling_rewards":
+                    return await self.handle_leveling_rewards(message)
                 elif command_type == "config_panel":
                     return await self.handle_config_panel_redirect(message, data)
                 elif command_type == "help_all":
@@ -4252,6 +4258,10 @@ class ActionHandler:
                     return await self.handle_leveling_rank(message)
                 elif command_type == "leveling_leaderboard":
                     return await self.handle_leveling_leaderboard(message)
+                elif command_type == "leveling_levels":
+                    return await self.handle_leveling_levels(message)
+                elif command_type == "leveling_rewards":
+                    return await self.handle_leveling_rewards(message)
                 elif command_type == "staffpromo_status":
                     return await self.handle_staffpromo_status(message)
                 elif command_type == "staffpromo_leaderboard":
@@ -5645,6 +5655,95 @@ class ActionHandler:
         except Exception as e:
             logger.error(f"Error in handle_leveling_leaderboard: {e}")
             await message.channel.send("❌ Unable to load leaderboard. Please try again.")
+            return False
+
+    async def handle_leveling_levels(self, message: discord.Message) -> bool:
+        """!levels — show level progression information."""
+        try:
+            guild_id = message.guild.id
+
+            # Check if leveling system is enabled
+            if not is_system_enabled(guild_id, "leveling"):
+                await message.channel.send("❌ The leveling system is currently disabled on this server.")
+                return False
+
+            from modules.leveling import Leveling
+            leveling = Leveling(self.bot)
+
+            # Calculate level progression
+            levels_info = []
+            for level in range(1, 21):  # Show first 20 levels
+                xp_needed = level * 100  # Since get_level_from_xp uses sqrt(xp/100)
+                levels_info.append(f"**Level {level}** — {xp_needed:,} XP")
+
+            embed = discord.Embed(
+                title="📊 Level Progression",
+                description="Here's how XP translates to levels:\n\n" + "\n".join(levels_info[:10]),
+                color=discord.Color.blue(),
+            )
+
+            if len(levels_info) > 10:
+                embed.add_field(
+                    name="Continued...",
+                    value="\n".join(levels_info[10:]),
+                    inline=False
+                )
+
+            embed.set_footer(text="Level = floor(sqrt(XP / 100)) • Keep chatting to level up!")
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leveling_levels: {e}")
+            await message.channel.send("❌ Unable to load level information. Please try again.")
+            return False
+
+    async def handle_leveling_rewards(self, message: discord.Message) -> bool:
+        """!rewards — show leveling rewards and role unlocks."""
+        try:
+            guild_id = message.guild.id
+
+            # Check if leveling system is enabled
+            if not is_system_enabled(guild_id, "leveling"):
+                await message.channel.send("❌ The leveling system is currently disabled on this server.")
+                return False
+
+            # Get configured rewards
+            rewards = dm.get_guild_data(guild_id, "level_rewards", {})
+
+            if not rewards:
+                embed = discord.Embed(
+                    title="🎁 Level Rewards",
+                    description="No role rewards have been configured yet.\n\nUse `/configpanel leveling` to set up automatic role rewards for reaching certain levels!",
+                    color=discord.Color.green(),
+                )
+            else:
+                reward_lines = []
+                for level_str, role_id in sorted(rewards.items(), key=lambda x: int(x[0])):
+                    level = int(level_str)
+                    role = message.guild.get_role(int(role_id))
+                    role_name = role.name if role else f"Role {role_id}"
+                    reward_lines.append(f"**Level {level}** — {role_name}")
+
+                embed = discord.Embed(
+                    title="🎁 Level Rewards",
+                    description="Earn these roles by reaching the specified levels:\n\n" + "\n".join(reward_lines),
+                    color=discord.Color.green(),
+                )
+
+            embed.add_field(
+                name="💎 Gems",
+                value="You also earn **Gems** as you level up!\nGems = floor(XP ÷ 10)\n\nUse gems in the level shop with `!levelshop`",
+                inline=False
+            )
+
+            embed.set_footer(text="Configure rewards with /configpanel leveling")
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leveling_levels: {e}")
+            await message.channel.send("❌ Unable to load rewards information. Please try again.")
             return False
 
 

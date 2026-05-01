@@ -453,7 +453,24 @@ Make it fun and varied. Consider message sending, reactions, voice chat, command
         custom_cmds["flip"] = json.dumps({"command_type": "flip"})
         custom_cmds["slots"] = json.dumps({"command_type": "slots"})
         custom_cmds["trivia"] = json.dumps({"command_type": "trivia"})
+
         custom_cmds["gamificationpanel"] = "configpanel gamification"
+
+        custom_cmds["help gamification"] = json.dumps({
+            "command_type": "help_embed",
+            "title": "Gamification System Help",
+            "description": "Earn rewards through games and challenges.",
+            "fields": [
+                {"name": "!quests", "value": "List available quests.", "inline": False},
+                {"name": "!prestige", "value": "Prestige system.", "inline": False},
+                {"name": "!dice", "value": "Dice game.", "inline": False},
+                {"name": "!flip", "value": "Coin flip game.", "inline": False},
+                {"name": "!slots", "value": "Slot machine game.", "inline": False},
+                {"name": "!trivia", "value": "Trivia game.", "inline": False},
+                {"name": "!help gamification", "value": "Show this help message.", "inline": False}
+            ]
+        })
+
         dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
 
         await interaction.followup.send("Gamification system set up! Try `!quests`, `!dice`, or `!flip <bet>`.", ephemeral=True)

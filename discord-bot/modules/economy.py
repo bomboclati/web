@@ -253,9 +253,16 @@ class Economy:
             "fields": [
                 {"name": "!daily", "value": "Claim your daily coin reward.", "inline": False},
                 {"name": "!balance", "value": "Check your coin balance.", "inline": False},
+                {"name": "!work", "value": "Work for coins.", "inline": False},
+                {"name": "!ecoleaderboard", "value": "Economy leaderboard.", "inline": False},
+                {"name": "!challenge", "value": "View today's daily challenge.", "inline": False},
+                {"name": "!shop", "value": "Browse available items.", "inline": False},
+                {"name": "!buy <item>", "value": "Purchase an item.", "inline": False},
                 {"name": "!transfer <user> <amount>", "value": "Send coins to another user.", "inline": False},
-                {"name": "!help economy", "value": "Show this help message.", "inline": False},
-                {"name": "!challenge", "value": "View today's daily challenge.", "inline": False}
+                {"name": "!give <user> <amount>", "value": "Give coins to user.", "inline": False},
+                {"name": "!beg", "value": "Beg for coins.", "inline": False},
+                {"name": "!rob @user", "value": "Rob another user.", "inline": False},
+                {"name": "!help economy", "value": "Show this help message.", "inline": False}
             ]
         })
         

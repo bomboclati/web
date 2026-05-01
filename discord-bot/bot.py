@@ -719,6 +719,18 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             if cmd_content.startswith("warn"):
                 await self.warnings.cmd_warn(message, cmd_content.split())
                 return
+            if cmd_content.startswith("kick"):
+                await self.warnings.cmd_kick(message, cmd_content.split())
+                return
+            if cmd_content.startswith("ban"):
+                await self.warnings.cmd_ban(message, cmd_content.split())
+                return
+            if cmd_content.startswith("mute"):
+                await self.warnings.cmd_mute(message, cmd_content.split())
+                return
+            if cmd_content.startswith("modstats"):
+                await self.warnings.cmd_modstats(message, cmd_content.split())
+                return
             if cmd_content.startswith("vote"):
                 # Peer voting is for staff members only
                 staff_roles = ["Trial Moderator", "Moderator", "Senior Moderator", "Head Moderator", "Admin"]
@@ -762,6 +774,16 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 from modules.leveling import Leveling
                 leveling = Leveling(self)
                 await leveling.handle_leveling_leaderboard(message)
+                return
+            elif cmd_content.strip() == "levels":
+                from modules.leveling import Leveling
+                leveling = Leveling(self)
+                await leveling.handle_levels(message)
+                return
+            elif cmd_content.strip() == "rewards":
+                from modules.leveling import Leveling
+                leveling = Leveling(self)
+                await leveling.handle_rewards(message)
                 return
 
             if cmd_content.strip() == "help":

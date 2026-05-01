@@ -28,7 +28,7 @@ CATEGORIES = {
             ("guardian",       "⚔️", "AI threat detection (scam, token, nuke)", ["!guardian status", "!configpanel guardian"]),
             ("automod",        "🤖", "Spam, caps, invite & link filters", ["!automod status", "!configpanel automod"]),
             ("warnings",       "⚠️", "Warning system with escalation", ["!warn @user", "!warnings"]),
-            ("moderation",     "🔨", "Kick, ban, mute, timeout commands", ["!kick", "!ban", "!mute"]),
+            ("moderation",     "🔨", "Kick, ban, mute, timeout commands", ["!kick", "!ban", "!mute", "!modstats"]),
             ("modlog",         "📋", "Audit log for all mod actions", ["!modlog view", "!configpanel modlog"]),
             ("logging",        "📊", "Full server event logging", ["!configpanel logging"]),
         ]
@@ -46,7 +46,7 @@ CATEGORIES = {
     "🎮 Gamification": {
         "color": PURPLE,
         "systems": [
-            ("gamification",   "🎮", "Prestige, quests, skill trees", ["!quests", "!prestige"]),
+            ("gamification",   "🎮", "Prestige, quests, skill trees", ["!quests", "!prestige", "!dice", "!flip", "!slots", "!trivia"]),
             ("giveaways",      "🎉", "Timed giveaways with role requirements", ["!giveaway create", "!giveaway list"]),
             ("events",         "📅", "Server event scheduling & RSVP", ["!event create", "!event list"]),
             ("tournaments",    "🏆", "Bracket-style tournament management", ["!tournament create"]),

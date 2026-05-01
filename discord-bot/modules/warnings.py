@@ -1,6 +1,7 @@
 import discord
 import time
 import json
+import re
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from data_manager import dm
@@ -282,6 +283,196 @@ class WarningSystem:
 
         count = await self.clear_all_warnings(message.guild, target.id, "Manual mass clear")
         await message.channel.send(f"✅ Cleared all ({count}) warnings for {target.display_name}")
+
+    async def cmd_kick(self, message, parts):
+        if not message.author.guild_permissions.kick_members:
+            return await message.channel.send("❌ You need kick permissions to use this command.")
+
+        if len(parts) < 2:
+            return await message.channel.send("Usage: `!kick @user [reason]`")
+
+        target = message.mentions[0] if message.mentions else None
+        if not target:
+            return await message.channel.send("❌ User not found.")
+
+        if target == message.author:
+            return await message.channel.send("❌ You cannot kick yourself.")
+
+        if target.guild_permissions.administrator:
+            return await message.channel.send("❌ You cannot kick an administrator.")
+
+        reason = " ".join(parts[1:]) if len(parts) > 1 else "No reason provided"
+
+        try:
+            await target.kick(reason=reason)
+            embed = discord.Embed(
+                title="👢 User Kicked",
+                description=f"**{target.display_name}** has been kicked from the server.",
+                color=discord.Color.orange()
+            )
+            embed.add_field(name="Reason", value=reason, inline=False)
+            embed.add_field(name="Moderator", value=message.author.display_name, inline=True)
+            await message.channel.send(embed=embed)
+        except discord.Forbidden:
+            await message.channel.send("❌ I don't have permission to kick this user.")
+        except Exception as e:
+            logger.error(f"Error kicking user: {e}")
+            await message.channel.send("❌ Failed to kick user.")
+
+    async def cmd_ban(self, message, parts):
+        if not message.author.guild_permissions.ban_members:
+            return await message.channel.send("❌ You need ban permissions to use this command.")
+
+        if len(parts) < 2:
+            return await message.channel.send("Usage: `!ban @user [reason]`")
+
+        target = message.mentions[0] if message.mentions else None
+        if not target:
+            return await message.channel.send("❌ User not found.")
+
+        if target == message.author:
+            return await message.channel.send("❌ You cannot ban yourself.")
+
+        if target.guild_permissions.administrator:
+            return await message.channel.send("❌ You cannot ban an administrator.")
+
+        reason = " ".join(parts[1:]) if len(parts) > 1 else "No reason provided"
+
+        try:
+            await target.ban(reason=reason)
+            embed = discord.Embed(
+                title="🔨 User Banned",
+                description=f"**{target.display_name}** has been banned from the server.",
+                color=discord.Color.red()
+            )
+            embed.add_field(name="Reason", value=reason, inline=False)
+            embed.add_field(name="Moderator", value=message.author.display_name, inline=True)
+            await message.channel.send(embed=embed)
+        except discord.Forbidden:
+            await message.channel.send("❌ I don't have permission to ban this user.")
+        except Exception as e:
+            logger.error(f"Error banning user: {e}")
+            await message.channel.send("❌ Failed to ban user.")
+
+    async def cmd_mute(self, message, parts):
+        if not message.author.guild_permissions.moderate_members:
+            return await message.channel.send("❌ You need moderate members permissions to use this command.")
+
+        if len(parts) < 3:
+            return await message.channel.send("Usage: `!mute @user <duration> [reason]`\nExample: `!mute @user 1h Spamming`")
+
+        target = message.mentions[0] if message.mentions else None
+        if not target:
+            return await message.channel.send("❌ User not found.")
+
+        if target == message.author:
+            return await message.channel.send("❌ You cannot mute yourself.")
+
+        # Parse duration
+        duration_str = parts[1]
+        try:
+            # Simple duration parsing: 1h, 30m, 2d, etc.
+            import re
+            match = re.match(r'^(\d+)([smhd])$', duration_str.lower())
+            if not match:
+                return await message.channel.send("❌ Invalid duration format. Use: 30m, 1h, 2d, etc.")
+
+            amount, unit = match.groups()
+            amount = int(amount)
+
+            if unit == 's':
+                duration = amount
+            elif unit == 'm':
+                duration = amount * 60
+            elif unit == 'h':
+                duration = amount * 3600
+            elif unit == 'd':
+                duration = amount * 86400
+            else:
+                return await message.channel.send("❌ Invalid time unit. Use: s, m, h, d")
+
+            if duration > 2419200:  # 28 days max
+                return await message.channel.send("❌ Maximum mute duration is 28 days.")
+
+        except Exception as e:
+            return await message.channel.send("❌ Invalid duration format.")
+
+        reason = " ".join(parts[2:]) if len(parts) > 2 else "No reason provided"
+
+        try:
+            await target.timeout(discord.utils.utcnow() + timedelta(seconds=duration), reason=reason)
+            embed = discord.Embed(
+                title="🔇 User Muted",
+                description=f"**{target.display_name}** has been muted.",
+                color=discord.Color.yellow()
+            )
+            embed.add_field(name="Duration", value=duration_str, inline=True)
+            embed.add_field(name="Reason", value=reason, inline=False)
+            embed.add_field(name="Moderator", value=message.author.display_name, inline=True)
+            await message.channel.send(embed=embed)
+        except discord.Forbidden:
+            await message.channel.send("❌ I don't have permission to mute this user.")
+        except Exception as e:
+            logger.error(f"Error muting user: {e}")
+            await message.channel.send("❌ Failed to mute user.")
+
+    async def cmd_modstats(self, message, parts):
+        """Show moderation statistics"""
+        if not message.author.guild_permissions.administrator:
+            return await message.channel.send("❌ Only administrators can view moderation statistics.")
+
+        try:
+            # Get warning stats
+            warning_stats = self.get_stats(message.guild.id)
+            most_warned = self.get_most_warned(message.guild.id)
+
+            embed = discord.Embed(
+                title="📊 Moderation Statistics",
+                description="Server moderation overview",
+                color=discord.Color.blue()
+            )
+
+            embed.add_field(
+                name="⚠️ Warnings Today",
+                value=str(warning_stats.get("today", 0)),
+                inline=True
+            )
+            embed.add_field(
+                name="📅 Warnings This Week",
+                value=str(warning_stats.get("week", 0)),
+                inline=True
+            )
+            embed.add_field(
+                name="🗑️ Total Pardoned",
+                value=str(warning_stats.get("total_pardoned", 0)),
+                inline=True
+            )
+
+            severity_breakdown = warning_stats.get("severity_breakdown", {})
+            severity_text = "\n".join([f"{k.title()}: {v}" for k, v in severity_breakdown.items()])
+            embed.add_field(
+                name="📈 Severity Breakdown",
+                value=severity_text or "No data",
+                inline=False
+            )
+
+            if most_warned:
+                most_warned_text = "\n".join([
+                    f"{i+1}. <@{entry['user_id']}> - {entry['count']} warnings"
+                    for i, entry in enumerate(most_warned[:5])
+                ])
+                embed.add_field(
+                    name="👥 Most Warned Users",
+                    value=most_warned_text,
+                    inline=False
+                )
+
+            embed.set_footer(text=f"Stats for {message.guild.name}")
+            await message.channel.send(embed=embed)
+
+        except Exception as e:
+            logger.error(f"Error in cmd_modstats: {e}")
+            await message.channel.send("❌ Failed to retrieve moderation statistics.")
 
     async def setup(self, interaction: discord.Interaction):
         self.save_config(interaction.guild_id, self.get_config(interaction.guild_id))
