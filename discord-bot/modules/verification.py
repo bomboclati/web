@@ -152,37 +152,113 @@ class Verification:
 
     async def set_verify_channel(self, message, args: list):
         """Handle !setverifychannel command to set the verification channel"""
-        # Check admin permissions
+        import asyncio
+
+        # Check admin permissions with enhanced feedback
         if not message.author.guild_permissions.administrator:
-            return await message.channel.send("❌ You need Administrator permissions to use this command.")
-        
-        # Get target channel
+            embed = discord.Embed(
+                title="❌ Permission Denied",
+                description="You need **Administrator** permissions to configure verification settings.",
+                color=discord.Color.red()
+            )
+            embed.set_footer(text="Contact a server administrator for assistance")
+            return await message.channel.send(embed=embed)
+
+        # Loading animation
+        loading_embed = discord.Embed(
+            title="⚙️ Configuring Verification Channel",
+            description="🔄 Analyzing channel settings...\n🔄 Updating configuration...\n🔄 Posting verification interface...",
+            color=discord.Color.orange()
+        )
+        loading_msg = await message.channel.send(embed=loading_embed)
+
+        # Get target channel with better parsing
         target_channel = None
         if message.channel_mentions:
             target_channel = message.channel_mentions[0]
         elif args and len(args) > 1:
+            channel_arg = args[1].strip("<#>")
+            # Try to parse as channel ID
             try:
-                channel_id = int(args[1].strip("<#>"))
+                channel_id = int(channel_arg)
                 target_channel = message.guild.get_channel(channel_id)
             except (ValueError, IndexError):
-                pass
-        
+                # Try to find by name
+                target_channel = discord.utils.get(message.guild.text_channels, name=channel_arg)
+
         if not target_channel:
             target_channel = message.channel
-        
+
         if not isinstance(target_channel, discord.TextChannel):
-            return await message.channel.send("❌ Please specify a valid text channel.")
-        
-        # Update config
+            error_embed = discord.Embed(
+                title="❌ Invalid Channel",
+                description="Please specify a valid **text channel** for verification.",
+                color=discord.Color.red()
+            )
+            error_embed.add_field(
+                name="Usage Examples",
+                value="`!setverifychannel #verification`\n`!setverifychannel 123456789012345678`\n`!setverifychannel` (uses current channel)",
+                inline=False
+            )
+            await loading_msg.edit(embed=error_embed)
+            return
+
+        # Update config with animation steps
+        await asyncio.sleep(0.5)
+        loading_embed.description = "✅ Analyzing channel settings...\n🔄 Updating configuration...\n🔄 Posting verification interface..."
+        await loading_msg.edit(embed=loading_embed)
+
         config = self._get_admin_config(message.guild.id)
         config["channel_id"] = target_channel.id
         dm.update_guild_data(message.guild.id, "verification_config", config)
-        
-        # Post verify embed and button
-        embed = discord.Embed(
-            title="🛡️ Verification Required",
-            description=f"Welcome to **{message.guild.name}**. Click below to verify.",
+
+        await asyncio.sleep(0.5)
+        loading_embed.description = "✅ Analyzing channel settings...\n✅ Updating configuration...\n🔄 Posting verification interface..."
+        await loading_msg.edit(embed=loading_embed)
+
+        # Post enhanced verify embed and button
+        verify_embed = discord.Embed(
+            title="🛡️ Server Verification Required",
+            description=f"Welcome to **{message.guild.name}**! To access the server, you must complete verification.\n\n"
+                       "Click the **✅ Verify** button below to start the process.",
             color=discord.Color.blue()
         )
-        await target_channel.send(embed=embed, view=VerifyView(self))
-        await message.channel.send(f"✅ Verification channel set to {target_channel.mention}. Verify button posted.")
+
+        verify_embed.add_field(
+            name="🔒 Security Features",
+            value="• Account age verification\n• CAPTCHA challenge\n• Automated role assignment",
+            inline=False
+        )
+
+        verify_embed.set_footer(text="Verification is required for all new members • Protected by Guardian AI")
+        verify_embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/verification_shield.png")
+
+        verify_msg = await target_channel.send(embed=verify_embed, view=VerifyView(self))
+
+        # Add reaction animation
+        await verify_msg.add_reaction("✅")
+        await verify_msg.add_reaction("🛡️")
+
+        await asyncio.sleep(0.5)
+        loading_embed.description = "✅ Analyzing channel settings...\n✅ Updating configuration...\n✅ Posting verification interface..."
+        await loading_msg.edit(embed=loading_embed)
+
+        # Success message with animation
+        success_embed = discord.Embed(
+            title="✅ Verification Channel Configured",
+            description=f"Successfully set {target_channel.mention} as the verification channel!",
+            color=discord.Color.green()
+        )
+
+        success_embed.add_field(
+            name="📋 What's Next",
+            value="• Verification button is now active in the channel\n• New members will be prompted to verify\n• Use `!configpanel verification` to adjust settings",
+            inline=False
+        )
+
+        success_embed.set_footer(text=f"Configured by {message.author.display_name}")
+        await loading_msg.edit(embed=success_embed)
+
+        # Celebration reactions
+        await loading_msg.add_reaction("🎉")
+        await loading_msg.add_reaction("✅")

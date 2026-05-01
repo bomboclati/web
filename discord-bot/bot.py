@@ -603,6 +603,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
     async def on_message(self, message):
         print(f"DEBUG: on_message fired for '{message.content}' from {message.author}")
         if message.author.bot:
+            print("DEBUG: Ignoring bot message")
             return
 
         # 0. General Logging - Message Delete is handled in its own event, but edit/delete can be here too

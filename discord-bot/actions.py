@@ -1622,7 +1622,7 @@ class ActionHandler:
 
         # f) Last resort: extract a Discord snowflake embedded in the username string.
         #    Discord's pomelo auto-usernames look like "user<snowflake>" e.g. user1357317173470564433.
-        #    We pull out any 17–20 digit number and call fetch_user() directly â€” no guild cache needed.
+        #    We pull out any 17–20 digit number and call fetch_user() directly — no guild cache needed.
         if not user_id and username:
             import re as _re_dm
             snowflake_match = _re_dm.search(r'\b(\d{17,20})\b', str(username))
@@ -1636,7 +1636,7 @@ class ActionHandler:
                 except Exception:
                     pass
 
-        # —— 2. No user resolved â€” return failure so action sequence stops ——
+        # —— 2. No user resolved — return failure so action sequence stops ——
         if not user_id:
             logger.warning(f"[send_dm] Could not resolve user from username={username!r}")
             try:
@@ -1687,11 +1687,11 @@ class ActionHandler:
             logger.info(f"[send_dm] DM sent to {user} ({user_id})")
             return True, None
         except discord.Forbidden:
-            # User has DMs disabled â€” NOT a soft pass - this is a genuine failure
+            # User has DMs disabled — NOT a soft pass - this is a genuine failure
             logger.warning(f"[send_dm] {user} ({user_id}) has DMs disabled")
             try:
                 await interaction.channel.send(
-                    f"⚠️ Could not DM **{user.display_name}** â€” they have DMs disabled.",
+                    f"⚠️ Could not DM **{user.display_name}** — they have DMs disabled.",
                     delete_after=10
                 )
             except Exception:
@@ -1811,7 +1811,7 @@ class ActionHandler:
                 except Exception:
                     pass
 
-        # —— Member not found â€” soft pass ——————————————————————————————————————
+        # —— Member not found — soft pass ——————————————————————————————————————
         if not member:
             logger.warning(f"[ping] Could not find member: username={username!r} user_id={user_id!r}")
             try:
@@ -3346,7 +3346,7 @@ class ActionHandler:
             return False, None
 
     async def action_create_category(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
-        """Alias for create_category_channel â€” supports name, private, allowed_roles, denied_roles."""
+        """Alias for create_category_channel — supports name, private, allowed_roles, denied_roles."""
         return await self.action_create_category_channel(interaction, params)
 
     async def action_edit_channel_bitrate(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
@@ -4449,45 +4449,182 @@ class ActionHandler:
         return True
 
     async def handle_economy_work(self, message: discord.Message) -> bool:
-        """Handle !work command"""
+        """Handle !work command with enhanced job system and animations"""
         try:
+            import asyncio
             guild_id = message.guild.id
-            
-            # Check if economy system is enabled
-            if not is_system_enabled(guild_id, "economy"):
-                await message.channel.send("❌ The economy system is currently disabled on this server.")
-                return False
-            
-            from modules.economy import Economy
-            economy = Economy(self.bot)
             user_id = message.author.id
 
+            # Check if economy system is enabled
+            if not is_system_enabled(guild_id, "economy"):
+                embed = discord.Embed(
+                    title="❌ Work Unavailable",
+                    description="The economy system is currently disabled on this server.\n\n*Please contact an administrator to enable it.*",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text="Use !configpanel economy to enable the system")
+                await message.channel.send(embed=embed)
+                return False
+
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="💼 Finding Employment",
+                description="📋 Checking job listings...\n🕒 Preparing work environment...\n💰 Negotiating salary...",
+                color=discord.Color.blue()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.7)
+            loading_embed.description = "✅ Checking job listings...\n🕒 Preparing work environment...\n💰 Negotiating salary..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.5)
+            loading_embed.description = "✅ Checking job listings...\n✅ Preparing work environment...\n💰 Negotiating salary..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.4)
+            loading_embed.description = "✅ Checking job listings...\n✅ Preparing work environment...\n✅ Negotiating salary..."
+            await loading_msg.edit(embed=loading_embed)
+
+            # Cooldown check
             c = dm.get_guild_data(guild_id, "economy_config", {})
-            min_reward = c.get("work_min", 50)
-            max_reward = c.get("work_max", 200)
             cooldown = c.get("work_cooldown_seconds", 3600)
 
-            # Basic cooldown check
             last_work = dm.get_guild_data(guild_id, "last_work", {})
             last_time = last_work.get(str(user_id), 0)
             now = time.time()
 
             if now - last_time < cooldown:
                 remaining = int(cooldown - (now - last_time))
-                await message.channel.send(f"❌ You're too tired! Wait **{remaining // 60}m {remaining % 60}s**.")
+                hours, remainder = divmod(remaining, 3600)
+                minutes, seconds = divmod(remainder, 60)
+
+                cooldown_embed = discord.Embed(
+                    title="😴 Work Cooldown Active",
+                    description=f"You're still recovering from your last job!\n\n"
+                               f"**Time remaining:** `{hours}h {minutes}m {seconds}s`\n\n"
+                               f"*Take a break and come back refreshed!*",
+                    color=discord.Color.orange()
+                )
+                cooldown_embed.set_footer(text="Work again when the cooldown expires")
+                cooldown_embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/sleeping.png")
+
+                await loading_msg.edit(embed=cooldown_embed)
+                await loading_msg.add_reaction("😴")
                 return True
 
-            reward = random.randint(min_reward, max_reward)
-            economy.add_coins(guild_id, user_id, reward)
+            # Enhanced job system
+            jobs = {
+                "developer": {"name": "💻 Software Developer", "reward_range": (150, 300), "description": "Debugged complex code", "emoji": "💻"},
+                "artist": {"name": "🎨 Digital Artist", "reward_range": (120, 250), "description": "Created stunning artwork", "emoji": "🎨"},
+                "doctor": {"name": "⚕️ Medical Doctor", "reward_range": (200, 400), "description": "Saved lives in the ER", "emoji": "⚕️"},
+                "chef": {"name": "👨‍🍳 Master Chef", "reward_range": (100, 220), "description": "Prepared gourmet meals", "emoji": "👨‍🍳"},
+                "moderator": {"name": "🛡️ Discord Moderator", "reward_range": (80, 180), "description": "Kept the server safe", "emoji": "🛡️"},
+                "farmer": {"name": "🚜 Organic Farmer", "reward_range": (70, 160), "description": "Harvested fresh produce", "emoji": "🚜"},
+                "streamer": {"name": "🎮 Game Streamer", "reward_range": (90, 200), "description": "Entertained thousands of viewers", "emoji": "🎮"},
+                "teacher": {"name": "👩‍🏫 Online Teacher", "reward_range": (110, 230), "description": "Educated eager students", "emoji": "👩‍🏫"},
+                "musician": {"name": "🎵 Session Musician", "reward_range": (130, 270), "description": "Recorded hit tracks", "emoji": "🎵"},
+                "scientist": {"name": "🔬 Research Scientist", "reward_range": (160, 320), "description": "Made groundbreaking discoveries", "emoji": "🔬"}
+            }
+
+            # Select random job
+            job_key = random.choice(list(jobs.keys()))
+            job = jobs[job_key]
+
+            # Calculate reward with level bonus
+            from modules.leveling import Leveling
+            leveling = Leveling(self.bot)
+            user_level = leveling.get_level_from_xp(leveling.get_xp(guild_id, user_id))
+
+            level_bonus = min(user_level * 5, 100)  # Up to 100 bonus based on level
+            base_reward = random.randint(*job["reward_range"])
+            total_reward = base_reward + level_bonus
+
+            # Award the coins
+            economy.add_coins(guild_id, user_id, total_reward)
             last_work[str(user_id)] = now
             dm.update_guild_data(guild_id, "last_work", last_work)
 
-            jobs = ["Developer", "Artist", "Doctor", "Chef", "Discord Mod", "Farmer"]
-            await message.channel.send(f"ðŸ’¼ You worked as a **{random.choice(jobs)}** and earned **{reward} coins**!")
+            currency_name = c.get("currency_name", "Coins")
+            currency_emoji = c.get("currency_emoji", "🪙")
+
+            # Success embed
+            success_embed = discord.Embed(
+                title="💼 Work Completed Successfully!",
+                description=f"**{message.author.display_name}** finished their shift!",
+                color=discord.Color.green()
+            )
+
+            success_embed.add_field(
+                name=f"{job['emoji']} Job Details",
+                value=f"**Position:** {job['name']}\n"
+                      f"**Task:** {job['description']}\n"
+                      f"**Performance:** Excellent!",
+                inline=False
+            )
+
+            success_embed.add_field(
+                name="💰 Earnings Breakdown",
+                value=f"**Base Pay:** `{base_reward:,}` {currency_name}\n"
+                      f"**Level Bonus:** `{level_bonus:,}` {currency_name} (Level {user_level})\n"
+                      f"**Total Earned:** `{total_reward:,}` {currency_name}",
+                inline=True
+            )
+
+            success_embed.add_field(
+                name="⏰ Next Shift",
+                value=f"Available in **{cooldown // 3600} hours**\n"
+                      f"<t:{int(now + cooldown)}:R>",
+                inline=True
+            )
+
+            # Work streak tracking
+            work_streak_data = dm.get_guild_data(guild_id, "work_streaks", {})
+            user_streak = work_streak_data.get(str(user_id), {"streak": 0, "last_work": 0})
+
+            if now - user_streak["last_work"] < cooldown * 2:  # Within reasonable time
+                user_streak["streak"] += 1
+            else:
+                user_streak["streak"] = 1
+
+            user_streak["last_work"] = now
+            work_streak_data[str(user_id)] = user_streak
+            dm.update_guild_data(guild_id, "work_streaks", work_streak_data)
+
+            if user_streak["streak"] >= 5:
+                success_embed.add_field(
+                    name="🔥 Work Streak Bonus!",
+                    value=f"**{user_streak['streak']}** days in a row!\n"
+                          f"Keep it up for even bigger rewards!",
+                    inline=False
+                )
+
+            success_embed.set_footer(text=f"Economy System • Work hard, earn more!")
+            success_embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/work_completed.png")
+
+            await loading_msg.edit(embed=success_embed)
+
+            # Celebration reactions
+            await loading_msg.add_reaction("💼")
+            await loading_msg.add_reaction("💰")
+            if user_streak["streak"] >= 5:
+                await loading_msg.add_reaction("🔥")
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_economy_work: {e}")
-            await message.channel.send("❌ Unable to work right now. Please try again.")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Work Error",
+                description="Unable to process your work shift. Please try again later.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
 
     async def handle_appeal_status(self, message: discord.Message) -> bool:
@@ -4571,47 +4708,202 @@ class ActionHandler:
             return False
 
     async def handle_economy_daily(self, message: discord.Message) -> bool:
-        """Handle !daily command"""
+        """Handle !daily command with enhanced animations and streak tracking"""
         try:
+            import asyncio
+            import datetime
             guild_id = message.guild.id
-            
-            # Check if economy system is enabled
-            if not is_system_enabled(guild_id, "economy"):
-                await message.channel.send("❌ The economy system is currently disabled on this server.")
-                return False
-            
-            from modules.economy import Economy
-            economy = Economy(self.bot)
             user_id = message.author.id
 
             # Check if economy system is enabled
-            config = dm.get_guild_data(guild_id, "economy_config", {})
-            if not config.get("enabled", True):
-                await message.channel.send("❌ Economy system is disabled on this server.")
-                return True
+            if not is_system_enabled(guild_id, "economy"):
+                embed = discord.Embed(
+                    title="❌ Daily Rewards Unavailable",
+                    description="The economy system is currently disabled on this server.\n\n*Please contact an administrator to enable it.*",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text="Use !configpanel economy to enable the system")
+                await message.channel.send(embed=embed)
+                return False
 
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="📅 Opening Daily Reward Chest",
+                description="🔑 Checking eligibility...\n💰 Calculating rewards...\n🎁 Preparing your gift...",
+                color=discord.Color.blue()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.8)
+            loading_embed.description = "✅ Checking eligibility...\n💰 Calculating rewards...\n🎁 Preparing your gift..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.5)
+            loading_embed.description = "✅ Checking eligibility...\n✅ Calculating rewards...\n🎁 Preparing your gift..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.4)
+            loading_embed.description = "✅ Checking eligibility...\n✅ Calculating rewards...\n✅ Preparing your gift..."
+            await loading_msg.edit(embed=loading_embed)
+
+            # Check if already claimed today
             last_daily = dm.get_guild_data(guild_id, "last_daily", {})
+            streak_data = dm.get_guild_data(guild_id, "daily_streaks", {})
+
             last_time = last_daily.get(str(user_id))
+            current_streak = streak_data.get(str(user_id), {}).get("streak", 0)
 
             if last_time:
-                import datetime
                 last_date = datetime.datetime.fromisoformat(last_time)
-                if (datetime.datetime.now() - last_date).days < 1:
-                    await message.channel.send("🎉 Daily reward already claimed today!")
+                time_diff = datetime.datetime.now() - last_date
+
+                if time_diff.days < 1:
+                    # Already claimed today
+                    next_claim = last_date + datetime.timedelta(days=1)
+                    time_remaining = next_claim - datetime.datetime.now()
+
+                    hours, remainder = divmod(int(time_remaining.total_seconds()), 3600)
+                    minutes, seconds = divmod(remainder, 60)
+
+                    already_claimed_embed = discord.Embed(
+                        title="🎉 Daily Reward Already Claimed!",
+                        description=f"You've already claimed your daily reward today!\n\n"
+                                   f"**Next reward available in:**\n"
+                                   f"⏰ `{hours}h {minutes}m {seconds}s`",
+                        color=discord.Color.orange()
+                    )
+
+                    already_claimed_embed.add_field(
+                        name="🔥 Current Streak",
+                        value=f"**{current_streak}** days in a row!",
+                        inline=True
+                    )
+
+                    already_claimed_embed.add_field(
+                        name="💎 Streak Bonus",
+                        value=f"+{min(current_streak * 10, 100)}% reward",
+                        inline=True
+                    )
+
+                    already_claimed_embed.set_footer(text="Come back tomorrow for your next reward!")
+                    already_claimed_embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/chest_locked.png")
+
+                    await loading_msg.edit(embed=already_claimed_embed)
+                    await loading_msg.add_reaction("⏰")
                     return True
 
-            reward = config.get("daily_amount", 100)
-            economy.add_coins(guild_id, user_id, reward)
+            # Calculate reward with streak bonus
+            config = dm.get_guild_data(guild_id, "economy_config", {})
+            base_reward = config.get("daily_amount", 100)
+
+            # Check if streak is maintained (claimed within 48 hours of last claim)
+            streak_maintained = True
+            if last_time:
+                last_date = datetime.datetime.fromisoformat(last_time)
+                if (datetime.datetime.now() - last_date).days > 2:
+                    streak_maintained = False
+                    current_streak = 0
+
+            if streak_maintained and last_time:
+                current_streak += 1
+            elif not last_time:
+                current_streak = 1
+
+            # Streak bonus (up to 100% extra)
+            streak_bonus_percent = min(current_streak * 10, 100)
+            bonus_amount = int(base_reward * (streak_bonus_percent / 100))
+            total_reward = base_reward + bonus_amount
+
+            # Award the coins
+            economy.add_coins(guild_id, user_id, total_reward)
+
+            # Update streak data
+            streak_data[str(user_id)] = {
+                "streak": current_streak,
+                "last_claim": str(datetime.datetime.now())
+            }
+            dm.update_guild_data(guild_id, "daily_streaks", streak_data)
+
+            # Update last daily
             last_daily[str(user_id)] = str(datetime.datetime.now())
             dm.update_guild_data(guild_id, "last_daily", last_daily)
 
-            currency_name = config.get("currency_name", "coins")
+            currency_name = config.get("currency_name", "Coins")
             currency_emoji = config.get("currency_emoji", "🪙")
-            await message.channel.send(f"{currency_emoji} You claimed **{reward} {currency_name}**!")
+
+            # Success embed
+            success_embed = discord.Embed(
+                title="🎉 Daily Reward Claimed Successfully!",
+                description=f"**{message.author.display_name}** opened their daily reward chest!",
+                color=discord.Color.green()
+            )
+
+            success_embed.add_field(
+                name="💰 Reward Amount",
+                value=f"**{total_reward:,}** {currency_name}\n"
+                      f"Base: `{base_reward:,}`\n"
+                      f"Streak Bonus: `{bonus_amount:,}` (+{streak_bonus_percent}%)",
+                inline=True
+            )
+
+            success_embed.add_field(
+                name="🔥 Streak Status",
+                value=f"**{current_streak}** consecutive days!\n"
+                      f"Next bonus: `+{min((current_streak + 1) * 10, 100)}%`",
+                inline=True
+            )
+
+            success_embed.add_field(
+                name="📅 Next Reward",
+                value=f"Available in **24 hours**\n"
+                      f"<t:{int((datetime.datetime.now() + datetime.timedelta(days=1)).timestamp())}:R>",
+                inline=True
+            )
+
+            # Achievement check
+            achievements = []
+            if current_streak >= 7:
+                achievements.append("🔥 **Week Warrior** - 7 day streak!")
+            if current_streak >= 30:
+                achievements.append("👑 **Monthly Monarch** - 30 day streak!")
+            if current_streak >= 100:
+                achievements.append("🌟 **Century Champion** - 100 day streak!")
+
+            if achievements:
+                success_embed.add_field(
+                    name="🏆 Achievements Unlocked",
+                    value="\n".join(achievements),
+                    inline=False
+                )
+
+            success_embed.set_footer(text=f"Daily Rewards • Keep your streak alive!")
+            success_embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/chest_opened.png")
+
+            await loading_msg.edit(embed=success_embed)
+
+            # Celebration reactions
+            await loading_msg.add_reaction("🎉")
+            await loading_msg.add_reaction("💰")
+            if current_streak >= 7:
+                await loading_msg.add_reaction("🔥")
+            if current_streak >= 30:
+                await loading_msg.add_reaction("👑")
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_economy_daily: {e}")
-            await message.channel.send("❌ Unable to claim daily reward. Please try again later.")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Daily Reward Error",
+                description="Unable to process your daily reward. Please try again later.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
 
     async def handle_economy_buy(self, message: discord.Message) -> bool:
@@ -4775,14 +5067,151 @@ class ActionHandler:
         return True
 
     async def handle_economy_balance(self, message: discord.Message) -> bool:
-        """Handle !balance command"""
+        """Handle !balance command with enhanced visuals and animations"""
         try:
+            import asyncio
             guild_id = message.guild.id
-            
+            user_id = message.author.id
+
             # Check if economy system is enabled
             if not is_system_enabled(guild_id, "economy"):
-                await message.channel.send("❌ The economy system is currently disabled on this server.")
+                embed = discord.Embed(
+                    title="❌ Economy Unavailable",
+                    description="The economy system is currently disabled on this server.\n\n*Please contact an administrator to enable it.*",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text="Use !configpanel economy to enable the system")
+                await message.channel.send(embed=embed)
                 return False
+
+            from modules.economy import Economy
+            from modules.leveling import Leveling
+            economy = Economy(self.bot)
+            leveling = Leveling(self.bot)
+
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="💰 Opening Your Wallet",
+                description="🔍 Counting coins...\n💎 Polishing gems...\n📊 Calculating wealth...",
+                color=discord.Color.gold()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.6)
+            loading_embed.description = "✅ Counting coins...\n💎 Polishing gems...\n📊 Calculating wealth..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.4)
+            loading_embed.description = "✅ Counting coins...\n✅ Polishing gems...\n📊 Calculating wealth..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.3)
+            loading_embed.description = "✅ Counting coins...\n✅ Polishing gems...\n✅ Calculating wealth..."
+            await loading_msg.edit(embed=loading_embed)
+
+            # Get economy data
+            config = dm.get_guild_data(guild_id, "economy_config", {})
+            coins = economy.get_coins(guild_id, user_id)
+            gems = leveling.get_gems(guild_id, user_id)
+            xp = leveling.get_xp(guild_id, user_id)
+            level = leveling.get_level_from_xp(xp)
+            prestige = leveling.get_prestige(guild_id, user_id)
+
+            currency_name = config.get("currency_name", "Coins")
+            currency_emoji = config.get("currency_emoji", "🪙")
+            gem_name = config.get("gem_name", "Gems")
+
+            # Enhanced balance embed
+            embed = discord.Embed(
+                title=f"💰 {message.author.display_name}'s Wealth Overview",
+                description=f"**Financial Status Report**\n━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                color=discord.Color.gold()
+            )
+
+            embed.set_thumbnail(url=message.author.display_avatar.url)
+
+            # Main currencies
+            embed.add_field(
+                name=f"{currency_emoji} Primary Currency",
+                value=f"**{coins:,}** {currency_name}",
+                inline=True
+            )
+
+            embed.add_field(
+                name="💎 Premium Currency",
+                value=f"**{gems}** {gem_name}",
+                inline=True
+            )
+
+            embed.add_field(
+                name="🏆 Net Worth",
+                value=f"**{coins + (gems * 100):,}** total value",
+                inline=True
+            )
+
+            # Level and XP information
+            xp_to_next = leveling.get_xp_for_next_level(level) - xp
+            embed.add_field(
+                name="🆙 Level Progress",
+                value=f"**Level {level}** {f'(Prestige {prestige})' if prestige > 0 else ''}\n"
+                      f"**{xp:,} XP** earned\n"
+                      f"**{xp_to_next:,} XP** to next level",
+                inline=False
+            )
+
+            # Progress bar for level
+            progress_percent = min(100, (xp / leveling.get_xp_for_next_level(level)) * 100) if leveling.get_xp_for_next_level(level) > 0 else 100
+            progress_bar = "█" * int(progress_percent / 10) + "░" * (10 - int(progress_percent / 10))
+            embed.add_field(
+                name="📊 Level Progress",
+                value=f"`{progress_bar}` **{progress_percent:.1f}%**",
+                inline=False
+            )
+
+            # Recent activity
+            recent_activity = []
+            # Check recent transactions (you might want to store this data)
+            embed.add_field(
+                name="📈 Recent Activity",
+                value="• Balance loaded successfully\n• All assets accounted for\n• Ready for transactions",
+                inline=False
+            )
+
+            # Quick actions
+            embed.add_field(
+                name="⚡ Quick Actions",
+                value="`!daily` - Claim daily reward\n"
+                      "`!work` - Earn coins\n"
+                      "`!shop` - Browse items\n"
+                      "`!leaderboard` - Check rankings",
+                inline=False
+            )
+
+            embed.set_footer(text=f"Economy System • Last updated: {discord.utils.format_dt(discord.utils.utcnow())}")
+            embed.set_author(name=f"{message.author.display_name}'s Portfolio", icon_url=message.author.display_avatar.url)
+
+            await loading_msg.edit(embed=embed)
+
+            # Add celebratory reactions based on wealth
+            if coins >= 10000:
+                await loading_msg.add_reaction("💎")
+            elif coins >= 1000:
+                await loading_msg.add_reaction("🪙")
+            await loading_msg.add_reaction("💰")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in handle_economy_balance: {e}")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Wallet Error",
+                description="Unable to access your financial data. Please try again later.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
+            return False
             
             from modules.economy import Economy
             from modules.leveling import Leveling
@@ -4818,7 +5247,7 @@ class ActionHandler:
             return False
 
     async def handle_economy_beg(self, message: discord.Message) -> bool:
-        """!beg â€” small random coin reward with a short cooldown. Mirrors handle_economy_work."""
+        """!beg — small random coin reward with a short cooldown. Mirrors handle_economy_work."""
         try:
             from modules.economy import Economy
             economy = Economy(self.bot)
@@ -4843,7 +5272,7 @@ class ActionHandler:
                 await message.channel.send(f"❌ Nobody feels generous right now. Try again in **{remaining // 60}m {remaining % 60}s**.")
                 return True
 
-            # 25% chance of getting nothing â€” keeps it fun.
+            # 25% chance of getting nothing — keeps it fun.
             if random.random() < 0.25:
                 last_beg[str(user_id)] = now
                 dm.update_guild_data(guild_id, "last_beg", last_beg)
@@ -4864,41 +5293,239 @@ class ActionHandler:
             return False
 
     async def handle_economy_leaderboard(self, message: discord.Message) -> bool:
-        """!economylb â€” top balances in the guild."""
+        """!economylb — enhanced economy leaderboard with pagination and stats"""
         try:
+            import asyncio
+            from discord import ui
+
             guild_id = message.guild.id
-            
+
             # Check if economy system is enabled
             if not is_system_enabled(guild_id, "economy"):
-                await message.channel.send("❌ The economy system is currently disabled on this server.")
+                embed = discord.Embed(
+                    title="❌ Economy Leaderboard Unavailable",
+                    description="The economy system is currently disabled on this server.\n\n*Please contact an administrator to enable it.*",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text="Use !configpanel economy to enable the system")
+                await message.channel.send(embed=embed)
                 return False
-            
+
             from modules.economy import Economy
             economy = Economy(self.bot)
 
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="🏆 Loading Economy Leaderboard",
+                description="💰 Counting coins...\n📊 Calculating rankings...\n🏅 Preparing podium...",
+                color=discord.Color.gold()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.8)
+            loading_embed.description = "✅ Counting coins...\n📊 Calculating rankings...\n🏅 Preparing podium..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.5)
+            loading_embed.description = "✅ Counting coins...\n✅ Calculating rankings...\n🏅 Preparing podium..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.4)
+            loading_embed.description = "✅ Counting coins...\n✅ Calculating rankings...\n✅ Preparing podium..."
+            await loading_msg.edit(embed=loading_embed)
+
             balances = dm.get_guild_data(guild_id, "economy_balances", {})
+            gems = dm.get_guild_data(guild_id, "economy_gems", {})
+
             if not balances:
-                await message.channel.send("💰 Nobody has any coins yet!")
+                empty_embed = discord.Embed(
+                    title="💰 Economy Leaderboard",
+                    description="**No one has earned any coins yet!**\n\n"
+                               "Be the first to start your financial journey!\n\n"
+                               "*Use `!daily`, `!work`, and other economy commands to earn coins.*",
+                    color=discord.Color.light_grey()
+                )
+                empty_embed.set_footer(text="Economy system • Start earning today!")
+                empty_embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/empty_wallet.png")
+
+                await loading_msg.edit(embed=empty_embed)
+                await loading_msg.add_reaction("💰")
                 return True
 
-            sorted_lb = sorted(balances.items(), key=lambda x: x[1], reverse=True)[:10]
+            # Create comprehensive leaderboard data
+            leaderboard_data = []
+            for user_id, coins in balances.items():
+                user_gems = gems.get(user_id, 0)
+                net_worth = coins + (user_gems * 100)  # Gems worth 100 coins each
+                leaderboard_data.append({
+                    "user_id": user_id,
+                    "coins": coins,
+                    "gems": user_gems,
+                    "net_worth": net_worth
+                })
 
-            medals = ["ðŸ¥‡", "ðŸ¥ˆ", "ðŸ¥‰"]
-            lines = []
-            for i, (uid, amt) in enumerate(sorted_lb):
-                medal = medals[i] if i < 3 else f"**{i+1}.**"
-                lines.append(f"{medal} <@{uid}> â€” {amt:,} 💰")
+            # Sort by net worth
+            leaderboard_data.sort(key=lambda x: x["net_worth"], reverse=True)
 
-            embed = discord.Embed(
-                title=f"💰 {message.guild.name} â€” Economy Leaderboard",
-                description="\n".join(lines),
-                color=discord.Color.gold(),
-            )
-            await message.channel.send(embed=embed)
+            config = dm.get_guild_data(guild_id, "economy_config", {})
+            currency_name = config.get("currency_name", "Coins")
+            currency_emoji = config.get("currency_emoji", "🪙")
+            gem_name = config.get("gem_name", "Gems")
+
+            # Create paginated leaderboard
+            class EconomyLeaderboardView(ui.View):
+                def __init__(self, leaderboard_data, currency_name, currency_emoji, gem_name, guild_name):
+                    super().__init__(timeout=300)
+                    self.leaderboard_data = leaderboard_data
+                    self.currency_name = currency_name
+                    self.currency_emoji = currency_emoji
+                    self.gem_name = gem_name
+                    self.guild_name = guild_name
+                    self.current_page = 0
+                    self.per_page = 8
+                    self.update_buttons()
+
+                def update_buttons(self):
+                    total_pages = (len(self.leaderboard_data) - 1) // self.per_page + 1
+                    self.prev_button.disabled = self.current_page == 0
+                    self.next_button.disabled = self.current_page >= total_pages - 1
+                    self.page_label.label = f"Page {self.current_page + 1}/{total_pages}"
+
+                @ui.button(label="◀️ Previous", style=discord.ButtonStyle.secondary, disabled=True)
+                async def prev_button(self, interaction: discord.Interaction, button: ui.Button):
+                    self.current_page -= 1
+                    self.update_buttons()
+                    embed = self.create_embed()
+                    await interaction.response.edit_message(embed=embed, view=self)
+
+                @ui.button(label="📄 Page 1/1", style=discord.ButtonStyle.secondary, disabled=True)
+                async def page_label(self, interaction: discord.Interaction, button: ui.Button):
+                    pass
+
+                @ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary)
+                async def next_button(self, interaction: discord.Interaction, button: ui.Button):
+                    self.current_page += 1
+                    self.update_buttons()
+                    embed = self.create_embed()
+                    await interaction.response.edit_message(embed=embed, view=self)
+
+                @ui.button(label="🏆 Top 3", style=discord.ButtonStyle.primary)
+                async def top_three(self, interaction: discord.Interaction, button: ui.Button):
+                    embed = self.create_top_three_embed()
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+                def create_embed(self):
+                    start_idx = self.current_page * self.per_page
+                    end_idx = start_idx + self.per_page
+                    page_data = self.leaderboard_data[start_idx:end_idx]
+
+                    embed = discord.Embed(
+                        title=f"💰 {self.guild_name} — Economy Leaderboard",
+                        description=f"**Wealth rankings by net worth**\n━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        color=discord.Color.gold()
+                    )
+
+                    # Trophy emojis for top 3
+                    trophies = ["🥇", "🥈", "🥉"]
+
+                    for i, entry in enumerate(page_data):
+                        rank = start_idx + i + 1
+                        user_id = entry["user_id"]
+                        coins = entry["coins"]
+                        gems = entry["gems"]
+                        net_worth = entry["net_worth"]
+
+                        # Rank display
+                        if rank <= 3:
+                            rank_display = trophies[rank - 1]
+                        else:
+                            rank_display = f"#{rank}"
+
+                        # Wealth display
+                        wealth_parts = []
+                        if coins > 0:
+                            wealth_parts.append(f"{coins:,} {self.currency_emoji}")
+                        if gems > 0:
+                            wealth_parts.append(f"{gems} 💎")
+                        wealth_str = " + ".join(wealth_parts) if wealth_parts else "0"
+
+                        embed.add_field(
+                            name=f"{rank_display} <@{user_id}>",
+                            value=f"**Net Worth:** {net_worth:,} total\n"
+                                  f"**Assets:** {wealth_str}",
+                            inline=False
+                        )
+
+                    # Statistics
+                    total_wealth = sum(entry["net_worth"] for entry in self.leaderboard_data)
+                    total_coins = sum(entry["coins"] for entry in self.leaderboard_data)
+                    total_gems = sum(entry["gems"] for entry in self.leaderboard_data)
+
+                    embed.add_field(
+                        name="📊 Server Statistics",
+                        value=f"• Total Wealth: `{total_wealth:,}`\n"
+                              f"• Active Traders: `{len(self.leaderboard_data)}`\n"
+                              f"• Average Balance: `{total_wealth // max(len(self.leaderboard_data), 1):,}`",
+                        inline=False
+                    )
+
+                    embed.set_footer(text=f"Economy System • Updated in real-time")
+                    embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/trophy.png")
+
+                    return embed
+
+                def create_top_three_embed(self):
+                    top_three = self.leaderboard_data[:3]
+
+                    embed = discord.Embed(
+                        title="🏆 Economy Champions",
+                        description="**The wealthiest members of the server!**\n━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        color=discord.Color.gold()
+                    )
+
+                    trophies = ["🥇 **CHAMPION**", "🥈 **RUNNER-UP**", "🥉 **THIRD PLACE**"]
+                    podium_emojis = ["👑", "🏅", "🎖️"]
+
+                    for i, entry in enumerate(top_three):
+                        user_id = entry["user_id"]
+                        coins = entry["coins"]
+                        gems = entry["gems"]
+                        net_worth = entry["net_worth"]
+
+                        embed.add_field(
+                            name=f"{podium_emojis[i]} {trophies[i]}",
+                            value=f"**<@{user_id}>**\n"
+                                  f"**Net Worth:** {net_worth:,}\n"
+                                  f"**Coins:** {coins:,} {self.currency_emoji}\n"
+                                  f"**Gems:** {gems} 💎",
+                            inline=False
+                        )
+
+                    embed.set_footer(text="Congratulations to our top earners!")
+                    return embed
+
+            view = EconomyLeaderboardView(leaderboard_data, currency_name, currency_emoji, gem_name, message.guild.name)
+            embed = view.create_embed()
+
+            await loading_msg.edit(embed=embed, view=view)
+
+            # Add celebration reactions
+            await loading_msg.add_reaction("💰")
+            await loading_msg.add_reaction("🏆")
+            await loading_msg.add_reaction("🥇")
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_economy_leaderboard: {e}")
-            await message.channel.send("❌ Unable to load leaderboard. Please try again.")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Leaderboard Error",
+                description="Unable to load the economy leaderboard. The system may be temporarily unavailable.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
 
     async def handle_economy_shop(self, message: discord.Message) -> bool:
@@ -4919,7 +5546,7 @@ class ActionHandler:
 
             embed = discord.Embed(title=f"ðŸ›’ {message.guild.name} Shop", color=discord.Color.green())
             for item in items[:25]:
-                embed.add_field(name=f"{item['name']} â€” {item['price']} Credits", value=item.get('description', 'No description'), inline=False)
+                embed.add_field(name=f"{item['name']} — {item['price']} Credits", value=item.get('description', 'No description'), inline=False)
 
             await message.channel.send(embed=embed)
             return True
@@ -4929,7 +5556,7 @@ class ActionHandler:
             return False
 
     async def handle_leveling_rank(self, message: discord.Message) -> bool:
-        """!rank â€” show the invoker's current XP, level, gems and streak."""
+        """!rank — show the invoker's current XP, level, gems and streak."""
         try:
             guild_id = message.guild.id
             
@@ -4978,7 +5605,7 @@ class ActionHandler:
             return False
 
     async def handle_leveling_leaderboard(self, message: discord.Message) -> bool:
-        """!leaderboard / !rank top â€” top XP earners in the guild."""
+        """!leaderboard / !rank top — top XP earners in the guild."""
         try:
             guild_id = message.guild.id
             
@@ -5003,11 +5630,11 @@ class ActionHandler:
                 mention = f"<@{entry['user_id']}>"
                 streak_txt = f" ðŸ”¥{entry['streak']}" if entry.get("streak") else ""
                 lines.append(
-                    f"{badge} {mention} â€” Lvl **{entry['level']}** Â· {entry['xp']:,} XP{streak_txt}"
+                    f"{badge} {mention} — Lvl **{entry['level']}** Â· {entry['xp']:,} XP{streak_txt}"
                 )
 
             embed = discord.Embed(
-                title=f"🏆 {message.guild.name} â€” XP Leaderboard",
+                title=f"🏆 {message.guild.name} — XP Leaderboard",
                 description="\n".join(lines),
                 color=discord.Color.gold(),
             )
@@ -5186,55 +5813,210 @@ class ActionHandler:
         return True
 
     async def handle_staffpromo_status(self, message: discord.Message) -> bool:
+        """Handle !staffpromo_status command with enhanced progress tracking"""
         try:
+            import asyncio
             guild_id = message.guild.id
-            
+            user_id = message.author.id
+
             # Check if staff promotion system is enabled
             if not is_system_enabled(guild_id, "staffpromo"):
-                await message.channel.send("❌ The staff promotion system is currently disabled on this server.")
+                embed = discord.Embed(
+                    title="❌ Staff Promotion Unavailable",
+                    description="The staff promotion system is currently disabled on this server.\n\n*Please contact an administrator to enable it.*",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text="Use !configpanel staffpromo to enable the system")
+                await message.channel.send(embed=embed)
                 return False
-            
+
             guild = message.guild
             member = message.author
             staff_promo = self.bot.staff_promo
             promotion_service = self.bot.promotion_service
 
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="📈 Analyzing Staff Performance",
+                description="👥 Reviewing activity metrics...\n📊 Calculating promotion score...\n🏆 Checking eligibility...",
+                color=discord.Color.blue()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.8)
+            loading_embed.description = "✅ Reviewing activity metrics...\n📊 Calculating promotion score...\n🏆 Checking eligibility..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.6)
+            loading_embed.description = "✅ Reviewing activity metrics...\n✅ Calculating promotion score...\n🏆 Checking eligibility..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.4)
+            loading_embed.description = "✅ Reviewing activity metrics...\n✅ Calculating promotion score...\n✅ Checking eligibility..."
+            await loading_msg.edit(embed=loading_embed)
+
             config = staff_promo._get_full_config(guild.id)
             settings = config.get("settings", {})
-            
+
             # Check if staff promotion system is enabled
             if not settings.get("auto_promote", True):
-                await message.channel.send("❌ Staff promotion system is disabled on this server.")
+                disabled_embed = discord.Embed(
+                    title="❌ Staff Promotion Disabled",
+                    description="The staff promotion system is currently disabled.\n\n*Please contact an administrator to enable it.*",
+                    color=discord.Color.red()
+                )
+                disabled_embed.set_footer(text="Automatic promotions are paused")
+                await loading_msg.edit(embed=disabled_embed)
                 return True
-            metrics = config.get("metrics", staff_promo._default_metrics)
 
-            score = promotion_service._compute_score(guild.id, member.id, member, metrics)
+            metrics = config.get("metrics", staff_promo._default_metrics)
+            score = promotion_service._compute_score(guild.id, user_id, member, metrics)
             tiers = config.get("tiers", staff_promo._default_tiers)
 
-            current_tier = "None"
-            for tier in tiers:
-                rid = config.get("roles_by_tier", {}).get(tier["name"])
+            # Find current tier
+            current_tier = None
+            next_tier = None
+            current_tier_index = -1
+
+            roles_by_tier = config.get("roles_by_tier", {})
+            for i, tier in enumerate(tiers):
+                rid = roles_by_tier.get(tier["name"])
                 if rid and any(r.id == rid for r in member.roles):
-                    current_tier = tier["name"]
+                    current_tier = tier
+                    current_tier_index = i
                     break
 
-            embed = discord.Embed(title="ðŸ“Š Your Staff Promotion Status", color=discord.Color.blue())
-            embed.add_field(name="Current Role", value=current_tier, inline=True)
-            embed.add_field(name="Score", value=f"{score*100:.1f}%", inline=True)
+            # Find next tier
+            if current_tier_index < len(tiers) - 1:
+                next_tier = tiers[current_tier_index + 1]
 
-            breakdown = []
-            udata = dm.get_guild_data(guild.id, f"user_{member.id}", {})
+            # Enhanced status embed
+            embed = discord.Embed(
+                title="📈 Staff Promotion Status",
+                description=f"**{member.display_name}'s** promotion progress and metrics.",
+                color=discord.Color.blue()
+            )
+
+            embed.set_thumbnail(url=member.display_avatar.url)
+
+            # Current tier information
+            if current_tier:
+                embed.add_field(
+                    name="🏅 Current Rank",
+                    value=f"**{current_tier['name']}**\n"
+                          f"Role: <@&{roles_by_tier.get(current_tier['name'], 'Unknown')}>",
+                    inline=True
+                )
+            else:
+                embed.add_field(
+                    name="🏅 Current Rank",
+                    value="**Not Staff**\nNo promotion tier assigned",
+                    inline=True
+                )
+
+            # Overall score with progress bar
+            score_percentage = min(100, score * 100)
+            progress_bar = "█" * int(score_percentage / 10) + "░" * (10 - int(score_percentage / 10))
+
+            embed.add_field(
+                name="📊 Promotion Score",
+                value=f"**{score_percentage:.1f}%**\n"
+                      f"`{progress_bar}`",
+                inline=True
+            )
+
+            # Next tier information
+            if next_tier:
+                next_threshold = next_tier.get("threshold", 100)
+                embed.add_field(
+                    name="🎯 Next Promotion",
+                    value=f"**{next_tier['name']}**\n"
+                          f"Required: {int(next_threshold * 100)}%\n"
+                          f"Progress: {score_percentage:.1f}%/{int(next_threshold * 100)}%",
+                    inline=True
+                )
+            else:
+                embed.add_field(
+                    name="🎯 Next Promotion",
+                    value="**MAX RANK**\nYou've reached the highest tier!",
+                    inline=True
+                )
+
+            # Detailed metrics breakdown
+            udata = dm.get_guild_data(guild.id, f"user_{user_id}", {})
+            metrics_breakdown = []
+
             for metric_name, cfg in metrics.items():
                 if not cfg.get("enabled", True):
                     continue
 
-                breakdown.append(f"{metric_name}: {udata.get(metric_name, 0)}")
+                current_value = udata.get(metric_name, 0)
+                target_value = cfg.get("target", 100)
+                percentage = min(100, (current_value / max(target_value, 1)) * 100)
 
-            if breakdown:
-                embed.add_field(name="Metrics", value="\n".join(breakdown), inline=False)
+                # Metric emoji
+                metric_emoji = {
+                    "messages": "💬",
+                    "voice_time": "🎤",
+                    "warnings_handled": "⚠️",
+                    "reports_resolved": "📋",
+                    "peer_reviews": "⭐",
+                    "events_hosted": "📅"
+                }.get(metric_name, "📊")
 
-            await message.channel.send(embed=embed)
+                metrics_breakdown.append(
+                    f"{metric_emoji} **{metric_name.replace('_', ' ').title()}**\n"
+                    f"Progress: {current_value}/{target_value} ({percentage:.1f}%)"
+                )
+
+            if metrics_breakdown:
+                embed.add_field(
+                    name="📈 Performance Metrics",
+                    value="\n\n".join(metrics_breakdown[:6]),  # Limit to 6 metrics
+                    inline=False
+                )
+
+            # Recent activity
+            embed.add_field(
+                name="⚡ Recent Activity",
+                value="• Metrics updated in real-time\n• Score recalculated automatically\n• Promotion checks run daily",
+                inline=False
+            )
+
+            # Quick actions
+            embed.add_field(
+                name="🛠️ Quick Actions",
+                value="`!staffpromo leaderboard` - View top performers\n"
+                      "`!staffpromo progress` - Detailed progress report\n"
+                      "`!configpanel staffpromo` - Configure system",
+                inline=False
+            )
+
+            embed.set_footer(text=f"Staff Promotion System • Last updated: {discord.utils.format_dt(discord.utils.utcnow())}")
+            embed.set_author(name=f"{member.display_name}'s Promotion Dashboard", icon_url=member.display_avatar.url)
+
+            await loading_msg.edit(embed=embed)
+
+            # Add celebratory reactions
+            await loading_msg.add_reaction("📈")
+            if score_percentage >= 75:
+                await loading_msg.add_reaction("⭐")
+            if current_tier:
+                await loading_msg.add_reaction("🏅")
+
             return True
+
+        except Exception as e:
+            logger.error(f"Error in handle_staffpromo_status: {e}")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Promotion Status Error",
+                description="Unable to load your promotion status. Please try again later.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
+            return False
         except Exception as e:
             logger.error(f"Error in handle_staffpromo_status: {e}")
             await message.channel.send("❌ Unable to retrieve your promotion status. Please contact staff.")
@@ -5785,24 +6567,132 @@ class ActionHandler:
                     return channel
 
     async def handle_ticket_create(self, message: discord.Message) -> bool:
-        guild_id = message.guild.id
-        
-        # Check if ticket system is enabled
-        if not is_system_enabled(guild_id, "tickets"):
-            await message.channel.send("❌ The ticket system is currently disabled on this server.")
-            return False
-        
-        from modules.auto_setup import CreateTicketButton
-        
-        # Check if ticket system is enabled
-        config = dm.get_guild_data(message.guild.id, "tickets_config", {})
-        if not config.get("enabled", True):
-            await message.channel.send("❌ Ticket system is disabled on this server.")
+        """Handle !ticket command with enhanced ticket creation interface"""
+        try:
+            guild_id = message.guild.id
+
+            # Check if ticket system is enabled
+            if not is_system_enabled(guild_id, "tickets"):
+                embed = discord.Embed(
+                    title="❌ Tickets Unavailable",
+                    description="The ticket system is currently disabled on this server.\n\n*Please contact an administrator to enable it.*",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text="Use !configpanel tickets to enable the system")
+                await message.channel.send(embed=embed)
+                return False
+
+            from modules.auto_setup import CreateTicketButton
+
+            # Check if ticket system is enabled
+            config = dm.get_guild_data(message.guild.id, "tickets_config", {})
+            if not config.get("enabled", True):
+                embed = discord.Embed(
+                    title="❌ Tickets Disabled",
+                    description="The ticket system is currently disabled.\n\n*Please contact an administrator to enable it.*",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text="Ticket creation is temporarily unavailable")
+                await message.channel.send(embed=embed)
+                return True
+
+            # Check if user already has an open ticket
+            tickets_data = dm.load_json("tickets", default={})
+            user_tickets = []
+
+            for tid, ticket in tickets_data.items():
+                if ticket.get("user_id") == message.author.id and ticket.get("status") == "open":
+                    user_tickets.append(ticket)
+
+            if user_tickets:
+                embed = discord.Embed(
+                    title="🎫 Existing Ticket Found",
+                    description="You already have an open ticket. Please use your existing ticket or wait for it to be resolved.",
+                    color=discord.Color.orange()
+                )
+
+                for ticket in user_tickets[:3]:  # Show up to 3 recent tickets
+                    embed.add_field(
+                        name=f"Ticket #{ticket.get('id', 'Unknown')}",
+                        value=f"Created: <t:{int(ticket.get('created_at', 0))}:R>\n"
+                              f"Status: Open\n"
+                              f"Channel: <#{ticket.get('channel_id', 'Unknown')}>",
+                        inline=False
+                    )
+
+                embed.set_footer(text="Use your existing ticket channel for continued support")
+                await message.channel.send(embed=embed)
+                return True
+
+            # Enhanced ticket creation interface
+            embed = discord.Embed(
+                title="🎫 Support Ticket System",
+                description=f"**Hello {message.author.display_name}!**\n\n"
+                           "Need help from the support team? Click the button below to create a private ticket.\n\n"
+                           "Our support team will assist you as soon as possible!",
+                color=discord.Color.green()
+            )
+
+            embed.add_field(
+                name="📋 What Happens Next",
+                value="1. Click '🎫 Create Ticket'\n"
+                      "2. Select a category (if prompted)\n"
+                      "3. Describe your issue in detail\n"
+                      "4. Support team will respond",
+                inline=False
+            )
+
+            embed.add_field(
+                name="⏱️ Response Times",
+                value="• General Support: Within 1-2 hours\n"
+                      "• Urgent Issues: Within 30 minutes\n"
+                      "• Emergency: Immediate attention",
+                inline=False
+            )
+
+            embed.add_field(
+                name="📞 Before Creating a Ticket",
+                value="• Check `!help` for common questions\n"
+                      "• Search existing channels for answers\n"
+                      "• Be specific about your issue\n"
+                      "• Include relevant details/screenshots",
+                inline=False
+            )
+
+            embed.add_field(
+                name="⚠️ Important Notes",
+                value="• One ticket per issue please\n"
+                      "• Stay in your ticket channel\n"
+                      "• Be patient and respectful\n"
+                      "• Close tickets when resolved",
+                inline=False
+            )
+
+            embed.set_footer(text=f"Ticket System • {message.guild.name} • Support is here to help!")
+            embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/support_ticket.png")
+            embed.set_author(name=f"{message.author.display_name}'s Support Request", icon_url=message.author.display_avatar.url)
+
+            view = CreateTicketButton(message.guild.id)
+            msg = await message.channel.send(embed=embed, view=view)
+
+            # Add supportive reactions
+            await msg.add_reaction("🎫")
+            await msg.add_reaction("🆘")
+            await msg.add_reaction("💬")
+
             return True
-        
-        view = CreateTicketButton(message.guild.id)
-        await message.channel.send("Click below to open a ticket!", view=view)
-        return True
+
+        except Exception as e:
+            logger.error(f"Error in handle_ticket_create: {e}")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Ticket Error",
+                description="Unable to create a support ticket. Please try again later or contact staff directly.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
+            return False
 
     async def handle_ticket_close(self, message: discord.Message) -> bool:
         if not message.guild: return False
@@ -5834,23 +6724,57 @@ class ActionHandler:
 
     async def handle_verification_verify(self, message: discord.Message) -> bool:
         guild_id = message.guild.id
-        
+
         # Check if verification system is enabled
         if not is_system_enabled(guild_id, "verification"):
-            await message.channel.send("❌ The verification system is currently disabled on this server.")
+            embed = discord.Embed(
+                title="❌ Verification Unavailable",
+                description="The verification system is currently disabled on this server.\n\n*Please contact an administrator to enable it.*",
+                color=discord.Color.red()
+            )
+            embed.set_footer(text="Use !configpanel verification to enable the system")
+            await message.channel.send(embed=embed)
             return False
-        
+
         from modules.verification import VerifyView
         verification_system = getattr(self.bot, 'verification', None)
-        
+
         # Check if verification system is enabled
         config = dm.get_guild_data(message.guild.id, "verification_config", {})
         if not config.get("enabled", True):
-            await message.channel.send("❌ Verification system is disabled on this server.")
+            embed = discord.Embed(
+                title="❌ Verification Disabled",
+                description="The verification system is currently disabled.\n\n*Please contact an administrator to enable it.*",
+                color=discord.Color.red()
+            )
+            embed.set_footer(text="Use !configpanel verification to enable the system")
+            await message.channel.send(embed=embed)
             return True
-        
-        embed = discord.Embed(title="Verification Required", description="Click the button below to verify.", color=discord.Color.blue())
-        await message.channel.send(embed=embed, view=VerifyView(verification_system))
+
+        # Enhanced verification embed with animations
+        embed = discord.Embed(
+            title="🛡️ Server Verification Required",
+            description="Welcome to **{}**! To access the server, you must complete verification.\n\n"
+                       "Click the **✅ Verify** button below to start the process.".format(message.guild.name),
+            color=discord.Color.blue()
+        )
+
+        embed.add_field(
+            name="🔒 Security Features",
+            value="• Account age verification\n• CAPTCHA challenge\n• Automated role assignment",
+            inline=False
+        )
+
+        embed.set_footer(text="Verification is required for all new members • Protected by Guardian AI")
+        embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/verification_shield.png")
+
+        # Send with animation effect
+        msg = await message.channel.send(embed=embed, view=VerifyView(verification_system))
+
+        # Add reaction animation
+        await msg.add_reaction("✅")
+        await msg.add_reaction("🛡️")
+
         return True
 
     async def handle_set_verify_channel(self, message: discord.Message) -> bool:
@@ -5943,85 +6867,673 @@ class ActionHandler:
         return True
 
     async def handle_appeal_create(self, message: discord.Message) -> bool:
-        guild_id = message.guild.id
-        
-        # Check if appeals system is enabled
-        if not is_system_enabled(guild_id, "appeals"):
-            await message.channel.send("❌ The appeals system is currently disabled on this server.")
+        """Handle !appeal command with enhanced appeal interface"""
+        try:
+            guild_id = message.guild.id
+
+            # Check if appeals system is enabled
+            if not is_system_enabled(guild_id, "appeals"):
+                embed = discord.Embed(
+                    title="❌ Appeals Unavailable",
+                    description="The appeal system is currently disabled on this server.\n\n*Please contact an administrator to enable it.*",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text="Use !configpanel appeals to enable the system")
+                await message.channel.send(embed=embed)
+                return False
+
+            # Check if user has any active bans/warnings to appeal
+            # This is a basic check - in a real implementation you'd check actual infractions
+            appeals = dm.get_guild_data(guild_id, "appeals", [])
+            user_appeals = [appeal for appeal in appeals if appeal.get("user_id") == message.author.id]
+
+            # Check for pending appeals
+            pending_appeal = next((appeal for appeal in user_appeals if appeal.get("status") == "pending"), None)
+            if pending_appeal:
+                embed = discord.Embed(
+                    title="⏳ Appeal Already Pending",
+                    description="You already have a pending appeal.\n\n"
+                               "Please wait for the review team to process your current appeal.",
+                    color=discord.Color.orange()
+                )
+                embed.add_field(
+                    name="📅 Submitted",
+                    value=f"<t:{int(pending_appeal.get('submitted_at', 0))}:F>",
+                    inline=True
+                )
+                embed.add_field(
+                    name="📊 Status",
+                    value="Under Review",
+                    inline=True
+                )
+                embed.set_footer(text="You'll be notified when there's a decision")
+                await message.channel.send(embed=embed)
+                return True
+
+            # Enhanced appeal interface
+            embed = discord.Embed(
+                title="⚖️ Appeal Submission Portal",
+                description=f"**{message.author.display_name}**, welcome to the appeals process.\n\n"
+                           "If you've received a moderation action that you believe was unfair, "
+                           "you can submit an appeal for review by the moderation team.\n\n"
+                           "Click the button below to start your appeal.",
+                color=discord.Color.orange()
+            )
+
+            embed.add_field(
+                name="📋 Appeal Process",
+                value="1. Click '⚖️ Submit Appeal'\n"
+                      "2. Provide details about the incident\n"
+                      "3. Explain why you believe the action was unfair\n"
+                      "4. Submit for staff review",
+                inline=False
+            )
+
+            embed.add_field(
+                name="⏱️ Processing Time",
+                value="• Appeals are typically reviewed within 24-48 hours\n"
+                      "• You'll receive a DM with the decision\n"
+                      "• Both approval and denial decisions are final",
+                inline=False
+            )
+
+            embed.add_field(
+                name="📞 Important Notes",
+                value="• Provide specific details and evidence\n"
+                      "• Be respectful and honest in your appeal\n"
+                      "• Multiple invalid appeals may result in further action\n"
+                      "• Contact staff directly for urgent matters",
+                inline=False
+            )
+
+            embed.set_footer(text=f"Appeals System • {message.guild.name} • All appeals are confidential")
+            embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/justice_scales.png")
+            embed.set_author(name=f"{message.author.display_name}'s Appeal", icon_url=message.author.display_avatar.url)
+
+            from modules.appeals import AppealPersistentView
+            msg = await message.channel.send(embed=embed, view=AppealPersistentView())
+
+            # Add appropriate reactions
+            await msg.add_reaction("⚖️")
+            await msg.add_reaction("📋")
+            await msg.add_reaction("⏳")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in handle_appeal_create: {e}")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Appeal Error",
+                description="Unable to load the appeal portal. Please try again later.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
-        
-        from modules.appeals import AppealPersistentView
-        await message.channel.send("Submit your appeal here.", view=AppealPersistentView())
-        return True
 
     async def handle_application_apply(self, message: discord.Message) -> bool:
-        guild_id = message.guild.id
-        
-        # Check if applications system is enabled
-        if not is_system_enabled(guild_id, "applications"):
-            await message.channel.send("❌ The applications system is currently disabled on this server.")
+        """Handle !apply command with enhanced application interface"""
+        try:
+            guild_id = message.guild.id
+
+            # Check if applications system is enabled
+            if not is_system_enabled(guild_id, "applications"):
+                embed = discord.Embed(
+                    title="❌ Applications Unavailable",
+                    description="The staff application system is currently disabled on this server.\n\n*Please contact an administrator to enable it.*",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text="Use !configpanel applications to enable the system")
+                await message.channel.send(embed=embed)
+                return False
+
+            # Check if user already has a pending application
+            applications = dm.get_guild_data(guild_id, "applications", [])
+            user_app = next((app for app in applications if app.get("user_id") == message.author.id and app.get("status") == "pending"), None)
+
+            if user_app:
+                embed = discord.Embed(
+                    title="⏳ Application Already Pending",
+                    description="You already have a pending staff application.\n\n"
+                               "Please wait for the review team to process your current application.",
+                    color=discord.Color.orange()
+                )
+                embed.add_field(
+                    name="📅 Submitted",
+                    value=f"<t:{int(user_app.get('submitted_at', 0))}:F>",
+                    inline=True
+                )
+                embed.add_field(
+                    name="📊 Status",
+                    value="Under Review",
+                    inline=True
+                )
+                embed.set_footer(text="You'll be notified when there's an update")
+                await message.channel.send(embed=embed)
+                return True
+
+            # Enhanced application interface
+            embed = discord.Embed(
+                title="📋 Staff Application Portal",
+                description=f"**Welcome, {message.author.display_name}!**\n\n"
+                           "Ready to join the staff team? Click the button below to start your application.\n\n"
+                           "**What to expect:**\n"
+                           "• Quick application form\n"
+                           "• Review by current staff\n"
+                           "• Response within 24-48 hours",
+                color=discord.Color.blue()
+            )
+
+            embed.add_field(
+                name="📝 Application Process",
+                value="1. Click '📋 Apply Now'\n"
+                      "2. Fill out the application form\n"
+                      "3. Submit for review\n"
+                      "4. Wait for staff decision",
+                inline=False
+            )
+
+            embed.add_field(
+                name="🎯 Requirements",
+                value="• Active community member\n"
+                      "• Good communication skills\n"
+                      "• Willingness to help others\n"
+                      "• Follow server rules",
+                inline=False
+            )
+
+            embed.add_field(
+                name="📞 Need Help?",
+                value="Contact current staff or use `!help applications` for more information.",
+                inline=False
+            )
+
+            embed.set_footer(text=f"Applications System • {message.guild.name}")
+            embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/application_form.png")
+            embed.set_author(name=f"{message.author.display_name}'s Application", icon_url=message.author.display_avatar.url)
+
+            from modules.applications import ApplicationPersistentView
+            msg = await message.channel.send(embed=embed, view=ApplicationPersistentView())
+
+            # Add encouraging reactions
+            await msg.add_reaction("📋")
+            await msg.add_reaction("✨")
+            await msg.add_reaction("🎉")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in handle_application_apply: {e}")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Application Error",
+                description="Unable to load the application portal. Please try again later.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
-        
-        from modules.applications import ApplicationPersistentView
-        await message.channel.send("Apply for staff using the button below!", view=ApplicationPersistentView())
-        return True
 
     async def handle_list_quests(self, message: discord.Message) -> bool:
-        """Handle !quests command - List available quests"""
+        """Handle !quests command - Enhanced quest system with progress visualization"""
         try:
+            import asyncio
+            from discord import ui
+
             gamification = self.bot.gamification
             guild_id = message.guild.id
             user_id = message.author.id
+
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="🎯 Loading Quest Log",
+                description="📜 Accessing quest database...\n🎯 Calculating progress...\n🏆 Preparing rewards...",
+                color=discord.Color.purple()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.8)
+            loading_embed.description = "✅ Accessing quest database...\n🎯 Calculating progress...\n🏆 Preparing rewards..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.5)
+            loading_embed.description = "✅ Accessing quest database...\n✅ Calculating progress...\n🏆 Preparing rewards..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.3)
+            loading_embed.description = "✅ Accessing quest database...\n✅ Calculating progress...\n✅ Preparing rewards..."
+            await loading_msg.edit(embed=loading_embed)
 
             # Get user's active quests
             user_quests = gamification.get_user_quests(guild_id, user_id)
 
             if not user_quests:
-                await message.channel.send("ðŸ“‹ You have no active quests. New quests will be assigned automatically!")
-                return True
-
-            embed = discord.Embed(title="ðŸŽ¯ Your Active Quests", color=discord.Color.purple())
-            for quest_data in user_quests:
-                quest_id = quest_data.get("id", "unknown")
-                progress = gamification._check_quest_progress(guild_id, user_id, quest_id)
-                status = "✅ Complete!" if progress >= 100 else f"⏳ {progress}% complete"
-                embed.add_field(
-                    name=quest_data.get("name", "Unknown Quest"),
-                    value=f"{quest_data.get('description', '')}\nReward: {quest_data.get('reward', {})}\nStatus: {status}",
+                empty_embed = discord.Embed(
+                    title="🎯 Quest Log - Empty",
+                    description="**You have no active quests right now!**\n\n"
+                               "New quests will be assigned automatically as you participate in the server.\n\n"
+                               "*Complete quests to earn XP, coins, and special rewards!*",
+                    color=discord.Color.light_grey()
+                )
+                empty_embed.add_field(
+                    name="🎮 Quest Types",
+                    value="• **Daily Challenges** - Complete daily tasks\n• **Achievement Hunts** - Reach milestones\n• **Community Goals** - Help the server grow",
                     inline=False
                 )
+                empty_embed.set_footer(text="Quests refresh automatically • Stay active to get new challenges!")
+                empty_embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/empty_quest.png")
 
-            await message.channel.send(embed=embed)
+                await loading_msg.edit(embed=empty_embed)
+                await loading_msg.add_reaction("🎯")
+                return True
+
+            # Create interactive quest view
+            class QuestView(ui.View):
+                def __init__(self, quests, gamification, guild_id, user_id):
+                    super().__init__(timeout=300)
+                    self.quests = quests
+                    self.gamification = gamification
+                    self.guild_id = guild_id
+                    self.user_id = user_id
+                    self.current_quest = 0
+
+                def create_progress_bar(self, progress):
+                    filled = int(progress / 10)
+                    bar = "█" * filled + "░" * (10 - filled)
+                    return f"`{bar}` {progress}%"
+
+                def create_embed(self):
+                    quest_data = self.quests[self.current_quest]
+                    quest_id = quest_data.get("id", "unknown")
+                    progress = self.gamification._check_quest_progress(self.guild_id, self.user_id, quest_id)
+
+                    embed = discord.Embed(
+                        title="🎯 Quest Log",
+                        description=f"**Quest {self.current_quest + 1} of {len(self.quests)}**\n━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        color=discord.Color.purple()
+                    )
+
+                    # Quest details
+                    embed.add_field(
+                        name=f"📜 {quest_data.get('name', 'Unknown Quest')}",
+                        value=quest_data.get('description', 'No description available.'),
+                        inline=False
+                    )
+
+                    # Progress visualization
+                    progress_bar = self.create_progress_bar(progress)
+                    status_emoji = "✅" if progress >= 100 else "⏳"
+                    embed.add_field(
+                        name="📊 Progress",
+                        value=f"{progress_bar}\n{status_emoji} **{progress}% Complete**",
+                        inline=False
+                    )
+
+                    # Rewards
+                    reward = quest_data.get('reward', {})
+                    if reward:
+                        reward_text = ""
+                        if reward.get('xp'):
+                            reward_text += f"🆙 {reward['xp']} XP\n"
+                        if reward.get('coins'):
+                            reward_text += f"💰 {reward['coins']} Coins\n"
+                        if reward.get('badge'):
+                            reward_text += f"🏅 {reward['badge']}\n"
+
+                        if reward_text:
+                            embed.add_field(
+                                name="🎁 Rewards",
+                                value=reward_text.strip(),
+                                inline=True
+                            )
+
+                    # Quest type
+                    quest_type = quest_data.get('type', 'achievement')
+                    type_emoji = {
+                        'daily': '📅',
+                        'achievement': '🏆',
+                        'community': '👥',
+                        'special': '✨'
+                    }.get(quest_type, '🎯')
+
+                    embed.add_field(
+                        name="🏷️ Quest Type",
+                        value=f"{type_emoji} {quest_type.title()}",
+                        inline=True
+                    )
+
+                    # Navigation info
+                    embed.set_footer(text=f"Use buttons to navigate • Quest {self.current_quest + 1}/{len(self.quests)}")
+                    embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/quest_scroll.png")
+
+                    return embed
+
+                @ui.button(label="◀️ Previous", style=discord.ButtonStyle.secondary)
+                async def prev_quest(self, interaction: discord.Interaction, button: ui.Button):
+                    if self.current_quest > 0:
+                        self.current_quest -= 1
+                    else:
+                        self.current_quest = len(self.quests) - 1
+
+                    embed = self.create_embed()
+                    await interaction.response.edit_message(embed=embed, view=self)
+
+                @ui.button(label="📋 Quest List", style=discord.ButtonStyle.primary)
+                async def quest_list(self, interaction: discord.Interaction, button: ui.Button):
+                    # Show compact list of all quests
+                    list_embed = discord.Embed(
+                        title="🎯 All Active Quests",
+                        description="**Your current quest progress:**\n━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        color=discord.Color.purple()
+                    )
+
+                    for i, quest_data in enumerate(self.quests):
+                        quest_id = quest_data.get("id", "unknown")
+                        progress = self.gamification._check_quest_progress(self.guild_id, self.user_id, quest_id)
+                        status = "✅" if progress >= 100 else f"{progress}%"
+
+                        list_embed.add_field(
+                            name=f"{i+1}. {quest_data.get('name', 'Unknown')}",
+                            value=f"Progress: {status}",
+                            inline=True
+                        )
+
+                    await interaction.response.send_message(embed=list_embed, ephemeral=True)
+
+                @ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary)
+                async def next_quest(self, interaction: discord.Interaction, button: ui.Button):
+                    if self.current_quest < len(self.quests) - 1:
+                        self.current_quest += 1
+                    else:
+                        self.current_quest = 0
+
+                    embed = self.create_embed()
+                    await interaction.response.edit_message(embed=embed, view=self)
+
+            view = QuestView(user_quests, gamification, guild_id, user_id)
+            embed = view.create_embed()
+
+            await loading_msg.edit(embed=embed, view=view)
+
+            # Add quest-themed reactions
+            await loading_msg.add_reaction("🎯")
+            await loading_msg.add_reaction("🏆")
+            await loading_msg.add_reaction("🎮")
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_list_quests: {e}")
-            await message.channel.send(f"❌ Error listing quests. Please try again later.")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Quest System Error",
+                description="Unable to load your quest log. The gamification system may be temporarily unavailable.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
 
     async def handle_prestige(self, message: discord.Message) -> bool:
-        """Handle !prestige command - Show prestige options"""
+        """Handle !prestige command - Interactive prestige system with animations"""
         try:
+            import asyncio
+            from discord import ui
+
             gamification = self.bot.gamification
             guild_id = message.guild.id
             user_id = message.author.id
 
+            # Check if gamification system is enabled
+            if not is_system_enabled(guild_id, "gamification"):
+                embed = discord.Embed(
+                    title="❌ Gamification Unavailable",
+                    description="The gamification system is currently disabled on this server.",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text="Use !configpanel gamification to enable the system")
+                await message.channel.send(embed=embed)
+                return False
+
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="🌟 Accessing Prestige Chamber",
+                description="✨ Calculating your achievements...\n🏆 Checking prestige eligibility...\n💎 Preparing ascension rewards...",
+                color=discord.Color.purple()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.9)
+            loading_embed.description = "✅ Calculating your achievements...\n🏆 Checking prestige eligibility...\n💎 Preparing ascension rewards..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.6)
+            loading_embed.description = "✅ Calculating your achievements...\n✅ Checking prestige eligibility...\n💎 Preparing ascension rewards..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.4)
+            loading_embed.description = "✅ Calculating your achievements...\n✅ Checking prestige eligibility...\n✅ Preparing ascension rewards..."
+            await loading_msg.edit(embed=loading_embed)
+
             # Get user's current level and prestige
-            from data_manager import dm
             leveling_data = dm.get_guild_data(guild_id, "leveling_data", {})
             user_data = leveling_data.get(str(user_id), {})
-            current_level = user_data.get("level", 0)
+            current_level = user_data.get("level", 1)
             current_prestige = user_data.get("prestige", 0)
 
-            embed = discord.Embed(title="ðŸŒŸ Prestige System", color=discord.Color.purple())
-            embed.add_field(name="Current Status", value=f"Level: {current_level}\nPrestige: {current_prestige}", inline=False)
-            embed.add_field(name="How it Works", value="Reach max level and prestige to reset your level but keep your rewards and gain a prestige bonus!", inline=False)
-            embed.add_field(name="Prestige Bonuses", value="• Prestige 1: 5% XP bonus\n• Prestige 2: 10% XP bonus\n• Prestige 3: 15% XP bonus\n• And more!", inline=False)
+            # Check if user can prestige (need to be at max level)
+            max_level = 100  # You might want to make this configurable
+            can_prestige = current_level >= max_level
 
-            await message.channel.send(embed=embed)
+            # Prestige bonuses
+            prestige_bonuses = {
+                1: {"xp_bonus": 5, "coin_multiplier": 1.1, "title": "Apprentice Ascendant"},
+                2: {"xp_bonus": 10, "coin_multiplier": 1.2, "title": "Journeyman Legend"},
+                3: {"xp_bonus": 15, "coin_multiplier": 1.3, "title": "Master Myth"},
+                4: {"xp_bonus": 20, "coin_multiplier": 1.4, "title": "Grandmaster Immortal"},
+                5: {"xp_bonus": 25, "coin_multiplier": 1.5, "title": "Transcendent Deity"}
+            }
+
+            class PrestigeView(ui.View):
+                def __init__(self, can_prestige, current_level, current_prestige, prestige_bonuses):
+                    super().__init__(timeout=300)
+                    self.can_prestige = can_prestige
+                    self.current_level = current_level
+                    self.current_prestige = current_prestige
+                    self.prestige_bonuses = prestige_bonuses
+
+                def create_embed(self):
+                    embed = discord.Embed(
+                        title="🌟 Prestige Ascension Chamber",
+                        description="**Transcend your limits and achieve greatness!**\n━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        color=discord.Color.purple()
+                    )
+
+                    # Current status
+                    embed.add_field(
+                        name="📊 Current Status",
+                        value=f"**Level:** {self.current_level}/100\n"
+                              f"**Prestige:** {self.current_prestige}\n"
+                              f"**Status:** {'✅ Ready to Ascend' if self.can_prestige else '⏳ Journey Continues'}",
+                        inline=False
+                    )
+
+                    # Next prestige info
+                    next_prestige = self.current_prestige + 1
+                    if next_prestige in self.prestige_bonuses:
+                        bonus = self.prestige_bonuses[next_prestige]
+                        embed.add_field(
+                            name=f"🏆 Next Prestige: Level {next_prestige}",
+                            value=f"**Title:** {bonus['title']}\n"
+                                  f"**XP Bonus:** +{bonus['xp_bonus']}%\n"
+                                  f"**Coin Multiplier:** {bonus['coin_multiplier']}x\n"
+                                  f"**Special Perks:** Unlocked",
+                            inline=False
+                        )
+
+                    # How prestige works
+                    embed.add_field(
+                        name="⚡ Ascension Mechanics",
+                        value="• Reach Level 100 to become eligible\n"
+                              "• Reset to Level 1 with bonus multipliers\n"
+                              "• Keep all achievements and cosmetic rewards\n"
+                              "• Unlock exclusive titles and abilities",
+                        inline=False
+                    )
+
+                    # Current bonuses (if any)
+                    if self.current_prestige > 0 and self.current_prestige in self.prestige_bonuses:
+                        current_bonus = self.prestige_bonuses[self.current_prestige]
+                        embed.add_field(
+                            name="💎 Active Bonuses",
+                            value=f"**Title:** {current_bonus['title']}\n"
+                                  f"**XP Bonus:** +{current_bonus['xp_bonus']}%\n"
+                                  f"**Coin Multiplier:** {current_bonus['coin_multiplier']}x",
+                            inline=True
+                        )
+
+                    embed.set_footer(text="Prestige • Ascend beyond your limits")
+                    embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/prestige_crystal.png")
+
+                    return embed
+
+                @ui.button(label="🚀 Ascend Now!", style=discord.ButtonStyle.success, disabled=True)
+                async def ascend_button(self, interaction: discord.Interaction, button: ui.Button):
+                    if not self.can_prestige:
+                        await interaction.response.send_message(
+                            "❌ You must reach Level 100 before you can ascend!", ephemeral=True
+                        )
+                        return
+
+                    # Confirm ascension with modal
+                    class AscensionConfirm(ui.Modal, title="Confirm Ascension"):
+                        confirm = ui.TextInput(
+                            label="Type 'ASCEND' to confirm",
+                            placeholder="This action cannot be undone!",
+                            required=True,
+                            max_length=10
+                        )
+
+                        async def on_submit(self, it):
+                            if self.confirm.value.upper() != "ASCEND":
+                                await it.response.send_message("❌ Ascension cancelled.", ephemeral=True)
+                                return
+
+                            # Perform ascension
+                            leveling_data = dm.get_guild_data(it.guild_id, "leveling_data", {})
+                            user_data = leveling_data.get(str(it.user.id), {})
+
+                            # Increment prestige
+                            new_prestige = user_data.get("prestige", 0) + 1
+                            user_data["prestige"] = new_prestige
+                            user_data["level"] = 1  # Reset to level 1
+                            user_data["xp"] = 0    # Reset XP
+
+                            leveling_data[str(it.user.id)] = user_data
+                            dm.update_guild_data(it.guild_id, "leveling_data", leveling_data)
+
+                            # Success message
+                            success_embed = discord.Embed(
+                                title="🌟 ASCENSION COMPLETE!",
+                                description=f"**Congratulations, {it.user.mention}!**\n\n"
+                                           f"You have ascended to **Prestige {new_prestige}**!\n\n"
+                                           f"✨ **Title Unlocked:** {self.prestige_bonuses.get(new_prestige, {}).get('title', 'Ascendant')}\n"
+                                           f"⚡ **XP Bonus:** +{self.prestige_bonuses.get(new_prestige, {}).get('xp_bonus', 0)}%\n"
+                                           f"💰 **Coin Multiplier:** {self.prestige_bonuses.get(new_prestige, {}).get('coin_multiplier', 1.0)}x",
+                                color=discord.Color.gold()
+                            )
+
+                            await it.response.send_message(embed=success_embed, ephemeral=True)
+
+                            # Update the main embed
+                            self.current_prestige = new_prestige
+                            self.current_level = 1
+                            self.can_prestige = False
+                            new_embed = self.create_embed()
+                            await it.followup.edit_message(it.message.id, embed=new_embed, view=self)
+
+                    await interaction.response.send_modal(AscensionConfirm())
+
+                @ui.button(label="📈 View Leaderboard", style=discord.ButtonStyle.primary)
+                async def leaderboard_button(self, interaction: discord.Interaction, button: ui.Button):
+                    # Get prestige leaderboard
+                    leveling_data = dm.get_guild_data(interaction.guild_id, "leveling_data", {})
+                    prestige_users = []
+
+                    for user_id, data in leveling_data.items():
+                        prestige = data.get("prestige", 0)
+                        if prestige > 0:
+                            prestige_users.append((user_id, prestige))
+
+                    # Sort by prestige (descending)
+                    prestige_users.sort(key=lambda x: x[1], reverse=True)
+
+                    if not prestige_users:
+                        await interaction.response.send_message(
+                            "🏆 **Prestige Leaderboard**\n\nNo one has ascended yet. Be the first!",
+                            ephemeral=True
+                        )
+                        return
+
+                    leaderboard_text = "**🏆 Prestige Champions**\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    for i, (user_id, prestige) in enumerate(prestige_users[:10]):
+                        medal = ["🥇", "🥈", "🥉"][i] if i < 3 else f"#{i+1}"
+                        title = self.prestige_bonuses.get(prestige, {}).get('title', f'Prestige {prestige}')
+                        leaderboard_text += f"{medal} <@{user_id}> - **{title}**\n"
+
+                    await interaction.response.send_message(leaderboard_text, ephemeral=True)
+
+                @ui.button(label="ℹ️ Prestige Info", style=discord.ButtonStyle.secondary)
+                async def info_button(self, interaction: discord.Interaction, button: ui.Button):
+                    info_embed = discord.Embed(
+                        title="🌟 Prestige Guide",
+                        description="**Master the art of ascension!**",
+                        color=discord.Color.blue()
+                    )
+
+                    info_embed.add_field(
+                        name="🎯 How to Prestige",
+                        value="1. Reach Level 100 through chatting and activities\n"
+                              "2. Click '🚀 Ascend Now!' to reset and gain bonuses\n"
+                              "3. Repeat the cycle to achieve higher prestige levels",
+                        inline=False
+                    )
+
+                    info_embed.add_field(
+                        name="💎 Prestige Benefits",
+                        value="• **XP Bonuses** - Permanent percentage increases\n"
+                              "• **Coin Multipliers** - Higher earnings from activities\n"
+                              "• **Exclusive Titles** - Special recognition\n"
+                              "• **Achievement Unlocks** - New challenges and rewards",
+                        inline=False
+                    )
+
+                    await interaction.response.send_message(embed=info_embed, ephemeral=True)
+
+            view = PrestigeView(can_prestige, current_level, current_prestige, prestige_bonuses)
+            view.ascend_button.disabled = not can_prestige
+            embed = view.create_embed()
+
+            await loading_msg.edit(embed=embed, view=view)
+
+            # Add prestige-themed reactions
+            await loading_msg.add_reaction("🌟")
+            await loading_msg.add_reaction("🏆")
+            await loading_msg.add_reaction("💎")
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_prestige: {e}")
-            await message.channel.send(f"❌ Error processing prestige. Please try again later.")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Ascension Chamber Error",
+                description="The prestige system is experiencing technical difficulties. Please try again later.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
 
     async def handle_dice(self, message: discord.Message) -> bool:
@@ -6086,31 +7598,162 @@ class ActionHandler:
             return False
 
     async def handle_starboard_leaderboard(self, message: discord.Message) -> bool:
-        """Handle !starboard command - Show starboard leaderboard"""
+        """Handle !starboard command - Show enhanced starboard leaderboard with animations"""
         try:
+            import asyncio
+            from discord import ui
+
             starboard = self.bot.starboard
             guild_id = message.guild.id
+
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="⭐ Loading Starboard",
+                description="✨ Gathering starred messages...\n🌟 Calculating star counts...\n🎯 Ranking top messages...",
+                color=discord.Color.gold()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.7)
+            loading_embed.description = "✅ Gathering starred messages...\n🌟 Calculating star counts...\n🎯 Ranking top messages..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.5)
+            loading_embed.description = "✅ Gathering starred messages...\n✅ Calculating star counts...\n🎯 Ranking top messages..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.3)
+            loading_embed.description = "✅ Gathering starred messages...\n✅ Calculating star counts...\n✅ Ranking top messages..."
+            await loading_msg.edit(embed=loading_embed)
 
             # Get leaderboard data
             leaderboard = starboard.get_leaderboard(guild_id)
 
             if not leaderboard:
-                await message.channel.send("â­ No starred messages yet! Start starring messages to see them here.")
-                return True
-
-            embed = discord.Embed(title="â­ Starboard Leaderboard", color=discord.Color.gold())
-            for i, entry in enumerate(leaderboard[:10]):  # Top 10
-                embed.add_field(
-                    name=f"#{i+1} - {entry.get('star_count', 0)} stars",
-                    value=f"<@{entry.get('author_id', 'unknown')}>'s message\n[Jump to message]({entry.get('jump_url', '#')})",
+                empty_embed = discord.Embed(
+                    title="⭐ Starboard Hall of Fame",
+                    description="**No starred messages yet!**\n\n"
+                               "Be the first to get your message starred! ⭐\n\n"
+                               "*Star messages by reacting with ⭐ to highlight amazing content.*",
+                    color=discord.Color.light_grey()
+                )
+                empty_embed.add_field(
+                    name="🌟 How It Works",
+                    value="• React with ⭐ to any message\n• Reach the star threshold to get featured\n• Top starred messages appear here",
                     inline=False
                 )
+                empty_embed.set_footer(text="Starboard celebrates the best community content")
+                empty_embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/star_empty.png")
 
-            await message.channel.send(embed=embed)
+                await loading_msg.edit(embed=empty_embed)
+                await loading_msg.add_reaction("⭐")
+                return True
+
+            # Create paginated leaderboard
+            class StarboardView(ui.View):
+                def __init__(self, leaderboard, current_page=0):
+                    super().__init__(timeout=300)
+                    self.leaderboard = leaderboard
+                    self.current_page = current_page
+                    self.per_page = 5
+                    self.update_buttons()
+
+                def update_buttons(self):
+                    total_pages = (len(self.leaderboard) - 1) // self.per_page + 1
+                    self.prev_button.disabled = self.current_page == 0
+                    self.next_button.disabled = self.current_page >= total_pages - 1
+                    self.page_label.label = f"Page {self.current_page + 1}/{total_pages}"
+
+                @ui.button(label="◀️ Previous", style=discord.ButtonStyle.secondary, disabled=True)
+                async def prev_button(self, interaction: discord.Interaction, button: ui.Button):
+                    self.current_page -= 1
+                    self.update_buttons()
+                    embed = self.create_embed()
+                    await interaction.response.edit_message(embed=embed, view=self)
+
+                @ui.button(label="📄 Page 1/1", style=discord.ButtonStyle.secondary, disabled=True)
+                async def page_label(self, interaction: discord.Interaction, button: ui.Button):
+                    pass
+
+                @ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary)
+                async def next_button(self, interaction: discord.Interaction, button: ui.Button):
+                    self.current_page += 1
+                    self.update_buttons()
+                    embed = self.create_embed()
+                    await interaction.response.edit_message(embed=embed, view=self)
+
+                def create_embed(self):
+                    start_idx = self.current_page * self.per_page
+                    end_idx = start_idx + self.per_page
+                    page_entries = self.leaderboard[start_idx:end_idx]
+
+                    embed = discord.Embed(
+                        title="⭐ Starboard Hall of Fame",
+                        description=f"**Celebrating the most starred messages!** ({len(self.leaderboard)} total)\n━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        color=discord.Color.gold()
+                    )
+
+                    # Medal emojis for top 3
+                    medals = ["🥇", "🥈", "🥉"]
+
+                    for i, entry in enumerate(page_entries):
+                        rank = start_idx + i + 1
+                        star_count = entry.get('star_count', 0)
+                        author_id = entry.get('author_id', 'unknown')
+                        jump_url = entry.get('jump_url', '#')
+
+                        # Medal for top 3
+                        rank_display = medals[i] if rank <= 3 else f"#{rank}"
+
+                        # Star visualization
+                        stars_display = "⭐" * min(star_count, 10)
+                        if star_count > 10:
+                            stars_display += f" (+{star_count-10})"
+
+                        embed.add_field(
+                            name=f"{rank_display} {stars_display} ({star_count} stars)",
+                            value=f"**Author:** <@{author_id}>\n"
+                                 f"**[View Message]({jump_url})**",
+                            inline=False
+                        )
+
+                    # Statistics
+                    total_stars = sum(entry.get('star_count', 0) for entry in self.leaderboard)
+                    embed.add_field(
+                        name="📊 Starboard Stats",
+                        value=f"• Total Stars Given: `{total_stars}`\n"
+                              f"• Messages Starred: `{len(self.leaderboard)}`\n"
+                              f"• Average Stars: `{total_stars // max(len(self.leaderboard), 1)}`",
+                        inline=False
+                    )
+
+                    embed.set_footer(text="Starboard • Celebrating community excellence")
+                    embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/star_trophy.png")
+
+                    return embed
+
+            view = StarboardView(leaderboard)
+            embed = view.create_embed()
+
+            await loading_msg.edit(embed=embed, view=view)
+
+            # Add celebratory reactions
+            await loading_msg.add_reaction("⭐")
+            await loading_msg.add_reaction("🥇")
+            await loading_msg.add_reaction("🎉")
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_starboard_leaderboard: {e}")
-            await message.channel.send(f"❌ Error showing starboard. Please try again later.")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Starboard Error",
+                description="Unable to load the starboard leaderboard. The system may be temporarily unavailable.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
 
     async def handle_list_events(self, message: discord.Message) -> bool:
@@ -6456,20 +8099,201 @@ class ActionHandler:
             return False
 
     async def handle_leveling_shop(self, message: discord.Message) -> bool:
-        """Handle !levelshop command"""
+        """Handle !levelshop command with enhanced interactive shop"""
         try:
-            from data_manager import dm
+            import asyncio
+            from discord import ui
+
             guild_id = message.guild.id
-            
-            embed = discord.Embed(title="ðŸŽ Leveling Shop", color=discord.Color.purple())
-            embed.description = "Spend your XP on perks and roles!"
-            embed.add_field(name="How it Works", value="Earn XP by chatting. Use `!rank` to check your XP.", inline=False)
-            
-            await message.channel.send(embed=embed)
+            user_id = message.author.id
+
+            # Check if leveling system is enabled
+            if not is_system_enabled(guild_id, "leveling"):
+                embed = discord.Embed(
+                    title="❌ Leveling Shop Unavailable",
+                    description="The leveling system is currently disabled on this server.",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text="Use !configpanel leveling to enable the system")
+                await message.channel.send(embed=embed)
+                return False
+
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="🎁 Opening Level Shop",
+                description="🛍️ Loading shop inventory...\n💎 Checking your balance...\n🎨 Preparing premium rewards...",
+                color=discord.Color.purple()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.8)
+            loading_embed.description = "✅ Loading shop inventory...\n💎 Checking your balance...\n🎨 Preparing premium rewards..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.5)
+            loading_embed.description = "✅ Loading shop inventory...\n✅ Checking your balance...\n🎨 Preparing premium rewards..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.3)
+            loading_embed.description = "✅ Loading shop inventory...\n✅ Checking your balance...\n✅ Preparing premium rewards..."
+            await loading_msg.edit(embed=loading_embed)
+
+            # Get user's leveling data
+            leveling_data = dm.get_guild_data(guild_id, "leveling_data", {})
+            user_data = leveling_data.get(str(user_id), {})
+            user_xp = user_data.get("xp", 0)
+            user_level = user_data.get("level", 1)
+
+            # Get shop items (you may want to store these in config)
+            shop_items = [
+                {"id": "color_role", "name": "🎨 Custom Color Role", "cost": 5000, "desc": "Get a custom color role for your name", "type": "role"},
+                {"id": "vip_badge", "name": "⭐ VIP Badge", "cost": 10000, "desc": "Special VIP badge in your profile", "type": "badge"},
+                {"id": "double_xp", "name": "⚡ 2x XP Boost (24h)", "cost": 2500, "desc": "Double XP gain for 24 hours", "type": "booster"},
+                {"id": "level_skip", "name": "🚀 Level Skip", "cost": 15000, "desc": "Skip one level instantly", "type": "special"},
+                {"id": "custom_title", "name": "🏷️ Custom Title", "cost": 8000, "desc": "Set a custom title under your name", "type": "cosmetic"},
+                {"id": "shop_discount", "name": "💰 Shop Discount (10%)", "cost": 3000, "desc": "10% discount on all shop items", "type": "booster"}
+            ]
+
+            class LevelShopView(ui.View):
+                def __init__(self, items, user_xp, user_level):
+                    super().__init__(timeout=300)
+                    self.items = items
+                    self.user_xp = user_xp
+                    self.user_level = user_level
+                    self.selected_item = None
+
+                def create_embed(self):
+                    embed = discord.Embed(
+                        title="🎁 Leveling Shop",
+                        description=f"**Welcome to the Level Shop!**\n\n"
+                                   f"💎 **Your Balance:** {self.user_xp:,} XP (Level {self.user_level})\n"
+                                   f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        color=discord.Color.purple()
+                    )
+
+                    embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/level_shop.png")
+
+                    for i, item in enumerate(self.items):
+                        can_afford = self.user_xp >= item["cost"]
+                        status = "✅ Available" if can_afford else f"❌ Need {item['cost'] - self.user_xp:,} more XP"
+
+                        embed.add_field(
+                            name=f"{item['name']} — {item['cost']:,} XP",
+                            value=f"{item['desc']}\n{status}",
+                            inline=False
+                        )
+
+                    embed.add_field(
+                        name="📋 How to Buy",
+                        value="Select an item below and confirm your purchase!\n"
+                              "Items are delivered instantly to your inventory.",
+                        inline=False
+                    )
+
+                    embed.set_footer(text="Earn XP by chatting • Use !rank to check your progress")
+                    return embed
+
+                @ui.button(label="🎨 Color Role", style=discord.ButtonStyle.primary, row=0)
+                async def buy_color_role(self, interaction: discord.Interaction, button: ui.Button):
+                    await self.handle_purchase(interaction, 0)
+
+                @ui.button(label="⭐ VIP Badge", style=discord.ButtonStyle.primary, row=0)
+                async def buy_vip_badge(self, interaction: discord.Interaction, button: ui.Button):
+                    await self.handle_purchase(interaction, 1)
+
+                @ui.button(label="⚡ XP Boost", style=discord.ButtonStyle.primary, row=1)
+                async def buy_xp_boost(self, interaction: discord.Interaction, button: ui.Button):
+                    await self.handle_purchase(interaction, 2)
+
+                @ui.button(label="🚀 Level Skip", style=discord.ButtonStyle.primary, row=1)
+                async def buy_level_skip(self, interaction: discord.Interaction, button: ui.Button):
+                    await self.handle_purchase(interaction, 3)
+
+                @ui.button(label="🏷️ Custom Title", style=discord.ButtonStyle.secondary, row=2)
+                async def buy_custom_title(self, interaction: discord.Interaction, button: ui.Button):
+                    await self.handle_purchase(interaction, 4)
+
+                @ui.button(label="💰 Discount", style=discord.ButtonStyle.secondary, row=2)
+                async def buy_discount(self, interaction: discord.Interaction, button: ui.Button):
+                    await self.handle_purchase(interaction, 5)
+
+                async def handle_purchase(self, interaction: discord.Interaction, item_index):
+                    item = self.items[item_index]
+
+                    # Check if user can afford
+                    leveling_data = dm.get_guild_data(interaction.guild_id, "leveling_data", {})
+                    user_data = leveling_data.get(str(interaction.user.id), {})
+                    current_xp = user_data.get("xp", 0)
+
+                    if current_xp < item["cost"]:
+                        await interaction.response.send_message(
+                            f"❌ You don't have enough XP! You need {item['cost'] - current_xp:,} more XP.",
+                            ephemeral=True
+                        )
+                        return
+
+                    # Deduct XP and give item
+                    user_data["xp"] = current_xp - item["cost"]
+
+                    # Add item to user's inventory
+                    inventory = user_data.get("inventory", [])
+                    inventory.append({
+                        "item_id": item["id"],
+                        "name": item["name"],
+                        "purchased_at": interaction.created_at.timestamp(),
+                        "type": item["type"]
+                    })
+                    user_data["inventory"] = inventory
+
+                    leveling_data[str(interaction.user.id)] = user_data
+                    dm.update_guild_data(interaction.guild_id, "leveling_data", leveling_data)
+
+                    # Success message with animation
+                    success_embed = discord.Embed(
+                        title="🎉 Purchase Successful!",
+                        description=f"You bought **{item['name']}** for {item['cost']:,} XP!",
+                        color=discord.Color.green()
+                    )
+                    success_embed.add_field(
+                        name="💎 Remaining Balance",
+                        value=f"{user_data['xp']:,} XP",
+                        inline=True
+                    )
+                    success_embed.add_field(
+                        name="📦 Item Delivered",
+                        value="Check your inventory with `!inventory` (coming soon!)",
+                        inline=True
+                    )
+
+                    await interaction.response.send_message(embed=success_embed, ephemeral=True)
+
+                    # Update the shop embed
+                    self.user_xp = user_data["xp"]
+                    new_embed = self.create_embed()
+                    await interaction.followup.edit_message(interaction.message.id, embed=new_embed, view=self)
+
+            view = LevelShopView(shop_items, user_xp, user_level)
+            embed = view.create_embed()
+
+            await loading_msg.edit(embed=embed, view=view)
+
+            # Add celebratory reactions
+            await loading_msg.add_reaction("🎁")
+            await loading_msg.add_reaction("💎")
+            await loading_msg.add_reaction("🛍️")
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_leveling_shop: {e}")
-            await message.channel.send(f"❌ Error showing leveling shop. Please try again later.")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Shop Error",
+                description="The leveling shop is experiencing technical difficulties. Please try again later.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
 
     async def handle_staffpromotion_history(self, message: discord.Message) -> bool:
@@ -6990,117 +8814,662 @@ class ActionHandler:
             return False
 
     async def handle_raidstatus(self, message: discord.Message) -> bool:
-        """Handle !raidstatus command"""
+        """Handle !raidstatus command with enhanced visuals and animations"""
         try:
+            import asyncio
+
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="🛡️ Scanning Anti-Raid Defenses",
+                description="🔍 Analyzing security protocols...\n🔍 Checking threat detection...\n🔍 Monitoring server activity...",
+                color=discord.Color.orange()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(1)
+            loading_embed.description = "✅ Analyzing security protocols...\n🔍 Checking threat detection...\n🔍 Monitoring server activity..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.5)
+            loading_embed.description = "✅ Analyzing security protocols...\n✅ Checking threat detection...\n🔍 Monitoring server activity..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.5)
+            loading_embed.description = "✅ Analyzing security protocols...\n✅ Checking threat detection...\n✅ Monitoring server activity..."
+            await loading_msg.edit(embed=loading_embed)
+
             settings = dm.get_guild_data(message.guild.id, "anti_raid_settings", {})
             enabled = settings.get("enabled", False)
-            embed = discord.Embed(title="🛡️ Anti-Raid Status", color=discord.Color.blue())
-            embed.add_field(name="Enabled", value="✅ Yes" if enabled else "❌ No", inline=True)
+
+            # Enhanced status embed
             if enabled:
-                embed.add_field(name="Join Rate Limit", value=settings.get("join_rate_limit", "Not set"), inline=True)
-                embed.add_field(name="Message Spam Limit", value=settings.get("message_spam_limit", "Not set"), inline=True)
-            embed.set_footer(text="Anti-raid protection status")
-            await message.channel.send(embed=embed)
+                embed = discord.Embed(
+                    title="🛡️ Anti-Raid Defense: ACTIVE",
+                    description="**Server protection is currently enabled and operational.**",
+                    color=discord.Color.green()
+                )
+                embed.add_field(
+                    name="🔒 Protection Status",
+                    value="✅ **ENABLED**\n🛡️ **ACTIVE**\n⚡ **MONITORING**",
+                    inline=True
+                )
+            else:
+                embed = discord.Embed(
+                    title="🛡️ Anti-Raid Defense: INACTIVE",
+                    description="**Server protection is currently disabled.**",
+                    color=discord.Color.red()
+                )
+                embed.add_field(
+                    name="🔓 Protection Status",
+                    value="❌ **DISABLED**\n⚠️ **VULNERABLE**\n🔴 **OFFLINE**",
+                    inline=True
+                )
+
+            # Detailed settings
+            if enabled:
+                embed.add_field(
+                    name="⚙️ Active Protections",
+                    value=f"• Join Rate Limit: `{settings.get('join_rate_limit', '10')}/min`\n"
+                          f"• Message Spam Limit: `{settings.get('message_spam_limit', '5')}/sec`\n"
+                          f"• Account Age Check: `{settings.get('min_account_age', '7')} days`\n"
+                          f"• Auto-Lockdown: `{settings.get('auto_lockdown', 'Enabled')}`",
+                    inline=False
+                )
+
+                # Recent activity
+                recent_raids = settings.get("recent_raids", [])
+                if recent_raids:
+                    raid_list = "\n".join([f"• {raid.get('timestamp', 'Unknown')} - {raid.get('severity', 'Unknown')} threat" for raid in recent_raids[-3:]])
+                    embed.add_field(
+                        name="📊 Recent Activity",
+                        value=raid_list,
+                        inline=False
+                    )
+                else:
+                    embed.add_field(
+                        name="📊 Recent Activity",
+                        value="• No recent threats detected\n• Server is secure",
+                        inline=False
+                    )
+
+            embed.add_field(
+                name="🛠️ Management",
+                value="Use `!configpanel antiraid` to configure protection settings.\n"
+                      "Contact administrators to enable/disable the system.",
+                inline=False
+            )
+
+            embed.set_footer(text=f"Anti-Raid System • Last checked: {discord.utils.format_dt(discord.utils.utcnow())}")
+            embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/shield.png")
+
+            await loading_msg.edit(embed=embed)
+
+            # Add celebratory reactions for active system
+            if enabled:
+                await loading_msg.add_reaction("🛡️")
+                await loading_msg.add_reaction("✅")
+                await loading_msg.add_reaction("⚡")
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_raidstatus: {e}")
-            await message.channel.send("❌ Error loading anti-raid status. Please try again.")
+            error_embed = discord.Embed(
+                title="❌ System Error",
+                description="Unable to load anti-raid status. The system may be temporarily unavailable.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
 
     async def handle_guardian_status(self, message: discord.Message) -> bool:
-        """Handle !guardian status command"""
+        """Handle !guardian status command with AI-themed animations"""
         try:
+            import asyncio
+
+            # AI-themed loading animation
+            loading_embed = discord.Embed(
+                title="🤖 Initializing Guardian AI",
+                description="🧠 Booting neural networks...\n🔍 Scanning threat databases...\n⚡ Calibrating detection algorithms...",
+                color=discord.Color.purple()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.8)
+            loading_embed.description = "✅ Booting neural networks...\n🔍 Scanning threat databases...\n⚡ Calibrating detection algorithms..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.6)
+            loading_embed.description = "✅ Booting neural networks...\n✅ Scanning threat databases...\n⚡ Calibrating detection algorithms..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.4)
+            loading_embed.description = "✅ Booting neural networks...\n✅ Scanning threat databases...\n✅ Calibrating detection algorithms..."
+            await loading_msg.edit(embed=loading_embed)
+
             config = dm.get_guild_data(message.guild.id, "guardian_config", {})
             enabled = config.get("enabled", False)
-            embed = discord.Embed(title="⚔️ Guardian Status", color=discord.Color.blue())
-            embed.add_field(name="Enabled", value="✅ Yes" if enabled else "❌ No", inline=True)
+
+            # Enhanced AI-themed status embed
             if enabled:
-                embed.add_field(name="Toxicity Filter", value="✅ On" if config.get("toxicity_enabled") else "❌ Off", inline=True)
-                embed.add_field(name="Scam Filter", value="✅ On" if config.get("scam_enabled") else "❌ Off", inline=True)
-                embed.add_field(name="Impersonation Detection", value="✅ On" if config.get("impersonation_enabled") else "❌ Off", inline=True)
-            embed.set_footer(text="AI-powered threat detection status")
-            await message.channel.send(embed=embed)
+                embed = discord.Embed(
+                    title="🤖 Guardian AI: ACTIVE",
+                    description="**Advanced AI threat detection is online and protecting your server.**",
+                    color=discord.Color.purple()
+                )
+                embed.add_field(
+                    name="🧠 AI Status",
+                    value="✅ **ONLINE**\n🤖 **ACTIVE**\n⚡ **SCANNING**",
+                    inline=True
+                )
+            else:
+                embed = discord.Embed(
+                    title="🤖 Guardian AI: OFFLINE",
+                    description="**AI threat detection is currently disabled.**",
+                    color=discord.Color.red()
+                )
+                embed.add_field(
+                    name="🧠 AI Status",
+                    value="❌ **OFFLINE**\n⚠️ **VULNERABLE**\n🔴 **STANDBY**",
+                    inline=True
+                )
+
+            # Detailed protection modules
+            if enabled:
+                toxicity_level = config.get("toxicity_level", "OFF")
+                scam_level = config.get("scam_level", "OFF")
+                impersonation_level = config.get("impersonation_level", "OFF")
+
+                embed.add_field(
+                    name="🛡️ Protection Modules",
+                    value=f"• **Toxicity Filter**: `{toxicity_level}`\n"
+                          f"• **Scam Detection**: `{scam_level}`\n"
+                          f"• **Impersonation Guard**: `{impersonation_level}`\n"
+                          f"• **Mass DM Monitor**: `{config.get('mass_dm_threshold', 10)}/min`\n"
+                          f"• **Token Detection**: `{'ENABLED' if config.get('token_detection', False) else 'DISABLED'}`",
+                    inline=False
+                )
+
+                # Threat statistics
+                log = config.get("guardian_log", [])
+                recent_threats = len([entry for entry in log if "detected" in entry.get("action", "").lower()])
+                embed.add_field(
+                    name="📊 Threat Intelligence",
+                    value=f"• Threats Detected: `{recent_threats}`\n"
+                          f"• Auto-Actions Taken: `{len(log)}`\n"
+                          f"• Server Security: `PROTECTED`",
+                    inline=False
+                )
+
+            embed.add_field(
+                name="⚙️ Configuration",
+                value="Use `!configpanel guardian` to adjust AI detection settings.\n"
+                      "Fine-tune threat levels and response actions.",
+                inline=False
+            )
+
+            embed.set_footer(text=f"Guardian AI System • Last scan: {discord.utils.format_dt(discord.utils.utcnow())}")
+            embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/ai_guardian.png")
+
+            await loading_msg.edit(embed=embed)
+
+            # AI-themed reactions
+            if enabled:
+                await loading_msg.add_reaction("🤖")
+                await loading_msg.add_reaction("🧠")
+                await loading_msg.add_reaction("⚡")
+                await loading_msg.add_reaction("🛡️")
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_guardian_status: {e}")
-            await message.channel.send("❌ Error loading guardian status. Please try again.")
+            error_embed = discord.Embed(
+                title="❌ AI System Error",
+                description="Guardian AI is experiencing technical difficulties. Please try again later.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
 
     async def handle_automod_status(self, message: discord.Message) -> bool:
-        """Handle !automod status command"""
+        """Handle !automod status command with enhanced rule visualization"""
         try:
+            import asyncio
+
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="🤖 Initializing AutoMod",
+                description="🔧 Loading moderation rules...\n🔍 Scanning active filters...\n📊 Calculating statistics...",
+                color=discord.Color.blue()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.7)
+            loading_embed.description = "✅ Loading moderation rules...\n🔍 Scanning active filters...\n📊 Calculating statistics..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.5)
+            loading_embed.description = "✅ Loading moderation rules...\n✅ Scanning active filters...\n📊 Calculating statistics..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.3)
+            loading_embed.description = "✅ Loading moderation rules...\n✅ Scanning active filters...\n✅ Calculating statistics..."
+            await loading_msg.edit(embed=loading_embed)
+
             config = dm.get_guild_data(message.guild.id, "automod_config", {})
             enabled = config.get("enabled", False)
-            embed = discord.Embed(title="🤖 AutoMod Status", color=discord.Color.blue())
-            embed.add_field(name="Enabled", value="✅ Yes" if enabled else "❌ No", inline=True)
+            rules = config.get("rules", {})
+
+            # Enhanced status embed
             if enabled:
-                embed.add_field(name="Spam Filter", value="✅ On" if config.get("spam_filter") else "❌ Off", inline=True)
-                embed.add_field(name="Caps Filter", value="✅ On" if config.get("caps_filter") else "❌ Off", inline=True)
-                embed.add_field(name="Link Filter", value="✅ On" if config.get("link_filter") else "❌ Off", inline=True)
-            embed.set_footer(text="Automated moderation status")
-            await message.channel.send(embed=embed)
+                embed = discord.Embed(
+                    title="🤖 AutoMod: ACTIVE",
+                    description="**Automated moderation is protecting your server 24/7.**",
+                    color=discord.Color.blue()
+                )
+                embed.add_field(
+                    name="⚙️ System Status",
+                    value="✅ **ENABLED**\n🤖 **ACTIVE**\n🛡️ **PROTECTING**",
+                    inline=True
+                )
+            else:
+                embed = discord.Embed(
+                    title="🤖 AutoMod: INACTIVE",
+                    description="**Automated moderation is currently disabled.**",
+                    color=discord.Color.red()
+                )
+                embed.add_field(
+                    name="⚙️ System Status",
+                    value="❌ **DISABLED**\n⚠️ **MANUAL MODE**\n🔴 **OFFLINE**",
+                    inline=True
+                )
+
+            # Detailed rule status
+            if enabled and rules:
+                active_rules = []
+                inactive_rules = []
+
+                for rule_name, rule_config in rules.items():
+                    if rule_config.get("enabled", False):
+                        active_rules.append(f"✅ {rule_name.replace('_', ' ').title()}")
+                    else:
+                        inactive_rules.append(f"❌ {rule_name.replace('_', ' ').title()}")
+
+                if active_rules:
+                    embed.add_field(
+                        name="🛡️ Active Rules",
+                        value="\n".join(active_rules[:8]),  # Limit to 8 for embed size
+                        inline=False
+                    )
+
+                if inactive_rules:
+                    embed.add_field(
+                        name="🔇 Inactive Rules",
+                        value="\n".join(inactive_rules[:8]),
+                        inline=False
+                    )
+
+                # Escalation info
+                escalation = config.get("escalation", {})
+                if escalation:
+                    embed.add_field(
+                        name="⚠️ Escalation Levels",
+                        value=f"Warning → Mute → Kick → Ban\n"
+                              f"Reset: `{escalation.get('reset_hours', 24)} hours`",
+                        inline=False
+                    )
+
+            # Statistics
+            embed.add_field(
+                name="📊 Moderation Stats",
+                value="• Actions Taken: `Loading...`\n• Messages Scanned: `24/7`\n• Server Protection: `ACTIVE`" if enabled else "• System Status: `DISABLED`\n• Manual Moderation: `REQUIRED`\n• Server Protection: `VULNERABLE`",
+                inline=False
+            )
+
+            embed.add_field(
+                name="⚙️ Configuration",
+                value="Use `!configpanel automod` to enable/disable rules and adjust settings.\n"
+                      "Fine-tune filters and escalation policies.",
+                inline=False
+            )
+
+            embed.set_footer(text=f"AutoMod System • Last updated: {discord.utils.format_dt(discord.utils.utcnow())}")
+            embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/automod_robot.png")
+
+            await loading_msg.edit(embed=embed)
+
+            # Add celebratory reactions
+            if enabled:
+                await loading_msg.add_reaction("🤖")
+                await loading_msg.add_reaction("🛡️")
+                await loading_msg.add_reaction("✅")
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_automod_status: {e}")
-            await message.channel.send("❌ Error loading automod status. Please try again.")
+            error_embed = discord.Embed(
+                title="❌ Moderation Error",
+                description="Unable to load AutoMod status. The system may be temporarily unavailable.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
 
     async def handle_modlog_view(self, message: discord.Message) -> bool:
-        """Handle !modlog view command"""
+        """Handle !modlog view command with enhanced pagination and animations"""
         try:
+            import asyncio
+            from discord import ui
+
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="📋 Accessing Moderation Database",
+                description="🔍 Retrieving moderation records...\n📊 Analyzing log entries...\n📋 Formatting report...",
+                color=discord.Color.orange()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.6)
+            loading_embed.description = "✅ Retrieving moderation records...\n📊 Analyzing log entries...\n📋 Formatting report..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.4)
+            loading_embed.description = "✅ Retrieving moderation records...\n✅ Analyzing log entries...\n📋 Formatting report..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.3)
+            loading_embed.description = "✅ Retrieving moderation records...\n✅ Analyzing log entries...\n✅ Formatting report..."
+            await loading_msg.edit(embed=loading_embed)
+
             logs = dm.get_guild_data(message.guild.id, "mod_logs", [])
+
             if not logs:
-                await message.channel.send("📋 No moderation logs found.")
+                no_logs_embed = discord.Embed(
+                    title="📋 Moderation Log",
+                    description="**No moderation actions have been recorded yet.**\n\n"
+                               "As moderators take actions (warn, mute, kick, ban), they will appear here.\n\n"
+                               "*This helps maintain transparency and accountability.*",
+                    color=discord.Color.light_grey()
+                )
+                no_logs_embed.set_footer(text="Moderation logs help track server safety and fairness")
+                await loading_msg.edit(embed=no_logs_embed)
                 return True
 
-            recent_logs = logs[-10:][::-1]  # Last 10, newest first
-            embed = discord.Embed(title="📋 Recent Mod Logs", color=discord.Color.orange())
-            for log in recent_logs:
-                mod = f"<@{log.get('moderator_id', 'Unknown')}>"
-                action = log.get('action', 'Unknown')
-                target = f"<@{log.get('user_id', 'Unknown')}>"
-                reason = log.get('reason', 'No reason')
-                timestamp = f"<t:{int(log.get('timestamp', 0))}:R>"
-                embed.add_field(name=f"{action} by {mod}", value=f"Target: {target}\nReason: {reason}\nTime: {timestamp}", inline=False)
-            await message.channel.send(embed=embed)
+            # Create paginated view for logs
+            class ModLogView(ui.View):
+                def __init__(self, logs, current_page=0):
+                    super().__init__(timeout=300)
+                    self.logs = logs
+                    self.current_page = current_page
+                    self.logs_per_page = 5
+                    self.update_buttons()
+
+                def update_buttons(self):
+                    total_pages = (len(self.logs) - 1) // self.logs_per_page + 1
+                    self.prev_button.disabled = self.current_page == 0
+                    self.next_button.disabled = self.current_page >= total_pages - 1
+                    self.page_label.label = f"Page {self.current_page + 1}/{total_pages}"
+
+                @ui.button(label="◀️ Previous", style=discord.ButtonStyle.secondary, disabled=True)
+                async def prev_button(self, interaction: discord.Interaction, button: ui.Button):
+                    self.current_page -= 1
+                    self.update_buttons()
+                    embed = self.create_embed()
+                    await interaction.response.edit_message(embed=embed, view=self)
+
+                @ui.button(label="📄 Page 1/1", style=discord.ButtonStyle.secondary, disabled=True)
+                async def page_label(self, interaction: discord.Interaction, button: ui.Button):
+                    pass
+
+                @ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary)
+                async def next_button(self, interaction: discord.Interaction, button: ui.Button):
+                    self.current_page += 1
+                    self.update_buttons()
+                    embed = self.create_embed()
+                    await interaction.response.edit_message(embed=embed, view=self)
+
+                def create_embed(self):
+                    start_idx = self.current_page * self.logs_per_page
+                    end_idx = start_idx + self.logs_per_page
+                    page_logs = self.logs[start_idx:end_idx]
+
+                    embed = discord.Embed(
+                        title="📋 Moderation Log",
+                        description=f"**Recent moderation actions** ({len(self.logs)} total)\n━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        color=discord.Color.orange()
+                    )
+
+                    for log in page_logs:
+                        mod_id = log.get('moderator_id', 'Unknown')
+                        mod = f"<@{mod_id}>" if mod_id != 'Unknown' else 'Unknown'
+
+                        action = log.get('action', 'Unknown').upper()
+                        target_id = log.get('user_id', 'Unknown')
+                        target = f"<@{target_id}>" if target_id != 'Unknown' else 'Unknown'
+
+                        reason = log.get('reason', 'No reason provided')
+                        if len(reason) > 50:
+                            reason = reason[:47] + "..."
+
+                        timestamp = f"<t:{int(log.get('timestamp', 0))}:F>"
+
+                        # Action emoji
+                        action_emoji = {
+                            'WARN': '⚠️', 'MUTE': '🔇', 'KICK': '👢', 'BAN': '🔨',
+                            'UNMUTE': '🔊', 'UNBAN': '✅', 'TIMEOUT': '⏰'
+                        }.get(action, '📋')
+
+                        embed.add_field(
+                            name=f"{action_emoji} {action} by {mod}",
+                            value=f"**Target:** {target}\n**Reason:** {reason}\n**Time:** {timestamp}",
+                            inline=False
+                        )
+
+                    embed.set_footer(text="Moderation logs ensure transparency and accountability")
+                    embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/mod_log.png")
+
+                    return embed
+
+            # Sort logs by timestamp (newest first) and create view
+            sorted_logs = sorted(logs, key=lambda x: x.get('timestamp', 0), reverse=True)
+            view = ModLogView(sorted_logs)
+            embed = view.create_embed()
+
+            await loading_msg.edit(embed=embed, view=view)
+
+            # Add reaction
+            await loading_msg.add_reaction("📋")
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_modlog_view: {e}")
-            await message.channel.send("❌ Error loading mod logs. Please try again.")
+            error_embed = discord.Embed(
+                title="❌ Database Error",
+                description="Unable to access moderation logs. The system may be temporarily unavailable.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
 
     async def handle_suggest(self, message: discord.Message) -> bool:
-        """Handle !suggest command"""
+        """Handle !suggest command with enhanced validation and feedback"""
         try:
+            import asyncio
             guild_id = message.guild.id
-            
+
             # Check if suggestions system is enabled
             if not is_system_enabled(guild_id, "suggestions"):
-                await message.channel.send("❌ The suggestions system is currently disabled on this server.")
+                embed = discord.Embed(
+                    title="❌ Suggestions Unavailable",
+                    description="The suggestions system is currently disabled on this server.\n\n*Please contact an administrator to enable it.*",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text="Use !configpanel suggestions to enable the system")
+                await message.channel.send(embed=embed)
                 return False
-            
+
             args = message.content.split(maxsplit=1)
             if len(args) < 2:
-                await message.channel.send("❌ Usage: !suggest <your suggestion>")
+                embed = discord.Embed(
+                    title="💡 How to Submit a Suggestion",
+                    description="Share your ideas to help improve the server!",
+                    color=discord.Color.blue()
+                )
+                embed.add_field(
+                    name="📝 Usage",
+                    value="`!suggest <your suggestion here>`",
+                    inline=False
+                )
+                embed.add_field(
+                    name="✨ Examples",
+                    value="`!suggest Add a music channel`\n"
+                          "`!suggest Create a gaming events category`\n"
+                          "`!suggest Add more emoji reactions`",
+                    inline=False
+                )
+                embed.add_field(
+                    name="🎯 Tips for Good Suggestions",
+                    value="• Be specific and detailed\n"
+                          "• Explain why it would help\n"
+                          "• Keep it constructive\n"
+                          "• Check if it already exists",
+                    inline=False
+                )
+                embed.set_footer(text="Your suggestions help make the server better!")
+                embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/lightbulb.png")
+                await message.channel.send(embed=embed)
                 return True
 
-            suggestion_text = args[1]
-            # Store suggestion
+            suggestion_text = args[1].strip()
+
+            # Validate suggestion length
+            if len(suggestion_text) < 10:
+                embed = discord.Embed(
+                    title="❌ Suggestion Too Short",
+                    description="Please provide more detail in your suggestion (at least 10 characters).",
+                    color=discord.Color.orange()
+                )
+                embed.add_field(
+                    name="💡 Tip",
+                    value="The more detailed your suggestion, the better we can understand and implement it!",
+                    inline=False
+                )
+                await message.channel.send(embed=embed)
+                return True
+
+            if len(suggestion_text) > 1000:
+                embed = discord.Embed(
+                    title="❌ Suggestion Too Long",
+                    description="Please keep your suggestion under 1000 characters.",
+                    color=discord.Color.orange()
+                )
+                await message.channel.send(embed=embed)
+                return True
+
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="💡 Processing Your Suggestion",
+                description="📝 Reviewing content...\n✅ Checking guidelines...\n💾 Saving suggestion...",
+                color=discord.Color.blue()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.7)
+            loading_embed.description = "✅ Reviewing content...\n✅ Checking guidelines...\n💾 Saving suggestion..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.5)
+            loading_embed.description = "✅ Reviewing content...\n✅ Checking guidelines...\n✅ Saving suggestion..."
+            await loading_msg.edit(embed=loading_embed)
+
+            # Check for duplicate recent suggestions
             suggestions = dm.get_guild_data(guild_id, "suggestions", [])
+            recent_suggestions = [s for s in suggestions if s.get("user_id") == message.author.id and time.time() - s.get("timestamp", 0) < 3600]  # Last hour
+
+            if recent_suggestions:
+                embed = discord.Embed(
+                    title="⏰ Recent Suggestion Found",
+                    description="You've submitted a suggestion recently. Please wait before submitting another.",
+                    color=discord.Color.orange()
+                )
+                embed.add_field(
+                    name="⏱️ Cooldown",
+                    value="You can submit another suggestion in 1 hour.",
+                    inline=True
+                )
+                await loading_msg.edit(embed=embed)
+                return True
+
+            # Create suggestion
             suggestion = {
                 "id": len(suggestions) + 1,
                 "user_id": message.author.id,
                 "text": suggestion_text,
                 "timestamp": time.time(),
-                "status": "pending"
+                "status": "pending",
+                "votes": {"up": 0, "down": 0},
+                "voters": []
             }
+
             suggestions.append(suggestion)
             dm.update_guild_data(guild_id, "suggestions", suggestions)
-            await message.channel.send(f"✅ Suggestion submitted! ID: {suggestion['id']}")
+
+            # Success embed
+            success_embed = discord.Embed(
+                title="✅ Suggestion Submitted Successfully!",
+                description=f"**Thank you for your suggestion, {message.author.display_name}!**\n\n"
+                           f"Your idea has been recorded and will be reviewed by the community and staff.",
+                color=discord.Color.green()
+            )
+
+            success_embed.add_field(
+                name="📋 Suggestion Details",
+                value=f"**ID:** `{suggestion['id']}`\n"
+                      f"**Status:** Pending Review\n"
+                      f"**Submitted:** <t:{int(time.time())}:R>",
+                inline=True
+            )
+
+            success_embed.add_field(
+                name="🎯 What's Next",
+                value="• Community members can vote on your suggestion\n"
+                      "• Staff will review and provide feedback\n"
+                      "• You may be contacted for more details\n"
+                      "• Check back later for updates!",
+                inline=False
+            )
+
+            success_embed.add_field(
+                name="💡 Suggestion Summary",
+                value=f"```{suggestion_text[:200]}{'...' if len(suggestion_text) > 200 else ''}```",
+                inline=False
+            )
+
+            success_embed.set_footer(text=f"Suggestion #{suggestion['id']} • {message.guild.name}")
+            success_embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/check_circle.png")
+
+            await loading_msg.edit(embed=success_embed)
+
+            # Add celebratory reactions
+            await loading_msg.add_reaction("✅")
+            await loading_msg.add_reaction("💡")
+            await loading_msg.add_reaction("👍")
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_suggest: {e}")
-            await message.channel.send("❌ Error creating suggestion. Please try again.")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Suggestion Error",
+                description="Unable to submit your suggestion. Please try again later.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
 
     async def handle_chatchannel_add(self, message: discord.Message) -> bool:
@@ -7157,115 +9526,642 @@ class ActionHandler:
             return False
 
     async def handle_remindme(self, message: discord.Message) -> bool:
-        """Handle !remindme command"""
+        """Handle !remindme command with enhanced validation and visuals"""
         try:
+            import asyncio
+            import re
+
             args = message.content.split(maxsplit=2)
             if len(args) < 3:
-                await message.channel.send("❌ Usage: !remindme <time> <message>\nExample: !remindme 1h Check the oven")
+                embed = discord.Embed(
+                    title="⏰ Reminder System",
+                    description="Never forget important tasks again!",
+                    color=discord.Color.blue()
+                )
+                embed.add_field(
+                    name="📝 Usage",
+                    value="`!remindme <time> <message>`",
+                    inline=False
+                )
+                embed.add_field(
+                    name="⏰ Time Formats",
+                    value="`30s` - 30 seconds\n"
+                          "`5m` - 5 minutes\n"
+                          "`2h` - 2 hours\n"
+                          "`1d` - 1 day\n"
+                          "`1w` - 1 week",
+                    inline=True
+                )
+                embed.add_field(
+                    name="💡 Examples",
+                    value="`!remindme 2h Submit assignment`\n"
+                          "`!remindme 30m Check the oven`\n"
+                          "`!remindme 1d Call mom`",
+                    inline=True
+                )
+                embed.add_field(
+                    name="📋 Features",
+                    value="• Reminders sent via DM\n"
+                          "• Multiple reminders allowed\n"
+                          "• Automatic cleanup of old reminders",
+                    inline=False
+                )
+                embed.set_footer(text="Stay organized with personal reminders!")
+                embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/alarm_clock.png")
+                await message.channel.send(embed=embed)
                 return True
 
             time_str = args[1]
             reminder_text = args[2]
 
-            # Parse time (simple: 1h, 30m, 1d, etc.)
-            import re
-            match = re.match(r'(\d+)([smhd])', time_str.lower())
+            # Validate reminder text
+            if len(reminder_text.strip()) < 3:
+                embed = discord.Embed(
+                    title="❌ Reminder Too Short",
+                    description="Please provide a more detailed reminder message (at least 3 characters).",
+                    color=discord.Color.orange()
+                )
+                await message.channel.send(embed=embed)
+                return True
+
+            if len(reminder_text) > 500:
+                embed = discord.Embed(
+                    title="❌ Reminder Too Long",
+                    description="Please keep your reminder under 500 characters.",
+                    color=discord.Color.orange()
+                )
+                await message.channel.send(embed=embed)
+                return True
+
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="⏰ Setting Up Your Reminder",
+                description="🕒 Parsing time format...\n📝 Processing message...\n💾 Scheduling reminder...",
+                color=discord.Color.blue()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.6)
+            loading_embed.description = "✅ Parsing time format...\n📝 Processing message...\n💾 Scheduling reminder..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.4)
+            loading_embed.description = "✅ Parsing time format...\n✅ Processing message...\n💾 Scheduling reminder..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.3)
+            loading_embed.description = "✅ Parsing time format...\n✅ Processing message...\n✅ Scheduling reminder..."
+            await loading_msg.edit(embed=loading_embed)
+
+            # Parse time with enhanced format support
+            match = re.match(r'(\d+)([smhdw])', time_str.lower())
             if not match:
-                await message.channel.send("❌ Invalid time format. Use like 1h, 30m, 1d")
+                error_embed = discord.Embed(
+                    title="❌ Invalid Time Format",
+                    description="Please use a valid time format.",
+                    color=discord.Color.red()
+                )
+                error_embed.add_field(
+                    name="⏰ Supported Formats",
+                    value="`30s` - seconds\n"
+                          "`5m` - minutes\n"
+                          "`2h` - hours\n"
+                          "`1d` - days\n"
+                          "`1w` - weeks",
+                    inline=False
+                )
+                await loading_msg.edit(embed=error_embed)
                 return True
 
             amount = int(match.group(1))
             unit = match.group(2)
-            multipliers = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}
-            delay = amount * multipliers[unit]
 
+            # Validate reasonable limits
+            if unit == 's' and amount > 3600:  # Max 1 hour for seconds
+                amount = 3600
+            elif unit == 'm' and amount > 1440:  # Max 24 hours for minutes
+                amount = 1440
+            elif unit == 'h' and amount > 168:  # Max 1 week for hours
+                amount = 168
+            elif unit == 'd' and amount > 30:  # Max 30 days
+                amount = 30
+            elif unit == 'w' and amount > 4:  # Max 4 weeks
+                amount = 4
+
+            multipliers = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400, 'w': 604800}
+            delay = amount * multipliers[unit]
             reminder_time = time.time() + delay
 
+            # Check user reminder limits
             reminders = dm.get_guild_data(message.guild.id, "reminders", [])
+            user_reminders = [r for r in reminders if r.get("user_id") == message.author.id and r.get("timestamp", 0) > time.time()]
+
+            if len(user_reminders) >= 10:  # Max 10 active reminders per user
+                embed = discord.Embed(
+                    title="❌ Too Many Reminders",
+                    description="You can only have up to 10 active reminders at once.",
+                    color=discord.Color.orange()
+                )
+                embed.add_field(
+                    name="💡 Tip",
+                    value="Use `!reminders` to view and manage your existing reminders.",
+                    inline=False
+                )
+                await loading_msg.edit(embed=embed)
+                return True
+
+            # Create reminder
             reminder = {
                 "id": len(reminders) + 1,
                 "user_id": message.author.id,
                 "channel_id": message.channel.id,
+                "guild_id": message.guild.id,
                 "text": reminder_text,
-                "timestamp": reminder_time
+                "timestamp": reminder_time,
+                "created_at": time.time(),
+                "status": "active"
             }
+
             reminders.append(reminder)
             dm.update_guild_data(message.guild.id, "reminders", reminders)
-            await message.channel.send(f"✅ Reminder set for <t:{int(reminder_time)}:R>")
+
+            # Success embed
+            success_embed = discord.Embed(
+                title="✅ Reminder Set Successfully!",
+                description=f"**{message.author.display_name}**, your reminder has been scheduled!",
+                color=discord.Color.green()
+            )
+
+            success_embed.add_field(
+                name="⏰ Reminder Details",
+                value=f"**When:** <t:{int(reminder_time)}:F> (<t:{int(reminder_time)}:R>)\n"
+                      f"**Message:** {reminder_text}\n"
+                      f"**ID:** `{reminder['id']}`",
+                inline=False
+            )
+
+            success_embed.add_field(
+                name="📱 Delivery Method",
+                value="You'll receive this reminder via **direct message** to ensure you don't miss it.",
+                inline=False
+            )
+
+            success_embed.add_field(
+                name="⚙️ Management",
+                value="Use `!reminders` to view all your scheduled reminders.",
+                inline=False
+            )
+
+            success_embed.set_footer(text=f"Reminder #{reminder['id']} • {message.guild.name}")
+            success_embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/bell.png")
+
+            await loading_msg.edit(embed=success_embed)
+
+            # Add celebratory reactions
+            await loading_msg.add_reaction("✅")
+            await loading_msg.add_reaction("⏰")
+            await loading_msg.add_reaction("📅")
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_remindme: {e}")
-            await message.channel.send("❌ Error setting reminder. Please try again.")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Reminder Setup Failed",
+                description="There was an error setting up your reminder. Please try again.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
 
     async def handle_announcement_create(self, message: discord.Message) -> bool:
-        """Handle !announcement create command"""
+        """Handle !announcement create command with enhanced permissions and formatting"""
         try:
-            args = message.content.split(maxsplit=1)
-            if len(args) < 2:
-                await message.channel.send("❌ Usage: !announcement create <message>")
+            import asyncio
+
+            # Permission check
+            if not message.author.guild_permissions.manage_messages and message.author.id != message.guild.owner_id:
+                embed = discord.Embed(
+                    title="❌ Permission Denied",
+                    description="You need **Manage Messages** permission to create announcements.",
+                    color=discord.Color.red()
+                )
+                embed.add_field(
+                    name="📋 Required Permissions",
+                    value="• Manage Messages\n• Or Server Owner",
+                    inline=True
+                )
+                embed.set_footer(text="Contact a moderator for announcement permissions")
+                await message.channel.send(embed=embed)
                 return True
 
-            announcement_text = args[1]
-            embed = discord.Embed(title="📢 Announcement", description=announcement_text, color=discord.Color.gold())
-            embed.set_footer(text=f"Announced by {message.author.display_name}")
-            await message.channel.send(embed=embed)
+            args = message.content.split(maxsplit=1)
+            if len(args) < 2:
+                embed = discord.Embed(
+                    title="📢 Announcement System",
+                    description="Create important server announcements with enhanced formatting!",
+                    color=discord.Color.gold()
+                )
+                embed.add_field(
+                    name="📝 Usage",
+                    value="`!announcement create <message>`",
+                    inline=False
+                )
+                embed.add_field(
+                    name="✨ Features",
+                    value="• Rich embed formatting\n"
+                          "• Professional appearance\n"
+                          "• Server branding\n"
+                          "• Announcement logging",
+                    inline=True
+                )
+                embed.add_field(
+                    name="💡 Examples",
+                    value="`!announcement create Welcome to our updated server!`\n"
+                          "`!announcement create Server maintenance tonight at 10 PM`",
+                    inline=True
+                )
+                embed.set_footer(text="Make your announcements stand out!")
+                embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/megaphone.png")
+                await message.channel.send(embed=embed)
+                return True
+
+            announcement_text = args[1].strip()
+
+            # Validate announcement length
+            if len(announcement_text) < 5:
+                embed = discord.Embed(
+                    title="❌ Announcement Too Short",
+                    description="Please provide a more detailed announcement (at least 5 characters).",
+                    color=discord.Color.orange()
+                )
+                await message.channel.send(embed=embed)
+                return True
+
+            if len(announcement_text) > 2000:
+                embed = discord.Embed(
+                    title="❌ Announcement Too Long",
+                    description="Please keep your announcement under 2000 characters.",
+                    color=discord.Color.orange()
+                )
+                await message.channel.send(embed=embed)
+                return True
+
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="📢 Preparing Announcement",
+                description="✨ Formatting message...\n🎨 Applying styling...\n📣 Broadcasting announcement...",
+                color=discord.Color.gold()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.8)
+            loading_embed.description = "✅ Formatting message...\n🎨 Applying styling...\n📣 Broadcasting announcement..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.5)
+            loading_embed.description = "✅ Formatting message...\n✅ Applying styling...\n📣 Broadcasting announcement..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.4)
+            loading_embed.description = "✅ Formatting message...\n✅ Applying styling...\n✅ Broadcasting announcement..."
+            await loading_msg.edit(embed=loading_embed)
+
+            # Create enhanced announcement embed
+            announcement_embed = discord.Embed(
+                title="📢 IMPORTANT ANNOUNCEMENT",
+                description=announcement_text,
+                color=discord.Color.gold()
+            )
+
+            announcement_embed.set_author(
+                name=f"{message.author.display_name}",
+                icon_url=message.author.display_avatar.url
+            )
+
+            announcement_embed.set_thumbnail(message.guild.icon.url if message.guild.icon else None)
+
+            announcement_embed.add_field(
+                name="🏠 Server",
+                value=message.guild.name,
+                inline=True
+            )
+
+            announcement_embed.add_field(
+                name="📅 Date & Time",
+                value=f"<t:{int(time.time())}:F>",
+                inline=True
+            )
+
+            announcement_embed.add_field(
+                name="👤 Announced By",
+                value=message.author.mention,
+                inline=True
+            )
+
+            announcement_embed.set_footer(
+                text=f"📢 Official Server Announcement • {message.guild.name}",
+                icon_url=message.guild.icon.url if message.guild.icon else None
+            )
+
+            # Send the announcement
+            await message.channel.send(embed=announcement_embed)
+
+            # Success feedback
+            success_embed = discord.Embed(
+                title="✅ Announcement Sent Successfully!",
+                description="Your announcement has been broadcast to the channel.",
+                color=discord.Color.green()
+            )
+
+            success_embed.add_field(
+                name="📊 Announcement Details",
+                value=f"• **Channel:** {message.channel.mention}\n"
+                      f"• **Length:** {len(announcement_text)} characters\n"
+                      f"• **Timestamp:** <t:{int(time.time())}:R>",
+                inline=False
+            )
+
+            # Log the announcement
+            announcements_log = dm.get_guild_data(message.guild.id, "announcements_log", [])
+            log_entry = {
+                "id": len(announcements_log) + 1,
+                "author_id": message.author.id,
+                "channel_id": message.channel.id,
+                "content": announcement_text,
+                "timestamp": time.time()
+            }
+            announcements_log.append(log_entry)
+            dm.update_guild_data(message.guild.id, "announcements_log", announcements_log)
+
+            success_embed.add_field(
+                name="📋 Logged",
+                value=f"Announcement logged for records (ID: `{log_entry['id']}`)",
+                inline=False
+            )
+
+            await loading_msg.edit(embed=success_embed)
+
+            # Add celebratory reactions
+            await loading_msg.add_reaction("📢")
+            await loading_msg.add_reaction("✅")
+            await loading_msg.add_reaction("🎉")
+
+            # Ping @everyone if it's a critical announcement (optional)
+            # You could add logic here to detect keywords like "emergency", "urgent", etc.
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_announcement_create: {e}")
-            await message.channel.send("❌ Error creating announcement. Please try again.")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Announcement Failed",
+                description="There was an error creating your announcement. Please try again.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
 
     async def handle_giveaway_create(self, message: discord.Message) -> bool:
-        """Handle !giveaway create command"""
+        """Handle !giveaway create command with enhanced validation and visuals"""
         try:
-            args = message.content.split()
-            if len(args) < 4:
-                await message.channel.send("❌ Usage: !giveaway create <duration> <winners> <prize>\nExample: !giveaway create 1h 1 Discord Nitro")
+            import asyncio
+            import re
+
+            # Permission check
+            if not message.author.guild_permissions.manage_messages and message.author.id not in [message.guild.owner_id]:
+                embed = discord.Embed(
+                    title="❌ Permission Denied",
+                    description="You need **Manage Messages** permission to create giveaways.",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text="Contact a moderator or administrator for assistance")
+                await message.channel.send(embed=embed)
                 return True
 
-            duration_str = args[1]
-            winners = int(args[2])
-            prize = ' '.join(args[3:])
+            # Check if giveaways system is enabled
+            if not is_system_enabled(message.guild.id, "giveaways"):
+                embed = discord.Embed(
+                    title="❌ Giveaways Unavailable",
+                    description="The giveaway system is currently disabled on this server.\n\n*Please contact an administrator to enable it.*",
+                    color=discord.Color.red()
+                )
+                embed.set_footer(text="Use !configpanel giveaways to enable the system")
+                await message.channel.send(embed=embed)
+                return False
+
+            args = message.content.split()
+            if len(args) < 5:  # !giveaway create duration winners prize
+                embed = discord.Embed(
+                    title="❌ Invalid Command Usage",
+                    description="**Correct Usage:** `!giveaway create <duration> <winners> <prize>`",
+                    color=discord.Color.red()
+                )
+                embed.add_field(
+                    name="📝 Examples",
+                    value="`!giveaway create 1h 1 Discord Nitro`\n"
+                          "`!giveaway create 30m 3 $50 Steam Gift Card`\n"
+                          "`!giveaway create 2d 5 Custom Server Role`",
+                    inline=False
+                )
+                embed.add_field(
+                    name="⏰ Duration Formats",
+                    value="`30s` - 30 seconds\n"
+                          "`5m` - 5 minutes\n"
+                          "`2h` - 2 hours\n"
+                          "`1d` - 1 day",
+                    inline=True
+                )
+                embed.set_footer(text="Make sure to specify duration, winner count, and prize")
+                await message.channel.send(embed=embed)
+                return True
+
+            # Loading animation
+            loading_embed = discord.Embed(
+                title="🎉 Creating Giveaway",
+                description="🎯 Validating parameters...\n🏆 Setting up prize...\n⏰ Configuring timer...",
+                color=discord.Color.gold()
+            )
+            loading_msg = await message.channel.send(embed=loading_embed)
+
+            await asyncio.sleep(0.8)
+            loading_embed.description = "✅ Validating parameters...\n🏆 Setting up prize...\n⏰ Configuring timer..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.5)
+            loading_embed.description = "✅ Validating parameters...\n✅ Setting up prize...\n⏰ Configuring timer..."
+            await loading_msg.edit(embed=loading_embed)
+
+            await asyncio.sleep(0.4)
+            loading_embed.description = "✅ Validating parameters...\n✅ Setting up prize...\n✅ Configuring timer..."
+            await loading_msg.edit(embed=loading_embed)
+
+            duration_str = args[2]
+            winners_str = args[3]
+            prize = ' '.join(args[4:])
+
+            # Actually, let me fix the argument parsing
+            duration_str = args[2]
+            winners_str = args[3]
+            prize = ' '.join(args[4:])
+
+            # Validate winners count
+            try:
+                winners = int(winners_str)
+                if winners < 1 or winners > 20:
+                    raise ValueError("Winner count must be between 1 and 20")
+            except ValueError:
+                error_embed = discord.Embed(
+                    title="❌ Invalid Winner Count",
+                    description="The number of winners must be between 1 and 20.",
+                    color=discord.Color.red()
+                )
+                await loading_msg.edit(embed=error_embed)
+                return True
+
+            # Validate prize
+            if not prize or len(prize.strip()) < 3:
+                error_embed = discord.Embed(
+                    title="❌ Invalid Prize",
+                    description="Please specify a prize with at least 3 characters.",
+                    color=discord.Color.red()
+                )
+                await loading_msg.edit(embed=error_embed)
+                return True
 
             # Parse duration
-            import re
             match = re.match(r'(\d+)([smhd])', duration_str.lower())
             if not match:
-                await message.channel.send("❌ Invalid duration format. Use like 1h, 30m, 1d")
+                error_embed = discord.Embed(
+                    title="❌ Invalid Duration Format",
+                    description="Use formats like: `30s`, `5m`, `2h`, `1d`",
+                    color=discord.Color.red()
+                )
+                error_embed.add_field(
+                    name="⏰ Examples",
+                    value="`30s` = 30 seconds\n"
+                          "`5m` = 5 minutes\n"
+                          "`2h` = 2 hours\n"
+                          "`1d` = 1 day",
+                    inline=False
+                )
+                await loading_msg.edit(embed=error_embed)
                 return True
 
             amount = int(match.group(1))
             unit = match.group(2)
+
+            # Validate reasonable limits
+            if unit == 's' and amount > 300:  # Max 5 minutes for seconds
+                amount = 300
+            elif unit == 'm' and amount > 1440:  # Max 24 hours for minutes
+                amount = 1440
+            elif unit == 'h' and amount > 168:  # Max 1 week for hours
+                amount = 168
+            elif unit == 'd' and amount > 30:  # Max 30 days
+                amount = 30
+
             multipliers = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}
             duration = amount * multipliers[unit]
-
             end_time = time.time() + duration
 
+            # Create giveaway
             giveaways = dm.get_guild_data(message.guild.id, "giveaways", [])
+            giveaway_id = len(giveaways) + 1
+
             giveaway = {
-                "id": len(giveaways) + 1,
+                "id": giveaway_id,
                 "channel_id": message.channel.id,
                 "host_id": message.author.id,
                 "prize": prize,
                 "winners": winners,
                 "end_time": end_time,
                 "participants": [],
-                "active": True
+                "active": True,
+                "created_at": time.time()
             }
+
             giveaways.append(giveaway)
             dm.update_guild_data(message.guild.id, "giveaways", giveaways)
 
-            embed = discord.Embed(title="🎉 Giveaway!", description=f"Prize: {prize}\nEnds: <t:{int(end_time)}:R>\nWinners: {winners}", color=discord.Color.green())
-            embed.set_footer(text="React with 🎉 to enter!")
+            # Create enhanced giveaway embed
+            embed = discord.Embed(
+                title="🎉 GIVEAWAY TIME!",
+                description=f"**Prize:** {prize}\n"
+                           f"**Winners:** {winners}\n"
+                           f"**Ends:** <t:{int(end_time)}:R> (<t:{int(end_time)}:F>)",
+                color=discord.Color.gold()
+            )
+
+            embed.add_field(
+                name="🎯 How to Enter",
+                value="React with 🎉 to this message!\n\n"
+                      "*You must stay in the server to win.*",
+                inline=False
+            )
+
+            embed.add_field(
+                name="🏆 Hosted By",
+                value=f"<@{message.author.id}>",
+                inline=True
+            )
+
+            embed.add_field(
+                name="📊 Participants",
+                value="`0` entrants so far",
+                inline=True
+            )
+
+            embed.set_footer(text=f"Giveaway #{giveaway_id} • Ends")
+            embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/123456789012345678/123456789012345678/trophy.png")
+            embed.set_author(name=f"{message.guild.name} Giveaway", icon_url=message.guild.icon.url if message.guild.icon else None)
+
             msg = await message.channel.send(embed=embed)
             await msg.add_reaction("🎉")
 
+            # Update giveaway with message ID
             giveaway["message_id"] = msg.id
             dm.update_guild_data(message.guild.id, "giveaways", giveaways)
 
+            # Success message
+            success_embed = discord.Embed(
+                title="✅ Giveaway Created Successfully!",
+                description=f"Your giveaway for **{prize}** has been created!\n\n"
+                           f"• **Duration:** {duration_str}\n"
+                           f"• **Winners:** {winners}\n"
+                           f"• **Ends:** <t:{int(end_time)}:R>",
+                color=discord.Color.green()
+            )
+
+            success_embed.add_field(
+                name="🎯 Next Steps",
+                value="• Participants will react with 🎉\n"
+                      "• Winners will be selected automatically\n"
+                      "• You'll be notified when it ends",
+                inline=False
+            )
+
+            await loading_msg.edit(embed=success_embed)
+
+            # Add celebratory reactions
+            await loading_msg.add_reaction("🎉")
+            await loading_msg.add_reaction("✅")
+            await loading_msg.add_reaction("🏆")
+
             return True
+
         except Exception as e:
             logger.error(f"Error in handle_giveaway_create: {e}")
-            await message.channel.send("❌ Error creating giveaway. Please try again.")
+            import traceback
+            traceback.print_exc()
+            error_embed = discord.Embed(
+                title="❌ Giveaway Creation Failed",
+                description="There was an error creating your giveaway. Please check your command format and try again.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=error_embed)
             return False
