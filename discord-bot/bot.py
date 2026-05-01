@@ -717,19 +717,24 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 await economy.handle_balance(message)
                 return
             elif cmd_content.strip() == "daily":
-                from modules.economy import Economy
-                economy = Economy(self)
-                await economy.handle_daily(message)
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                await handler.handle_economy_daily(message)
                 return
             elif cmd_content.strip() == "work":
-                from modules.economy import Economy
-                economy = Economy(self)
-                await economy.handle_work(message)
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                await handler.handle_economy_work(message)
                 return
             elif cmd_content.strip() == "ecoleaderboard":
-                from modules.economy import Economy
-                economy = Economy(self)
-                await economy.handle_economy_leaderboard(message)
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                await handler.handle_economy_leaderboard(message)
+                return
+            elif cmd_content.startswith("transfer"):
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                await handler.handle_economy_transfer(message)
                 return
 
             # Handle leveling commands

@@ -5553,6 +5553,78 @@ class ActionHandler:
             await message.channel.send("❌ Unable to load shop. Please try again.")
             return False
 
+    async def handle_economy_transfer(self, message: discord.Message) -> bool:
+        """!transfer — transfer coins to another user"""
+        try:
+            guild_id = message.guild.id
+            author_id = message.author.id
+
+            # Check if economy system is enabled
+            if not is_system_enabled(guild_id, "economy"):
+                await message.channel.send("❌ The economy system is currently disabled on this server.")
+                return False
+
+            parts = message.content.split()
+            if len(parts) < 3:
+                await message.channel.send("Usage: `!transfer @user amount`")
+                return False
+
+            try:
+                # Parse target
+                target_part = parts[1]
+                if target_part.startswith("<@") and target_part.endswith(">"):
+                    target_id = target_part.strip("<@!>")
+                else:
+                    target_id = target_part
+
+                target = message.guild.get_member(int(target_id))
+                if not target:
+                    await message.channel.send("❌ User not found in this server.")
+                    return False
+
+                if target.id == author_id:
+                    await message.channel.send("❌ You cannot transfer coins to yourself.")
+                    return False
+
+                amount = int(parts[2])
+                if amount <= 0:
+                    await message.channel.send("❌ Amount must be positive.")
+                    return False
+
+                from modules.economy import Economy
+                economy = Economy(self.bot)
+
+                current_balance = economy.get_coins(guild_id, author_id)
+                if current_balance < amount:
+                    await message.channel.send(f"❌ Insufficient funds. You have {current_balance:,} coins.")
+                    return False
+
+                # Perform transfer
+                economy.add_coins(guild_id, author_id, -amount)
+                economy.add_coins(guild_id, target.id, amount)
+                economy.log_transaction(guild_id, author_id, amount, "transfer", f"to {target.id}")
+
+                embed = discord.Embed(
+                    title="💸 Coin Transfer Successful",
+                    description=f"**{message.author.display_name}** transferred **{amount:,} coins** to **{target.display_name}**!",
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="Sender", value=f"{message.author.mention}\nBalance: {current_balance - amount:,}", inline=True)
+                embed.add_field(name="Recipient", value=f"{target.mention}\nBalance: {economy.get_coins(guild_id, target.id):,}", inline=True)
+                embed.set_footer(text="Economy System • Secure transactions")
+
+                await message.channel.send(embed=embed)
+                return True
+
+            except ValueError:
+                await message.channel.send("❌ Invalid amount. Please use a number.")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error in handle_economy_transfer: {e}")
+            await message.channel.send("❌ Transfer failed. Please try again.")
+            return False
+
     async def handle_leveling_rank(self, message: discord.Message) -> bool:
         """!rank — show the invoker's current XP, level, gems and streak."""
         try:
