@@ -218,6 +218,8 @@ class CoreCommands(commands.Cog):
         if feature.lower() in modules:
             dm.update_guild_data(interaction.guild.id, f"{feature.lower()}_enabled", False)
             await interaction.response.send_message(f"✅ Disabled module: **{feature}**", ephemeral=True)
+            # Update live status embed
+            await self.bot.get_cog('AutoSetup').update_system_status_embed(interaction.guild.id)
             return
 
         await interaction.response.send_message(f"❌ Feature or task '**{feature}**' not found.", ephemeral=True)
