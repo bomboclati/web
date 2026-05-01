@@ -6120,6 +6120,264 @@ class ActionHandler:
         await message.channel.send("🛍️ Level shop coming soon! Use your gems here.")
         return True
 
+    async def handle_verify(self, message: discord.Message) -> bool:
+        """!verify — manually verify a user (admin only)"""
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ Only administrators can use this command.")
+            return False
+
+        config = dm.get_guild_data(message.guild.id, "verification_config", {})
+        role_id = config.get("verified_role_id")
+        if not role_id:
+            await message.channel.send("❌ Verification role not set.")
+            return False
+
+        role = message.guild.get_role(role_id)
+        if not role:
+            await message.channel.send("❌ Verification role not found.")
+            return False
+
+        parts = message.content.split()
+        if len(parts) > 1:
+            try:
+                user_id = int(parts[1].strip("<@!>"))
+                member = message.guild.get_member(user_id)
+                if member:
+                    await member.add_roles(role)
+                    await message.channel.send(f"✅ Verified {member.mention}")
+                else:
+                    await message.channel.send("❌ User not found.")
+            except ValueError:
+                await message.channel.send("❌ Invalid user.")
+        else:
+            await message.author.add_roles(role)
+            await message.channel.send("✅ You are now verified.")
+        return True
+
+    async def handle_kick(self, message: discord.Message) -> bool:
+        """!kick — kick a user"""
+        if not message.author.guild_permissions.kick_members:
+            await message.channel.send("❌ No permission.")
+            return False
+
+        parts = message.content.split()
+        if len(parts) < 2:
+            await message.channel.send("Usage: !kick @user [reason]")
+            return False
+
+        try:
+            user_id = int(parts[1].strip("<@!>"))
+            member = message.guild.get_member(user_id)
+            if not member:
+                await message.channel.send("❌ User not found.")
+                return False
+
+            reason = " ".join(parts[2:]) if len(parts) > 2 else "No reason"
+            await member.kick(reason=reason)
+            await message.channel.send(f"✅ Kicked {member.mention} for {reason}")
+        except Exception as e:
+            await message.channel.send(f"❌ Error: {e}")
+        return True
+
+    async def handle_ban(self, message: discord.Message) -> bool:
+        """!ban — ban a user"""
+        if not message.author.guild_permissions.ban_members:
+            await message.channel.send("❌ No permission.")
+            return False
+
+        parts = message.content.split()
+        if len(parts) < 2:
+            await message.channel.send("Usage: !ban @user [reason]")
+            return False
+
+        try:
+            user_id = int(parts[1].strip("<@!>"))
+            member = message.guild.get_member(user_id)
+            if not member:
+                await message.channel.send("❌ User not found.")
+                return False
+
+            reason = " ".join(parts[2:]) if len(parts) > 2 else "No reason"
+            await member.ban(reason=reason)
+            await message.channel.send(f"✅ Banned {member.mention} for {reason}")
+        except Exception as e:
+            await message.channel.send(f"❌ Error: {e}")
+        return True
+
+    async def handle_mute(self, message: discord.Message) -> bool:
+        """!mute — timeout a user"""
+        if not message.author.guild_permissions.moderate_members:
+            await message.channel.send("❌ No permission.")
+            return False
+
+        parts = message.content.split()
+        if len(parts) < 3:
+            await message.channel.send("Usage: !mute @user duration reason (e.g. 1h spam)")
+            return False
+
+        try:
+            user_id = int(parts[1].strip("<@!>"))
+            member = message.guild.get_member(user_id)
+            if not member:
+                await message.channel.send("❌ User not found.")
+                return False
+
+            duration_str = parts[2]
+            import re
+            match = re.match(r'(\d+)([smhd])', duration_str)
+            if not match:
+                await message.channel.send("❌ Invalid duration. Use format like 1h, 30m, 10s")
+                return False
+
+            amount = int(match.group(1))
+            unit = match.group(2)
+            seconds = amount * {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}[unit]
+            reason = " ".join(parts[3:]) if len(parts) > 3 else "No reason"
+
+            await member.timeout(discord.utils.utcnow() + datetime.timedelta(seconds=seconds), reason=reason)
+            await message.channel.send(f"✅ Muted {member.mention} for {duration_str} - {reason}")
+        except Exception as e:
+            await message.channel.send(f"❌ Error: {e}")
+        return True
+
+    async def handle_modstats(self, message: discord.Message) -> bool:
+        """!modstats — moderation statistics"""
+        embed = discord.Embed(title="📊 Mod Stats", description="Moderation statistics.", color=discord.Color.red())
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_warn(self, message: discord.Message) -> bool:
+        """!warn — warn a user"""
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ No permission.")
+            return False
+
+        parts = message.content.split(None, 2)
+        if len(parts) < 2:
+            await message.channel.send("Usage: !warn @user reason")
+            return False
+
+        try:
+            user_id = int(parts[1].strip("<@!>"))
+            member = message.guild.get_member(user_id)
+            if not member:
+                await message.channel.send("❌ User not found.")
+                return False
+
+            reason = parts[2] if len(parts) > 2 else "No reason"
+            warnings = dm.get_guild_data(message.guild.id, "warnings", {})
+            user_warnings = warnings.get(str(user_id), [])
+            user_warnings.append({"reason": reason, "by": message.author.id, "at": time.time()})
+            warnings[str(user_id)] = user_warnings
+            dm.update_guild_data(message.guild.id, "warnings", warnings)
+            await message.channel.send(f"⚠️ Warned {member.mention} for {reason}")
+        except Exception as e:
+            await message.channel.send(f"❌ Error: {e}")
+        return True
+
+    async def handle_warnings(self, message: discord.Message) -> bool:
+        """!warnings — view warnings"""
+        parts = message.content.split()
+        if len(parts) > 1:
+            try:
+                user_id = int(parts[1].strip("<@!>"))
+                warnings_list = dm.get_guild_data(message.guild.id, "warnings", {}).get(str(user_id), [])
+                embed = discord.Embed(title=f"⚠️ Warnings for <@{user_id}>", color=discord.Color.orange())
+                if warnings_list:
+                    for i, w in enumerate(warnings_list):
+                        embed.add_field(name=f"Warning {i+1}", value=f"Reason: {w['reason']}\nBy: <@{w['by']}>\nAt: <t:{int(w['at'])}:f>", inline=False)
+                else:
+                    embed.description = "No warnings."
+                await message.channel.send(embed=embed)
+            except ValueError:
+                await message.channel.send("❌ Invalid user.")
+        else:
+            warnings_list = dm.get_guild_data(message.guild.id, "warnings", {}).get(str(message.author.id), [])
+            embed = discord.Embed(title="⚠️ Your Warnings", color=discord.Color.orange())
+            if warnings_list:
+                for i, w in enumerate(warnings_list):
+                    embed.add_field(name=f"Warning {i+1}", value=f"Reason: {w['reason']}\nBy: <@{w['by']}>\nAt: <t:{int(w['at'])}:f>", inline=False)
+            else:
+                embed.description = "No warnings."
+            await message.channel.send(embed=embed)
+        return True
+
+    async def handle_clearwarn(self, message: discord.Message) -> bool:
+        """!clearwarn — clear warnings for a user"""
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ No permission.")
+            return False
+
+        parts = message.content.split()
+        if len(parts) < 2:
+            await message.channel.send("Usage: !clearwarn @user")
+            return False
+
+        try:
+            user_id = int(parts[1].strip("<@!>"))
+            warnings = dm.get_guild_data(message.guild.id, "warnings", {})
+            if str(user_id) in warnings:
+                del warnings[str(user_id)]
+                dm.update_guild_data(message.guild.id, "warnings", warnings)
+                await message.channel.send(f"✅ Cleared warnings for <@{user_id}>")
+            else:
+                await message.channel.send("❌ No warnings found.")
+        except ValueError:
+            await message.channel.send("❌ Invalid user.")
+        return True
+
+    async def handle_clearallwarns(self, message: discord.Message) -> bool:
+        """!clearallwarns — clear all warnings"""
+        if not message.author.guild_permissions.administrator:
+            await message.channel.send("❌ No permission.")
+            return False
+
+        dm.update_guild_data(message.guild.id, "warnings", {})
+        await message.channel.send("✅ Cleared all warnings.")
+        return True
+
+    async def handle_raidstatus(self, message: discord.Message) -> bool:
+        """!raidstatus — check anti-raid status"""
+        config = dm.get_guild_data(message.guild.id, "anti_raid_config", {})
+        enabled = config.get("enabled", False)
+        status = "✅ Enabled" if enabled else "❌ Disabled"
+        embed = discord.Embed(title="🚨 Anti-Raid Status", description=f"Status: {status}", color=discord.Color.red() if enabled else discord.Color.green())
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_guardian_status(self, message: discord.Message) -> bool:
+        """!guardian status — check guardian status"""
+        config = dm.get_guild_data(message.guild.id, "guardian_config", {})
+        enabled = config.get("enabled", False)
+        status = "✅ Enabled" if enabled else "❌ Disabled"
+        embed = discord.Embed(title="⚔️ Guardian Status", description=f"Status: {status}", color=discord.Color.blue() if enabled else discord.Color.red())
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_automod_status(self, message: discord.Message) -> bool:
+        """!automod status — check automod status"""
+        config = dm.get_guild_data(message.guild.id, "automod_config", {})
+        enabled = config.get("enabled", False)
+        status = "✅ Enabled" if enabled else "❌ Disabled"
+        embed = discord.Embed(title="🤖 AutoMod Status", description=f"Status: {status}", color=discord.Color.green() if enabled else discord.Color.red())
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_reactionrolespanel(self, message: discord.Message) -> bool:
+        """!reactionrolespanel — open reaction roles panel"""
+        await message.channel.send("🎭 Reaction roles panel: Use `/setup` to configure.")
+        return True
+
+    async def handle_reactionmenuspanel(self, message: discord.Message) -> bool:
+        """!reactionmenuspanel — open reaction menus panel"""
+        await message.channel.send("📌 Reaction menus panel: Use `/setup` to configure.")
+        return True
+
+    async def handle_rolebuttonspanel(self, message: discord.Message) -> bool:
+        """!rolebuttonspanel — open role buttons panel"""
+        await message.channel.send("🔘 Role buttons panel: Use `/setup` to configure.")
+        return True
+
     async def handle_leveling_rank(self, message: discord.Message) -> bool:
         """!rank — show the invoker's current XP, level, gems and streak."""
         try:
