@@ -31,6 +31,7 @@ CATEGORIES = {
             ("moderation",     "🔨", "Kick, ban, mute, timeout commands", ["!kick", "!ban", "!mute", "!modstats"]),
             ("modlog",         "📋", "Audit log for all mod actions", ["!modlog view", "!configpanel modlog"]),
             ("logging",        "📊", "Full server event logging", ["!configpanel logging"]),
+            ("mod_logging",    "📝", "Moderation action logging", ["!configpanel modlog"]),
         ]
     },
     "💰 Economy": {
@@ -79,6 +80,7 @@ CATEGORIES = {
             ("chatchannels",   "🧠", "AI-powered chat channels", ["!chatchannel add"]),
             ("autoresponder",  "💬", "Keyword auto-responses", ["!autoresponder add"]),
             ("reminders",      "⏰", "Personal & server reminders", ["!remind", "!reminders"]),
+            ("scheduled_reminders", "⏰", "Scheduled reminder system", ["!configpanel scheduled"]),
             ("announcements",  "📢", "Scheduled announcements", ["!announcement create"]),
             ("scheduled",      "🕒", "Scheduled automated messages", ["!configpanel scheduled"]),
         ]
@@ -94,6 +96,42 @@ CATEGORIES = {
             ("intelligence",   "🧠", "Server analytics & stats", ["!serverstats", "!mystats", "!atrisk"]),
             ("conflict_resolution", "⚖️", "AI conflict resolution", ["!configpanel conflict"]),
             ("community_health", "❤️", "Community engagement tracking", ["!configpanel community"]),
+            ("embed_system",   "📄", "Embed creation & management", ["!configpanel embed"]),
+            ("proactive_assist", "🤖", "Proactive AI assistance", ["!configpanel proactive"]),
+            ("vector_memory",  "💾", "AI memory management", ["!configpanel vector"]),
+            ("mod_logging",    "📝", "Moderation logging", ["!configpanel modlog"]),
+            ("server_analytics", "📈", "Server analytics", ["!configpanel analytics"]),
+        ]
+    },
+    "🚀 Advanced Systems": {
+        "color": PURPLE,
+        "systems": [
+            ("trigger_roles",  "🎭", "Trigger-based role assignment", ["!configpanel trigger"]),
+            ("content_generator", "✍️", "AI content generation", ["!configpanel content"]),
+            ("tournament_system", "🏅", "Tournament management", ["!tournament create"]),
+            ("starboard",      "⭐", "Star highlight board", ["!configpanel starboard"]),
+            ("anti_raid",      "🚨", "Anti-raid protection", ["!raidstatus"]),
+            ("auto_setup",     "⚙️", "Automated server setup", ["!autosetup"]),
+            ("guardian",       "⚔️", "Advanced threat detection", ["!guardian status"]),
+            ("warning_system", "⚠️", "Warning escalation system", ["!warn"]),
+            ("staff_promo",    "📈", "Staff promotion system", ["!staffpromo"]),
+            ("staff_reviews",  "📝", "Staff review system", ["!review"]),
+            ("modmail",        "📬", "Modmail system", ["DM the bot"]),
+            ("auto_responder", "💬", "Auto-response system", ["!autoresponder add"]),
+            ("welcome_leave",  "👋", "Welcome/leave messages", ["!configpanel welcome"]),
+            ("reaction_roles", "🎭", "Reaction role assignment", ["!reactionrolespanel"]),
+            ("reaction_menus", "📌", "Reaction menus", ["!reactionmenuspanel"]),
+            ("role_buttons",   "🔘", "Role buttons", ["!rolebuttonspanel"]),
+            ("chat_channels",  "🧠", "AI chat channels", ["!chatchannel add"]),
+            ("events",         "📅", "Event scheduling", ["!events"]),
+            ("giveaways",      "🎉", "Giveaway system", ["!giveaway create"]),
+            ("reminders",      "⏰", "Reminder system", ["!remind"]),
+            ("announcements",  "📢", "Announcement system", ["!announcement create"]),
+            ("suggestions",    "💡", "Suggestion system", ["!suggest"]),
+            ("tickets",        "🎫", "Ticket system", ["!ticket"]),
+            ("appeals",        "⚖️", "Appeal system", ["!appeal"]),
+            ("applications",   "📋", "Application system", ["!apply"]),
+            ("staff_system",   "👮", "Staff system", ["!staffleaderboard"]),
         ]
     },
 }
