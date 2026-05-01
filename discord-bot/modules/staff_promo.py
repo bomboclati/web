@@ -1007,29 +1007,33 @@ class AddTierModal(discord.ui.Modal):
         super().__init__(title="Add New Tier")
         self.guild_id = guild_id
 
-    name = discord.ui.TextInput(label="Tier Name", placeholder="e.g. Junior Moderator")
-    role_id = discord.ui.TextInput(label="Role ID", placeholder="123456789")
-    requirements = discord.ui.TextInput(label="Requirements", style=discord.TextStyle.long, placeholder="Activity requirements, etc.", required=False)
+        self.name_input = discord.ui.TextInput(label="Tier Name", placeholder="e.g. Junior Moderator")
+        self.role_id_input = discord.ui.TextInput(label="Role ID", placeholder="123456789")
+        self.requirements_input = discord.ui.TextInput(label="Requirements", style=discord.TextStyle.long, placeholder="Activity requirements, etc.", required=False)
+
+        self.add_item(self.name_input)
+        self.add_item(self.role_id_input)
+        self.add_item(self.requirements_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         config = dm.get_guild_data(self.guild_id, "staffpromo_config", {})
         tiers = config.get("tiers", [])
 
         try:
-            role_id_int = int(self.role_id.value)
+            role_id_int = int(self.role_id_input.value)
         except ValueError:
             return await interaction.response.send_message("Invalid role ID.", ephemeral=True)
 
         new_tier = {
-            "name": self.name.value,
+            "name": self.name_input.value,
             "role_id": role_id_int,
-            "requirements": self.requirements.value or "None"
+            "requirements": self.requirements_input.value or "None"
         }
         tiers.append(new_tier)
         config["tiers"] = tiers
         dm.update_guild_data(self.guild_id, "staffpromo_config", config)
 
-        await interaction.response.send_message(f"✅ Added tier '{self.name.value}'!", ephemeral=True)
+        await interaction.response.send_message(f"✅ Added tier '{self.name_input.value}'!", ephemeral=True)
 
 
 class TierSelect(discord.ui.Select):
@@ -1074,28 +1078,32 @@ class EditTierModal(discord.ui.Modal):
         self.index = index
         self.tier = tier
 
-    name = discord.ui.TextInput(label="Tier Name", default=tier['name'])
-    role_id = discord.ui.TextInput(label="Role ID", default=str(tier['role_id']))
-    requirements = discord.ui.TextInput(label="Requirements", style=discord.TextStyle.long, default=tier.get('requirements', 'None'))
+        self.name_input = discord.ui.TextInput(label="Tier Name", default=tier['name'])
+        self.role_id_input = discord.ui.TextInput(label="Role ID", default=str(tier['role_id']))
+        self.requirements_input = discord.ui.TextInput(label="Requirements", style=discord.TextStyle.long, default=tier.get('requirements', 'None'))
+
+        self.add_item(self.name_input)
+        self.add_item(self.role_id_input)
+        self.add_item(self.requirements_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         config = dm.get_guild_data(self.guild_id, "staffpromo_config", {})
         tiers = config.get("tiers", [])
 
         try:
-            role_id_int = int(self.role_id.value)
+            role_id_int = int(self.role_id_input.value)
         except ValueError:
             return await interaction.response.send_message("Invalid role ID.", ephemeral=True)
 
         tiers[self.index] = {
-            "name": self.name.value,
+            "name": self.name_input.value,
             "role_id": role_id_int,
-            "requirements": self.requirements.value
+            "requirements": self.requirements_input.value
         }
         config["tiers"] = tiers
         dm.update_guild_data(self.guild_id, "staffpromo_config", config)
 
-        await interaction.response.send_message(f"✅ Updated tier '{self.name.value}'!", ephemeral=True)
+        await interaction.response.send_message(f"✅ Updated tier '{self.name_input.value}'!", ephemeral=True)
 
 
 class StaffPromoRequirementsView(discord.ui.View):
