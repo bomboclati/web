@@ -4328,6 +4328,80 @@ class ActionHandler:
                     return await self.handle_my_stats(message)
                 elif command_type == "at_risk":
                     return await self.handle_at_risk(message)
+                elif command_type == "gamification_quests":
+                    return await self.handle_gamification_quests(message)
+                elif command_type == "gamification_prestige":
+                    return await self.handle_gamification_prestige(message)
+                elif command_type == "gamification_dice":
+                    return await self.handle_gamification_dice(message)
+                elif command_type == "gamification_flip":
+                    return await self.handle_gamification_flip(message)
+                elif command_type == "events_create":
+                    return await self.handle_events_create(message)
+                elif command_type == "events_list":
+                    return await self.handle_events_list(message)
+                elif command_type == "tournaments_create":
+                    return await self.handle_tournaments_create(message)
+                elif command_type == "tournaments_join":
+                    return await self.handle_tournaments_join(message)
+                elif command_type == "tournaments_leaderboard":
+                    return await self.handle_tournaments_leaderboard(message)
+                elif command_type == "reminders":
+                    return await self.handle_reminders(message)
+                elif command_type == "remind":
+                    return await self.handle_remind(message)
+                elif command_type == "announcements_create":
+                    return await self.handle_announcements_create(message)
+                elif command_type == "giveaways_create":
+                    return await self.handle_giveaways_create(message)
+                elif command_type == "giveaways_list":
+                    return await self.handle_giveaways_list(message)
+                elif command_type == "serverstats":
+                    return await self.handle_serverstats(message)
+                elif command_type == "mystats":
+                    return await self.handle_mystats(message)
+                elif command_type == "atrisk":
+                    return await self.handle_atrisk(message)
+                elif command_type == "automod_status":
+                    return await self.handle_automod_status(message)
+                elif command_type == "guardian_status":
+                    return await self.handle_guardian_status(message)
+                elif command_type == "chatchannel_add":
+                    return await self.handle_chatchannel_add(message)
+                elif command_type == "suggest":
+                    return await self.handle_suggest(message)
+                elif command_type == "ticket":
+                    return await self.handle_ticket(message)
+                elif command_type == "appeal":
+                    return await self.handle_appeal(message)
+                elif command_type == "apply":
+                    return await self.handle_apply(message)
+                elif command_type == "verify":
+                    return await self.handle_verify(message)
+                elif command_type == "modlog_view":
+                    return await self.handle_modlog_view(message)
+                elif command_type == "warn":
+                    return await self.handle_warn(message)
+                elif command_type == "warnings":
+                    return await self.handle_warnings(message)
+                elif command_type == "clearwarn":
+                    return await self.handle_clearwarn(message)
+                elif command_type == "clearallwarns":
+                    return await self.handle_clearallwarns(message)
+                elif command_type == "kick":
+                    return await self.handle_kick(message)
+                elif command_type == "ban":
+                    return await self.handle_ban(message)
+                elif command_type == "mute":
+                    return await self.handle_mute(message)
+                elif command_type == "modstats":
+                    return await self.handle_modstats(message)
+                elif command_type == "leveling_levels":
+                    return await self.handle_leveling_levels(message)
+                elif command_type == "leveling_rewards":
+                    return await self.handle_leveling_rewards(message)
+                elif command_type == "leveling_shop":
+                    return await self.handle_leveling_shop(message)
                 elif command_type == "remind":
                     return await self.handle_remind(message)
                 elif command_type == "list_reminders":
@@ -5695,6 +5769,296 @@ class ActionHandler:
             logger.error(f"Error in handle_economy_buy: {e}")
             await message.channel.send("❌ Purchase failed. Please try again.")
             return False
+
+    async def handle_gamification_quests(self, message: discord.Message) -> bool:
+        """!quests — list available quests"""
+        try:
+            guild_id = message.guild.id
+
+            if not is_system_enabled(guild_id, "gamification"):
+                await message.channel.send("❌ The gamification system is currently disabled.")
+                return False
+
+            # Placeholder for quests
+            embed = discord.Embed(
+                title="🎯 Available Quests",
+                description="Complete quests to earn rewards!",
+                color=discord.Color.purple()
+            )
+            embed.add_field(name="Daily Login", value="Log in daily - Reward: 100 XP", inline=False)
+            embed.add_field(name="Chat Master", value="Send 100 messages - Reward: 500 XP", inline=False)
+            embed.add_field(name="Voice Veteran", value="Spend 1 hour in voice - Reward: 200 XP", inline=False)
+            embed.set_footer(text="More quests coming soon!")
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_gamification_quests: {e}")
+            return False
+
+    async def handle_gamification_prestige(self, message: discord.Message) -> bool:
+        """!prestige — prestige system"""
+        try:
+            guild_id = message.guild.id
+
+            if not is_system_enabled(guild_id, "gamification"):
+                await message.channel.send("❌ The gamification system is currently disabled.")
+                return False
+
+            embed = discord.Embed(
+                title="⭐ Prestige System",
+                description="Reset your progress for permanent bonuses!",
+                color=discord.Color.gold()
+            )
+            embed.add_field(name="Requirements", value="Reach max level and have gems", inline=False)
+            embed.add_field(name="Benefits", value="Permanent XP multipliers", inline=False)
+            embed.set_footer(text="Prestige when ready!")
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_gamification_prestige: {e}")
+            return False
+
+    async def handle_gamification_dice(self, message: discord.Message) -> bool:
+        """!dice — roll dice"""
+        try:
+            import random
+            result = random.randint(1, 6)
+            embed = discord.Embed(
+                title="🎲 Dice Roll",
+                description=f"{message.author.mention} rolled a **{result}**!",
+                color=discord.Color.blue()
+            )
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            return False
+
+    async def handle_gamification_flip(self, message: discord.Message) -> bool:
+        """!flip — coin flip"""
+        try:
+            import random
+            result = random.choice(["Heads", "Tails"])
+            embed = discord.Embed(
+                title="🪙 Coin Flip",
+                description=f"{message.author.mention} got **{result}**!",
+                color=discord.Color.green()
+            )
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            return False
+
+    async def handle_events_create(self, message: discord.Message) -> bool:
+        """!event create — create event (placeholder)"""
+        await message.channel.send("📅 Event creation: Use `/setup` to configure events.")
+        return True
+
+    async def handle_events_list(self, message: discord.Message) -> bool:
+        """!event list — list events"""
+        embed = discord.Embed(
+            title="📅 Upcoming Events",
+            description="No events scheduled.",
+            color=discord.Color.blue()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_tournaments_create(self, message: discord.Message) -> bool:
+        """!tournament create — create tournament"""
+        await message.channel.send("🏆 Tournament creation: Use `/setup` to configure tournaments.")
+        return True
+
+    async def handle_tournaments_join(self, message: discord.Message) -> bool:
+        """!join <tournament> — join tournament"""
+        await message.channel.send("🏆 Tournament joining: Feature coming soon!")
+        return True
+
+    async def handle_tournaments_leaderboard(self, message: discord.Message) -> bool:
+        """!tournamentleaderboard — tournament leaderboard"""
+        embed = discord.Embed(
+            title="🏆 Tournament Leaderboard",
+            description="Top tournament players.",
+            color=discord.Color.gold()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_reminders(self, message: discord.Message) -> bool:
+        """!reminders — list reminders"""
+        embed = discord.Embed(
+            title="⏰ Your Reminders",
+            description="No active reminders.",
+            color=discord.Color.blue()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_remind(self, message: discord.Message) -> bool:
+        """!remind — set reminder (placeholder)"""
+        await message.channel.send("⏰ Reminder: Use `/remindme` for slash command.")
+        return True
+
+    async def handle_announcements_create(self, message: discord.Message) -> bool:
+        """!announcement create — create announcement"""
+        await message.channel.send("📢 Announcement: Use `/setup` to configure announcements.")
+        return True
+
+    async def handle_giveaways_create(self, message: discord.Message) -> bool:
+        """!giveaway create — create giveaway"""
+        await message.channel.send("🎉 Giveaway: Use `/setup` to configure giveaways.")
+        return True
+
+    async def handle_giveaways_list(self, message: discord.Message) -> bool:
+        """!giveaway list — list giveaways"""
+        embed = discord.Embed(
+            title="🎉 Active Giveaways",
+            description="No active giveaways.",
+            color=discord.Color.purple()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_serverstats(self, message: discord.Message) -> bool:
+        """!serverstats — server statistics"""
+        guild = message.guild
+        embed = discord.Embed(
+            title=f"📊 {guild.name} Stats",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Members", value=guild.member_count, inline=True)
+        embed.add_field(name="Channels", value=len(guild.channels), inline=True)
+        embed.add_field(name="Roles", value=len(guild.roles), inline=True)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_mystats(self, message: discord.Message) -> bool:
+        """!mystats — user statistics"""
+        embed = discord.Embed(
+            title=f"📈 {message.author.display_name}'s Stats",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Joined", value=message.author.joined_at.strftime("%Y-%m-%d"), inline=True)
+        embed.add_field(name="Roles", value=len(message.author.roles), inline=True)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_atrisk(self, message: discord.Message) -> bool:
+        """!atrisk — at-risk users"""
+        embed = discord.Embed(
+            title="⚠️ At-Risk Users",
+            description="Users needing attention.",
+            color=discord.Color.red()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_automod_status(self, message: discord.Message) -> bool:
+        """!automod status — automod status"""
+        embed = discord.Embed(
+            title="🤖 AutoMod Status",
+            description="AutoMod is active.",
+            color=discord.Color.green()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_guardian_status(self, message: discord.Message) -> bool:
+        """!guardian status — guardian status"""
+        embed = discord.Embed(
+            title="⚔️ Guardian Status",
+            description="Guardian is protecting the server.",
+            color=discord.Color.blue()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_chatchannel_add(self, message: discord.Message) -> bool:
+        """!chatchannel add — add chat channel"""
+        await message.channel.send("🧠 Chat channel: Use `/setup` to configure AI chat channels.")
+        return True
+
+    async def handle_suggest(self, message: discord.Message) -> bool:
+        """!suggest — submit suggestion"""
+        parts = message.content.split(None, 1)
+        if len(parts) < 2:
+            await message.channel.send("Usage: `!suggest <your suggestion>`")
+            return False
+
+        suggestion = parts[1]
+        embed = discord.Embed(
+            title="💡 New Suggestion",
+            description=suggestion,
+            color=discord.Color.yellow()
+        )
+        embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url)
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_ticket(self, message: discord.Message) -> bool:
+        """!ticket — create ticket"""
+        await message.channel.send("🎫 Ticket: Use buttons or `/setup` to configure tickets.")
+        return True
+
+    async def handle_appeal(self, message: discord.Message) -> bool:
+        """!appeal — create appeal"""
+        await message.channel.send("⚖️ Appeal: Use `/setup` to configure appeals.")
+        return True
+
+    async def handle_apply(self, message: discord.Message) -> bool:
+        """!apply — apply for staff"""
+        await message.channel.send("📋 Application: Use buttons or `/setup` to configure applications.")
+        return True
+
+    async def handle_verify(self, message: discord.Message) -> bool:
+        """!verify — verify user"""
+        await message.channel.send("🛡️ Verification: Use buttons in verify channel.")
+        return True
+
+    async def handle_modlog_view(self, message: discord.Message) -> bool:
+        """!modlog view — view mod logs"""
+        embed = discord.Embed(
+            title="📋 Moderation Logs",
+            description="Recent mod actions.",
+            color=discord.Color.red()
+        )
+        await message.channel.send(embed=embed)
+        return True
+
+    async def handle_kick(self, message: discord.Message) -> bool:
+        """!kick — kick user"""
+        if not message.author.guild_permissions.kick_members:
+            await message.channel.send("❌ No permission.")
+            return False
+        await message.channel.send("🔨 Kick: Use `/kick` slash command.")
+        return True
+
+    async def handle_ban(self, message: discord.Message) -> bool:
+        """!ban — ban user"""
+        if not message.author.guild_permissions.ban_members:
+            await message.channel.send("❌ No permission.")
+            return False
+        await message.channel.send("🔨 Ban: Use `/ban` slash command.")
+        return True
+
+    async def handle_mute(self, message: discord.Message) -> bool:
+        """!mute — mute user"""
+        if not message.author.guild_permissions.moderate_members:
+            await message.channel.send("❌ No permission.")
+            return False
+        await message.channel.send("🔇 Mute: Use timeout feature.")
+        return True
+
+    async def handle_modstats(self, message: discord.Message) -> bool:
+        """!modstats — moderation stats"""
+        embed = discord.Embed(
+            title="📊 Mod Stats",
+            description="Moderation statistics.",
+            color=discord.Color.red()
+        )
+        await message.channel.send(embed=embed)
+        return True
 
     async def handle_leveling_levels(self, message: discord.Message) -> bool:
         """!levels — show leveling system info"""

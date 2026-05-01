@@ -768,6 +768,11 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             if any(cmd_content.startswith(cmd) for cmd in ["staffleaderboard", "promotionhistory", "staffpromotionhistory", "trainingtasks", "appeal"]) or cmd_content.startswith("shift"):
                 await self._handle_staff_command(message, cmd_content)
                 return
+
+            # Handle staffpromo subcommands
+            if cmd_content.startswith("staffpromo"):
+                await self._handle_staffpromo_command(message, cmd_content)
+                return
             
             # Handle remaining prefix commands via custom commands system
             guild_cmds = dm.get_guild_data(message.guild.id, "custom_commands", {})
@@ -1239,6 +1244,104 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         if command in staff_commands:
             cmd_func = staff_commands[command]
             await cmd_func(message, parts)
+
+    async def _handle_staffpromo_command(self, message, cmd_content):
+        """Handle !staffpromo subcommands"""
+        parts = cmd_content.split()
+        if len(parts) < 2:
+            # Default to opening the main staffpromo panel
+            from modules.config_panels import get_config_panel
+            view = get_config_panel(message.guild.id, "staffpromo")
+            if view:
+                embed = view.create_embed(message.guild.id)
+                await message.channel.send(embed=embed, view=view)
+            else:
+                await message.channel.send("Staff promotion system not configured.")
+            return
+
+        subcommand = parts[1].lower()
+
+        if subcommand == "tiers":
+            # Interactive hierarchy management
+            from modules.staff_promo import StaffPromoTiersView
+            view = StaffPromoTiersView(message.guild.id)
+            embed = view.create_embed()
+            await message.channel.send(embed=embed, view=view)
+        elif subcommand == "requirements":
+            # Per-tier criteria editor
+            from modules.staff_promo import StaffPromoRequirementsView
+            view = StaffPromoRequirementsView(message.guild.id)
+            embed = view.create_embed()
+            await message.channel.send(embed=embed, view=view)
+        elif subcommand == "status":
+            # Check staff promotion status
+            from modules.staff_promo import StaffPromoStatusView
+            view = StaffPromoStatusView(message.guild.id)
+            embed = view.create_embed()
+            await message.channel.send(embed=embed, view=view)
+        elif subcommand == "leaderboard":
+            # Staff leaderboard
+            from modules.staff_promo import StaffPromoLeaderboardView
+            view = StaffPromoLeaderboardView(message.guild.id)
+            embed = view.create_embed()
+            await message.channel.send(embed=embed, view=view)
+        elif subcommand == "progress":
+            # Personal progress
+            from modules.staff_promo import StaffPromoProgressView
+            view = StaffPromoProgressView(message.guild.id, message.author.id)
+            embed = view.create_embed()
+            await message.channel.send(embed=embed, view=view)
+        elif subcommand == "tiers":
+            # Tiers management
+            from modules.staff_promo import StaffPromoTiersView
+            view = StaffPromoTiersView(message.guild.id)
+            embed = view.create_embed()
+            await message.channel.send(embed=embed, view=view)
+        elif subcommand == "bonuses":
+            # Bonuses management
+            from modules.staff_promo import StaffPromoBonusesView
+            view = StaffPromoBonusesView(message.guild.id)
+            embed = view.create_embed()
+            await message.channel.send(embed=embed, view=view)
+        elif subcommand == "exclude":
+            # Exclude management
+            if len(parts) > 2:
+                action = parts[2].lower()
+                if action == "add" and len(parts) > 3:
+                    # Add user to exclude
+                    try:
+                        user_id = int(parts[3].strip("<@!>"))
+                        config = dm.get_guild_data(message.guild.id, "staffpromo_config", {})
+                        excluded = config.get("excluded_users", [])
+                        if user_id not in excluded:
+                            excluded.append(user_id)
+                            config["excluded_users"] = excluded
+                            dm.update_guild_data(message.guild.id, "staffpromo_config", config)
+                            await message.channel.send(f"✅ User <@{user_id}> excluded from promotions.")
+                        else:
+                            await message.channel.send("User already excluded.")
+                    except ValueError:
+                        await message.channel.send("Invalid user ID.")
+                elif action == "remove" and len(parts) > 3:
+                    try:
+                        user_id = int(parts[3].strip("<@!>"))
+                        config = dm.get_guild_data(message.guild.id, "staffpromo_config", {})
+                        excluded = config.get("excluded_users", [])
+                        if user_id in excluded:
+                            excluded.remove(user_id)
+                            config["excluded_users"] = excluded
+                            dm.update_guild_data(message.guild.id, "staffpromo_config", config)
+                            await message.channel.send(f"✅ User <@{user_id}> removed from exclusions.")
+                        else:
+                            await message.channel.send("User not excluded.")
+                    except ValueError:
+                        await message.channel.send("Invalid user ID.")
+                else:
+                    await message.channel.send("Usage: `!staffpromo exclude add @user` or `!staffpromo exclude remove @user`")
+            else:
+                await message.channel.send("Usage: `!staffpromo exclude add @user` or `!staffpromo exclude remove @user`")
+        else:
+            await message.channel.send(f"Unknown subcommand '{subcommand}'. Available: tiers, requirements, status, leaderboard, progress, bonuses, exclude.")
             return
 
         if command == "myshifts":

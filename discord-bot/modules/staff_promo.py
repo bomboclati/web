@@ -939,5 +939,277 @@ class StaffPromotionSystem:
         })
         
         dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
-        
+
         await interaction.followup.send("✅ Staff Promotion System set up!", ephemeral=True)
+
+
+class StaffPromoTiersView(discord.ui.View):
+    """Interactive hierarchy management for staff tiers"""
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+
+    def create_embed(self):
+        config = dm.get_guild_data(self.guild_id, "staffpromo_config", {})
+        tiers = config.get("tiers", [])
+
+        embed = discord.Embed(
+            title="🏗️ Staff Promotion Tiers Management",
+            description="Manage the staff hierarchy tiers below.",
+            color=discord.Color.blue()
+        )
+
+        if tiers:
+            for i, tier in enumerate(tiers):
+                embed.add_field(
+                    name=f"{i+1}. {tier['name']}",
+                    value=f"Role: <@&{tier['role_id']}>\nRequirements: {tier.get('requirements', 'None')}",
+                    inline=False
+                )
+        else:
+            embed.add_field(name="No Tiers", value="Add tiers using the buttons below.", inline=False)
+
+        return embed
+
+    @discord.ui.button(label="Add Tier", style=discord.ButtonStyle.success, emoji="➕")
+    async def add_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = AddTierModal(self.guild_id)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="Edit Tier", style=discord.ButtonStyle.primary, emoji="✏️")
+    async def edit_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = dm.get_guild_data(self.guild_id, "staffpromo_config", {})
+        tiers = config.get("tiers", [])
+        if not tiers:
+            return await interaction.response.send_message("No tiers to edit.", ephemeral=True)
+
+        select = TierSelect(tiers)
+        await interaction.response.send_message("Select a tier to edit:", view=TierSelectView(select), ephemeral=True)
+
+    @discord.ui.button(label="Remove Tier", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def remove_tier(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = dm.get_guild_data(self.guild_id, "staffpromo_config", {})
+        tiers = config.get("tiers", [])
+        if not tiers:
+            return await interaction.response.send_message("No tiers to remove.", ephemeral=True)
+
+        select = TierSelect(tiers, action="remove")
+        await interaction.response.send_message("Select a tier to remove:", view=TierSelectView(select), ephemeral=True)
+
+    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, emoji="🔄")
+    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = self.create_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+
+class AddTierModal(discord.ui.Modal):
+    def __init__(self, guild_id: int):
+        super().__init__(title="Add New Tier")
+        self.guild_id = guild_id
+
+    name = discord.ui.TextInput(label="Tier Name", placeholder="e.g. Junior Moderator")
+    role_id = discord.ui.TextInput(label="Role ID", placeholder="123456789")
+    requirements = discord.ui.TextInput(label="Requirements", style=discord.TextStyle.long, placeholder="Activity requirements, etc.", required=False)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        config = dm.get_guild_data(self.guild_id, "staffpromo_config", {})
+        tiers = config.get("tiers", [])
+
+        try:
+            role_id_int = int(self.role_id.value)
+        except ValueError:
+            return await interaction.response.send_message("Invalid role ID.", ephemeral=True)
+
+        new_tier = {
+            "name": self.name.value,
+            "role_id": role_id_int,
+            "requirements": self.requirements.value or "None"
+        }
+        tiers.append(new_tier)
+        config["tiers"] = tiers
+        dm.update_guild_data(self.guild_id, "staffpromo_config", config)
+
+        await interaction.response.send_message(f"✅ Added tier '{self.name.value}'!", ephemeral=True)
+
+
+class TierSelect(discord.ui.Select):
+    def __init__(self, tiers: list, action: str = "edit"):
+        options = []
+        for i, tier in enumerate(tiers):
+            options.append(discord.SelectOption(
+                label=tier['name'],
+                value=str(i),
+                description=f"Role: <@&{tier['role_id']}>"
+            ))
+        super().__init__(placeholder=f"Select tier to {action}", options=options[:25])
+        self.tiers = tiers
+        self.action = action
+
+    async def callback(self, interaction: discord.Interaction):
+        index = int(self.values[0])
+        tier = self.tiers[index]
+
+        if self.action == "edit":
+            modal = EditTierModal(self.view.guild_id, index, tier)
+            await interaction.response.send_modal(modal)
+        elif self.action == "remove":
+            config = dm.get_guild_data(self.view.guild_id, "staffpromo_config", {})
+            tiers = config.get("tiers", [])
+            removed = tiers.pop(index)
+            config["tiers"] = tiers
+            dm.update_guild_data(self.view.guild_id, "staffpromo_config", config)
+            await interaction.response.send_message(f"✅ Removed tier '{removed['name']}'!", ephemeral=True)
+
+
+class TierSelectView(discord.ui.View):
+    def __init__(self, select: TierSelect):
+        super().__init__()
+        self.add_item(select)
+
+
+class EditTierModal(discord.ui.Modal):
+    def __init__(self, guild_id: int, index: int, tier: dict):
+        super().__init__(title=f"Edit Tier: {tier['name']}")
+        self.guild_id = guild_id
+        self.index = index
+        self.tier = tier
+
+    name = discord.ui.TextInput(label="Tier Name", default=tier['name'])
+    role_id = discord.ui.TextInput(label="Role ID", default=str(tier['role_id']))
+    requirements = discord.ui.TextInput(label="Requirements", style=discord.TextStyle.long, default=tier.get('requirements', 'None'))
+
+    async def on_submit(self, interaction: discord.Interaction):
+        config = dm.get_guild_data(self.guild_id, "staffpromo_config", {})
+        tiers = config.get("tiers", [])
+
+        try:
+            role_id_int = int(self.role_id.value)
+        except ValueError:
+            return await interaction.response.send_message("Invalid role ID.", ephemeral=True)
+
+        tiers[self.index] = {
+            "name": self.name.value,
+            "role_id": role_id_int,
+            "requirements": self.requirements.value
+        }
+        config["tiers"] = tiers
+        dm.update_guild_data(self.guild_id, "staffpromo_config", config)
+
+        await interaction.response.send_message(f"✅ Updated tier '{self.name.value}'!", ephemeral=True)
+
+
+class StaffPromoRequirementsView(discord.ui.View):
+    """Per-tier criteria editor"""
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+
+    def create_embed(self):
+        config = dm.get_guild_data(self.guild_id, "staffpromo_config", {})
+        tiers = config.get("tiers", [])
+
+        embed = discord.Embed(
+            title="📋 Staff Promotion Requirements",
+            description="Set criteria for each tier.",
+            color=discord.Color.green()
+        )
+
+        if tiers:
+            for tier in tiers:
+                embed.add_field(
+                    name=tier['name'],
+                    value=f"Requirements: {tier.get('requirements', 'None')}\nRole: <@&{tier['role_id']}>",
+                    inline=False
+                )
+        else:
+            embed.add_field(name="No Tiers", value="Add tiers first using `!staffpromo tiers`.", inline=False)
+
+        return embed
+
+    @discord.ui.button(label="Set Requirements", style=discord.ButtonStyle.primary, emoji="✏️")
+    async def set_requirements(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = dm.get_guild_data(self.guild_id, "staffpromo_config", {})
+        tiers = config.get("tiers", [])
+        if not tiers:
+            return await interaction.response.send_message("No tiers to edit.", ephemeral=True)
+
+        select = TierSelect(tiers, action="requirements")
+        await interaction.response.send_message("Select a tier to set requirements:", view=TierSelectView(select), ephemeral=True)
+
+    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary, emoji="🔄")
+    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = self.create_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+
+
+class StaffPromoStatusView(discord.ui.View):
+    """Check staff promotion status"""
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+
+    def create_embed(self):
+        config = dm.get_guild_data(self.guild_id, "staffpromo_config", {})
+        enabled = config.get("enabled", False)
+        tiers = config.get("tiers", [])
+
+        embed = discord.Embed(
+            title="📊 Staff Promotion Status",
+            color=discord.Color.blue() if enabled else discord.Color.red()
+        )
+
+        embed.add_field(name="System Status", value="✅ Enabled" if enabled else "❌ Disabled", inline=True)
+        embed.add_field(name="Total Tiers", value=str(len(tiers)), inline=True)
+        embed.add_field(name="Active Promotions", value="Check individual user progress", inline=False)
+
+        return embed
+
+
+class StaffPromoLeaderboardView(discord.ui.View):
+    """Staff leaderboard"""
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+
+    def create_embed(self):
+        # Placeholder for leaderboard logic
+        embed = discord.Embed(
+            title="🏆 Staff Leaderboard",
+            description="Top performing staff members.",
+            color=discord.Color.gold()
+        )
+        embed.add_field(name="Coming Soon", value="Leaderboard feature under development.", inline=False)
+        return embed
+
+
+class StaffPromoProgressView(discord.ui.View):
+    """Personal progress"""
+    def __init__(self, guild_id: int, user_id: int):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+        self.user_id = user_id
+
+    def create_embed(self):
+        embed = discord.Embed(
+            title="📈 Your Promotion Progress",
+            description="Track your journey through the staff ranks.",
+            color=discord.Color.purple()
+        )
+        embed.add_field(name="Current Tier", value="Check with staff for details.", inline=False)
+        return embed
+
+
+class StaffPromoBonusesView(discord.ui.View):
+    """Bonuses management"""
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+
+    def create_embed(self):
+        embed = discord.Embed(
+            title="🎁 Promotion Bonuses",
+            description="Manage bonus rewards for promotions.",
+            color=discord.Color.yellow()
+        )
+        embed.add_field(name="Bonuses", value="Configure bonuses in the config panel.", inline=False)
+        return embed
