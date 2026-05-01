@@ -773,7 +773,104 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             if cmd_content.startswith("staffpromo"):
                 await self._handle_staffpromo_command(message, cmd_content)
                 return
-            
+
+            # Direct command handlers for all systems
+            economy_commands = {
+                "balance": "handle_economy_balance",
+                "daily": "handle_economy_daily",
+                "work": "handle_economy_work",
+                "ecoleaderboard": "handle_economy_leaderboard",
+                "challenge": "handle_economy_challenge",
+                "shop": "handle_economy_shop",
+                "buy": "handle_economy_buy",
+                "transfer": "handle_economy_transfer",
+                "give": "handle_economy_transfer",
+                "beg": "handle_economy_beg",
+                "rob": "handle_economy_rob",
+            }
+
+            leveling_commands = {
+                "rank": "handle_leveling_rank",
+                "leaderboard": "handle_leveling_leaderboard",
+                "levels": "handle_leveling_levels",
+                "rewards": "handle_leveling_rewards",
+                "levelshop": "handle_leveling_shop",
+            }
+
+            verification_commands = {
+                "setverifychannel": "handle_set_verify_channel",
+                "verify": "handle_verify",
+            }
+
+            staff_commands = {
+                "apply": "handle_application_apply",
+                "appeal": "handle_appeal_create",
+                "ticket": "handle_ticket_create",
+            }
+
+            gamification_commands = {
+                "quests": "handle_gamification_quests",
+                "prestige": "handle_gamification_prestige",
+                "dice": "handle_gamification_dice",
+                "flip": "handle_gamification_flip",
+                "events": "handle_events_create",
+                "tournaments": "handle_tournaments_create",
+                "reminders": "handle_reminders",
+                "giveaways": "handle_giveaways_create",
+                "suggestions": "handle_suggest",
+                "serverstats": "handle_serverstats",
+                "mystats": "handle_mystats",
+                "atrisk": "handle_atrisk",
+                "automod status": "handle_automod_status",
+                "guardian status": "handle_guardian_status",
+                "chatchannel add": "handle_chatchannel_add",
+                "autoresponder add": "handle_autoresponder_add",
+                "announcements create": "handle_announcements_create",
+                "reactionrolespanel": "handle_reactionrolespanel",
+                "reactionmenuspanel": "handle_reactionmenuspanel",
+                "rolebuttonspanel": "handle_rolebuttonspanel",
+            }
+
+            # Check economy commands
+            if cmd_content in economy_commands:
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                method = getattr(handler, economy_commands[cmd_content])
+                await method(message)
+                return
+
+            # Check leveling commands
+            if cmd_content in leveling_commands:
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                method = getattr(handler, leveling_commands[cmd_content])
+                await method(message)
+                return
+
+            # Check verification commands
+            if cmd_content in verification_commands:
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                method = getattr(handler, verification_commands[cmd_content])
+                await method(message)
+                return
+
+            # Check staff commands
+            if cmd_content in staff_commands:
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                method = getattr(handler, staff_commands[cmd_content])
+                await method(message)
+                return
+
+            # Check gamification commands
+            if cmd_content in gamification_commands:
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                method = getattr(handler, gamification_commands[cmd_content])
+                await method(message)
+                return
+
             # Handle remaining prefix commands via custom commands system
             guild_cmds = dm.get_guild_data(message.guild.id, "custom_commands", {})
 
