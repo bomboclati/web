@@ -23,12 +23,12 @@ CATEGORIES = {
     "🛡️ Security": {
         "color": RED,
         "systems": [
-            ("verification",   "🛡️", "Captcha verification for new members", ["!setverifychannel"]),
+            ("verification",   "🛡️", "Captcha verification for new members", ["!setverifychannel", "!verify"]),
             ("antiraid",       "🚨", "Mass-join detection & server lockdown", ["!raidstatus", "!configpanel antiraid"]),
             ("guardian",       "⚔️", "AI threat detection (scam, token, nuke)", ["!guardian status", "!configpanel guardian"]),
             ("automod",        "🤖", "Spam, caps, invite & link filters", ["!automod status", "!configpanel automod"]),
-            ("warnings",       "⚠️", "Warning system with escalation", ["!warn @user", "!warnings"]),
-            ("moderation",     "🔨", "Kick, ban, mute, timeout commands", ["!kick", "!ban", "!mute"]),
+            ("warnings",       "⚠️", "Warning system with escalation", ["!warn @user", "!warnings", "!clearwarn", "!clearallwarns"]),
+            ("moderation",     "🔨", "Kick, ban, mute, timeout commands", ["!kick", "!ban", "!mute", "!modstats"]),
             ("modlog",         "📋", "Audit log for all mod actions", ["!modlog view", "!configpanel modlog"]),
             ("logging",        "📊", "Full server event logging", ["!configpanel logging"]),
         ]
@@ -36,9 +36,9 @@ CATEGORIES = {
     "💰 Economy": {
         "color": GOLD,
         "systems": [
-            ("economy",        "💵", "Balance, daily, work, rob & transfer", ["!daily", "!balance", "!ecoleaderboard"]),
-            ("economyshop",    "🛒", "Item shop with role rewards", ["!shop", "!buy"]),
-            ("leveling",       "🆙", "XP per message with role rewards", ["!rank", "!lvlleaderboard"]),
+            ("economy",        "💵", "Balance, daily, work, rob & transfer", ["!daily", "!balance", "!work", "!ecoleaderboard", "!transfer", "!challenge", "!help economy"]),
+            ("economyshop",    "🛒", "Item shop with role rewards", ["!shop", "!buy", "!sell"]),
+            ("leveling",       "🆙", "XP per message with role rewards", ["!rank", "!lvlleaderboard", "!levels", "!rewards"]),
             ("levelingshop",   "🎁", "Spend XP on perks & roles", ["!levelshop"]),
             ("starboard",      "⭐", "Star highlight board with rewards", ["!starboard"]),
         ]
@@ -46,19 +46,19 @@ CATEGORIES = {
     "🎮 Gamification": {
         "color": PURPLE,
         "systems": [
-            ("gamification",   "🎮", "Prestige, quests, skill trees", ["!quests", "!prestige"]),
+            ("gamification",   "🎮", "Prestige, quests, skill trees", ["!quests", "!prestige", "!dice", "!flip"]),
             ("giveaways",      "🎉", "Timed giveaways with role requirements", ["!giveaway create", "!giveaway list"]),
-            ("events",         "📅", "Server event scheduling & RSVP", ["!event create", "!event list"]),
-            ("tournaments",    "🏆", "Bracket-style tournament management", ["!tournament create"]),
+            ("events",         "📅", "Server event scheduling & RSVP", ["!events", "!join <event>"]),
+            ("tournaments",    "🏆", "Bracket-style tournament management", ["!tournaments", "!join <tournament>", "!tournamentleaderboard"]),
         ]
     },
     "📋 Staff": {
         "color": TEAL,
         "systems": [
-            ("staffpromo",     "📈", "Auto staff promotion tiers", ["!staffpromo", "!promotionhistory"]),
-            ("staffreviews",   "📝", "Peer & admin review cycles", ["!staffreview"]),
-            ("staffshifts",    "🕒", "On-duty shift tracker & hours log", ["!shift start", "!shift end"]),
-            ("staffsystem",    "👮", "Staff hierarchy & management", ["!staffleaderboard"]),
+            ("staffpromo",     "📈", "Auto staff promotion tiers", ["!staffpromo", "!staffpromo_status", "!promotionhistory", "!staffleaderboard"]),
+            ("staffreviews",   "📝", "Peer & admin review cycles", ["!review", "!myreview"]),
+            ("staffshifts",    "🕒", "On-duty shift tracker & hours log", ["!shift", "!endshift", "!task"]),
+            ("staffsystem",    "👮", "Staff hierarchy & management", ["!apply", "!apply status", "!help staffapply"]),
         ]
     },
     "🎫 Support": {
@@ -67,7 +67,7 @@ CATEGORIES = {
             ("tickets",        "🎫", "Support ticket system", ["!ticket", "!close"]),
             ("modmail",        "📬", "Private DM-based modmail", ["DM the bot"]),
             ("appeals",        "⚖️", "Ban / mute appeal system", ["!appeal"]),
-            ("applications",   "📋", "Staff application forms", ["!apply"]),
+            ("applications",   "📋", "Staff application forms", ["!apply", "!apply status", "!help staffapply"]),
             ("suggestions",    "💡", "Community suggestion board", ["!suggest"]),
         ]
     },
@@ -78,7 +78,7 @@ CATEGORIES = {
             ("welcomedm",      "✉️", "Direct-message on join", ["!configpanel welcomedm"]),
             ("chatchannels",   "🧠", "AI-powered chat channels", ["!chatchannel add"]),
             ("autoresponder",  "💬", "Keyword auto-responses", ["!autoresponder add"]),
-            ("reminders",      "⏰", "Personal & server reminders", ["!remindme"]),
+            ("reminders",      "⏰", "Personal & server reminders", ["!remind", "!reminders"]),
             ("announcements",  "📢", "Scheduled announcements", ["!announcement create"]),
             ("scheduled",      "🕒", "Scheduled automated messages", ["!configpanel scheduled"]),
         ]
@@ -86,11 +86,14 @@ CATEGORIES = {
     "🔧 Configuration": {
         "color": DARK_BLUE,
         "systems": [
-            ("reactionroles",  "🎭", "Emoji-based role assignment", ["!configpanel reactionroles"]),
-            ("reactionmenus",  "📌", "Role picker menus", ["!configpanel reactionmenus"]),
-            ("rolebuttons",    "🔘", "Button-based role panels", ["!configpanel rolebuttons"]),
+            ("reactionroles",  "🎭", "Emoji-based role assignment", ["!reactionrolespanel"]),
+            ("reactionmenus",  "📌", "Role picker menus", ["!reactionmenuspanel"]),
+            ("rolebuttons",    "🔘", "Button-based role panels", ["!rolebuttonspanel"]),
             ("automod",        "🛡️", "AutoMod rule management", ["!configpanel automod"]),
             ("voicesystem",    "🔊", "Voice channel management", ["!configpanel voicesystem"]),
+            ("intelligence",   "🧠", "Server analytics & stats", ["!serverstats", "!mystats", "!atrisk"]),
+            ("conflict_resolution", "⚖️", "AI conflict resolution", ["!configpanel conflict"]),
+            ("community_health", "❤️", "Community engagement tracking", ["!configpanel community"]),
         ]
     },
 }
