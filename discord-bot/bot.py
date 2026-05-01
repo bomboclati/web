@@ -268,26 +268,6 @@ class MiroBot(commands.Bot):
                 await ctx.send(f"Synced {len(synced)} global commands.")
 
 
-        # Embed System Example Command
-        @self.tree.command(name="create_example_embed", description="Create an example embed with buttons")
-        @app_commands.checks.has_permissions(administrator=True)
-        async def create_example_embed(interaction: discord.Interaction):
-            """Create an example embed with Verify, Apply Staff, and Create Ticket buttons"""
-            try:
-                if not interaction.guild:
-                    await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-                    return
-
-                await interaction.response.defer(ephemeral=True)
-
-                message = await self.embed_system.create_example_embed(interaction.channel, interaction.guild.id)
-
-                await interaction.followup.send("✅ Example embed created!", ephemeral=True)
-
-            except Exception as e:
-                logger.error(f"Error creating example embed: {e}")
-                await interaction.followup.send("❌ Failed to create embed.", ephemeral=True)
-
         # Final sync after all commands and cogs are loaded
         if os.getenv("SYNC_COMMANDS", "false").lower() == "true":
             logger.info("Syncing slash commands...")
