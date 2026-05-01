@@ -1342,12 +1342,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 await message.channel.send("Usage: `!staffpromo exclude add @user` or `!staffpromo exclude remove @user`")
         else:
             await message.channel.send(f"Unknown subcommand '{subcommand}'. Available: tiers, requirements, status, leaderboard, progress, bonuses, exclude.")
-            return
 
-        if command == "myshifts":
-            await self.staff_shift.handle_myshifts(message, parts)
-            return
-    
     async def _handle_suggest_command(self, message, cmd_content):
         """Handle !suggest command with voting system"""
         parts = cmd_content.split(maxsplit=1)
