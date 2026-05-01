@@ -481,5 +481,14 @@ async def send_help(channel: discord.TextChannel, guild_id: int, invoker: discor
         print(f"Error in send_help: {e}")
         import traceback
         traceback.print_exc()
-        # Fallback: send a simple message
-        await channel.send("❌ Help system is currently unavailable. Please try again later.")
+        # Fallback: send a simple embed
+        try:
+            embed = discord.Embed(
+                title="📖 Miro Bot Help",
+                description="**Categories:**\n• 🛡️ Security\n• 💰 Economy\n• 🎮 Gamification\n• 📋 Staff\n\nUse `!configpanel <system>` to configure any system.",
+                color=0x5865F2
+            )
+            await channel.send(embed=embed)
+        except Exception as e2:
+            # Last resort: plain text
+            await channel.send("Help system error. Please contact an administrator.")
