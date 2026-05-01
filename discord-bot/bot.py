@@ -601,6 +601,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             logger.error("Error in %s handler: %s", label, e)
 
     async def on_message(self, message):
+        print(f"DEBUG: on_message fired for '{message.content}' from {message.author}")
         if message.author.bot:
             return
 
@@ -739,6 +740,10 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                     import traceback
                     traceback.print_exc()
                     await message.channel.send("❌ Help system error. Please try again later.")
+                return
+            elif cmd_content.strip() == "test":
+                print(f"DEBUG: Processing !test command")
+                await message.channel.send("✅ Bot is responding to commands!")
                 return
 
             if cmd_content.startswith("help "):
