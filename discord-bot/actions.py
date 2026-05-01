@@ -9039,26 +9039,6 @@ class ActionHandler:
 
 
 
-    async def handle_economy_beg(self, message: discord.Message) -> bool:
-        """Handle !economy beg command"""
-        try:
-            import random
-            if random.random() < 0.7:  # 70% success
-                beg_coins = random.randint(1, 20)
-                balance = dm.get_user_data(message.author.id, "balance", 0) + beg_coins
-                dm.update_user_data(message.author.id, "balance", balance)
-                embed = discord.Embed(title="Begging", description=f"Someone gave you **{beg_coins}** coins!\nTotal balance: **{balance}** coins", color=discord.Color.green())
-            else:
-                embed = discord.Embed(title="Begging", description="Nobody gave you anything. Try again later.", color=discord.Color.red())
-            await message.channel.send(embed=embed)
-            return True
-        except Exception as e:
-            logger.error(f"Error in handle_economy_beg: {e}")
-            await message.channel.send("❌ Error begging. Please try again.")
-            return False
-
-
-
     async def handle_economy_shop(self, message: discord.Message) -> bool:
         """Handle !economy shop command"""
         try:
