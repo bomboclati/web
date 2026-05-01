@@ -5151,12 +5151,23 @@ class ActionHandler:
 
     async def handle_help_all(self, message: discord.Message) -> bool:
         """Handle !help command - Delegate to standardized help system."""
-        from modules.help_system import send_help
-        if isinstance(message, discord.Interaction):
-            await send_help(message.channel, message.guild_id, message.user, bot=self.bot)
-        else:
-            await send_help(message.channel, message.guild.id, message.author, bot=self.bot)
-        return True
+        try:
+            from modules.help_system import send_help
+            if isinstance(message, discord.Interaction):
+                await send_help(message.channel, message.guild_id, message.user, bot=self.bot)
+            else:
+                await send_help(message.channel, message.guild.id, message.author, bot=self.bot)
+            return True
+        except Exception as e:
+            print(f"Error in handle_help_all: {e}")
+            # Fallback: send simple help
+            embed = discord.Embed(
+                title="📖 Miro Bot Help",
+                description="**Categories:**\n• 🛡️ Security\n• 💰 Economy\n• 🎮 Gamification\n• 📋 Staff\n\nUse `!configpanel <system>` to configure systems.",
+                color=0x5865F2
+            )
+            await message.channel.send(embed=embed)
+            return True
     
     def _get_popular_commands(self, guild_id: int) -> List[str]:
         """Get most popular commands based on usage statistics."""
