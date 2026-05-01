@@ -665,8 +665,10 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
 
         # 4. Prefix Commands
         prefix = await self.get_dynamic_prefix(self, message)
+        print(f"DEBUG: message='{message.content}', prefix='{prefix}', starts_with={message.content.startswith(prefix)}")
         if message.content.startswith(prefix):
             cmd_content = " ".join(message.content[len(prefix):].split()).strip()
+            print(f"DEBUG: cmd_content='{cmd_content}'")
             
             # Handle !suggest command
             if cmd_content.startswith("suggest"):
@@ -727,8 +729,16 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 return
 
             if cmd_content.strip() == "help":
-                from modules.help_system import send_help
-                await send_help(message.channel, message.guild.id, message.author, bot=self)
+                print(f"DEBUG: Processing !help command for user {message.author} in guild {message.guild}")
+                try:
+                    from modules.help_system import send_help
+                    await send_help(message.channel, message.guild.id, message.author, bot=self)
+                    print("DEBUG: send_help completed successfully")
+                except Exception as e:
+                    print(f"DEBUG: Error in !help: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    await message.channel.send("❌ Help system error. Please try again later.")
                 return
 
             if cmd_content.startswith("help "):
@@ -894,14 +904,15 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                     # Cleanup: remove invalid keys
                     if cmd_name in guild_cmds:
                         del guild_cmds[cmd_name]
-                        dm.update_guild_data(message.guild.id, "custom_commands", guild_cmds)
                     continue
                 if cmd_content == cmd_name or cmd_content.startswith(cmd_name + " "):
                     matched_cmd = cmd_name
                     matched_data = guild_cmds[cmd_name]
+                    print(f"DEBUG: Matched custom command '{cmd_name}' with data {matched_data}")
                     break
             
             if matched_cmd:
+                print(f"DEBUG: Executing custom command '{matched_cmd}'")
                 # Rate limiting check
                 cooldown_key = (message.guild.id, message.author.id, matched_cmd)
                 now = time.time()
@@ -917,7 +928,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 cmd_name = str(matched_cmd) if matched_cmd else "unknown"
                 # Track command chain (what was run before this)
                 prev_cmd = self.track_command_chain(message.author.id, cmd_name)
-                
+
                 # Track command with context for AI improvement
                 context = {
                     "user_id": message.author.id,

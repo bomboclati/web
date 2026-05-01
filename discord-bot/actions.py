@@ -4192,6 +4192,7 @@ class ActionHandler:
                 elif command_type == "config_panel":
                     return await self.handle_config_panel_redirect(message, data)
                 elif command_type == "help_all":
+                    print(f"DEBUG: ActionHandler processing help_all command for {message.author}")
                     return await self.handle_help_all(message)
                 elif command_type == "staffpromo_status":
                     return await self.handle_staffpromo_status(message)
