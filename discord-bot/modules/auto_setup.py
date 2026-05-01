@@ -1707,6 +1707,16 @@ class AutoSetup(commands.Cog):
                 dm.update_guild_data(guild.id, "leveling_data", {})
             if dm.get_guild_data(guild.id, "leveling_xp", None) is None:
                 dm.update_guild_data(guild.id, "leveling_xp", {})
+
+            # Register custom commands
+            custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
+            custom_cmds["rank"] = json.dumps({"command_type": "leveling_rank"})
+            custom_cmds["leaderboard"] = json.dumps({"command_type": "leveling_leaderboard"})
+            custom_cmds["levels"] = json.dumps({"command_type": "leveling_levels"})
+            custom_cmds["rewards"] = json.dumps({"command_type": "leveling_rewards"})
+            custom_cmds["levelshop"] = json.dumps({"command_type": "leveling_shop"})
+            dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
+
             return True
         except Exception as e:
             logger.error(f"Failed to setup leveling: {e}")

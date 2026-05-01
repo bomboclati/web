@@ -5625,6 +5625,137 @@ class ActionHandler:
             await message.channel.send("❌ Transfer failed. Please try again.")
             return False
 
+    async def handle_economy_buy(self, message: discord.Message) -> bool:
+        """!buy — purchase an item from the shop"""
+        try:
+            guild_id = message.guild.id
+            author_id = message.author.id
+
+            # Check if economy system is enabled
+            if not is_system_enabled(guild_id, "economy"):
+                await message.channel.send("❌ The economy system is currently disabled on this server.")
+                return False
+
+            parts = message.content.split()
+            if len(parts) < 2:
+                await message.channel.send("Usage: `!buy <item_name>`")
+                return False
+
+            item_name = " ".join(parts[1:]).lower()
+            items = dm.get_guild_data(guild_id, "shop_items", [])
+
+            item = None
+            for i in items:
+                if i["name"].lower() == item_name:
+                    item = i
+                    break
+
+            if not item:
+                await message.channel.send("❌ Item not found in the shop.")
+                return False
+
+            price = item["price"]
+            from modules.economy import Economy
+            economy = Economy(self.bot)
+
+            if economy.get_coins(guild_id, author_id) < price:
+                await message.channel.send(f"❌ Insufficient funds. You need {price:,} coins.")
+                return False
+
+            # Deduct coins
+            economy.add_coins(guild_id, author_id, -price)
+            economy.log_transaction(guild_id, author_id, price, "purchase", f"bought {item['name']}")
+
+            # Give role if applicable
+            role_given = False
+            if item.get("role_id"):
+                role = message.guild.get_role(int(item["role_id"]))
+                if role:
+                    try:
+                        await message.author.add_roles(role)
+                        role_given = True
+                    except:
+                        pass
+
+            embed = discord.Embed(
+                title="🛒 Purchase Successful!",
+                description=f"You bought **{item['name']}** for **{price:,} coins**!",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="Item", value=item["name"], inline=True)
+            embed.add_field(name="Cost", value=f"{price:,} coins", inline=True)
+            if role_given:
+                embed.add_field(name="Role Granted", value=role.name, inline=True)
+            embed.set_footer(text="Thank you for your purchase!")
+
+            await message.channel.send(embed=embed)
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in handle_economy_buy: {e}")
+            await message.channel.send("❌ Purchase failed. Please try again.")
+            return False
+
+    async def handle_leveling_levels(self, message: discord.Message) -> bool:
+        """!levels — show leveling system info"""
+        try:
+            guild_id = message.guild.id
+
+            if not is_system_enabled(guild_id, "leveling"):
+                await message.channel.send("❌ The leveling system is currently disabled.")
+                return False
+
+            from modules.leveling import Leveling
+            leveling = Leveling(self.bot)
+
+            embed = discord.Embed(
+                title="🆙 Leveling System Info",
+                description="Earn XP by chatting and level up for rewards!",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="XP per Message", value="15-25 XP", inline=True)
+            embed.add_field(name="Level Formula", value="Level = √(XP / 100)", inline=True)
+            embed.add_field(name="Gems", value="XP / 10", inline=True)
+            embed.add_field(name="Commands", value="`!rank`, `!leaderboard`", inline=False)
+            embed.set_footer(text="Keep chatting to level up!")
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leveling_levels: {e}")
+            return False
+
+    async def handle_leveling_rewards(self, message: discord.Message) -> bool:
+        """!rewards — show level rewards"""
+        try:
+            guild_id = message.guild.id
+
+            if not is_system_enabled(guild_id, "leveling"):
+                await message.channel.send("❌ The leveling system is currently disabled.")
+                return False
+
+            rewards = dm.get_guild_data(guild_id, "level_rewards", {})
+            if not rewards:
+                await message.channel.send("No level rewards set up yet.")
+                return True
+
+            embed = discord.Embed(title="🎁 Level Rewards", color=discord.Color.purple())
+            for level, role_id in sorted(rewards.items(), key=lambda x: int(x[0])):
+                role = message.guild.get_role(int(role_id))
+                role_name = role.name if role else "Unknown Role"
+                embed.add_field(name=f"Level {level}", value=role_name, inline=True)
+
+            await message.channel.send(embed=embed)
+            return True
+        except Exception as e:
+            logger.error(f"Error in handle_leveling_rewards: {e}")
+            return False
+
+    async def handle_leveling_shop(self, message: discord.Message) -> bool:
+        """!levelshop — shop for leveling perks (placeholder)"""
+        await message.channel.send("🛍️ Level shop coming soon! Use your gems here.")
+        return True
+
     async def handle_leveling_rank(self, message: discord.Message) -> bool:
         """!rank — show the invoker's current XP, level, gems and streak."""
         try:
