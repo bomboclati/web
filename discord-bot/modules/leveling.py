@@ -282,3 +282,16 @@ class Leveling:
         
         # If no cached data, return empty structure
         return {}
+
+    # Prefix command handlers
+    async def handle_rank(self, message):
+        """Handle !rank prefix command"""
+        from actions import ActionHandler
+        handler = ActionHandler(message.guild._state._get_client())
+        return await handler.handle_leveling_rank(message)
+
+    async def handle_leveling_leaderboard(self, message):
+        """Handle !lvlleaderboard prefix command"""
+        from actions import ActionHandler
+        handler = ActionHandler(message.guild._state._get_client())
+        return await handler.handle_leveling_leaderboard(message)

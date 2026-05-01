@@ -36,9 +36,9 @@ CATEGORIES = {
     "💰 Economy": {
         "color": GOLD,
         "systems": [
-            ("economy",        "💵", "Balance, daily, work, rob & transfer", ["!daily", "!balance", "!shop"]),
+            ("economy",        "💵", "Balance, daily, work, rob & transfer", ["!daily", "!balance", "!ecoleaderboard"]),
             ("economyshop",    "🛒", "Item shop with role rewards", ["!shop", "!buy"]),
-            ("leveling",       "🆙", "XP per message with role rewards", ["!rank", "!leaderboard"]),
+            ("leveling",       "🆙", "XP per message with role rewards", ["!rank", "!lvlleaderboard"]),
             ("levelingshop",   "🎁", "Spend XP on perks & roles", ["!levelshop"]),
             ("starboard",      "⭐", "Star highlight board with rewards", ["!starboard"]),
         ]

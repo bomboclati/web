@@ -1,86 +1,44 @@
 {
-    "welcome": {
-        "command_type": "simple",
-        "content": "Welcome system is active! New members will receive automated welcome messages."
-    },
-    "verify": {
-        "command_type": "verification_verify",
-        "content": "Click the button below to verify your account."
-    },
-    "verification": {
-        "command_type": "verification_verify",
-        "content": "Use /verify or click below to verify."
-    },
-    "balance": {
-        "command_type": "economy_balance",
-        "content": "Check your current balance with !balance"
-    },
-    "daily": {
-        "command_type": "economy_daily",
-        "content": "Claim your daily reward with !daily"
-    },
-    "work": {
-        "command_type": "economy_work",
-        "content": "Work to earn coins!"
-    },
-    "beg": {
-        "command_type": "economy_beg",
-        "content": "Beg for coins!"
-    },
-    "shop": {
-        "command_type": "economy_shop",
-        "content": "Browse the server shop."
-    },
-    "buy": {
-        "command_type": "economy_buy",
-        "content": "Usage: !buy <item>"
-    },
-    "leaderboard": {
-        "command_type": "leveling_leaderboard",
-        "content": "View top members with !leaderboard"
-    },
-    "economylb": {
-        "command_type": "economy_leaderboard",
-        "content": "View top members by coins with !economylb"
-    },
-    "rank": {
-        "command_type": "leveling_rank",
-        "content": "Check your current level and XP with !rank"
-    },
-    "ticket": {
-        "command_type": "ticket_create",
-        "content": "Create a support ticket with !ticket"
-    },
-    "close": {
-        "command_type": "ticket_close",
-        "content": "Close the current ticket."
-    },
-    "warn": {
-        "command_type": "simple",
-        "content": "Usage: !warn @user <reason>"
-    },
-    "warnings": {
-        "command_type": "simple",
-        "content": "Check user warnings."
-    },
-    "staffpromo_status": {
-        "command_type": "staffpromo_status",
-        "content": "Check your staff promotion eligibility."
-    },
-    "staffpromo_leaderboard": {
-        "command_type": "staffpromo_leaderboard",
-        "content": "View staff activity leaderboard."
-    },
-    "suggest": {
-        "command_type": "simple",
-        "content": "Submit a suggestion for the server."
-    },
-    "appeal": {
-        "command_type": "appeal_create",
-        "content": "Open an appeal form."
-    },
-    "apply": {
-        "command_type": "application_apply",
-        "content": "Open a staff application form."
+    "note": "This file now only contains references to command locations for documentation. Commands are defined in their respective modules.",
+    "commands": {
+        "economy": {
+            "balance": "modules/economy.py - handle_balance()",
+            "daily": "modules/economy.py - handle_daily()",
+            "work": "modules/economy.py - handle_work()",
+            "ecoleaderboard": "modules/economy.py - handle_economy_leaderboard()"
+        },
+        "leveling": {
+            "rank": "modules/leveling.py - handle_rank()",
+            "lvlleaderboard": "modules/leveling.py - handle_leveling_leaderboard()"
+        },
+        "verification": {
+            "verify": "actions.py - handle_verification_verify()",
+            "setverifychannel": "actions.py - handle_set_verify_channel()"
+        },
+        "security": {
+            "raidstatus": "actions.py - handle_raidstatus()",
+            "guardian_status": "actions.py - handle_guardian_status()",
+            "automod_status": "actions.py - handle_automod_status()",
+            "modlog_view": "actions.py - handle_modlog_view()"
+        },
+        "staff": {
+            "staffpromo_status": "actions.py - handle_staffpromo_status()",
+            "apply": "actions.py - handle_application_apply()",
+            "appeal": "actions.py - handle_appeal_create()",
+            "ticket": "actions.py - handle_ticket_create()"
+        },
+        "gamification": {
+            "quests": "actions.py - handle_list_quests()",
+            "prestige": "actions.py - handle_prestige()"
+        },
+        "utilities": {
+            "giveaway_create": "actions.py - handle_giveaway_create()",
+            "suggest": "actions.py - handle_suggest()",
+            "remindme": "actions.py - handle_remindme()",
+            "announcement_create": "actions.py - handle_announcement_create()"
+        },
+        "help": {
+            "help": "modules/help_system.py - send_help()"
+        }
     }
 }

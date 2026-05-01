@@ -730,17 +730,43 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 await message.channel.send("✅ Peer vote recorded.")
                 return
 
+            # Handle economy commands
+            if cmd_content.strip() == "balance":
+                from modules.economy import Economy
+                economy = Economy(self)
+                await economy.handle_balance(message)
+                return
+            elif cmd_content.strip() == "daily":
+                from modules.economy import Economy
+                economy = Economy(self)
+                await economy.handle_daily(message)
+                return
+            elif cmd_content.strip() == "work":
+                from modules.economy import Economy
+                economy = Economy(self)
+                await economy.handle_work(message)
+                return
+            elif cmd_content.strip() == "ecoleaderboard":
+                from modules.economy import Economy
+                economy = Economy(self)
+                await economy.handle_economy_leaderboard(message)
+                return
+
+            # Handle leveling commands
+            elif cmd_content.strip() == "rank":
+                from modules.leveling import Leveling
+                leveling = Leveling(self)
+                await leveling.handle_rank(message)
+                return
+            elif cmd_content.strip() == "lvlleaderboard":
+                from modules.leveling import Leveling
+                leveling = Leveling(self)
+                await leveling.handle_leveling_leaderboard(message)
+                return
+
             if cmd_content.strip() == "help":
-                print(f"DEBUG: Processing !help command for user {message.author} in guild {message.guild}")
-                try:
-                    from modules.help_system import send_help
-                    await send_help(message.channel, message.guild.id, message.author, bot=self)
-                    print("DEBUG: send_help completed successfully")
-                except Exception as e:
-                    print(f"DEBUG: Error in !help: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    await message.channel.send("❌ Help system error. Please try again later.")
+                from modules.help_system import send_help
+                await send_help(message.channel, message.guild.id, message.author, bot=self)
                 return
             elif cmd_content.strip() == "test":
                 print(f"DEBUG: Processing !test command")
@@ -758,148 +784,8 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 await self._handle_staff_command(message, cmd_content)
                 return
             
+            # Handle remaining prefix commands via custom commands system
             guild_cmds = dm.get_guild_data(message.guild.id, "custom_commands", {})
-
-            # Add default commands if not present
-            default_cmds = {
-                # Economy commands
-                "balance": json.dumps({"command_type": "economy_balance"}),
-                "daily": json.dumps({"command_type": "economy_daily"}),
-                "work": json.dumps({"command_type": "economy_work"}),
-                "beg": json.dumps({"command_type": "economy_beg"}),
-                "leaderboard": json.dumps({"command_type": "economy_leaderboard"}),
-                "shop": json.dumps({"command_type": "economy_shop"}),
-                "buy": json.dumps({"command_type": "economy_buy"}),
-                "transfer": json.dumps({"command_type": "economy_transfer"}),
-                "rob": json.dumps({"command_type": "economy_rob"}),
-                "challenge": json.dumps({"command_type": "economy_challenge"}),
-                # Leveling commands
-                "rank": json.dumps({"command_type": "leveling_rank"}),
-                "leveling_leaderboard": json.dumps({"command_type": "leveling_leaderboard"}),
-                # Staff promotion commands
-                "staffpromo_status": json.dumps({"command_type": "staffpromo_status"}),
-                "staffpromo_leaderboard": json.dumps({"command_type": "staffpromo_leaderboard"}),
-                "staffpromo_progress": json.dumps({"command_type": "staffpromo_progress"}),
-                "staffpromo_tiers": json.dumps({"command_type": "staffpromo_tiers"}),
-                "staffpromo_roles": json.dumps({"command_type": "staffpromo_roles"}),
-                "staffpromo_review": json.dumps({"command_type": "staffpromo_review"}),
-                "staffpromo_requirements": json.dumps({"command_type": "staffpromo_requirements"}),
-                "staffpromo_bonuses": json.dumps({"command_type": "staffpromo_bonuses"}),
-                "staffpromo_exclude": json.dumps({"command_type": "staffpromo_exclude"}),
-                "staffpromo_config": json.dumps({"command_type": "staffpromo_config"}),
-                "staffpromo_promote": json.dumps({"command_type": "staffpromo_promote"}),
-                "staffpromo_demote": json.dumps({"command_type": "staffpromo_demote"}),
-                "staffpromo": json.dumps({"command_type": "staffpromo_status"}),
-                "staffpromotion": json.dumps({"command_type": "staffpromo_status"}),
-                "promotionhistory": json.dumps({"command_type": "staffpromotion_history"}),
-                "staffpromotionhistory": json.dumps({"command_type": "staffpromotion_history"}),
-                "vote": json.dumps({"command_type": "peer_vote"}),
-                "tiers": json.dumps({"command_type": "staffpromo_tiers"}),
-                "staffpromo approve": json.dumps({"command_type": "staffpromo_review"}),
-                "staffpromo reject": json.dumps({"command_type": "staffpromo_review"}),
-                # Trigger roles commands
-                "list_triggers": json.dumps({"command_type": "list_triggers"}),
-                "triggers": json.dumps({"command_type": "help_embed", "title": "Trigger Roles", "description": "Automatically assign roles based on keywords.", "fields": [{"name": "!triggers", "value": "List all trigger roles.", "inline": False}, {"name": "!help triggerroles", "value": "View help.", "inline": False}]}),
-                # Application commands
-                "application_status": json.dumps({"command_type": "application_status"}),
-                "apply": json.dumps({"command_type": "application_apply"}),
-                "appeal_status": json.dumps({"command_type": "appeal_status"}),
-                "appeal": json.dumps({"command_type": "appeal_create"}),
-                # Verification commands
-                "verify": json.dumps({"command_type": "verification_verify"}),
-                "setverifychannel": json.dumps({"command_type": "set_verify_channel"}),
-                # Ticket commands
-                "ticket": json.dumps({"command_type": "ticket_create"}),
-                "close": json.dumps({"command_type": "ticket_close"}),
-                # Starboard commands
-                "starboard": json.dumps({"command_type": "starboard_leaderboard"}),
-                # Gamification commands
-                "quests": json.dumps({"command_type": "list_quests"}),
-                "quest": json.dumps({"command_type": "list_quests"}),
-                "prestige": json.dumps({"command_type": "prestige"}),
-                "dice": json.dumps({"command_type": "dice"}),
-                "flip": json.dumps({"command_type": "flip"}),
-                "slots": json.dumps({"command_type": "slots"}),
-                "trivia": json.dumps({"command_type": "trivia"}),
-                # Giveaway commands
-                "giveaway": json.dumps({"command_type": "simple", "content": "Use !giveawaypanel to manage giveaways."}),
-                "giveawaypanel": json.dumps({"command_type": "config_panel", "panel": "giveaway"}),
-                "gend": json.dumps({"actions": [{"name": "giveaway_end", "parameters": {"giveaway_id": "{args}"}}]}),
-                "greroll": json.dumps({"actions": [{"name": "giveaway_reroll", "parameters": {"giveaway_id": "{args}"}}]}),
-                "glist": json.dumps({"actions": [{"name": "giveaway_list", "parameters": {}}]}),
-                # Event commands
-                "events": json.dumps({"command_type": "list_events"}),
-                "evenf": json.dumps({"command_type": "list_events"}),
-                "evenf create": json.dumps({"command_type": "create_event"}),
-                "event create": json.dumps({"command_type": "create_event"}),
-                "event list": json.dumps({"command_type": "list_events"}),
-                # Tournament commands
-                "tournaments": json.dumps({"command_type": "list_tournaments"}),
-                "tournamentleaderboard": json.dumps({"command_type": "tournament_leaderboard"}),
-                "tournament create": json.dumps({"command_type": "create_tournament"}),
-                "join": json.dumps({"command_type": "tournament_join"}),
-                # Help commands
-                "help": json.dumps({"command_type": "help_all"}),
-                "configpanel": json.dumps({"command_type": "config_panel"}),
-                "help staffapply": json.dumps({"command_type": "help_embed", "title": "Staff Applications", "description": "Apply for staff positions.", "fields": [{"name": "!apply", "value": "Submit an application.", "inline": False}]}),
-                "help triggerroles": json.dumps({"command_type": "help_embed", "title": "Trigger Roles", "description": "Keyword-based role assignment.", "fields": [{"name": "!triggers", "value": "List trigger roles.", "inline": False}]}),
-                "help starboard": json.dumps({"command_type": "help_embed", "title": "Starboard", "description": "Star messages to highlight them.", "fields": [{"name": "!starboard", "value": "View starred messages.", "inline": False}]}),
-                "help reminders": json.dumps({"command_type": "help_embed", "title": "Reminders", "description": "Set personal or server reminders.", "fields": [{"name": "!remind <time> <message>", "value": "Set a reminder.", "inline": False}, {"name": "!reminders", "value": "View your reminders.", "inline": False}]}),
-                "help intelligence": json.dumps({"command_type": "help_embed", "title": "Server Intelligence", "description": "AI-powered server insights.", "fields": [{"name": "!serverstats", "value": "View server statistics.", "inline": False}, {"name": "!mystats", "value": "View your stats.", "inline": False}]}),
-                "help moderation": json.dumps({"command_type": "help_embed", "title": "Moderation", "description": "Moderation commands and tools.", "fields": [{"name": "!modstats", "value": "View moderation stats.", "inline": False}, {"name": "!appeal", "value": "Submit an appeal.", "inline": False}]}),
-                "help economy": json.dumps({"command_type": "help_embed", "title": "Economy System", "description": "Earn and spend coins.", "fields": [{"name": "!daily", "value": "Claim daily reward.", "inline": False}, {"name": "!balance", "value": "Check your balance.", "inline": False}]}),
-                "help leveling": json.dumps({"command_type": "help_embed", "title": "Leveling System", "description": "Gain XP and level up.", "fields": [{"name": "!rank", "value": "Check your rank.", "inline": False}, {"name": "!leaderboard", "value": "View leaderboard.", "inline": False}]}),
-                "help events": json.dumps({"command_type": "help_embed", "title": "Events System", "description": "Create and manage events.", "fields": [{"name": "!events", "value": "List events.", "inline": False}, {"name": "!event create <name>", "value": "Create an event.", "inline": False}]}),
-                "help tournaments": json.dumps({"command_type": "help_embed", "title": "Tournaments", "description": "Create bracket tournaments.", "fields": [{"name": "!tournaments", "value": "List tournaments.", "inline": False}, {"name": "!tournament create <name>", "value": "Create tournament.", "inline": False}]}),
-                "help staffpromo": json.dumps({"command_type": "help_embed", "title": "Staff Promotion", "description": "Auto-promotion based on activity.", "fields": [{"name": "!staffpromo", "value": "Check your status.", "inline": False}, {"name": "!staffpromo leaderboard", "value": "View leaderboard.", "inline": False}]}),
-                "help aichat": json.dumps({"command_type": "help_embed", "title": "AI Chat Channels", "description": "Chat with AI in designated channels.", "fields": [{"name": "!help aichat", "value": "View AI chat help.", "inline": False}]}),
-                "help content": json.dumps({"command_type": "help_embed", "title": "Content Generator", "description": "Generate content with AI.", "fields": [{"name": "!help content", "value": "View content generator help.", "inline": False}]}),
-                "help autorespond": json.dumps({"command_type": "help_embed", "title": "Auto Responder", "description": "Automatic keyword responses.", "fields": [{"name": "!help autorespond", "value": "View auto responder help.", "inline": False}]}),
-                # Intelligence commands
-                "serverstats": json.dumps({"command_type": "server_stats"}),
-                "mystats": json.dumps({"command_type": "my_stats"}),
-                "atrisk": json.dumps({"command_type": "at_risk"}),
-                # Reminder commands
-                "remind": json.dumps({"command_type": "remind"}),
-                "reminders": json.dumps({"command_type": "list_reminders"}),
-                # Moderation commands
-                "modstats": json.dumps({"command_type": "mod_stats"}),
-                # Staff shift commands
-                "shift start": json.dumps({"command_type": "shift_start"}),
-                "shift end": json.dumps({"command_type": "shift_end"}),
-                "shift": json.dumps({"command_type": "shift_status"}),
-                # Staff review commands
-                "staffreview": json.dumps({"command_type": "staff_review"}),
-                # Reaction roles panel
-                "reactionrolespanel": json.dumps({"command_type": "config_panel", "panel": "reactionroles"}),
-                "rolebuttonspanel": json.dumps({"command_type": "config_panel", "panel": "rolebuttons"}),
-                "loggingpanel": json.dumps({"command_type": "config_panel", "panel": "logging"}),
-                "gamificationpanel": json.dumps({"command_type": "config_panel", "panel": "gamification"}),
-                "reactionmenuspanel": json.dumps({"command_type": "config_panel", "panel": "reactionmenus"}),
-                "menupanel": json.dumps({"command_type": "config_panel", "panel": "reactionmenus"}),
-                # Announce commands
-                "announce": json.dumps({"command_type": "announce"}),
-                # Level shop command
-                "levelshop": json.dumps({"command_type": "leveling_shop"}),
-                # Additional commands
-                "raidstatus": json.dumps({"command_type": "raidstatus"}),
-                "guardian status": json.dumps({"command_type": "guardian_status"}),
-                "automod status": json.dumps({"command_type": "automod_status"}),
-                "modlog view": json.dumps({"command_type": "modlog_view"}),
-                "suggest": json.dumps({"command_type": "suggest"}),
-                "chatchannel add": json.dumps({"command_type": "chatchannel_add"}),
-                "autoresponder add": json.dumps({"command_type": "autoresponder_add"}),
-                "remindme": json.dumps({"command_type": "remindme"}),
-                "announcement create": json.dumps({"command_type": "announcement_create"}),
-                "giveaway create": json.dumps({"command_type": "giveaway_create"}),
-            }
-            updated = False
-            for cmd, data in default_cmds.items():
-                if cmd not in guild_cmds:
-                    guild_cmds[cmd] = data
-                    updated = True
-            if updated:
-                dm.update_guild_data(message.guild.id, "custom_commands", guild_cmds)
 
             matched_cmd = None
             matched_data = None

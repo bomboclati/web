@@ -560,3 +560,28 @@ class ResetBalanceModal(Modal, title="Reset User Balance"):
         dm.update_guild_data(self.guild_id, "economy_balances", balances)
         self.economy.log_transaction(self.guild_id, user_id, -old_balance, "reset", "Admin reset")
         await interaction.response.send_message(f"Reset balance from {old_balance} to 0!", ephemeral=True)
+
+    # Prefix command handlers
+    async def handle_balance(self, message):
+        """Handle !balance prefix command"""
+        from actions import ActionHandler
+        handler = ActionHandler(message.guild._state._get_client())
+        return await handler.handle_economy_balance(message)
+
+    async def handle_daily(self, message):
+        """Handle !daily prefix command"""
+        from actions import ActionHandler
+        handler = ActionHandler(message.guild._state._get_client())
+        return await handler.handle_economy_daily(message)
+
+    async def handle_work(self, message):
+        """Handle !work prefix command"""
+        from actions import ActionHandler
+        handler = ActionHandler(message.guild._state._get_client())
+        return await handler.handle_economy_work(message)
+
+    async def handle_economy_leaderboard(self, message):
+        """Handle !ecoleaderboard prefix command"""
+        from actions import ActionHandler
+        handler = ActionHandler(message.guild._state._get_client())
+        return await handler.handle_economy_leaderboard(message)

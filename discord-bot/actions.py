@@ -8468,54 +8468,11 @@ class ActionHandler:
             await message.channel.send("✅ Simple command executed.")
             return True
 
-    async def handle_economy_daily(self, message: discord.Message) -> bool:
-        """Handle !economy daily command"""
-        try:
-            # Simple daily reward
-            last_daily = dm.get_user_data(message.author.id, "last_daily", 0)
-            now = time.time()
-            if now - last_daily < 86400:  # 24 hours
-                remaining = 86400 - (now - last_daily)
-                hours = int(remaining // 3600)
-                await message.channel.send(f"❌ Daily reward available in {hours} hours.")
-                return True
-            balance = dm.get_user_data(message.author.id, "balance", 0) + 100
-            dm.update_user_data(message.author.id, "balance", balance)
-            dm.update_user_data(message.author.id, "last_daily", now)
-            embed = discord.Embed(title="Daily Reward", description=f"You claimed your daily reward of **100** coins!\nTotal balance: **{balance}** coins", color=discord.Color.green())
-            await message.channel.send(embed=embed)
-            return True
-        except Exception as e:
-            logger.error(f"Error in handle_economy_daily: {e}")
-            await message.channel.send("❌ Error claiming daily reward. Please try again.")
-            return False
 
-    async def handle_economy_balance(self, message: discord.Message) -> bool:
-        """Handle !economy balance command"""
-        try:
-            balance = dm.get_user_data(message.author.id, "balance", 0)
-            embed = discord.Embed(title=f"{message.author.display_name}'s Balance", description=f"You have **{balance}** coins.", color=discord.Color.gold())
-            await message.channel.send(embed=embed)
-            return True
-        except Exception as e:
-            logger.error(f"Error in handle_economy_balance: {e}")
-            await message.channel.send("❌ Error checking balance. Please try again.")
-            return False
 
-    async def handle_economy_work(self, message: discord.Message) -> bool:
-        """Handle !economy work command"""
-        try:
-            import random
-            work_coins = random.randint(10, 50)
-            balance = dm.get_user_data(message.author.id, "balance", 0) + work_coins
-            dm.update_user_data(message.author.id, "balance", balance)
-            embed = discord.Embed(title="Work", description=f"You worked hard and earned **{work_coins}** coins!\nTotal balance: **{balance}** coins", color=discord.Color.green())
-            await message.channel.send(embed=embed)
-            return True
-        except Exception as e:
-            logger.error(f"Error in handle_economy_work: {e}")
-            await message.channel.send("❌ Error working. Please try again.")
-            return False
+
+
+
 
     async def handle_economy_beg(self, message: discord.Message) -> bool:
         """Handle !economy beg command"""
@@ -8535,28 +8492,7 @@ class ActionHandler:
             await message.channel.send("❌ Error begging. Please try again.")
             return False
 
-    async def handle_economy_leaderboard(self, message: discord.Message) -> bool:
-        """Handle !economy leaderboard command"""
-        try:
-            balances = {}
-            for uid in dm.list_user_ids():
-                bal = dm.get_user_data(uid, "balance", 0)
-                if bal > 0:
-                    balances[uid] = bal
-            sorted_bal = sorted(balances.items(), key=lambda x: x[1], reverse=True)[:10]
-            embed = discord.Embed(title="Economy Leaderboard", color=discord.Color.gold())
-            for i, (uid, bal) in enumerate(sorted_bal, 1):
-                user = self.bot.get_user(uid)
-                name = user.display_name if user else f"User {uid}"
-                embed.add_field(name=f"{i}. {name}", value=f"{bal} coins", inline=False)
-            if not sorted_bal:
-                embed.description = "No one has coins yet!"
-            await message.channel.send(embed=embed)
-            return True
-        except Exception as e:
-            logger.error(f"Error in handle_economy_leaderboard: {e}")
-            await message.channel.send("❌ Error loading leaderboard. Please try again.")
-            return False
+
 
     async def handle_economy_shop(self, message: discord.Message) -> bool:
         """Handle !economy shop command"""
