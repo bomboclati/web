@@ -581,9 +581,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
             logger.error("Error in %s handler: %s", label, e)
 
     async def on_message(self, message):
-        print(f"DEBUG: on_message fired for '{message.content}' from {message.author}")
         if message.author.bot:
-            print("DEBUG: Ignoring bot message")
             return
 
         # 0. General Logging - Message Delete is handled in its own event, but edit/delete can be here too
@@ -650,7 +648,6 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         print(f"DEBUG: message='{message.content}', prefix='{prefix}', starts_with={message.content.startswith(prefix)}")
         if message.content.startswith(prefix):
             cmd_content = " ".join(message.content[len(prefix):].split()).strip()
-            print(f"DEBUG: cmd_content='{cmd_content}'")
             
             # Handle !suggest command
             if cmd_content.startswith("suggest"):
@@ -891,7 +888,6 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                     break
             
             if matched_cmd:
-                print(f"DEBUG: Executing custom command '{matched_cmd}'")
                 # Rate limiting check
                 cooldown_key = (message.guild.id, message.author.id, matched_cmd)
                 now = time.time()
