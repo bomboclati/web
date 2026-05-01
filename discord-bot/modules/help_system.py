@@ -337,38 +337,41 @@ class HelpCategoryView(ui.View):
 
 
 class HelpMainView(ui.View):
-    """The main !help panel with category select menu."""
+    """The main !help panel with category buttons."""
 
     def __init__(self, guild_id: int):
         super().__init__(timeout=300)
         self.guild_id = guild_id
 
-        # Select menu for categories
-        options = []
-        for cat_name in CATEGORIES.keys():
-            options.append(discord.SelectOption(label=cat_name, value=cat_name, emoji=list(CATEGORIES.keys()).index(cat_name) % 5 + 1))  # Placeholder emoji
-        self.category_select = ui.Select(
-            placeholder="Choose a category...",
-            options=options,
-            custom_id="help_category_select"
-        )
-        self.category_select.callback = self._category_callback
-        self.add_item(self.category_select)
+        # Add buttons for each category (up to 4 categories per row, max 5 rows)
+        categories = list(CATEGORIES.keys())
+        for i, cat_name in enumerate(categories):
+            emoji = cat_name.split()[0]  # Get emoji from category name
+            button = ui.Button(
+                label=cat_name,
+                style=discord.ButtonStyle.primary,
+                custom_id=f"help_cat_{i}",
+                row=i // 4  # 4 buttons per row
+            )
+            button.callback = self._make_callback(cat_name)
+            self.add_item(button)
 
-        # Search button
+        # Search button in the last row
         search_btn = ui.Button(
             label="🔍 Search",
             style=discord.ButtonStyle.secondary,
-            custom_id="help_main_search"
+            custom_id="help_main_search",
+            row=min(4, len(categories) // 4 + 1)  # Place in appropriate row
         )
         search_btn.callback = self._search_callback
         self.add_item(search_btn)
 
-    async def _category_callback(self, interaction: Interaction):
-        cat_name = self.category_select.values[0]
-        embed = _build_category_embed(interaction.guild_id, cat_name, interaction.client)
-        view = HelpCategoryView(interaction.guild_id, cat_name)
-        await interaction.response.edit_message(embed=embed, view=view)
+    def _make_callback(self, cat_name: str):
+        async def callback(interaction: Interaction):
+            embed = _build_category_embed(interaction.guild_id, cat_name, interaction.client)
+            view = HelpCategoryView(interaction.guild_id, cat_name)
+            await interaction.response.edit_message(embed=embed, view=view)
+        return callback
 
     async def _search_callback(self, interaction: Interaction):
         await interaction.response.send_modal(_SearchModal(interaction.guild_id))
@@ -409,14 +412,17 @@ class HelpMainView(ui.View):
 
 async def send_help(channel: discord.TextChannel, guild_id: int, invoker: discord.Member = None, system_query: str = None, bot: discord.Client = None):
     """Entry point called from bot.py on_message for the !help command."""
-    # Resolve a bot reference if the caller didn't pass one.
-    if bot is None:
-        try:
-            bot = channel._state._get_client()
-        except Exception:
-            bot = None
+    try:
+        # Resolve a bot reference if the caller didn't pass one.
+        if bot is None:
+            try:
+                bot = channel._state._get_client()
+            except Exception:
+                bot = None
 
-    if system_query:
+
+
+        if system_query:
         system_key = system_query.lower().replace("_", "").replace("system", "").strip()
         if system_key in _SYSTEM_LOOKUP:
             # _SYSTEM_LOOKUP stores 4-tuples: (emoji, desc, category, cmd_examples).
@@ -466,8 +472,14 @@ async def send_help(channel: discord.TextChannel, guild_id: int, invoker: discor
         except Exception:
             pass
 
-    view = HelpMainView(guild_id)
-    embed = _build_main_embed(guild_id, bot)
-    if invoker:
-        embed.set_author(name=f"Requested by {invoker.display_name}", icon_url=invoker.display_avatar.url)
-    await channel.send(embed=embed, view=view)
+        view = HelpMainView(guild_id)
+        embed = _build_main_embed(guild_id, bot)
+        if invoker:
+            embed.set_author(name=f"Requested by {invoker.display_name}", icon_url=invoker.display_avatar.url)
+        await channel.send(embed=embed, view=view)
+    except Exception as e:
+        print(f"Error in send_help: {e}")
+        import traceback
+        traceback.print_exc()
+        # Fallback: send a simple message
+        await channel.send("❌ Help system is currently unavailable. Please try again later.")
