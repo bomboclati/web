@@ -147,7 +147,9 @@ class ActionHandler:
         # Additional actions from action_catalog
         "post_documentation", "setup_trigger_role",
         # Personalized Memory actions
-        "update_user_preference"
+        "update_user_preference",
+        # Automation action
+        "create_automation"
     }
 
     def __init__(self, bot):
@@ -2122,7 +2124,7 @@ class ActionHandler:
             await self._auto_document_system(guild.id, "welcome")
         return success, {"action": "undo_welcome", "guild_id": guild.id}
 
-    # --- Aliases: create_*_system → setup_* (AI may use either name) ---
+# --- Aliases: create_*_system → setup_* (AI may use either name) ---
 
     async def action_create_verify_system(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         return await self.action_setup_verification(interaction, params)
@@ -2168,6 +2170,53 @@ class ActionHandler:
         else:
             logger.error("Scheduler not available")
             return False, None
+
+    async def action_create_automation(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
+        """Create an automation - schedule a task or set up an auto-responder."""
+        from task_scheduler import TaskScheduler
+
+        name = params.get("name", f"automation_{int(time.time())}")
+        automation_type = params.get("type", "scheduled_task")
+        schedule = params.get("schedule", {})
+        trigger = params.get("trigger", {})
+        action_to_perform = params.get("action", {})
+        response = params.get("response", "")
+
+        guild_id = interaction.guild.id
+
+        try:
+            if automation_type == "scheduled_task":
+                cron = schedule.get("cron", "0 12 * * *")
+                channel_id = trigger.get("channel_id")
+                scheduler = getattr(self.bot, 'scheduler', None)
+                if scheduler and hasattr(scheduler, 'add_ai_task'):
+                    scheduler.add_ai_task(name, guild_id, cron, action_to_perform.get("name", "send_message"), action_to_perform.get("parameters", {}), channel_id)
+                    logger.info(f"Created scheduled automation: {name} for guild {guild_id}")
+                    return True, {"automation_id": name, "type": automation_type, "schedule": schedule}
+            elif automation_type == "auto_responder":
+                triggers = trigger.get("keywords", [])
+                dm.update_guild_data(guild_id, f"auto_responder_{name}", {
+                    "keywords": triggers,
+                    "response": response,
+                    "enabled": True
+                })
+                logger.info(f"Created auto-responder automation: {name} for guild {guild_id}")
+                return True, {"automation_id": name, "type": automation_type, "triggers": triggers}
+            elif automation_type == "reminder":
+                duration = schedule.get("duration", 3600)
+                dm.update_guild_data(guild_id, f"reminder_{name}", {
+                    "duration": duration,
+                    "content": response,
+                    "original_message": trigger.get("message_id"),
+                    "target_user": trigger.get("user_id")
+                })
+                logger.info(f"Created reminder automation: {name} for guild {guild_id}")
+                return True, {"automation_id": name, "type": automation_type, "duration": duration}
+            else:
+                return False, {"error": f"Unknown automation type: {automation_type}"}
+        except Exception as e:
+            logger.error(f"Error creating automation: {e}")
+            return False, {"error": str(e)}
 
     async def action_connect_systems(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Connect two systems so that when trigger_event happens in source_system, action is performed on target_system."""

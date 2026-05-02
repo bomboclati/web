@@ -102,7 +102,7 @@ class ServerAnalytics:
         try:
             # Get message count and unique chatters from leveling module
             if hasattr(self.bot, 'leveling'):
-                hourly_stats = self.bot.leveling.get_hourly_stats(guild_id, 1)  # Last hour
+                hourly_stats = self.bot.leveling.get_hourly_stats(guild.id, 1)  # Last hour
                 if hourly_stats:
                     # Take the most recent hour's data
                     latest_hour = sorted(hourly_stats.keys())[0] if hourly_stats else None

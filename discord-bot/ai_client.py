@@ -480,6 +480,7 @@ Only suggest actions from this list. Do not invent new actions:
             "model": active_model,
             "messages": [m for m in messages if m["role"] != "system"],
             "temperature": 0.7,
+            "max_tokens": 8000,
         }
         
         # Anthropic specific payload structure
@@ -487,7 +488,7 @@ Only suggest actions from this list. Do not invent new actions:
             system_msg = next((m["content"] for m in messages if m["role"] == "system"), None)
             if system_msg:
                 payload["system"] = system_msg
-            payload["max_tokens"] = 4096
+            payload["max_tokens"] = 8000
         else:
             # Add system message back for OpenAI compatible providers
             payload["messages"] = messages
@@ -688,8 +689,14 @@ Only suggest actions from this list. Do not invent new actions:
             pass
                 
         # Cannot parse as JSON - return a helpful fallback
-        logger.warning(f"Could not parse AI response as JSON, response appears truncated or malformed. Preview: {text[:100]}")
-        return {"summary": "I tried to generate a response, but it seems the output was cut off or malformed. Please try rephrasing your request or try again."}
+        logger.warning(f"Could not parse AI response as JSON, response appears truncated or malformed. Preview: {text[:200]}")
+        # Check if response appears incomplete/truncated
+        truncated_warning = ""
+        if text.count('{') > text.count('}') or text.count('[') > text.count(']'):
+            truncated_warning = " (Response appears truncated - increase max_tokens for full response)"
+        elif len(text) < 200 and '{' in text:
+            truncated_warning = " (Response may be incomplete)"
+        return {"summary": f"I tried to generate a response, but it seems the output was cut off or malformed{truncated_warning}. Please try rephrasing your request or try again."}
         
     def _repair_json(self, content: str) -> str:
         """Repair common JSON formatting errors."""

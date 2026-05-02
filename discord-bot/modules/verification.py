@@ -115,7 +115,7 @@ class Verification:
 
         # Account age check passed, proceed with verification
 
-        # CAPTCHA
+# CAPTCHA
         if config.get("captcha_enabled"):
             a, b = random.randint(1, 10), random.randint(1, 10)
             return await interaction.response.send_modal(CaptchaModal(self, a+b, f"What is {a} + {b}?"))
@@ -150,6 +150,9 @@ class Verification:
     async def on_member_join(self, member):
         uv, v = self._get_roles(member.guild)
         if uv: await member.add_roles(uv)
+
+    async def on_guild_channel_create(self, channel):
+        pass
 
     async def setup_interaction(self, interaction):
         await self.setup(interaction.guild)
