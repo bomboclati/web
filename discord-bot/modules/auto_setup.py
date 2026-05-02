@@ -693,6 +693,16 @@ class AutoSetup(commands.Cog):
 
     async def update_system_status_embed(self, guild_id: int):
         """Update the live status embed for a guild."""
+        # Load from persistence if not in memory
+        if guild_id not in self._status_messages:
+            mid = dm.get_guild_data(guild_id, "status_message_id")
+            if mid:
+                self._status_messages[guild_id] = mid
+        if guild_id not in self._status_channels:
+            cid = dm.get_guild_data(guild_id, "status_channel_id")
+            if cid:
+                self._status_channels[guild_id] = cid
+
         if guild_id not in self._status_messages or guild_id not in self._status_channels:
             return
         message_id = self._status_messages[guild_id]
@@ -920,6 +930,8 @@ class AutoSetup(commands.Cog):
                         message = await target_channel.send(f"{user.mention}", embed=embed)
                     self._status_messages[guild.id] = message.id
                     self._status_channels[guild.id] = target_channel.id
+                    dm.update_guild_data(guild.id, "status_message_id", message.id)
+                    dm.update_guild_data(guild.id, "status_channel_id", target_channel.id)
                     sent = True
                 except Exception as e:
                     logger.warning(f"Failed to send status embed to channel: {e}")
@@ -941,6 +953,8 @@ class AutoSetup(commands.Cog):
                             message = await system_channel.send(f"{user.mention}", embed=embed)
                         self._status_messages[guild.id] = message.id
                         self._status_channels[guild.id] = system_channel.id
+                        dm.update_guild_data(guild.id, "status_message_id", message.id)
+                        dm.update_guild_data(guild.id, "status_channel_id", system_channel.id)
                     except Exception as e:
                         logger.warning(f"Failed to send status embed to system channel: {e}")
 

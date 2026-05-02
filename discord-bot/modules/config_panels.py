@@ -2406,9 +2406,10 @@ class WarningConfigView(ConfigPanelView):
     @ui.button(label="Toggle DM Warnings", emoji="📩", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_warn_toggle_dm")
     async def toggle_dm(self, i, b):
         c = self.get_config(i.guild_id)
-        c["dm_enabled"] = not c.get("dm_enabled", True)
+        c["enabled"] = not c.get("enabled", True)
         self.save_config(c, i.guild_id, i.client)
         await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Pardon Warning", emoji="✅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_warn_pardon")
     async def pardon_warn(self, i, b):
@@ -3501,9 +3502,10 @@ class GamificationConfigView(ConfigPanelView):
     @ui.button(label="Toggle Quests", emoji="📋", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_gam_quests")
     async def toggle_quests(self, i, b):
         c = self.get_config(i.guild_id)
-        c["quests_enabled"] = not c.get("quests_enabled", True)
+        c["enabled"] = not c.get("enabled", True)
         self.save_config(c, i.guild_id, i.client)
         await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Toggle Skills", emoji="🎯", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_gam_skills")
     async def toggle_skills(self, i, b):
