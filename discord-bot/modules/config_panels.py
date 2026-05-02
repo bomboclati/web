@@ -4316,12 +4316,16 @@ class ChatChannelsConfigView(ConfigPanelView):
     async def set_api_key(self, i, b):
         class ProviderSelect(ui.Select):
             async def callback(self, it):
-                class KeyModal(ui.Modal, title=f"Set API Key for {self.values[0]}"):
-                    key = ui.TextInput(label="API Key", placeholder="Enter your API key securely", required=True, style=discord.TextStyle.short)
+                provider = self.values[0]
+                class KeyModal(ui.Modal, title=f"Set API Key for {provider}"):
+                    def __init__(self):
+                        super().__init__()
+                        self.provider = provider
+                        self.key = ui.TextInput(label="API Key", placeholder="Enter your API key securely", required=True, style=discord.TextStyle.short)
                     async def on_submit(self, mt):
                         try:
-                            dm.set_guild_api_key(mt.guild_id, self.key.value, self.values[0])
-                            await mt.response.send_message(f"✅ API key for **{self.values[0]}** has been updated and encrypted.", ephemeral=True)
+                            dm.set_guild_api_key(mt.guild_id, self.key.value, self.provider)
+                            await mt.response.send_message(f"✅ API key for **{self.provider}** has been updated and encrypted.", ephemeral=True)
                         except Exception as e:
                             await mt.response.send_message(f"❌ Failed to set API key: {str(e)}", ephemeral=True)
                 await it.response.send_modal(KeyModal())
