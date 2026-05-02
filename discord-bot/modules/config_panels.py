@@ -71,6 +71,11 @@ class ConfigPanelView(ui.View):
             from logger import logger
             logger.warning(f"save_config: command re-registration failed for {self.system_name}: {e}")
 
+        # Update live status embed if any config changed
+        if bot and hasattr(bot, 'auto_setup'):
+            import asyncio
+            asyncio.create_task(bot.auto_setup.update_system_status_embed(guild_id))
+
     def _get_subsystem(self, bot, attr_name: str):
         """Safely fetch a bot subsystem (returns None if missing).
         Use this instead of bot.X.method() directly to prevent AttributeError."""
