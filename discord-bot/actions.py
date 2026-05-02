@@ -1269,7 +1269,7 @@ class ActionHandler:
 
         for role in roles:
             if role.position >= bot_top_role.position:
-                errors.append(f"Role '{role.name}' is higher than bot's role.")
+                errors.append(f"Role '{role.name}' is higher than bot's role. Please move the bot's role higher in the server's role hierarchy to assign this role.")
                 continue
 
             for member in members:
