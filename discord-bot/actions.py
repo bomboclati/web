@@ -330,6 +330,10 @@ class ActionHandler:
         for i, action in enumerate(actions):
             name = action.get("name")
             params = action.get("parameters", {})
+            # Ensure params is a dictionary
+            if not isinstance(params, dict):
+                logger.warning(f"Parameters for action {name} is not a dict: {type(params)}. Converting to empty dict.")
+                params = {}
 
             if name not in self.ALLOWED_ACTIONS:
                 logger.warning("Blocked disallowed action: %s", name)
@@ -2186,6 +2190,18 @@ class ActionHandler:
 
         try:
             if automation_type == "scheduled_task":
+                # Ensure schedule and trigger are dictionaries
+                if not isinstance(schedule, dict):
+                    logger.warning(f"Schedule is not a dict: {type(schedule)}. Using empty dict.")
+                    schedule = {}
+                if not isinstance(trigger, dict):
+                    logger.warning(f"Trigger is not a dict: {type(trigger)}. Using empty dict.")
+                    trigger = {}
+                # Ensure action_to_perform is a dictionary
+                if not isinstance(action_to_perform, dict):
+                    logger.warning(f"Action to perform is not a dict: {type(action_to_perform)}. Using empty dict.")
+                    action_to_perform = {}
+                
                 cron = schedule.get("cron", "0 12 * * *")
                 channel_id = trigger.get("channel_id")
                 scheduler = getattr(self.bot, 'scheduler', None)
@@ -2194,6 +2210,10 @@ class ActionHandler:
                     logger.info(f"Created scheduled automation: {name} for guild {guild_id}")
                     return True, {"automation_id": name, "type": automation_type, "schedule": schedule}
             elif automation_type == "auto_responder":
+                # Ensure trigger is a dictionary
+                if not isinstance(trigger, dict):
+                    logger.warning(f"Trigger is not a dict: {type(trigger)}. Using empty dict.")
+                    trigger = {}
                 triggers = trigger.get("keywords", [])
                 dm.update_guild_data(guild_id, f"auto_responder_{name}", {
                     "keywords": triggers,
@@ -2203,6 +2223,13 @@ class ActionHandler:
                 logger.info(f"Created auto-responder automation: {name} for guild {guild_id}")
                 return True, {"automation_id": name, "type": automation_type, "triggers": triggers}
             elif automation_type == "reminder":
+                # Ensure schedule and trigger are dictionaries
+                if not isinstance(schedule, dict):
+                    logger.warning(f"Schedule is not a dict: {type(schedule)}. Using empty dict.")
+                    schedule = {}
+                if not isinstance(trigger, dict):
+                    logger.warning(f"Trigger is not a dict: {type(trigger)}. Using empty dict.")
+                    trigger = {}
                 duration = schedule.get("duration", 3600)
                 dm.update_guild_data(guild_id, f"reminder_{name}", {
                     "duration": duration,
