@@ -607,6 +607,7 @@ class AutoSetup(commands.Cog):
         self._pending_setups: Dict[int, ServerSetup] = self._load_pending_setups()
         self._setup_messages: Dict[int, int] = {}
         self._status_messages: Dict[int, int] = {}  # guild_id -> message_id for live status embed
+        self._status_channels: Dict[int, int] = {}  # guild_id -> channel_id for live status embed
         self._startup_guilds = set()
     
     def create_welcome_embed(self, guild: discord.Guild, selected_systems: List[str] = None) -> discord.Embed:
