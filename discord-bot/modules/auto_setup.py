@@ -980,9 +980,17 @@ class AutoSetup(commands.Cog):
                 inline=False
             )
 
+        # Build specific configpanel commands
+        config_steps = []
+        for sys in success_systems[:5]:  # Limit to 5 to avoid embed length limit
+            config_steps.append(f"• Use `!configpanel {sys}` to configure {sys}")
+
+        next_steps = "\n".join(config_steps)
+        next_steps += "\n• Run `!help` for command reference\n• Join our support server for help"
+
         embed.add_field(
             name="🚀 Next Steps",
-            value="• Use `!configpanel <system>` to configure each system\n• Run `!help` for command reference\n• Join our support server for help",
+            value=next_steps,
             inline=False
         )
 
