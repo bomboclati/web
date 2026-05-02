@@ -4238,7 +4238,7 @@ class ChatChannelsConfigView(ConfigPanelView):
             config["channels"] = channels
         super().save_config(config, guild_id, bot)
 
-    @ui.button(label="Set AI Model", emoji="🤖", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_chat_model")
+    @ui.button(label="Models", emoji="🤖", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_chat_model")
     async def set_model(self, i, b):
         # Get current provider for this guild
         c = dm.get_guild_data(i.guild_id, "ai_chat_config", {})
@@ -4268,7 +4268,7 @@ class ChatChannelsConfigView(ConfigPanelView):
         v = ui.View(); v.add_item(ModelSelect(placeholder="Choose AI Model...", options=options))
         await i.response.send_message("Select model:", view=v, ephemeral=True)
 
-    @ui.button(label="Set AI Provider", emoji="🛰️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_chat_provider")
+    @ui.button(label="More Providers", emoji="🛰️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_chat_provider")
     async def set_provider(self, i, b):
         # Pick which backend powers the AI chat channels (matches /config provider choices).
         class ProviderSelect(ui.Select):
