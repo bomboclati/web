@@ -27,13 +27,8 @@ CATEGORIES = {
             ("antiraid",       "🚨", "Mass-join detection & server lockdown", ["!raidstatus", "!configpanel antiraid"]),
             ("guardian",       "⚔️", "AI threat detection (scam, token, nuke)", ["!guardian status", "!configpanel guardian"]),
             ("automod",        "🤖", "Spam, caps, invite & link filters", ["!automod status", "!configpanel automod"]),
-<<<<<<< HEAD
-            ("warnings",       "⚠️", "Warning system with escalation", ["!warn @user", "!warnings"]),
-            ("moderation",     "🔨", "Kick, ban, mute, timeout commands", ["!kick", "!ban", "!mute", "!modstats"]),
-=======
             ("warnings",       "⚠️", "Warning system with escalation", ["!warn @user", "!warnings", "!clearwarn", "!clearallwarns", "!configpanel warnings"]),
             ("moderation",     "🔨", "Kick, ban, mute, timeout commands", ["!kick", "!ban", "!mute", "!modstats", "!configpanel moderation"]),
->>>>>>> 3898eaa86529ad68bad82100d21178627ac42c02
             ("modlog",         "📋", "Audit log for all mod actions", ["!modlog view", "!configpanel modlog"]),
             ("logging",        "📊", "Full server event logging", ["!configpanel logging"]),
         ]
