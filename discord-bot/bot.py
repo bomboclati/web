@@ -637,8 +637,13 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         
         # 2. AI Chat Channels (if message is in an AI chat channel)
         await self._safe_call(self.chat_channels.handle_message(message), "chat_channels")
-        
-        # 3. Mention-Based AI Triggering (NEW FEATURE)
+
+        # 3. Reply-Based AI Triggering (handle replies to bot messages)
+        if message.reference and message.reference.message and message.reference.message.author == self.user:
+            await self._handle_reply_ai(message)
+            return
+
+        # 4. Mention-Based AI Triggering (NEW FEATURE)
         if self.user and self.user.mentioned_in(message):
             await self._handle_mention_ai(message)
             return  # Don't process as command if mentioned
@@ -1840,6 +1845,13 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         except Exception as e:
             logger.error(f"Error in mention AI handler: {e}")
             await message.channel.send("[WARNING] Sorry, I'm having trouble processing that right now. Please try again!", suppress_embeds=True)
+
+    async def _handle_reply_ai(self, message):
+        """
+        Handle replies to the bot's messages - provides conversational AI response.
+        Similar to mention AI but indicates it's a reply for context.
+        """
+        await self._handle_mention_ai(message)
 
     async def _reload_event_listeners(self):
         """Reload event listeners from data/event_listeners.json"""

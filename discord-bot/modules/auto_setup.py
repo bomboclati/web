@@ -607,6 +607,7 @@ class AutoSetup(commands.Cog):
         self._pending_setups: Dict[int, ServerSetup] = self._load_pending_setups()
         self._setup_messages: Dict[int, int] = {}
         self._status_messages: Dict[int, int] = {}  # guild_id -> message_id for live status embed
+        self._status_channels: Dict[int, int] = {}  # guild_id -> channel_id for live status embed
         self._startup_guilds = set()
     
     def create_welcome_embed(self, guild: discord.Guild, selected_systems: List[str] = None) -> discord.Embed:
@@ -693,6 +694,16 @@ class AutoSetup(commands.Cog):
 
     async def update_system_status_embed(self, guild_id: int):
         """Update the live status embed for a guild."""
+        # Load from persistence if not in memory
+        if guild_id not in self._status_messages:
+            mid = dm.get_guild_data(guild_id, "status_message_id")
+            if mid:
+                self._status_messages[guild_id] = mid
+        if guild_id not in self._status_channels:
+            cid = dm.get_guild_data(guild_id, "status_channel_id")
+            if cid:
+                self._status_channels[guild_id] = cid
+
         if guild_id not in self._status_messages or guild_id not in self._status_channels:
             return
         message_id = self._status_messages[guild_id]
@@ -920,6 +931,8 @@ class AutoSetup(commands.Cog):
                         message = await target_channel.send(f"{user.mention}", embed=embed)
                     self._status_messages[guild.id] = message.id
                     self._status_channels[guild.id] = target_channel.id
+                    dm.update_guild_data(guild.id, "status_message_id", message.id)
+                    dm.update_guild_data(guild.id, "status_channel_id", target_channel.id)
                     sent = True
                 except Exception as e:
                     logger.warning(f"Failed to send status embed to channel: {e}")
@@ -941,9 +954,86 @@ class AutoSetup(commands.Cog):
                             message = await system_channel.send(f"{user.mention}", embed=embed)
                         self._status_messages[guild.id] = message.id
                         self._status_channels[guild.id] = system_channel.id
+                        dm.update_guild_data(guild.id, "status_message_id", message.id)
+                        dm.update_guild_data(guild.id, "status_channel_id", system_channel.id)
                     except Exception as e:
                         logger.warning(f"Failed to send status embed to system channel: {e}")
-    
+
+    async def _send_celebratory_embed(self, guild: discord.Guild, user: discord.Member, results: List[Tuple[str, bool, Optional[str]]], channel_id: Optional[int] = None, created_channels: List[int] = None):
+        """Send celebratory embed when setup is complete"""
+        embed = discord.Embed(
+            title="🎉 Setup Complete!",
+            description=f"Congratulations {user.mention}! Your server has been successfully configured with the latest bot systems.",
+            color=discord.Color.green()
+        )
+
+        # Count successes
+        success_count = sum(1 for name, success, _ in results if success)
+        total_count = len(results)
+
+        embed.add_field(
+            name="📊 Summary",
+            value=f"**{success_count}/{total_count}** systems installed successfully!",
+            inline=True
+        )
+
+        # List successful systems
+        success_systems = [name for name, success, _ in results if success]
+        if success_systems:
+            embed.add_field(
+                name="✅ Installed Systems",
+                value="\n".join(f"• {sys}" for sys in success_systems[:10]),
+                inline=True
+            )
+
+        # Created channels
+        if created_channels:
+            channel_mentions = [f"<#{cid}>" for cid in created_channels[:5]]
+            embed.add_field(
+                name="🏗️ Created Channels",
+                value=" ".join(channel_mentions),
+                inline=False
+            )
+
+        # Build specific configpanel commands
+        config_steps = []
+        for sys in success_systems[:5]:  # Limit to 5 to avoid embed length limit
+            config_steps.append(f"• Use `!configpanel {sys}` to configure {sys}")
+
+        next_steps = "\n".join(config_steps)
+        next_steps += "\n• Run `!help` for command reference\n• Join our support server for help"
+
+        embed.add_field(
+            name="🚀 Next Steps",
+            value=next_steps,
+            inline=False
+        )
+
+        embed.set_footer(text="Thank you for choosing Miro Bot! | Setup by AutoSetup")
+        embed.timestamp = discord.utils.utcnow()
+
+        # Send to specified channel or DM
+        sent = False
+        if channel_id:
+            target_channel = guild.get_channel(channel_id)
+            if target_channel:
+                try:
+                    await target_channel.send(embed=embed)
+                    sent = True
+                except Exception as e:
+                    logger.warning(f"Failed to send celebratory embed to channel: {e}")
+
+        if not sent:
+            try:
+                await user.send(embed=embed)
+            except discord.Forbidden:
+                system_channel = guild.system_channel
+                if system_channel:
+                    try:
+                        await system_channel.send(embed=embed)
+                    except Exception as e:
+                        logger.warning(f"Failed to send celebratory embed to system channel: {e}")
+
     def _get_example_commands(self, installed_systems: List[str]) -> List[str]:
         """Get example commands for installed systems"""
         cmd_map = {

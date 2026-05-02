@@ -49,7 +49,7 @@ class ConfigPanelView(ui.View):
             logger.warning(f"get_config failed for {self.system_name}: {e}")
             return {}
 
-    def save_config(self, config: Dict[str, Any], guild_id: int = None, bot: discord.Client = None):
+    async def save_config(self, config: Dict[str, Any], guild_id: int = None, bot: discord.Client = None):
         target_guild = guild_id or self.guild_id
         try:
             dm.update_guild_data(target_guild, self._storage_key(), config)
@@ -70,6 +70,11 @@ class ConfigPanelView(ui.View):
         except Exception as e:
             from logger import logger
             logger.warning(f"save_config: command re-registration failed for {self.system_name}: {e}")
+
+        # Update live status embed if any config changed
+        if bot and hasattr(bot, 'auto_setup'):
+            import asyncio
+            asyncio.create_task(bot.auto_setup.update_system_status_embed(guild_id))
 
     def _get_subsystem(self, bot, attr_name: str):
         """Safely fetch a bot subsystem (returns None if missing).
@@ -394,9 +399,10 @@ class VerificationConfigView(ConfigPanelView):
 
     @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_verify_toggle")
     async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, f"Toggled verification to {c.get('enabled')}")
-        # Update toggle button label and style
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
         for item in self.children:
             if isinstance(item, ui.Button) and item.custom_id == "cfg_verify_toggle":
                 if c.get("enabled", True):
@@ -428,7 +434,9 @@ class VerificationConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle CAPTCHA", emoji="🧮", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_verify_toggle_c")
     async def toggle_c(self, i, b):
-        c = self.get_config(i.guild_id); c["captcha_enabled"] = not c.get("captcha_enabled", False); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["captcha_enabled"] = not c.get("captcha_enabled", False)
+        await self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
 
     @ui.button(label="Set Welcome DM", emoji="📩", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_verify_set_dm")
     async def set_dm(self, i, b):
@@ -447,7 +455,8 @@ class VerificationConfigView(ConfigPanelView):
 
     @ui.button(label="Reset Log", emoji="🗑️", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_verify_reset")
     async def reset(self, i, b):
-        c = self.get_config(i.guild_id); c["verification_log"] = []; self.save_config(c, i.guild_id, i.client)
+        c = self.get_config(i.guild_id); c["verification_log"] = []
+        await self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, "Reset verification log")
         await i.response.send_message("Log Reset", ephemeral=True)
 
@@ -518,6 +527,7 @@ class AntiRaidConfigView(ConfigPanelView):
     @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_antiraid_toggle")
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
         # Update toggle button label and style
         for item in self.children:
             if isinstance(item, ui.Button) and item.custom_id == "cfg_antiraid_toggle":
@@ -664,6 +674,7 @@ class GuardianConfigView(ConfigPanelView):
     @ui.button(label="Toggle Guardian", emoji="⚔️", style=discord.ButtonStyle.success, row=0, custom_id="cfg_guardian_toggle")
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Toxicity Filter", emoji="☣️", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_guardian_set_tox")
     async def set_tox(self, i, b):
@@ -782,11 +793,13 @@ class WelcomeConfigView(ConfigPanelView):
     async def toggle_w(self, i, b):
         c = dm.get_guild_data(i.guild_id, "welcome_config", {}); c["enabled"] = not c.get("enabled", False)
         dm.update_guild_data(i.guild_id, "welcome_config", c); await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Toggle Leave", style=discord.ButtonStyle.success, row=0, custom_id="cfg_wl_toggle_l")
     async def toggle_l(self, i, b):
         c = dm.get_guild_data(i.guild_id, "leave_config", {}); c["enabled"] = not c.get("enabled", False)
         dm.update_guild_data(i.guild_id, "leave_config", c); await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Set Welcome Ch", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_wl_set_wch")
     async def set_wch(self, i, b):
@@ -881,6 +894,7 @@ class WelcomeDMConfigView(ConfigPanelView):
     async def toggle(self, i, b):
         c = dm.get_guild_data(i.guild_id, "welcomedm_config", {}); c["enabled"] = not c.get("enabled", False)
         dm.update_guild_data(i.guild_id, "welcomedm_config", c); await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Edit DM Message", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_wdm_edit")
     async def edit_msg(self, i, b):
@@ -1329,6 +1343,7 @@ class ModmailConfigView(ConfigPanelView):
     async def toggle_open(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
         self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
 class TicketsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
@@ -1364,6 +1379,7 @@ class TicketsConfigView(ConfigPanelView):
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, f"Toggled tickets to {c.get('enabled')}")
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
         # Update toggle button label and style
         for item in self.children:
             if isinstance(item, ui.Button) and item.custom_id == "cfg_tickets_toggle":
@@ -2398,9 +2414,10 @@ class WarningConfigView(ConfigPanelView):
     @ui.button(label="Toggle DM Warnings", emoji="📩", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_warn_toggle_dm")
     async def toggle_dm(self, i, b):
         c = self.get_config(i.guild_id)
-        c["dm_enabled"] = not c.get("dm_enabled", True)
+        c["enabled"] = not c.get("enabled", True)
         self.save_config(c, i.guild_id, i.client)
         await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Pardon Warning", emoji="✅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_warn_pardon")
     async def pardon_warn(self, i, b):
@@ -3398,6 +3415,7 @@ class SuggestionsConfigView(ConfigPanelView):
     async def toggle_open(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
         self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
 class _TicketEmbedModal(ui.Modal):
     def __init__(self, parent):
@@ -3492,9 +3510,10 @@ class GamificationConfigView(ConfigPanelView):
     @ui.button(label="Toggle Quests", emoji="📋", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_gam_quests")
     async def toggle_quests(self, i, b):
         c = self.get_config(i.guild_id)
-        c["quests_enabled"] = not c.get("quests_enabled", True)
+        c["enabled"] = not c.get("enabled", True)
         self.save_config(c, i.guild_id, i.client)
         await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Toggle Skills", emoji="🎯", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_gam_skills")
     async def toggle_skills(self, i, b):
@@ -3557,6 +3576,7 @@ class EconomyConfigView(ConfigPanelView):
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, f"Toggled economy to {c.get('enabled')}")
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
         # Update toggle button label and style
         for item in self.children:
             if isinstance(item, ui.Button) and item.custom_id == "cfg_eco_toggle":
@@ -3753,6 +3773,7 @@ class LevelingConfigView(ConfigPanelView):
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, f"Toggled leveling to {c.get('enabled')}")
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
         # Update toggle button label and style
         for item in self.children:
             if isinstance(item, ui.Button) and item.custom_id == "cfg_lvl_toggle":
@@ -3915,6 +3936,7 @@ class StarboardConfigView(ConfigPanelView):
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, f"Toggled starboard to {c.get('enabled')}")
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
         # Update toggle button label and style
         for item in self.children:
             if isinstance(item, ui.Button) and item.custom_id == "cfg_stb_toggle":
@@ -4203,7 +4225,10 @@ class ChatChannelsConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle AI Chat", emoji="🔌", style=discord.ButtonStyle.success, row=0, custom_id="cfg_chat_toggle")
     async def toggle_auto(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Personality", emoji="🎭", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_chat_pers")
     async def set_personality(self, i, b):
@@ -4236,9 +4261,9 @@ class ChatChannelsConfigView(ConfigPanelView):
             if cid in channels: channels.remove(cid)
             else: channels.append(cid)
             config["channels"] = channels
-        super().save_config(config, guild_id, bot)
+        await super().save_config(config, guild_id, bot)
 
-    @ui.button(label="Set AI Model", emoji="🤖", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_chat_model")
+    @ui.button(label="Models", emoji="🤖", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_chat_model")
     async def set_model(self, i, b):
         # Get current provider for this guild
         c = dm.get_guild_data(i.guild_id, "ai_chat_config", {})
@@ -4248,7 +4273,7 @@ class ChatChannelsConfigView(ConfigPanelView):
         MODEL_CHOICES = {
             "openrouter": ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash"],
             "openai": ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
-            "gemini": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+            "gemini": ["gemini-2.5-pro", "gemini-2.5-flash-lite", "gemini-2.0-flash"],
             "groq": ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
             "mistral": ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"],
             "deepseek": ["deepseek-chat", "deepseek-coder"],
@@ -4259,24 +4284,30 @@ class ChatChannelsConfigView(ConfigPanelView):
         
         class ModelSelect(ui.Select):
             async def callback(self, it):
-                config = dm.get_guild_data(it.guild_id, "ai_chat_config", {})
-                config["model"] = self.values[0]
-                dm.update_guild_data(it.guild_id, "ai_chat_config", config)
-                await it.response.send_message(f"✅ Model set to {self.values[0]}", ephemeral=True)
+                try:
+                    config = dm.get_guild_data(it.guild_id, "ai_chat_config", {})
+                    config["model"] = self.values[0]
+                    dm.update_guild_data(it.guild_id, "ai_chat_config", config)
+                    await it.response.send_message(f"✅ Model set to {self.values[0]}", ephemeral=True)
+                except Exception as e:
+                    await it.response.send_message(f"❌ Failed to set model: {str(e)}", ephemeral=True)
         
         options = [discord.SelectOption(label=model, value=model) for model in available_models]
         v = ui.View(); v.add_item(ModelSelect(placeholder="Choose AI Model...", options=options))
         await i.response.send_message("Select model:", view=v, ephemeral=True)
 
-    @ui.button(label="Set AI Provider", emoji="🛰️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_chat_provider")
+    @ui.button(label="More Providers", emoji="🛰️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_chat_provider")
     async def set_provider(self, i, b):
         # Pick which backend powers the AI chat channels (matches /config provider choices).
         class ProviderSelect(ui.Select):
             async def callback(self, it):
-                config = dm.get_guild_data(it.guild_id, "ai_chat_config", {})
-                config["provider"] = self.values[0]
-                dm.update_guild_data(it.guild_id, "ai_chat_config", config)
-                await it.response.send_message(f"✅ AI provider set to **{self.values[0]}**.", ephemeral=True)
+                try:
+                    config = dm.get_guild_data(it.guild_id, "ai_chat_config", {})
+                    config["provider"] = self.values[0]
+                    dm.update_guild_data(it.guild_id, "ai_chat_config", config)
+                    await it.response.send_message(f"✅ AI provider set to **{self.values[0]}**.", ephemeral=True)
+                except Exception as e:
+                    await it.response.send_message(f"❌ Failed to set provider: {str(e)}", ephemeral=True)
         v = ui.View(); v.add_item(ProviderSelect(placeholder="Choose AI provider...", options=[
             discord.SelectOption(label="OpenRouter", value="openrouter"),
             discord.SelectOption(label="OpenAI", value="openai"),
@@ -4305,6 +4336,35 @@ class ChatChannelsConfigView(ConfigPanelView):
                     await it.response.send_message(f"✅ Temperature set to {val}", ephemeral=True)
                 except: await it.response.send_message("❌ Invalid number.", ephemeral=True)
         await i.response.send_modal(TempModal())
+
+    @ui.button(label="API Key", emoji="🔑", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_chat_apikey")
+    async def set_api_key(self, i, b):
+        class ProviderSelect(ui.Select):
+            async def callback(self, it):
+                provider = self.values[0]
+                class KeyModal(ui.Modal, title=f"Set API Key for {provider}"):
+                    def __init__(self):
+                        super().__init__()
+                        self.provider = provider
+                        self.key = ui.TextInput(label="API Key", placeholder="Enter your API key securely", required=True, style=discord.TextStyle.short)
+                        self.add_item(self.key)
+                    async def on_submit(self, mt):
+                        try:
+                            dm.set_guild_api_key(mt.guild_id, self.key.value, self.provider)
+                            await mt.response.send_message(f"✅ API key for **{self.provider}** has been updated and encrypted.", ephemeral=True)
+                        except Exception as e:
+                            await mt.response.send_message(f"❌ Failed to set API key: {str(e)}", ephemeral=True)
+                await it.response.send_modal(KeyModal())
+        v = ui.View(); v.add_item(ProviderSelect(placeholder="Choose provider...", options=[
+            discord.SelectOption(label="OpenRouter", value="openrouter"),
+            discord.SelectOption(label="OpenAI", value="openai"),
+            discord.SelectOption(label="Gemini", value="gemini"),
+            discord.SelectOption(label="Groq", value="groq"),
+            discord.SelectOption(label="Mistral", value="mistral"),
+            discord.SelectOption(label="DeepSeek", value="deepseek"),
+            discord.SelectOption(label="Anthropic", value="anthropic"),
+            discord.SelectOption(label="DashScope", value="dashscope")
+        ])); await i.response.send_message("Select provider to set API key:", view=v, ephemeral=True)
 
     @ui.button(label="Clear History", emoji="🧹", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_chat_clear")
     async def clear_hist(self, i, b):
@@ -4350,7 +4410,9 @@ class EventsConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle System", emoji="🔌", style=discord.ButtonStyle.success, row=0, custom_id="cfg_evt_toggle")
     async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
 
     @ui.button(label="Set Log Channel", emoji="📝", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_evt_log")
     async def set_log(self, i, b):
@@ -4362,7 +4424,9 @@ class EventsConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle Auto-Remind", emoji="⏰", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_evt_remind")
     async def toggle_remind(self, i, b):
-        c = self.get_config(i.guild_id); c["auto_remind"] = not c.get("auto_remind", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["auto_remind"] = not c.get("auto_remind", True)
+        await self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
 
     @ui.button(label="Set Ping Role", emoji="🔔", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_evt_role")
     async def set_role(self, i, b):
@@ -4838,6 +4902,9 @@ SPECIALIZED_VIEWS = {
     "scheduledreminders": "ScheduledPanelView",
     "autoresponder": "AutoResponderConfigView",
     "chatchannels": "ChatChannelsConfigView",
+    "chat channels": "ChatChannelsConfigView",
+    "aichatchannels": "ChatChannelsConfigView",
+    "ai chat channels": "ChatChannelsConfigView",
     "events": "EventsConfigView",
 }
 
@@ -4896,7 +4963,7 @@ def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
         _view_cache["ScheduledPanelView"] = ScheduledPanelView
         _view_cache["AnnouncementsPanelView"] = AnnouncementsPanelView
     
-    system_key = system.lower().replace("_", "").replace("system", "")
+    system_key = system.lower().replace("_", "").replace(" ", "").replace("system", "")
     class_name = SPECIALIZED_VIEWS.get(system_key)
     if class_name and class_name in _view_cache:
         return _view_cache[class_name](guild_id)

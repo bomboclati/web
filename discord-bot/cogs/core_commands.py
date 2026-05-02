@@ -36,7 +36,7 @@ class CoreCommands(commands.Cog):
     MODEL_CHOICES = {
         "openrouter": ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash"],
         "openai": ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
-        "gemini": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+        "gemini": ["gemini-2.5-pro", "gemini-2.5-flash-lite", "gemini-2.0-flash"],
         "groq": ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
         "mistral": ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"],
         "deepseek": ["deepseek-chat", "deepseek-coder"],
