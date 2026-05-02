@@ -1,0 +1,105 @@
+﻿{
+    "welcome":  {
+                    "welcome":  {
+                                    "command_type":  "simple",
+                                    "content":  "Welcome system is active! New members will receive automated welcome messages."
+                                }
+                },
+    "verification":  {
+                         "verify":  {
+                                        "command_type":  "simple",
+                                        "content":  "Use `/verify` to verify your account and gain access to the server."
+                                    }
+                     },
+    "economy":  {
+                    "balance":  {
+                                    "command_type":  "economy_balance",
+                                    "content":  "Check your current balance with !balance"
+                                },
+                    "daily":  {
+                                  "command_type":  "economy_daily",
+                                  "content":  "Claim your daily reward with !daily"
+                              },
+                    "work": {
+                                 "command_type": "economy_work",
+                                 "content": "Work to earn coins!"
+                             },
+                    "shop":  {
+                                 "command_type":  "simple",
+                                 "content":  "Use !shop to see available items."
+                             }
+                },
+    "leveling":  {
+                     "rank":  {
+                                  "command_type":  "simple",
+                                  "content":  "Check your current level and XP with !rank"
+                              },
+                     "leaderboard":  {
+                                         "command_type":  "simple",
+                                         "content":  "View top members with !leaderboard"
+                                     }
+                 },
+    "tickets":  {
+                    "ticket":  {
+                                   "command_type":  "simple",
+                                   "content":  "Create a support ticket with !ticket"
+                               }
+                },
+    "moderation":  {
+                       "report":  {
+                                      "command_type":  "simple",
+                                      "content":  "Report a user with !report \u003cuser\u003e \u003creason\u003e"
+                                  },
+                       "warn":  {
+                                    "command_type":  "simple",
+                                    "content":  "Warn a user (Staff only)"
+                                },
+                       "warnings":  {
+                                        "command_type":  "simple",
+                                        "content":  "Check user warnings."
+                                    }
+                   },
+    "staff_system":  {
+                         "shift":  {
+                                       "command_type":  "simple",
+                                       "content":  "Start or end your staff shift with !shift"
+                                   }
+                     },
+    "starboard":  {
+                      "starboard":  {
+                                        "command_type":  "simple",
+                                        "content":  "View the top starred messages in this server."
+                                    }
+                  },
+    "suggestions":  {
+                        "suggest":  {
+                                        "command_type":  "simple",
+                                        "content":  "Submit a suggestion for the server."
+                                    }
+                    },
+    "giveaways":  {
+                      "giveaway":  {
+                                       "command_type":  "simple",
+                                       "content":  "Manage giveaways with !giveaway create/end/reroll"
+                                   }
+                  },
+    "modmail":  {
+                    "modmail":  {
+                                    "command_type":  "simple",
+                                    "content":  "DM the bot to contact the server staff."
+                                }
+                },
+    "anti_raid":  {
+                      "raidstatus":  {
+                                         "command_type":  "simple",
+                                         "content":  "Check the current server security status."
+                                     }
+                  },
+    "guardian":  {
+                     "guardian":  {
+                                      "command_type":  "simple",
+                                      "content":  "View AI protection analytics."
+                                  }
+                 }
+}
+
