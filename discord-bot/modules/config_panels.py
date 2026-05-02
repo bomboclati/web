@@ -4322,6 +4322,7 @@ class ChatChannelsConfigView(ConfigPanelView):
                         super().__init__()
                         self.provider = provider
                         self.key = ui.TextInput(label="API Key", placeholder="Enter your API key securely", required=True, style=discord.TextStyle.short)
+                        self.add_item(self.key)
                     async def on_submit(self, mt):
                         try:
                             dm.set_guild_api_key(mt.guild_id, self.key.value, self.provider)
