@@ -399,10 +399,10 @@ class VerificationConfigView(ConfigPanelView):
 
     @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_verify_toggle")
     async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, f"Toggled verification to {c.get('enabled')}")
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
-        # Update toggle button label and style
         for item in self.children:
             if isinstance(item, ui.Button) and item.custom_id == "cfg_verify_toggle":
                 if c.get("enabled", True):
@@ -434,7 +434,9 @@ class VerificationConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle CAPTCHA", emoji="🧮", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_verify_toggle_c")
     async def toggle_c(self, i, b):
-        c = self.get_config(i.guild_id); c["captcha_enabled"] = not c.get("captcha_enabled", False); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["captcha_enabled"] = not c.get("captcha_enabled", False)
+        await self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
 
     @ui.button(label="Set Welcome DM", emoji="📩", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_verify_set_dm")
     async def set_dm(self, i, b):
@@ -453,7 +455,8 @@ class VerificationConfigView(ConfigPanelView):
 
     @ui.button(label="Reset Log", emoji="🗑️", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_verify_reset")
     async def reset(self, i, b):
-        c = self.get_config(i.guild_id); c["verification_log"] = []; self.save_config(c, i.guild_id, i.client)
+        c = self.get_config(i.guild_id); c["verification_log"] = []
+        await self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, "Reset verification log")
         await i.response.send_message("Log Reset", ephemeral=True)
 
@@ -4222,7 +4225,9 @@ class ChatChannelsConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle AI Chat", emoji="🔌", style=discord.ButtonStyle.success, row=0, custom_id="cfg_chat_toggle")
     async def toggle_auto(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Personality", emoji="🎭", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_chat_pers")
@@ -4405,7 +4410,9 @@ class EventsConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle System", emoji="🔌", style=discord.ButtonStyle.success, row=0, custom_id="cfg_evt_toggle")
     async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
 
     @ui.button(label="Set Log Channel", emoji="📝", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_evt_log")
     async def set_log(self, i, b):
@@ -4417,7 +4424,9 @@ class EventsConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle Auto-Remind", emoji="⏰", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_evt_remind")
     async def toggle_remind(self, i, b):
-        c = self.get_config(i.guild_id); c["auto_remind"] = not c.get("auto_remind", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["auto_remind"] = not c.get("auto_remind", True)
+        await self.save_config(c, i.guild_id, i.client)
+        await self.update_panel(i)
 
     @ui.button(label="Set Ping Role", emoji="🔔", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_evt_role")
     async def set_role(self, i, b):
