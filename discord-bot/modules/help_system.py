@@ -470,6 +470,27 @@ async def send_help(channel: discord.TextChannel, guild_id: int, invoker: discor
 
 
         if system_query:
+            if system_query.lower() == "systems":
+                # Special case: show all systems
+                embed = discord.Embed(
+                    title="🔧 All Systems Overview",
+                    description="Complete list of all available systems organized by category.\nUse `!help <system>` for detailed help on a specific system.",
+                    color=BRAND
+                )
+                embed.set_thumbnail(url=_bot_avatar_url(bot))
+
+                for cat_name, cat_data in CATEGORIES.items():
+                    systems_list = []
+                    for sys_key, emoji, desc, _ in cat_data["systems"]:
+                        status = _status_emoji(guild_id, sys_key)
+                        systems_list.append(f"{emoji} {sys_key.replace('_', ' ').title()} {status}")
+                    if systems_list:
+                        embed.add_field(name=cat_name, value="\n".join(systems_list), inline=False)
+
+                embed.set_footer(text="Use !configpanel <system> to configure any system")
+                await channel.send(embed=embed)
+                return
+
             system_key = system_query.lower().replace("_", "").replace("system", "").strip()
             if system_key in _SYSTEM_LOOKUP:
                 # _SYSTEM_LOOKUP stores 4-tuples: (emoji, desc, category, cmd_examples).
