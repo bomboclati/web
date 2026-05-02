@@ -49,7 +49,7 @@ class ConfigPanelView(ui.View):
             logger.warning(f"get_config failed for {self.system_name}: {e}")
             return {}
 
-    def save_config(self, config: Dict[str, Any], guild_id: int = None, bot: discord.Client = None):
+    async def save_config(self, config: Dict[str, Any], guild_id: int = None, bot: discord.Client = None):
         target_guild = guild_id or self.guild_id
         try:
             dm.update_guild_data(target_guild, self._storage_key(), config)
@@ -4261,7 +4261,7 @@ class ChatChannelsConfigView(ConfigPanelView):
             if cid in channels: channels.remove(cid)
             else: channels.append(cid)
             config["channels"] = channels
-        super().save_config(config, guild_id, bot)
+        await super().save_config(config, guild_id, bot)
 
     @ui.button(label="Models", emoji="🤖", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_chat_model")
     async def set_model(self, i, b):
