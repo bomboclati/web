@@ -4259,10 +4259,13 @@ class ChatChannelsConfigView(ConfigPanelView):
         
         class ModelSelect(ui.Select):
             async def callback(self, it):
-                config = dm.get_guild_data(it.guild_id, "ai_chat_config", {})
-                config["model"] = self.values[0]
-                dm.update_guild_data(it.guild_id, "ai_chat_config", config)
-                await it.response.send_message(f"✅ Model set to {self.values[0]}", ephemeral=True)
+                try:
+                    config = dm.get_guild_data(it.guild_id, "ai_chat_config", {})
+                    config["model"] = self.values[0]
+                    dm.update_guild_data(it.guild_id, "ai_chat_config", config)
+                    await it.response.send_message(f"✅ Model set to {self.values[0]}", ephemeral=True)
+                except Exception as e:
+                    await it.response.send_message(f"❌ Failed to set model: {str(e)}", ephemeral=True)
         
         options = [discord.SelectOption(label=model, value=model) for model in available_models]
         v = ui.View(); v.add_item(ModelSelect(placeholder="Choose AI Model...", options=options))
@@ -4273,10 +4276,13 @@ class ChatChannelsConfigView(ConfigPanelView):
         # Pick which backend powers the AI chat channels (matches /config provider choices).
         class ProviderSelect(ui.Select):
             async def callback(self, it):
-                config = dm.get_guild_data(it.guild_id, "ai_chat_config", {})
-                config["provider"] = self.values[0]
-                dm.update_guild_data(it.guild_id, "ai_chat_config", config)
-                await it.response.send_message(f"✅ AI provider set to **{self.values[0]}**.", ephemeral=True)
+                try:
+                    config = dm.get_guild_data(it.guild_id, "ai_chat_config", {})
+                    config["provider"] = self.values[0]
+                    dm.update_guild_data(it.guild_id, "ai_chat_config", config)
+                    await it.response.send_message(f"✅ AI provider set to **{self.values[0]}**.", ephemeral=True)
+                except Exception as e:
+                    await it.response.send_message(f"❌ Failed to set provider: {str(e)}", ephemeral=True)
         v = ui.View(); v.add_item(ProviderSelect(placeholder="Choose AI provider...", options=[
             discord.SelectOption(label="OpenRouter", value="openrouter"),
             discord.SelectOption(label="OpenAI", value="openai"),
@@ -4305,6 +4311,30 @@ class ChatChannelsConfigView(ConfigPanelView):
                     await it.response.send_message(f"✅ Temperature set to {val}", ephemeral=True)
                 except: await it.response.send_message("❌ Invalid number.", ephemeral=True)
         await i.response.send_modal(TempModal())
+
+    @ui.button(label="API Key", emoji="🔑", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_chat_apikey")
+    async def set_api_key(self, i, b):
+        class ProviderSelect(ui.Select):
+            async def callback(self, it):
+                class KeyModal(ui.Modal, title=f"Set API Key for {self.values[0]}"):
+                    key = ui.TextInput(label="API Key", placeholder="Enter your API key securely", required=True, style=discord.TextStyle.short)
+                    async def on_submit(self, mt):
+                        try:
+                            dm.set_guild_api_key(mt.guild_id, self.key.value, self.values[0])
+                            await mt.response.send_message(f"✅ API key for **{self.values[0]}** has been updated and encrypted.", ephemeral=True)
+                        except Exception as e:
+                            await mt.response.send_message(f"❌ Failed to set API key: {str(e)}", ephemeral=True)
+                await it.response.send_modal(KeyModal())
+        v = ui.View(); v.add_item(ProviderSelect(placeholder="Choose provider...", options=[
+            discord.SelectOption(label="OpenRouter", value="openrouter"),
+            discord.SelectOption(label="OpenAI", value="openai"),
+            discord.SelectOption(label="Gemini", value="gemini"),
+            discord.SelectOption(label="Groq", value="groq"),
+            discord.SelectOption(label="Mistral", value="mistral"),
+            discord.SelectOption(label="DeepSeek", value="deepseek"),
+            discord.SelectOption(label="Anthropic", value="anthropic"),
+            discord.SelectOption(label="DashScope", value="dashscope")
+        ])); await i.response.send_message("Select provider to set API key:", view=v, ephemeral=True)
 
     @ui.button(label="Clear History", emoji="🧹", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_chat_clear")
     async def clear_hist(self, i, b):
