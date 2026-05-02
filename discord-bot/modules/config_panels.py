@@ -4838,6 +4838,9 @@ SPECIALIZED_VIEWS = {
     "scheduledreminders": "ScheduledPanelView",
     "autoresponder": "AutoResponderConfigView",
     "chatchannels": "ChatChannelsConfigView",
+    "chat channels": "ChatChannelsConfigView",
+    "aichatchannels": "ChatChannelsConfigView",
+    "ai chat channels": "ChatChannelsConfigView",
     "events": "EventsConfigView",
 }
 
@@ -4896,7 +4899,7 @@ def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
         _view_cache["ScheduledPanelView"] = ScheduledPanelView
         _view_cache["AnnouncementsPanelView"] = AnnouncementsPanelView
     
-    system_key = system.lower().replace("_", "").replace("system", "")
+    system_key = system.lower().replace("_", "").replace(" ", "").replace("system", "")
     class_name = SPECIALIZED_VIEWS.get(system_key)
     if class_name and class_name in _view_cache:
         return _view_cache[class_name](guild_id)
