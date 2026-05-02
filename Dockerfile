@@ -32,4 +32,7 @@ RUN chmod +x /app/start.sh || true
 WORKDIR /app/discord-bot
 RUN mkdir -p data && chmod 755 data
 
+# Declare data directory as a volume for persistence across deployments
+VOLUME ["/app/discord-bot/data"]
+
 CMD ["python", "bot.py"]
