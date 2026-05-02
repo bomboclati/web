@@ -396,6 +396,7 @@ class VerificationConfigView(ConfigPanelView):
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, f"Toggled verification to {c.get('enabled')}")
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
         # Update toggle button label and style
         for item in self.children:
             if isinstance(item, ui.Button) and item.custom_id == "cfg_verify_toggle":
@@ -518,6 +519,7 @@ class AntiRaidConfigView(ConfigPanelView):
     @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_antiraid_toggle")
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
         # Update toggle button label and style
         for item in self.children:
             if isinstance(item, ui.Button) and item.custom_id == "cfg_antiraid_toggle":
@@ -664,6 +666,7 @@ class GuardianConfigView(ConfigPanelView):
     @ui.button(label="Toggle Guardian", emoji="⚔️", style=discord.ButtonStyle.success, row=0, custom_id="cfg_guardian_toggle")
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Toxicity Filter", emoji="☣️", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_guardian_set_tox")
     async def set_tox(self, i, b):
@@ -782,11 +785,13 @@ class WelcomeConfigView(ConfigPanelView):
     async def toggle_w(self, i, b):
         c = dm.get_guild_data(i.guild_id, "welcome_config", {}); c["enabled"] = not c.get("enabled", False)
         dm.update_guild_data(i.guild_id, "welcome_config", c); await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Toggle Leave", style=discord.ButtonStyle.success, row=0, custom_id="cfg_wl_toggle_l")
     async def toggle_l(self, i, b):
         c = dm.get_guild_data(i.guild_id, "leave_config", {}); c["enabled"] = not c.get("enabled", False)
         dm.update_guild_data(i.guild_id, "leave_config", c); await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Set Welcome Ch", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_wl_set_wch")
     async def set_wch(self, i, b):
@@ -881,6 +886,7 @@ class WelcomeDMConfigView(ConfigPanelView):
     async def toggle(self, i, b):
         c = dm.get_guild_data(i.guild_id, "welcomedm_config", {}); c["enabled"] = not c.get("enabled", False)
         dm.update_guild_data(i.guild_id, "welcomedm_config", c); await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Edit DM Message", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_wdm_edit")
     async def edit_msg(self, i, b):
@@ -1329,6 +1335,7 @@ class ModmailConfigView(ConfigPanelView):
     async def toggle_open(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
         self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
 class TicketsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
@@ -1364,6 +1371,7 @@ class TicketsConfigView(ConfigPanelView):
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, f"Toggled tickets to {c.get('enabled')}")
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
         # Update toggle button label and style
         for item in self.children:
             if isinstance(item, ui.Button) and item.custom_id == "cfg_tickets_toggle":
@@ -3398,6 +3406,7 @@ class SuggestionsConfigView(ConfigPanelView):
     async def toggle_open(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
         self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
 class _TicketEmbedModal(ui.Modal):
     def __init__(self, parent):
@@ -3557,6 +3566,7 @@ class EconomyConfigView(ConfigPanelView):
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, f"Toggled economy to {c.get('enabled')}")
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
         # Update toggle button label and style
         for item in self.children:
             if isinstance(item, ui.Button) and item.custom_id == "cfg_eco_toggle":
@@ -3753,6 +3763,7 @@ class LevelingConfigView(ConfigPanelView):
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, f"Toggled leveling to {c.get('enabled')}")
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
         # Update toggle button label and style
         for item in self.children:
             if isinstance(item, ui.Button) and item.custom_id == "cfg_lvl_toggle":
@@ -3915,6 +3926,7 @@ class StarboardConfigView(ConfigPanelView):
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, f"Toggled starboard to {c.get('enabled')}")
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
         # Update toggle button label and style
         for item in self.children:
             if isinstance(item, ui.Button) and item.custom_id == "cfg_stb_toggle":
@@ -4204,6 +4216,7 @@ class ChatChannelsConfigView(ConfigPanelView):
     @ui.button(label="Toggle AI Chat", emoji="🔌", style=discord.ButtonStyle.success, row=0, custom_id="cfg_chat_toggle")
     async def toggle_auto(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Personality", emoji="🎭", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_chat_pers")
     async def set_personality(self, i, b):
