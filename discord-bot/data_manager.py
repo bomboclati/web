@@ -373,9 +373,6 @@ class DataManager:
             # Old format migration
             old_provider = guild_data.get("provider", "openrouter")
             target_provider = provider or old_provider
-            if target_provider == old_provider:
-                encrypted_key = guild_data.get("api_key")
-        
         if not encrypted_key:
             return None
             
@@ -391,7 +388,7 @@ class DataManager:
              # If decryption fails, return as-is (might be old unencrypted key)
              return guild_data
 
-     def save_guild_api_key(self, guild_id: int, api_key: str, provider: str = "openrouter"):
+    def save_guild_api_key(self, guild_id: int, api_key: str, provider: str = "openrouter"):
         """Save guild-specific API key for a specific provider (encrypted)"""
         self.set_guild_api_key(guild_id, api_key, provider)
 
