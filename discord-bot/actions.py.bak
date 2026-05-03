@@ -11,7 +11,6 @@ from data_manager import dm
 from logger import logger
 from utils.deduplicator import deduplicator
 from ui_components import *
-from animated_assets import get_animated_emoji, get_success_gif, create_success_embed, create_loading_embed
 
 # Color name to integer mapping for embeds
 COLOR_MAP = {
@@ -109,109 +108,6 @@ def validate_command_json(data: dict) -> Tuple[bool, str]:
                 return False, f"Disallowed action in command: {action['name']}"
 
     return True, ""
-
-class ConnectSystemsWizardModal(discord.ui.Modal):
-    """Modal wizard for creating system connections with guided parameter collection."""
-
-    def __init__(self):
-        super().__init__(title="🔗 Create System Connection", timeout=300)
-
-        self.source_system = discord.ui.TextInput(
-            label="Source System",
-            placeholder="e.g., leveling, verification, economy",
-            style=discord.TextStyle.short,
-            required=True,
-            max_length=50
-        )
-        self.add_item(self.source_system)
-
-        self.trigger_event = discord.ui.TextInput(
-            label="Trigger Event",
-            placeholder="e.g., level_up, member_join, daily_claimed",
-            style=discord.TextStyle.short,
-            required=True,
-            max_length=50
-        )
-        self.add_item(self.trigger_event)
-
-        self.target_system = discord.ui.TextInput(
-            label="Target System",
-            placeholder="e.g., welcome, economy, tickets",
-            style=discord.TextStyle.short,
-            required=True,
-            max_length=50
-        )
-        self.add_item(self.target_system)
-
-        self.action = discord.ui.TextInput(
-            label="Action to Perform",
-            placeholder="e.g., send_message, give_points, assign_role",
-            style=discord.TextStyle.short,
-            required=True,
-            max_length=50
-        )
-        self.add_item(self.action)
-
-        self.parameters = discord.ui.TextInput(
-            label="Additional Parameters (JSON, optional)",
-            placeholder='{"amount": 50, "message": "Welcome!"}',
-            style=discord.TextStyle.paragraph,
-            required=False,
-            max_length=500
-        )
-        self.add_item(self.parameters)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        """Process the modal submission and create the connection."""
-        try:
-            # Parse parameters if provided
-            parameters = {}
-            if self.parameters.value and self.parameters.value.strip():
-                try:
-                    parameters = json.loads(self.parameters.value.strip())
-                except json.JSONDecodeError:
-                    await interaction.response.send_message(
-                        "❌ Invalid JSON in parameters. Please check your syntax and try again.",
-                        ephemeral=True
-                    )
-                    return
-
-            # Execute the connect_systems action with collected parameters
-            from actions import ActionHandler
-            action_handler = ActionHandler(interaction.client)
-
-            params = {
-                "source_system": self.source_system.value.strip().lower(),
-                "trigger_event": self.trigger_event.value.strip().lower(),
-                "target_system": self.target_system.value.strip().lower(),
-                "action": self.action.value.strip().lower(),
-                "parameters": parameters
-            }
-
-            success, result = await action_handler.dispatch(interaction, "connect_systems", params)
-
-            if success:
-                embed = discord.Embed(
-                    title="✅ System Connection Created",
-                    description=f"**{params['source_system']}** → **{params['target_system']}**",
-                    color=discord.Color.green()
-                )
-                embed.add_field(name="Trigger Event", value=f"`{params['trigger_event']}`", inline=True)
-                embed.add_field(name="Action", value=f"`{params['action']}`", inline=True)
-                if parameters:
-                    embed.add_field(name="Parameters", value=f"```{json.dumps(parameters, indent=2)}```", inline=False)
-                embed.set_footer(text="Use /configpanel to manage your connections")
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-            else:
-                error_msg = result.get("error", "Unknown error") if result else "Unknown error"
-                await interaction.response.send_message(f"❌ Failed to create connection: {error_msg}", ephemeral=True)
-
-        except Exception as e:
-            logger.error(f"Error in connect systems wizard: {e}")
-            await interaction.response.send_message(
-                "❌ An error occurred while creating the connection. Please try again.",
-                ephemeral=True
-            )
 
 class ActionHandler:
     ALLOWED_ACTIONS = {
@@ -2352,22 +2248,20 @@ class ActionHandler:
     async def action_connect_systems(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Connect two systems so that when trigger_event happens in source_system, action is performed on target_system."""
         guild_id = interaction.guild.id
-
+        
         source_system = params.get("source_system")
         trigger_event = params.get("trigger_event")
         target_system = params.get("target_system")
         action = params.get("action")
         parameters = params.get("parameters", {})
-
+        
         if not all([source_system, trigger_event, target_system, action]):
-            # Instead of failing, launch the guided wizard modal
-            await self._launch_connect_systems_wizard(interaction)
-            return False, {"wizard_launched": True}
-
+            return False, {"error": "Missing required parameters: source_system, trigger_event, target_system, action"}
+        
         # Load existing connections
         connections = dm.load_json("system_connections", default={})
         guild_connections = connections.get(str(guild_id), [])
-
+        
         # Create connection object
         connection = {
             "source_system": source_system,
@@ -2376,18 +2270,13 @@ class ActionHandler:
             "action": action,
             "parameters": parameters
         }
-
+        
         # Add to connections
         guild_connections.append(connection)
         connections[str(guild_id)] = guild_connections
         dm.save_json("system_connections", connections)
-
+        
         return True, {"connection": connection}
-
-    async def _launch_connect_systems_wizard(self, interaction: discord.Interaction):
-        """Launch a guided modal wizard to collect connection parameters."""
-        modal = ConnectSystemsWizardModal()
-        await interaction.response.send_modal(modal)
 
     async def action_move_system(self, interaction: discord.Interaction, params: Dict[str, Any]) -> Tuple[bool, Optional[Dict]]:
         """Move a system to a different channel."""
@@ -4999,10 +4888,10 @@ class ActionHandler:
             economy = Economy(self.bot)
 
             # Loading animation
-            loading_embed = create_loading_embed(
-                title=f"{get_animated_emoji('economy')} Opening Daily Reward Chest",
+            loading_embed = discord.Embed(
+                title="📅 Opening Daily Reward Chest",
                 description="🔑 Checking eligibility...\n💰 Calculating rewards...\n🎁 Preparing your gift...",
-                system_name="economy"
+                color=discord.Color.blue()
             )
             loading_msg = await message.channel.send(embed=loading_embed)
 
@@ -5104,14 +4993,14 @@ class ActionHandler:
             currency_emoji = config.get("currency_emoji", "🪙")
 
             # Success embed
-            success_embed = create_success_embed(
+            success_embed = discord.Embed(
+                title="🎉 Daily Reward Claimed Successfully!",
                 description=f"**{message.author.display_name}** opened their daily reward chest!",
-                action_type="daily"
+                color=discord.Color.green()
             )
-            success_embed.title = f"{get_animated_emoji('economy')} Daily Reward Claimed Successfully!"
 
             success_embed.add_field(
-                name=f"{get_animated_emoji('economy')} Reward Amount",
+                name="💰 Reward Amount",
                 value=f"**{total_reward:,}** {currency_name}\n"
                       f"Base: `{base_reward:,}`\n"
                       f"Streak Bonus: `{bonus_amount:,}` (+{streak_bonus_percent}%)",
@@ -5119,14 +5008,14 @@ class ActionHandler:
             )
 
             success_embed.add_field(
-                name=f"{get_animated_emoji('leveling')} Streak Status",
+                name="🔥 Streak Status",
                 value=f"**{current_streak}** consecutive days!\n"
                       f"Next bonus: `+{min((current_streak + 1) * 10, 100)}%`",
                 inline=True
             )
 
             success_embed.add_field(
-                name=f"{get_animated_emoji('reminders')} Next Reward",
+                name="📅 Next Reward",
                 value=f"Available in **24 hours**\n"
                       f"<t:{int((datetime.datetime.now() + datetime.timedelta(days=1)).timestamp())}:R>",
                 inline=True
@@ -5143,7 +5032,7 @@ class ActionHandler:
 
             if achievements:
                 success_embed.add_field(
-                    name=f"{get_animated_emoji('gamification')} Achievements Unlocked",
+                    name="🏆 Achievements Unlocked",
                     value="\n".join(achievements),
                     inline=False
                 )
@@ -5359,10 +5248,10 @@ class ActionHandler:
             leveling = Leveling(self.bot)
 
             # Loading animation
-            loading_embed = create_loading_embed(
-                title=f"{get_animated_emoji('economy')} Opening Your Wallet",
+            loading_embed = discord.Embed(
+                title="💰 Opening Your Wallet",
                 description="🔍 Counting coins...\n💎 Polishing gems...\n📊 Calculating wealth...",
-                system_name="economy"
+                color=discord.Color.gold()
             )
             loading_msg = await message.channel.send(embed=loading_embed)
 
@@ -5391,11 +5280,11 @@ class ActionHandler:
             gem_name = config.get("gem_name", "Gems")
 
             # Enhanced balance embed
-            embed = create_success_embed(
+            embed = discord.Embed(
+                title=f"💰 {message.author.display_name}'s Wealth Overview",
                 description=f"**Financial Status Report**\n━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                action_type="economy"
+                color=discord.Color.gold()
             )
-            embed.title = f"{get_animated_emoji('economy')} {message.author.display_name}'s Wealth Overview"
 
             embed.set_thumbnail(url=message.author.display_avatar.url)
 
@@ -5407,13 +5296,13 @@ class ActionHandler:
             )
 
             embed.add_field(
-                name=f"{get_animated_emoji('leveling')} Premium Currency",
+                name="💎 Premium Currency",
                 value=f"**{gems}** {gem_name}",
                 inline=True
             )
 
             embed.add_field(
-                name=f"{get_animated_emoji('gamification')} Net Worth",
+                name="🏆 Net Worth",
                 value=f"**{coins + (gems * 100):,}** total value",
                 inline=True
             )
@@ -5421,7 +5310,7 @@ class ActionHandler:
             # Level and XP information
             xp_to_next = leveling.get_xp_for_next_level(level) - xp
             embed.add_field(
-                name=f"{get_animated_emoji('leveling')} Level Progress",
+                name="🆙 Level Progress",
                 value=f"**Level {level}** {f'(Prestige {prestige})' if prestige > 0 else ''}\n"
                       f"**{xp:,} XP** earned\n"
                       f"**{xp_to_next:,} XP** to next level",
@@ -5432,7 +5321,7 @@ class ActionHandler:
             progress_percent = min(100, (xp / leveling.get_xp_for_next_level(level)) * 100) if leveling.get_xp_for_next_level(level) > 0 else 100
             progress_bar = "█" * int(progress_percent / 10) + "░" * (10 - int(progress_percent / 10))
             embed.add_field(
-                name=f"{get_animated_emoji('intelligence')} Progress Bar",
+                name="📊 Level Progress",
                 value=f"`{progress_bar}` **{progress_percent:.1f}%**",
                 inline=False
             )
@@ -5441,7 +5330,7 @@ class ActionHandler:
             recent_activity = []
             # Check recent transactions (you might want to store this data)
             embed.add_field(
-                name=f"{get_animated_emoji('server_analytics')} Recent Activity",
+                name="📈 Recent Activity",
                 value="• Balance loaded successfully\n• All assets accounted for\n• Ready for transactions",
                 inline=False
             )
@@ -5813,7 +5702,7 @@ class ActionHandler:
                 await message.channel.send("ðŸ›’ The shop is currently empty.")
                 return True
 
-            embed = discord.Embed(title=f"{get_animated_emoji('economy')} {message.guild.name} Shop", color=discord.Color.green())
+            embed = discord.Embed(title=f"ðŸ›’ {message.guild.name} Shop", color=discord.Color.green())
             for item in items[:25]:
                 embed.add_field(name=f"{item['name']} — {item['price']} Credits", value=item.get('description', 'No description'), inline=False)
 
@@ -6153,11 +6042,6 @@ class ActionHandler:
 
     async def handle_automod_status(self, message: discord.Message) -> bool:
         """!automod status — automod status"""
-        # Check if automod system is enabled
-        if not is_system_enabled(message.guild.id, "automod"):
-            await message.channel.send("❌ The AutoMod system is currently disabled on this server.")
-            return False
-
         embed = discord.Embed(
             title="🤖 AutoMod Status",
             description="AutoMod is active.",
@@ -6450,11 +6334,6 @@ class ActionHandler:
 
     async def handle_warn(self, message: discord.Message) -> bool:
         """!warn — warn a user"""
-        # Check if warnings system is enabled
-        if not is_system_enabled(message.guild.id, "warnings"):
-            await message.channel.send("❌ The warnings system is currently disabled on this server.")
-            return False
-
         if not message.author.guild_permissions.administrator:
             await message.channel.send("❌ No permission.")
             return False
@@ -6616,17 +6495,16 @@ class ActionHandler:
             xp_into_level = xp - (level * level * 100)
             xp_to_next = max(0, xp_for_next - xp)
 
-            embed = create_success_embed(
-                description=f"Rank information for {message.author.display_name}",
-                action_type="leveling"
+            embed = discord.Embed(
+                title=f"ðŸ“Š {message.author.display_name}'s Rank",
+                color=discord.Color.purple(),
             )
-            embed.title = f"{get_animated_emoji('leveling')} {message.author.display_name}'s Rank"
             embed.set_thumbnail(url=message.author.display_avatar.url)
-            embed.add_field(name=f"{get_animated_emoji('leveling')} Level", value=str(level), inline=True)
-            embed.add_field(name=f"{get_animated_emoji('intelligence')} Total XP", value=f"{xp:,}", inline=True)
-            embed.add_field(name=f"{get_animated_emoji('gamification')} Gems", value=str(gems), inline=True)
-            embed.add_field(name=f"{get_animated_emoji('leveling')} Streak", value=f"{get_animated_emoji('leveling')} {streak} day(s)", inline=True)
-            embed.add_field(name=f"{get_animated_emoji('intelligence')} XP to next level", value=f"{xp_to_next:,} XP", inline=True)
+            embed.add_field(name="Level", value=str(level), inline=True)
+            embed.add_field(name="Total XP", value=f"{xp:,}", inline=True)
+            embed.add_field(name="Gems", value=str(gems), inline=True)
+            embed.add_field(name="Streak", value=f"ðŸ”¥ {streak} day(s)", inline=True)
+            embed.add_field(name="XP to next level", value=f"{xp_to_next:,} XP", inline=True)
 
             await message.channel.send(embed=embed)
             return True
@@ -7167,7 +7045,7 @@ class ActionHandler:
         scores.sort(key=lambda x: x[1], reverse=True)
         top_10 = scores[:10]
 
-        embed = discord.Embed(title=f"{get_animated_emoji('staff')} Staff Promotion Leaderboard", color=discord.Color.gold())
+        embed = discord.Embed(title="ðŸ“Š Staff Promotion Leaderboard", color=discord.Color.gold())
 
         if not top_10:
             embed.add_field(name="No data", value="No staff members evaluated yet", inline=False)
@@ -8890,7 +8768,7 @@ class ActionHandler:
                 await message.channel.send("ðŸ“… No events scheduled. Use `!event create <name>` to create one.")
                 return True
 
-            embed = discord.Embed(title=f"{get_animated_emoji('events')} Scheduled Events", color=discord.Color.blue())
+            embed = discord.Embed(title="ðŸ“… Scheduled Events", color=discord.Color.blue())
             for event_id, event_data in list(scheduled_events.items())[:10]:  # Top 10
                 embed.add_field(
                     name=event_data.get("name", "Unknown Event"),
@@ -8944,7 +8822,7 @@ class ActionHandler:
                 return True
 
             # Calculate leaderboard from tournament results
-            embed = discord.Embed(title=f"{get_animated_emoji('tournaments')} Tournament Leaderboard", color=discord.Color.gold())
+            embed = discord.Embed(title="🏆 Tournament Leaderboard", color=discord.Color.gold())
             # This is a simplified version - full implementation would track wins/losses
             embed.description = "Tournament leaderboard will be available after tournaments complete."
             await message.channel.send(embed=embed)
@@ -9710,7 +9588,7 @@ class ActionHandler:
                 if xp > 0:
                     xps[uid] = xp
             sorted_xp = sorted(xps.items(), key=lambda x: x[1], reverse=True)[:10]
-            embed = discord.Embed(title=f"{get_animated_emoji('leveling')} Leveling Leaderboard", color=discord.Color.gold())
+            embed = discord.Embed(title="Leveling Leaderboard", color=discord.Color.gold())
             for i, (uid, xp) in enumerate(sorted_xp, 1):
                 user = self.bot.get_user(uid)
                 name = user.display_name if user else f"User {uid}"
@@ -10968,17 +10846,6 @@ class ActionHandler:
             import asyncio
             import re
 
-            # Check if giveaway system is enabled
-            if not is_system_enabled(message.guild.id, "giveaways"):
-                embed = discord.Embed(
-                    title="❌ Giveaways Unavailable",
-                    description="The giveaway system is currently disabled on this server.\n\n*Please contact an administrator to enable it.*",
-                    color=discord.Color.red()
-                )
-                embed.set_footer(text="Use !configpanel giveaways to enable the system")
-                await message.channel.send(embed=embed)
-                return False
-
             # Permission check
             if not message.author.guild_permissions.manage_messages and message.author.id not in [message.guild.owner_id]:
                 embed = discord.Embed(
@@ -11175,17 +11042,17 @@ class ActionHandler:
             dm.update_guild_data(message.guild.id, "giveaways", giveaways)
 
             # Success message
-            success_embed = create_success_embed(
+            success_embed = discord.Embed(
+                title="✅ Giveaway Created Successfully!",
                 description=f"Your giveaway for **{prize}** has been created!\n\n"
                            f"• **Duration:** {duration_str}\n"
                            f"• **Winners:** {winners}\n"
                            f"• **Ends:** <t:{int(end_time)}:R>",
-                action_type="giveaways"
+                color=discord.Color.green()
             )
-            success_embed.title = f"{get_animated_emoji('giveaways')} Giveaway Created Successfully!"
 
             success_embed.add_field(
-                name=f"{get_animated_emoji('gamification')} Next Steps",
+                name="🎯 Next Steps",
                 value="• Participants will react with 🎉\n"
                       "• Winners will be selected automatically\n"
                       "• You'll be notified when it ends",

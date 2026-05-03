@@ -295,3 +295,233 @@ class CoreCommands(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(CoreCommands(bot))
+
+    # Add connect_systems slash command
+    @bot.tree.command(name="connect_systems", description="Create a connection between two systems (e.g., when member joins, send welcome message)")
+    @app_commands.describe(
+        source_system="The system that triggers the connection (e.g., verification, leveling)",
+        trigger_event="The event that triggers the connection (e.g., member_join, level_up)",
+        target_system="The system that performs the action (e.g., welcome, economy)",
+        action="The action to perform (e.g., send_message, give_points)"
+    )
+    async def connect_systems_command(interaction: discord.Interaction, source_system: str, trigger_event: str, target_system: str, action: str):
+        """Slash command for creating system connections"""
+        # Check if user has administrator permissions
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ You need Administrator permission to use this command.", ephemeral=True)
+            return
+            
+        # Defer response as this might take a moment
+        await interaction.response.defer(ephemeral=True)
+        
+        # Get available systems for validation
+        available_systems = [
+            "verification", "leveling", "economy", "welcome", "tickets", "appeals", 
+            "staff_promo", "staff_shift", "staff_reviews", "anti_raid", "automod", 
+            "warnings", "modmail", "auto_responder", "reminders", "giveaways",
+            "events", "tournaments", "chat_channels", "starboard", "reaction_roles",
+            "reaction_menus", "role_buttons", "logging", "mod_logging", "community_health",
+            "conflict_resolution", "server_analytics", "intelligence", "gamification",
+            "content_generator", "tournaments", "auto_setup", "guardian", "staff_extras"
+        ]
+        
+        # Validate systems
+        if source_system not in available_systems:
+            await interaction.followup.send(f"❌ Invalid source system. Available systems: {', '.join(available_systems[:10])}...", ephemeral=True)
+            return
+            
+        if target_system not in available_systems:
+            await interaction.followup.send(f"❌ Invalid target system. Available systems: {', '.join(available_systems[:10])}...", ephemeral=True)
+            return
+        
+        # Common trigger events by system
+        trigger_events_map = {
+            "verification": ["member_join", "verification_complete", "verification_failed"],
+            "leveling": ["level_up", "xp_gain", "daily_xp_bonus"],
+            "economy": ["daily_claimed", "work_completed", "crime_completed", "shop_purchase"],
+            "welcome": ["member_join", "member_leave"],
+            "tickets": ["ticket_created", "ticket_closed", "ticket_claimed"],
+            "appeals": ["appeal_submitted", "appeal_approved", "appeal_denied"],
+            "staff_promo": ["promotion_earned", "demotion_issued"],
+            "staff_shift": ["shift_started", "shift_ended"],
+            "staff_reviews": ["review_submitted", "review_completed"],
+            "anti_raid": ["raid_detected", "mass_join_detected"],
+            "automod": ["rule_triggered", "message_flagged"],
+            "warnings": ["warning_issued", "warning_cleared"],
+            "modmail": ["modmail_received", "modmail_closed"],
+            "auto_responder": ["keyword_matched"],
+            "reminders": ["reminder_triggered"],
+            "giveaways": ["giveaway_ended", "giveaway_won"],
+            "events": ["event_started", "event_ended", "event_joined"],
+            "tournaments": ["tournament_started", "tournament_ended", "tournament_joined"],
+            "chat_channels": ["message_received", "ai_response_generated"],
+            "starboard": ["star_received"],
+            "reaction_roles": ["role_assigned_via_reaction"],
+            "reaction_menus": ["role_assigned_via_menu"],
+            "role_buttons": ["role_assigned_via_button"],
+            "logging": ["log_entry_created"],
+            "mod_logging": ["mod_action_logged"],
+            "community_health": ["health_report_generated"],
+            "conflict_resolution": ["conflict_resolved", "mediation_completed"],
+            "server_analytics": ["analytics_updated"],
+            "intelligence": ["intelligence_generated"],
+            "gamification": ["quest_completed", "daily_challenge_claimed"],
+            "content_generator": ["content_generated"],
+            "tournaments": ["tournament_started", "tournament_ended"],
+            "auto_setup": ["setup_completed"],
+            "guardian": ["threat_detected", "link_scanned"],
+            "staff_extras": ["compliment_sent", "report_submitted"]
+        }
+        
+        # Validate trigger event
+        valid_triggers = trigger_events_map.get(source_system, [])
+        if valid_triggers and trigger_event not in valid_triggers:
+            await interaction.followup.send(f"❌ Invalid trigger event for {source_system}. Valid events: {', '.join(valid_triggers)}", ephemeral=True)
+            return
+            
+        # Common actions by target system
+        actions_map = {
+            "verification": ["start_verification", "send_verification_dm"],
+            "leveling": ["give_xp", "send_level_up_message"],
+            "economy": ["give_points", "remove_points", "open_shop"],
+            "welcome": ["send_welcome_message", "assign_welcome_role"],
+            "tickets": ["create_ticket", "close_ticket", "notify_staff"],
+            "appeals": ["create_appeal", "notify_appeal_team"],
+            "staff_promo": ["promote_user", "demote_user", "notify_staff_promo"],
+            "staff_shift": ["start_shift_tracking", "end_shift_tracking"],
+            "staff_reviews": ["request_staff_review", "notify_review_team"],
+            "anti_raid": ["trigger_lockdown", "notify_mods"],
+            "automod": ["flag_message", "apply_automod_punishment"],
+            "warnings": ["issue_warning", "clear_warnings"],
+            "modmail": ["create_modmail_thread", "notify_modmail_team"],
+            "auto_responder": ["send_auto_response"],
+            "reminders": ["send_reminder"],
+            "giveaways": ["create_giveaway", "end_giveaway", "pick_winner"],
+            "events": ["create_event", "end_event", "notify_event_attendees"],
+            "tournaments": ["create_tournament", "end_tournament", "notify_participants"],
+            "chat_channels": ["send_ai_message", "start_ai_chat"],
+            "starboard": ["add_to_starboard"],
+            "reaction_roles": ["assign_reaction_role"],
+            "reaction_menus": ["assign_menu_role"],
+            "role_buttons": ["assign_button_role"],
+            "logging": ["create_log_entry"],
+            "mod_logging": ["log_mod_action"],
+            "community_health": ["generate_health_report"],
+            "conflict_resolution": ["initiate_conflict_resolution"],
+            "server_analytics": ["generate_analytics_report"],
+            "intelligence": ["generate_intelligence_report"],
+            "gamification": ["create_quest", "start_daily_challenge"],
+            "content_generator": ["generate_content"],
+            "tournaments": ["create_tournament"],
+            "auto_setup": ["run_auto_setup"],
+            "guardian": ["scan_for_threats", "block_malicious_link"],
+            "staff_extras": ["send_compliment", "process_user_report"]
+        }
+        
+        # Validate action
+        valid_actions = actions_map.get(target_system, [])
+        if valid_actions and action not in valid_actions:
+            await interaction.followup.send(f"❌ Invalid action for {target_system}. Valid actions: {', '.join(valid_actions)}", ephemeral=True)
+            return
+        
+        # Execute the connect_systems action
+        from actions import ActionHandler
+        action_handler = ActionHandler(self.bot)
+        
+        params = {
+            "source_system": source_system,
+            "trigger_event": trigger_event,
+            "target_system": target_system,
+            "action": action,
+            "parameters": {}
+        }
+        
+        success, result = await action_handler.dispatch(interaction, "connect_systems", params)
+        
+        if success:
+            embed = discord.Embed(
+                title="✅ System Connection Created",
+                description=f"**{source_system}** → **{target_system}**",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="Trigger Event", value=f"`{trigger_event}`", inline=True)
+            embed.add_field(name="Action", value=f"`{action}`", inline=True)
+            embed.set_footer(text="Use /configpanel to manage your connections")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        else:
+            error_msg = result.get("error", "Unknown error") if result else "Unknown error"
+            await interaction.followup.send(f"❌ Failed to create connection: {error_msg}", ephemeral=True)
+
+    # Add config commands for API key management
+    @bot.tree.command(name="config", description="Configure bot settings")
+    @app_commands.describe(
+        setting="The setting to configure",
+        value="The value to set"
+    )
+    @app_commands.choices(setting=[
+        app_commands.Choice(name="API Key", value="apikey"),
+        app_commands.Choice(name="Provider", value="provider"),
+        app_commands.Choice(name="Model", value="model")
+    ])
+    async def config_command(interaction: discord.Interaction, setting: str, value: str):
+        """Slash command for configuring bot settings"""
+        # Check if user has administrator permissions
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ You need Administrator permission to use this command.", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=True)
+        
+        guild_id = interaction.guild.id
+        
+        if setting == "apikey":
+            # Save the API key
+            dm.save_guild_api_key(guild_id, value)
+            embed = discord.Embed(
+                title="✅ API Key Set",
+                description="Your API key has been securely saved and encrypted.",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="Provider", value="Will use the currently configured provider", inline=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        elif setting == "provider":
+            # Validate provider
+            valid_providers = ["openrouter", "openai", "gemini", "groq", "mistral", "deepseek", "anthropic", "dashscope"]
+            if value.lower() not in valid_providers:
+                await interaction.followup.send(f"❌ Invalid provider. Valid providers: {', '.join(valid_providers)}", ephemeral=True)
+                return
+                
+            # Get current API key for this provider or set a placeholder
+            current_key_data = dm.get_guild_api_key(guild_id)
+            if not current_key_data:
+                await interaction.followup.send("⚠️ No API key found. Please set an API key first using `/config apikey <your_key>`", ephemeral=True)
+                return
+                
+            # Update the provider
+            dm.set_guild_api_key(guild_id, current_key_data["api_key"], value.lower())
+            embed = discord.Embed(
+                title="✅ Provider Updated",
+                description=f"AI provider has been set to **{value.lower()}**",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="Note", value="The AI client will use this provider for future requests", inline=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        elif setting == "model":
+            # Validate model (basic validation - in production you'd check against provider's available models)
+            if not value or len(value.strip()) == 0:
+                await interaction.followup.send("❌ Model name cannot be empty", ephemeral=True)
+                return
+                
+            # Update the bot's AI model
+            interaction.client.ai.model = value.strip()
+            
+            # Also save to persistent storage if needed (for now we'll just update the client)
+            embed = discord.Embed(
+                title="✅ Model Updated",
+                description=f"AI model has been set to **{value.strip()}**",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="Note", value="This change takes effect immediately for new requests", inline=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)

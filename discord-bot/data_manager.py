@@ -388,8 +388,12 @@ class DataManager:
                 "provider": target_provider
             }
         except Exception:
-            # If decryption fails, return as-is (might be old unencrypted key)
-            return guild_data
+             # If decryption fails, return as-is (might be old unencrypted key)
+             return guild_data
+
+     def save_guild_api_key(self, guild_id: int, api_key: str, provider: str = "openrouter"):
+        """Save guild-specific API key for a specific provider (encrypted)"""
+        self.set_guild_api_key(guild_id, api_key, provider)
 
     def record_global_action_result(self, action_name: str, success: bool, error: str = None):
         """Record anonymized action result for cross-server intelligence sharing."""

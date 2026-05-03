@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 from data_manager import dm
 from logger import logger
 from typing import Dict, Any, List, Optional, Union
+from animated_assets import get_animated_emoji, get_panel_thumbnail, create_animated_embed_title, create_success_embed, create_loading_embed
 
 # Forward imports for panel views used in registry
 RemindersPanelView = None
@@ -49,7 +50,7 @@ class ConfigPanelView(ui.View):
             logger.warning(f"get_config failed for {self.system_name}: {e}")
             return {}
 
-    async def save_config(self, config: Dict[str, Any], guild_id: int = None, bot: discord.Client = None):
+    async def save_config(self, config: Dict[str, Any], guild_id: int = None, bot: discord.Client = None, interaction: Interaction = None):
         target_guild = guild_id or self.guild_id
         try:
             dm.update_guild_data(target_guild, self._storage_key(), config)
@@ -75,6 +76,16 @@ class ConfigPanelView(ui.View):
         if bot and hasattr(bot, 'auto_setup'):
             import asyncio
             asyncio.create_task(bot.auto_setup.update_system_status_embed(guild_id))
+        
+        # Update the panel embed if interaction is provided
+        if interaction is not None:
+            try:
+                if interaction.response.is_done():
+                    await interaction.edit_original_response(embed=self.create_embed(guild_id=interaction.guild_id, guild=interaction.guild), view=self)
+                else:
+                    await interaction.response.edit_message(embed=self.create_embed(guild_id=interaction.guild_id, guild=interaction.guild), view=self)
+            except Exception:
+                pass
 
     def _get_subsystem(self, bot, attr_name: str):
         """Safely fetch a bot subsystem (returns None if missing).
@@ -192,7 +203,7 @@ class _GenericRoleSelect(ui.RoleSelect):
     async def callback(self, interaction: Interaction):
         config = self.config_panel.get_config(interaction.guild_id)
         config[self.key] = self.values[0].id
-        self.config_panel.save_config(config, interaction.guild_id, interaction.client)
+        self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {self.values[0].name}")
         await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to {self.values[0].mention}", ephemeral=True)
         # Update the original config panel
@@ -217,7 +228,7 @@ class _GenericChannelSelect(ui.ChannelSelect):
     async def callback(self, interaction: Interaction):
         config = self.config_panel.get_config(interaction.guild_id)
         config[self.key] = self.values[0].id
-        self.config_panel.save_config(config, interaction.guild_id, interaction.client)
+        self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to #{self.values[0].name}")
         await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to <#{self.values[0].id}>", ephemeral=True)
         # Update the original config panel
@@ -268,7 +279,7 @@ class _NumberModal(ui.Modal):
             if user_id not in whitelist:
                 whitelist.append(user_id)
                 config["whitelist"] = whitelist
-                self.config_panel.save_config(config, interaction.guild_id, interaction.client)
+                self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
                 log_panel_action(interaction.guild_id, interaction.user.id, f"Added {user_id} to whitelist")
                 return await interaction.response.send_message(f"✅ User `{user_id}` added to whitelist.", ephemeral=True)
             else:
@@ -281,20 +292,20 @@ class _NumberModal(ui.Modal):
                     y = int(self.second_value.value)
                     config["duplicate_threshold"] = v
                     config["duplicate_window"] = y
-                    self.config_panel.save_config(config, interaction.guild_id, interaction.client)
+                    self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set duplicate filter to {v} msgs in {y}s")
                     return await interaction.response.send_message(f"✅ Duplicate filter: **{v}** messages in **{y}** seconds.", ephemeral=True)
                 except ValueError:
                     return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
             config["duplicate_threshold"] = v
-            self.config_panel.save_config(config, interaction.guild_id, interaction.client)
+            self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set duplicate threshold to {v}")
             return await interaction.response.send_message(f"✅ Duplicate threshold set to **{v}** messages.", ephemeral=True)
         
         # Special handling for mention threshold config
         if self.key == "mention_threshold_config":
             config["mention_threshold"] = v
-            self.config_panel.save_config(config, interaction.guild_id, interaction.client)
+            self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set mention threshold to {v}")
             return await interaction.response.send_message(f"✅ Max mentions per message: **{v}**.", ephemeral=True)
         
@@ -305,13 +316,13 @@ class _NumberModal(ui.Modal):
                     max_v = int(self.second_value.value)
                     config["work_min"] = v
                     config["work_max"] = max_v
-                    self.config_panel.save_config(config, interaction.guild_id, interaction.client)
+                    self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set work rewards to {v}-{max_v}")
                     return await interaction.response.send_message(f"✅ Work rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
                 except ValueError:
                     return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
             config["work_min"] = v
-            self.config_panel.save_config(config, interaction.guild_id, interaction.client)
+            self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set work min to {v}")
             return await interaction.response.send_message(f"✅ Work min reward set to **{v}**.", ephemeral=True)
         
@@ -322,19 +333,19 @@ class _NumberModal(ui.Modal):
                     max_v = int(self.second_value.value)
                     config["beg_min"] = v
                     config["beg_max"] = max_v
-                    self.config_panel.save_config(config, interaction.guild_id, interaction.client)
+                    self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set beg rewards to {v}-{max_v}")
                     return await interaction.response.send_message(f"✅ Beg rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
                 except ValueError:
                     return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
             config["beg_min"] = v
-            self.config_panel.save_config(config, interaction.guild_id, interaction.client)
+            self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set beg min to {v}")
             return await interaction.response.send_message(f"✅ Beg min reward set to **{v}**.", ephemeral=True)
         
         # Default: single value storage
         config[self.key] = v
-        self.config_panel.save_config(config, interaction.guild_id, interaction.client)
+        self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {v}")
         await interaction.response.send_message(f"✅ {self.key.replace('_',' ').title()} set to **{v}**.", ephemeral=True)
 
@@ -353,7 +364,7 @@ class _TextModal(ui.Modal):
     async def on_submit(self, interaction: Interaction):
         config = self.config_panel.get_config(interaction.guild_id)
         config[self.key] = self.value_input.value
-        self.config_panel.save_config(config, interaction.guild_id, interaction.client)
+        self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Updated text field {self.key}")
         await interaction.response.send_message(f"✅ {self.key.replace('_',' ').title()} updated.", ephemeral=True)
 
@@ -383,8 +394,14 @@ class VerificationConfigView(ConfigPanelView):
 
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
-        embed = discord.Embed(title="🛡️ Verification System", color=discord.Color.green() if c.get("enabled", True) else discord.Color.red())
-        if guild and guild.icon:
+        # Use animated emoji in title
+        title = create_animated_embed_title("verification", "Verification System")
+        embed = discord.Embed(title=title, color=discord.Color.green() if c.get("enabled", True) else discord.Color.red())
+        # Set thumbnail
+        thumbnail_url = get_panel_thumbnail("verification")
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
+        elif guild and guild.icon:
             embed.set_thumbnail(url=guild.icon.url)
         elif guild:
             embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
@@ -397,10 +414,10 @@ class VerificationConfigView(ConfigPanelView):
         embed.add_field(name="Log Count", value=str(len(c.get("verification_log", []))), inline=True)
         return embed
 
-    @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_verify_toggle")
+    @ui.button(label="Disable", emoji=get_animated_emoji("verification"), style=discord.ButtonStyle.danger, row=0, custom_id="cfg_verify_toggle")
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
-        await self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         log_panel_action(i.guild_id, i.user.id, f"Toggled verification to {c.get('enabled')}")
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
         for item in self.children:
@@ -408,11 +425,27 @@ class VerificationConfigView(ConfigPanelView):
                 if c.get("enabled", True):
                     item.label = "Disable"
                     item.style = discord.ButtonStyle.danger
-                    item.emoji = "❌"
+                    item.emoji = get_animated_emoji("verification")
                 else:
                     item.label = "Enable"
                     item.style = discord.ButtonStyle.success
-                    item.emoji = "✅"
+                    item.emoji = get_animated_emoji("verification")
+                break
+    async def toggle(self, i, b):
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, i.guild_id, i.client, i)
+        log_panel_action(i.guild_id, i.user.id, f"Toggled verification to {c.get('enabled')}")
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_verify_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = get_animated_emoji("verification")
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = get_animated_emoji("verification")
                 break
         await self.update_panel(i)
 
@@ -435,8 +468,7 @@ class VerificationConfigView(ConfigPanelView):
     @ui.button(label="Toggle CAPTCHA", emoji="🧮", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_verify_toggle_c")
     async def toggle_c(self, i, b):
         c = self.get_config(i.guild_id); c["captcha_enabled"] = not c.get("captcha_enabled", False)
-        await self.save_config(c, i.guild_id, i.client)
-        await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Set Welcome DM", emoji="📩", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_verify_set_dm")
     async def set_dm(self, i, b):
@@ -456,7 +488,7 @@ class VerificationConfigView(ConfigPanelView):
     @ui.button(label="Reset Log", emoji="🗑️", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_verify_reset")
     async def reset(self, i, b):
         c = self.get_config(i.guild_id); c["verification_log"] = []
-        await self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         log_panel_action(i.guild_id, i.user.id, "Reset verification log")
         await i.response.send_message("Log Reset", ephemeral=True)
 
@@ -526,7 +558,7 @@ class AntiRaidConfigView(ConfigPanelView):
 
     @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_antiraid_toggle")
     async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); await self.save_config(c, i.guild_id, i.client, i)
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
         # Update toggle button label and style
         for item in self.children:
@@ -556,7 +588,7 @@ class AntiRaidConfigView(ConfigPanelView):
             discord.SelectOption(label="Mute", value="mute")
         ])
         async def callback(it):
-            c = self.get_config(i.guild_id); c["action"] = select.values[0]; self.save_config(c, i.guild_id, i.client); await it.response.send_message(f"Action set to {c['action']}", ephemeral=True)
+            c = self.get_config(i.guild_id); c["action"] = select.values[0]; await self.save_config(c, i.guild_id, i.client, i); await it.response.send_message(f"Action set to {c['action']}", ephemeral=True)
         select.callback = callback
         view.add_item(select)
         await i.response.send_message("Choose action:", view=view, ephemeral=True)
@@ -610,7 +642,7 @@ class AntiRaidConfigView(ConfigPanelView):
         rules = c.setdefault("rules", {})
         link_spam = rules.setdefault("link_spam", {})
         link_spam["enabled"] = not link_spam.get("enabled", True)
-        self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         await self.update_panel(i)
 
     @ui.button(label="Toggle Mention Filter", emoji="📣", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_antiraid_s_ment")
@@ -619,7 +651,7 @@ class AntiRaidConfigView(ConfigPanelView):
         rules = c.setdefault("rules", {})
         mention_filter = rules.setdefault("mention_filter", {})
         mention_filter["enabled"] = not mention_filter.get("enabled", True)
-        self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         await self.update_panel(i)
 
     @ui.button(label="Toggle Duplicate Filter", emoji="💬", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_antiraid_s_dup")
@@ -628,7 +660,7 @@ class AntiRaidConfigView(ConfigPanelView):
         rules = c.setdefault("rules", {})
         dup_filter = rules.setdefault("duplicate_filter", {})
         dup_filter["enabled"] = not dup_filter.get("enabled", True)
-        self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         await self.update_panel(i)
 
     @ui.button(label="Toggle Invite Filter", emoji="🌐", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_antiraid_t_inv")
@@ -637,7 +669,7 @@ class AntiRaidConfigView(ConfigPanelView):
         rules = c.setdefault("rules", {})
         inv_filter = rules.setdefault("invite_filter", {})
         inv_filter["enabled"] = not inv_filter.get("enabled", True)
-        self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         await self.update_panel(i)
 
     @ui.button(label="Raid Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_antiraid_r_stats")
@@ -649,7 +681,7 @@ class AntiRaidConfigView(ConfigPanelView):
     async def silence(self, i, b):
         c = self.get_config(i.guild_id)
         c["alerts_silenced"] = not c.get("alerts_silenced", False)
-        self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         log_panel_action(i.guild_id, i.user.id, f"Anti-raid alerts silenced={c['alerts_silenced']}")
         state = "silenced" if c["alerts_silenced"] else "active"
         await i.response.send_message(f"🔕 Raid alerts are now **{state}**.", ephemeral=True)
@@ -660,20 +692,30 @@ class GuardianConfigView(ConfigPanelView):
 
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
-        embed = discord.Embed(title="🛡️ Guardian System", color=discord.Color.blue())
+        # Use animated emoji in title
+        title = create_animated_embed_title("leveling", "Leveling System Configuration")
+        embed = discord.Embed(title=title, color=discord.Color.blue() if c.get("enabled", True) else discord.Color.dark_grey())
+        # Set thumbnail
+        thumbnail_url = get_panel_thumbnail("leveling")
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
         if guild and guild.icon:
             embed.set_thumbnail(url=guild.icon.url)
         elif guild:
             embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
-        embed.add_field(name="Response Levels", value=f"Tox: {c.get('toxicity_level','WARN')} | Scam: {c.get('scam_level','MUTE')} | Nuke: {c.get('nuke_level','BAN')}", inline=False)
-        embed.add_field(name="Alert Channel", value=f"<#{c.get('alert_channel')}>" if c.get('alert_channel') else "_None_", inline=True)
-        embed.add_field(name="Mass DM", value=f"{c.get('mass_dm_threshold',10)}/min", inline=True)
+        embed.add_field(name="XP per Message", value=f"{c.get('xp_per_message', 15)}-{c.get('xp_per_message_max', 25)}", inline=True)
+        embed.add_field(name="XP per Minute (Voice)", value=f"{c.get('xp_per_voice_minute', 10)}", inline=True)
+        embed.add_field(name="Level Up Reward", value=f"{c.get('level_up_reward', 50)} coins", inline=True)
+        embed.add_field(name="Voice XP Enabled", value="✅ Yes" if c.get("voice_xp_enabled", True) else "❌ No", inline=True)
+        embed.add_field(name="Double XP Weekend", value="✅ Yes" if c.get("double_xp_weekend", False) else "❌ No", inline=True)
+        embed.add_field(name="Debt System", value="✅ Yes" if c.get("debt_system_enabled", False) else "❌ No", inline=True)
+        embed.add_field(name="Prestige Enabled", value="✅ Yes" if c.get("prestige_enabled", False) else "❌ No", inline=True)
         return embed
 
     @ui.button(label="Toggle Guardian", emoji="⚔️", style=discord.ButtonStyle.success, row=0, custom_id="cfg_guardian_toggle")
     async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); await self.save_config(c, i.guild_id, i.client, i)
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Toxicity Filter", emoji="☣️", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_guardian_set_tox")
@@ -698,7 +740,7 @@ class GuardianConfigView(ConfigPanelView):
             discord.SelectOption(label="Ban", value="BAN")
         ])
         async def callback(it):
-            c = self.get_config(i.guild_id); c[key] = select.values[0]; self.save_config(c, i.guild_id, i.client); await it.response.send_message(f"Set to {c[key]}", ephemeral=True)
+            c = self.get_config(i.guild_id); c[key] = select.values[0]; await self.save_config(c, i.guild_id, i.client, i); await it.response.send_message(f"Set to {c[key]}", ephemeral=True)
         select.callback = callback; view.add_item(select); await i.response.send_message("Choose Level:", view=view, ephemeral=True)
 
     @ui.button(label="Mass DM Detection", emoji="📨", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_guardian_set_dm")
@@ -711,7 +753,7 @@ class GuardianConfigView(ConfigPanelView):
 
     @ui.button(label="Bot Token Detection", emoji="🤖", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_guardian_set_token")
     async def set_token(self, i, b):
-        c = self.get_config(i.guild_id); c["token_detection"] = not c.get("token_detection", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["token_detection"] = not c.get("token_detection", True); await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Malware Detection", emoji="📎", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_guardian_set_mal")
     async def set_mal(self, i, b):
@@ -762,7 +804,7 @@ class GuardianConfigView(ConfigPanelView):
                 if self.confirm.value == "RESET":
                     c = self.config_panel.get_config(it.guild_id)
                     c.clear()
-                    self.config_panel.save_config(c, it.guild_id, it.client)
+                    self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                     await it.response.send_message("✅ Guardian rules have been reset.", ephemeral=True)
                 else: await it.response.send_message("❌ Cancelled.", ephemeral=True)
         modal = ConfirmModal()
@@ -792,13 +834,13 @@ class WelcomeConfigView(ConfigPanelView):
     @ui.button(label="Toggle Welcome", style=discord.ButtonStyle.success, row=0, custom_id="cfg_wl_toggle_w")
     async def toggle_w(self, i, b):
         c = dm.get_guild_data(i.guild_id, "welcome_config", {}); c["enabled"] = not c.get("enabled", False)
-        dm.update_guild_data(i.guild_id, "welcome_config", c); await self.update_panel(i)
+        dm.update_guild_data(i.guild_id, "welcome_config", c)
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Toggle Leave", style=discord.ButtonStyle.success, row=0, custom_id="cfg_wl_toggle_l")
     async def toggle_l(self, i, b):
         c = dm.get_guild_data(i.guild_id, "leave_config", {}); c["enabled"] = not c.get("enabled", False)
-        dm.update_guild_data(i.guild_id, "leave_config", c); await self.update_panel(i)
+        dm.update_guild_data(i.guild_id, "leave_config", c)
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Set Welcome Ch", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_wl_set_wch")
@@ -893,7 +935,7 @@ class WelcomeDMConfigView(ConfigPanelView):
     @ui.button(label="Toggle Welcome DMs", style=discord.ButtonStyle.success, row=0, custom_id="cfg_wdm_toggle")
     async def toggle(self, i, b):
         c = dm.get_guild_data(i.guild_id, "welcomedm_config", {}); c["enabled"] = not c.get("enabled", False)
-        dm.update_guild_data(i.guild_id, "welcomedm_config", c); await self.update_panel(i)
+        dm.update_guild_data(i.guild_id, "welcomedm_config", c)
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Edit DM Message", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_wdm_edit")
@@ -1047,7 +1089,7 @@ class ApplicationConfigView(ConfigPanelView):
             async def on_submit(self, it):
                 qs = [q.strip() for q in self.input.value.split("\n") if q.strip()][:5]
                 c = self.config_panel.get_config(it.guild_id); c["questions"] = qs
-                self.config_panel.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message(f"✅ Questions updated ({len(qs)} set).", ephemeral=True)
         await i.response.send_modal(QModal(self))
 
@@ -1066,7 +1108,7 @@ class ApplicationConfigView(ConfigPanelView):
     @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_app_toggle_dm")
     async def toggle_dm(self, i, b):
         c = self.get_config(i.guild_id); c["applicant_dms_enabled"] = not c.get("applicant_dms_enabled", True)
-        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Edit Accept DM", emoji="✏️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_app_edit_acc_dm")
     async def edit_acc_dm(self, i, b):
@@ -1111,7 +1153,7 @@ class ApplicationConfigView(ConfigPanelView):
     @ui.button(label="Toggle Auto-Ping", emoji="🔔", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_app_ping")
     async def toggle_ping(self, i, b):
         c = self.get_config(i.guild_id); c["auto_ping_enabled"] = not c.get("auto_ping_enabled", False)
-        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Add App Type", emoji="🏷️", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_app_add_type")
     async def add_type(self, i, b):
@@ -1127,7 +1169,7 @@ class ApplicationConfigView(ConfigPanelView):
                 if self.input.value not in types:
                     types.append(self.input.value)
                     c["application_types"] = types
-                    self.config_panel.save_config(c, it.guild_id, it.client)
+                    self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                     await it.response.send_message(f"✅ Added application type: {self.input.value}", ephemeral=True)
                 else:
                     await it.response.send_message("❌ Type already exists.", ephemeral=True)
@@ -1136,12 +1178,12 @@ class ApplicationConfigView(ConfigPanelView):
     @ui.button(label="Clear Types", emoji="🗑️", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_app_clear_types")
     async def clear_types(self, i, b):
         c = self.get_config(i.guild_id); c["application_types"] = []
-        self.save_config(c, i.guild_id, i.client); await i.response.send_message("✅ Application types cleared.", ephemeral=True)
+        await self.save_config(c, i.guild_id, i.client, i); await i.response.send_message("✅ Application types cleared.", ephemeral=True)
 
     @ui.button(label="Open/Close Apps", emoji="🔒", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_app_toggle_open")
     async def toggle_open(self, i, b):
         c = self.get_config(i.guild_id); c["applications_open"] = not c.get("applications_open", True)
-        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
 
 class AppealsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
@@ -1209,14 +1251,14 @@ class AppealsConfigView(ConfigPanelView):
             async def on_submit(self, it):
                 qs = [s.strip() for s in self.q.value.split("\n") if s.strip()][:4]
                 c = self.config_panel.get_config(it.guild_id); c["questions"] = qs
-                self.config_panel.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message(f"✅ Questions updated.", ephemeral=True)
         await i.response.send_modal(QModal(self))
 
     @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_appeals_t_dm")
     async def toggle_dm(self, i, b):
         c = self.get_config(i.guild_id); c["appellant_dms_enabled"] = not c.get("appellant_dms_enabled", True)
-        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Edit Approval DM", emoji="✏️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_appeals_acc_dm")
     async def edit_acc_dm(self, i, b):
@@ -1311,7 +1353,7 @@ class ModmailConfigView(ConfigPanelView):
     @ui.button(label="Toggle Pings", emoji="🔔", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_modmail_pings")
     async def toggle_pings(self, i, b):
         c = self.get_config(i.guild_id); c["new_thread_pings"] = not c.get("new_thread_pings", True)
-        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Set Style", emoji="📥", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_modmail_style")
     async def set_style(self, i, b):
@@ -1322,7 +1364,7 @@ class ModmailConfigView(ConfigPanelView):
         ])
         async def cb(it):
             c = self.get_config(it.guild_id); c["thread_style"] = s.values[0]
-            self.save_config(c, it.guild_id, it.client); await it.response.send_message(f"Style set to {s.values[0]}", ephemeral=True)
+            await self.save_config(c, it.guild_id, it.client); await it.response.send_message(f"Style set to {s.values[0]}", ephemeral=True)
         s.callback = cb; view.add_item(s); await i.response.send_message("Choose Style:", view=view, ephemeral=True)
 
     @ui.button(label="Set Auto-Close", emoji="⏰", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_modmail_autoclose")
@@ -1342,7 +1384,7 @@ class ModmailConfigView(ConfigPanelView):
     @ui.button(label="Toggle Open", emoji="🔒", style=discord.ButtonStyle.danger, row=4, custom_id="cfg_modmail_toggle")
     async def toggle_open(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
-        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
 class TicketsConfigView(ConfigPanelView):
@@ -1375,9 +1417,9 @@ class TicketsConfigView(ConfigPanelView):
         embed.add_field(name="📊 Stats", value=f"Total: {stats['total']} | Open: {stats['open']} | Closed: {stats['closed']}", inline=False)
         return embed
 
-    @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_tickets_toggle")
+    @ui.button(label="Disable", emoji=get_animated_emoji("tickets"), style=discord.ButtonStyle.danger, row=0, custom_id="cfg_tickets_toggle")
     async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); await self.save_config(c, i.guild_id, i.client, i)
         log_panel_action(i.guild_id, i.user.id, f"Toggled tickets to {c.get('enabled')}")
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
         # Update toggle button label and style
@@ -1421,7 +1463,7 @@ class TicketsConfigView(ConfigPanelView):
     @ui.button(label="Toggle DM", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_tickets_t_dm")
     async def toggle_dm(self, i, b):
         c = self.get_config(i.guild_id); c["opener_dm_enabled"] = not c.get("opener_dm_enabled", True)
-        self.save_config(c, i.guild_id, i.client); await i.response.send_message(f"Opener DM set to {c['opener_dm_enabled']}", ephemeral=True)
+        await self.save_config(c, i.guild_id, i.client, i); await i.response.send_message(f"Opener DM set to {c['opener_dm_enabled']}", ephemeral=True)
 
     @ui.button(label="View Open Tickets", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_tickets_view_open")
     async def view_open(self, i, b):
@@ -1532,7 +1574,7 @@ class GiveawayConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle Entry DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_gw_dm")
     async def toggle_dm(self, i, b):
-        c = self.get_config(i.guild_id); c["entry_dms"] = not c.get("entry_dms", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["entry_dms"] = not c.get("entry_dms", True); await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Set Default Channel", emoji="📣", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_gw_ch")
     async def set_default_ch(self, i, b):
@@ -1738,8 +1780,24 @@ class ReactionMenusConfigView(ConfigPanelView):
 
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
-        embed = discord.Embed(title="📋 Reaction Role Menus", color=discord.Color.blue())
-        embed.add_field(name="Active Menus", value=str(len(c)), inline=True)
+        # Use animated emoji in title
+        title = create_animated_embed_title("verification", "Verification System")
+        embed = discord.Embed(title=title, color=discord.Color.green() if c.get("enabled", True) else discord.Color.red())
+        # Set thumbnail
+        thumbnail_url = get_panel_thumbnail("verification")
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
+        elif guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        elif guild:
+            embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Verified Role", value=f"<@&{c.get('verified_role_id')}>" if c.get('verified_role_id') else "_None_", inline=True)
+        embed.add_field(name="Unverified Role", value=f"<@&{c.get('unverified_role_id')}>" if c.get('unverified_role_id') else "_None_", inline=True)
+        embed.add_field(name="Channel", value=f"<#{c.get('channel_id')}>" if c.get('channel_id') else "_None_", inline=True)
+        embed.add_field(name="CAPTCHA", value="🧮 On" if c.get("captcha_enabled") else "Off", inline=True)
+        embed.add_field(name="Min Age", value=f"{c.get('min_account_age_days', 0)}d", inline=True)
+        embed.add_field(name="Log Count", value=str(len(c.get("verification_log", []))), inline=True)
         return embed
 
     @ui.button(label="Create New Menu", emoji="➕", style=discord.ButtonStyle.success, row=0, custom_id="cfg_rm_create")
@@ -1879,9 +1937,25 @@ class RoleButtonsConfigView(ConfigPanelView):
         dm.update_guild_data(target_guild, "role_buttons_config", config)
 
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
-        c = self.get_config(guild_id)
-        embed = discord.Embed(title="🔘 Role Button Panels", color=discord.Color.blue())
-        embed.add_field(name="Active Panels", value=str(len(c)), inline=True)
+        c = self.get_config(guild_id or self.guild_id)
+        # Use animated emoji in title
+        title = create_animated_embed_title("welcome", "Welcome System Configuration")
+        embed = discord.Embed(title=title, color=discord.Color.blue() if c.get("enabled", True) else discord.Color.red())
+        # Set thumbnail
+        thumbnail_url = get_panel_thumbnail("welcome")
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
+        elif guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        elif guild:
+            embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Channel", value=f"<#{c.get('channel_id')}>" if c.get('channel_id') else "_None_", inline=True)
+        embed.add_field(name="DM Welcome", value="✅ On" if c.get("dm_enabled", False) else "❌ Off", inline=True)
+        embed.add_field(name="Welcome Role", value=f"<@&{c.get('role_id')}>" if c.get('role_id') else "_None_", inline=True)
+        embed.add_field(name="Custom Message", value="✅ Set" if c.get("message") else "❌ Default", inline=True)
+        embed.add_field(name="Embed Color", value=f"#{c.get('color', '3498db')}", inline=True)
+        embed.add_field(name="Banner URL", value=c.get("banner_url", "None")[:30] + "..." if c.get("banner_url") and len(c.get("banner_url", "")) > 30 else c.get("banner_url", "None"), inline=True)
         return embed
 
     @ui.button(label="Create Panel", emoji="➕", style=discord.ButtonStyle.success, row=0, custom_id="cfg_rb_create")
@@ -1998,16 +2072,33 @@ class ModLogConfigView(ConfigPanelView):
         super().__init__(guild_id, "mod_log")
 
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
-        c = self.get_config(guild_id)
-        embed = discord.Embed(title="📝 Moderation Logging", color=discord.Color.red() if c.get("enabled") else discord.Color.greyple())
-        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled") else "❌ Disabled", inline=True)
-        embed.add_field(name="Log Channel", value=f"<#{c.get('log_channel_id')}>" if c.get('log_channel_id') else "None", inline=True)
-        embed.add_field(name="Next Case", value=f"#{c.get('next_case_number', 1)}", inline=True)
+        c = self.get_config(guild_id or self.guild_id)
+        # Use animated emoji in title
+        title = create_animated_embed_title("giveaways", "Giveaways Configuration")
+        embed = discord.Embed(title=title, color=discord.Color.purple() if c.get("enabled", True) else discord.Color.red())
+        # Set thumbnail
+        thumbnail_url = get_panel_thumbnail("giveaways")
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
+        elif guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        elif guild:
+            embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Default Channel", value=f"<#{c.get('default_channel_id')}>" if c.get('default_channel_id') else "_None_", inline=True)
+        embed.add_field(name="Manager Role", value=f"<@&{c.get('manager_role_id')}>" if c.get('manager_role_id') else "_None_", inline=True)
+        embed.add_field(name="Blacklist Role", value=f"<@&{c.get('blacklist_role_id')}>" if c.get('blacklist_role_id') else "_None_", inline=True)
+        embed.add_field(name="Winner Count", value=str(c.get("default_winner_count", 1)), inline=True)
+        embed.add_field(name="Max Entries", value=str(c.get("max_entries", 1000)), inline=True)
+        embed.add_field(name="Allow Duplicate Winners", value="✅ Yes" if c.get("allow_duplicate_winners", False) else "❌ No", inline=True)
+        embed.add_field(name="Require Account Age", value=f"{c.get('required_account_age_days', 0)} days", inline=True)
+        embed.add_field(name="Active Giveaways", value=str(len(c.get("active_giveaways", []))), inline=True)
+        embed.add_field(name="Total Giveaways", value=str(len(c.get("giveaways_log", []))), inline=True)
         return embed
 
     @ui.button(label="Toggle System", emoji="✅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_ml_toggle")
     async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Set Log Channel", emoji="📣", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_ml_set_ch")
     async def set_ch(self, i, b):
@@ -2257,7 +2348,7 @@ class StaffPromoConfigView(ConfigPanelView):
             "activity_decay_days": 30,
         })
         settings["auto_promote"] = not settings.get("auto_promote", True)
-        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Toggle Review Mode", emoji="⚖️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staff_review")
     async def toggle_review(self, i, b):
@@ -2282,7 +2373,7 @@ class StaffPromoConfigView(ConfigPanelView):
             "activity_decay_days": 30,
         })
         settings["review_mode"] = not settings.get("review_mode", False)
-        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staff_dm")
     async def toggle_dm(self, i, b):
@@ -2307,7 +2398,7 @@ class StaffPromoConfigView(ConfigPanelView):
             "activity_decay_days": 30,
         })
         settings["notify_on_promotion"] = not settings.get("notify_on_promotion", True)
-        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Set Review Ch", emoji="🔔", style=discord.ButtonStyle.primary, row=3, custom_id="cfg_staff_rev_ch")
     async def set_rev_ch(self, i, b):
@@ -2408,14 +2499,14 @@ class WarningConfigView(ConfigPanelView):
     async def toggle_system(self, i, b):
         c = self.get_config(i.guild_id)
         c["enabled"] = not c.get("enabled", True)
-        self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         await self.update_panel(i)
 
     @ui.button(label="Toggle DM Warnings", emoji="📩", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_warn_toggle_dm")
     async def toggle_dm(self, i, b):
         c = self.get_config(i.guild_id)
         c["enabled"] = not c.get("enabled", True)
-        self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         await self.update_panel(i)
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
@@ -2485,7 +2576,7 @@ class WarningConfigView(ConfigPanelView):
                 c["thresholds"]["moderate"]["count"] = int(self.moderate.value)
                 c["thresholds"]["severe"]["count"] = int(self.severe.value)
                 c["thresholds"]["critical"]["count"] = int(self.critical.value)
-                self.config_panel.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Threshold counts updated.", ephemeral=True)
         await i.response.send_modal(ThreshModal(self))
 
@@ -2496,7 +2587,7 @@ class WarningConfigView(ConfigPanelView):
     @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_warn_dm")
     async def toggle_dm(self, i, b):
         c = self.get_config(i.guild_id); c["dm_enabled"] = not c.get("dm_enabled", True)
-        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Edit DM", emoji="✏️", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_warn_edit_dm")
     async def edit_dm(self, i, b):
@@ -2550,7 +2641,7 @@ class AutoModConfigView(ConfigPanelView):
     async def toggle_system(self, i, b):
         c = self.get_config(i.guild_id)
         c["enabled"] = not c.get("enabled", True)
-        self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         await self.update_panel(i)
 
     @ui.button(label="View All Rules", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_automod_view")
@@ -2584,7 +2675,7 @@ class AutoModConfigView(ConfigPanelView):
                     "action": self.action.value.lower(),
                     "enabled": True
                 })
-                self.config_panel.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Spam filter updated.", ephemeral=True)
         await i.response.send_modal(SpamModal(self))
 
@@ -2607,7 +2698,7 @@ class AutoModConfigView(ConfigPanelView):
                     "action": self.action.value.lower(),
                     "enabled": True
                 })
-                self.config_panel.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Mention filter updated.", ephemeral=True)
         await i.response.send_modal(MentModal(self))
 
@@ -2630,7 +2721,7 @@ class AutoModConfigView(ConfigPanelView):
                     "action": self.action.value.lower(),
                     "enabled": True
                 })
-                self.config_panel.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Caps filter updated.", ephemeral=True)
         await i.response.send_modal(CapsModal(self))
 
@@ -2659,7 +2750,7 @@ class AutoModConfigView(ConfigPanelView):
                     "whitelisted_domains": domains,
                     "enabled": True
                 })
-                self.config_panel.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Link filter updated.", ephemeral=True)
         await i.response.send_modal(LinkModal(self))
 
@@ -2667,7 +2758,7 @@ class AutoModConfigView(ConfigPanelView):
     async def toggle_invites(self, i, b):
         c = self.get_config(i.guild_id)
         rules = c.setdefault("rules", {}); inv = rules.setdefault("invites", {}); inv["enabled"] = not inv.get("enabled", True)
-        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Manage Banned Words", emoji="📝", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_automod_words")
     async def config_words(self, i, b):
@@ -2740,7 +2831,7 @@ class AutoModConfigView(ConfigPanelView):
                     "4": self.p4.value.lower(),
                     "5": "ban"
                 })
-                self.config_panel.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Escalation settings updated.", ephemeral=True)
         await i.response.send_modal(EscModal(self))
 
@@ -2845,7 +2936,7 @@ class StaffReviewsConfigView(ConfigPanelView):
 
     @ui.button(label="Pause Cycle", emoji="⏸️", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_rev_pause")
     async def pause_cycle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = False; self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["enabled"] = False; await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Active Reviews", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_rev_active")
     async def v_active(self, i, b):
@@ -2945,7 +3036,7 @@ class StaffReviewsConfigView(ConfigPanelView):
                     if ":" in line:
                         name, weight = line.split(":")
                         new_crit.append({"name": name.strip(), "weight": float(weight.strip())})
-                c = self.config_panel.get_config(it.guild_id); c["criteria"] = new_crit; self.config_panel.save_config(c, it.guild_id, it.client)
+                c = self.config_panel.get_config(it.guild_id); c["criteria"] = new_crit; self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Criteria updated.", ephemeral=True)
         await i.response.send_modal(CritModal(self))
 
@@ -2953,7 +3044,7 @@ class StaffReviewsConfigView(ConfigPanelView):
     async def set_cycle(self, i, b):
         class CycleSelect(ui.Select):
             async def callback(self, it):
-                c = self.config_panel.get_config(it.guild_id); c["cycle"] = self.values[0]; self.config_panel.save_config(c, it.guild_id, it.client)
+                c = self.config_panel.get_config(it.guild_id); c["cycle"] = self.values[0]; self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message(f"✅ Cycle set to {self.values[0]}.", ephemeral=True)
         v = ui.View(); v.add_item(CycleSelect(options=[discord.SelectOption(label="Weekly", value="weekly"), discord.SelectOption(label="Bi-Weekly", value="bi-weekly"), discord.SelectOption(label="Monthly", value="monthly")])); await i.response.send_message("Select cycle frequency:", view=v, ephemeral=True)
 
@@ -2963,7 +3054,7 @@ class StaffReviewsConfigView(ConfigPanelView):
             warn = ui.TextInput(label="Warning Threshold (e.g. 2.5)", default="2.5")
             promo = ui.TextInput(label="Promotion Threshold (e.g. 4.5)", default="4.5")
             async def on_submit(self, it):
-                c = self.config_panel.get_config(it.guild_id); c["thresholds"] = {"warning": float(self.warn.value), "promotion": float(self.promo.value)}; self.config_panel.save_config(c, it.guild_id, it.client)
+                c = self.config_panel.get_config(it.guild_id); c["thresholds"] = {"warning": float(self.warn.value), "promotion": float(self.promo.value)}; self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Thresholds updated.", ephemeral=True)
         await i.response.send_modal(ThreshModal())
 
@@ -2973,7 +3064,7 @@ class StaffReviewsConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle Review DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_rev_dm")
     async def t_dm(self, i, b):
-        c = self.get_config(i.guild_id); c["review_dms_enabled"] = not c.get("review_dms_enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["review_dms_enabled"] = not c.get("review_dms_enabled", True); await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Clear Cycle", emoji="🗑️", style=discord.ButtonStyle.danger, row=4, custom_id="cfg_rev_clear")
     async def clear_rev(self, i, b):
@@ -3129,22 +3220,38 @@ class StaffShiftsConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle Notifs", emoji="🔕", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_shift_notif")
     async def t_notif(self, i, b):
-        c = self.get_config(i.guild_id); c["notifications_enabled"] = not c.get("notifications_enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["notifications_enabled"] = not c.get("notifications_enabled", True); await self.save_config(c, i.guild_id, i.client, i)
 
 class LoggingConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "logging")
 
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
-        c = self.get_config(guild_id)
-        embed = discord.Embed(title="📊 General Server Logging", color=discord.Color.green() if c.get("enabled") else discord.Color.greyple())
-        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled") else "❌ Disabled", inline=True)
-        embed.add_field(name="Main Channel", value=f"<#{c.get('log_channel_id')}>" if c.get('log_channel_id') else "None", inline=True)
+        c = self.get_config(guild_id or self.guild_id)
+        # Use animated emoji in title
+        title = create_animated_embed_title("tickets", "Tickets System Configuration")
+        embed = discord.Embed(title=title, color=discord.Color.blue() if c.get("enabled", True) else discord.Color.red())
+        # Set thumbnail
+        thumbnail_url = get_panel_thumbnail("tickets")
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
+        elif guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        elif guild:
+            embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Category", value=f"<#{c.get('category_id')}>" if c.get('category_id') else "_None_", inline=True)
+        embed.add_field(name="Support Role", value=f"<@&{c.get('support_role_id')}>" if c.get('support_role_id') else "_None_", inline=True)
+        embed.add_field(name="Log Channel", value=f"<#{c.get('log_channel_id')}>" if c.get('log_channel_id') else "_None_", inline=True)
+        embed.add_field(name="Transcript Channel", value=f"<#{c.get('transcript_channel_id')}>" if c.get('transcript_channel_id') else "_None_", inline=True)
+        embed.add_field(name="Max Tickets per User", value=str(c.get("max_tickets_per_user", 3)), inline=True)
+        embed.add_field(name="Auto-Close (hours)", value=str(c.get("auto_close_hours", 24)), inline=True)
+        embed.add_field(name="Total Tickets", value=str(len(c.get("tickets_log", []))), inline=True)
         return embed
 
     @ui.button(label="Toggle System", emoji="✅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_lg_toggle")
     async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Set Main Channel", emoji="📣", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_lg_set_ch")
     async def set_ch(self, i, b):
@@ -3347,7 +3454,7 @@ class SuggestionsConfigView(ConfigPanelView):
                 c = self.config_panel.get_config(it.guild_id) if hasattr(self, 'parent') else {}
                 c["categories"] = categories
                 if hasattr(self, 'parent'):
-                    self.config_panel.save_config(c, it.guild_id, it.client)
+                    self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 else:
                     dm.update_guild_data(it.guild_id, "suggestions_config", c)
                 await it.response.send_message(f"✅ Categories updated: {', '.join(categories)}", ephemeral=True)
@@ -3373,7 +3480,7 @@ class SuggestionsConfigView(ConfigPanelView):
     @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_suggest_t_dm")
     async def toggle_dm(self, i, b):
         c = self.get_config(i.guild_id); c["submitter_dms_enabled"] = not c.get("submitter_dms_enabled", True)
-        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Edit Approval DM", emoji="✏️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_suggest_acc_dm")
     async def edit_acc_dm(self, i, b):
@@ -3414,7 +3521,7 @@ class SuggestionsConfigView(ConfigPanelView):
     @ui.button(label="Toggle Open/Closed", emoji="🔒", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_suggest_toggle")
     async def toggle_open(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
-        self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
 class _TicketEmbedModal(ui.Modal):
@@ -3435,7 +3542,7 @@ class _TicketEmbedModal(ui.Modal):
             c["panel_title"] = self.title_in.value
             c["panel_description"] = self.desc_in.value
             c["panel_color"] = color
-            self.config_panel.save_config(c, interaction.guild_id, interaction.client)
+            self.config_panel.save_config(c, interaction.guild_id, interaction.client, interaction)
             await interaction.response.send_message("✅ Ticket panel customized.", ephemeral=True)
         except:
             await interaction.response.send_message("❌ Invalid color.", ephemeral=True)
@@ -3476,7 +3583,7 @@ class GamificationConfigView(ConfigPanelView):
     async def toggle_system(self, i, b):
         c = self.get_config(i.guild_id)
         c["enabled"] = not c.get("enabled", True)
-        self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         await self.update_panel(i)
 
     @ui.button(label="Set Prestige Level", emoji="⭐", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_gam_prestige")
@@ -3489,7 +3596,7 @@ class GamificationConfigView(ConfigPanelView):
             async def on_submit(self, it):
                 c = self.config_panel.get_config(it.guild_id)
                 c["prestige_level"] = int(self.level.value)
-                self.config_panel.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Prestige level updated.", ephemeral=True)
         await i.response.send_modal(PrestigeModal(self))
 
@@ -3503,7 +3610,7 @@ class GamificationConfigView(ConfigPanelView):
             async def on_submit(self, it):
                 c = self.config_panel.get_config(it.guild_id)
                 c["xp_multiplier"] = float(self.mult.value)
-                self.config_panel.save_config(c, it.guild_id, it.client)
+                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ XP multiplier updated.", ephemeral=True)
         await i.response.send_modal(XPModal(self))
 
@@ -3511,7 +3618,7 @@ class GamificationConfigView(ConfigPanelView):
     async def toggle_quests(self, i, b):
         c = self.get_config(i.guild_id)
         c["enabled"] = not c.get("enabled", True)
-        self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         await self.update_panel(i)
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
@@ -3519,7 +3626,7 @@ class GamificationConfigView(ConfigPanelView):
     async def toggle_skills(self, i, b):
         c = self.get_config(i.guild_id)
         c["skills_enabled"] = not c.get("skills_enabled", True)
-        self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         await self.update_panel(i)
 
 
@@ -3539,16 +3646,19 @@ class EconomyConfigView(ConfigPanelView):
                     item.style = discord.ButtonStyle.success
                     item.emoji = "✅"
                 break
-    def __init__(self, guild_id: int):
-        super().__init__(guild_id, "economy")
 
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         gid = guild_id or self.guild_id
         c = self.get_config(gid)
-
-        embed = discord.Embed(title="💰 Economy System Configuration", color=discord.Color.gold())
+        # Use animated emoji in title
+        title = create_animated_embed_title("economy", "Economy System Configuration")
+        embed = discord.Embed(title=title, color=discord.Color.gold())
         embed.set_footer(text="Tip: Higher daily streaks encourage daily engagement!")
-
+        
+        # Set thumbnail
+        thumbnail_url = get_panel_thumbnail("economy")
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
         # Try to set thumbnail
         try:
             # We don't have bot instance easily, base ConfigPanelView doesn't store it.
@@ -3563,6 +3673,7 @@ class EconomyConfigView(ConfigPanelView):
         embed.add_field(name="Daily Cooldown", value=f"{c.get('daily_cooldown_seconds', 86400)//3600}h", inline=True)
 
         rates = c.get("earn_rates", {})
+
         rates_text = f"Msg: {rates.get('coins_per_message', 2)} | Voice: {rates.get('coins_per_voice_minute', 5)} | Gem Chance: {rates.get('gem_chance', 0.01)*100}%"
         embed.add_field(name="Earn Rates", value=rates_text, inline=False)
 
@@ -3572,499 +3683,13 @@ class EconomyConfigView(ConfigPanelView):
 
         return embed
 
-    @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_eco_toggle")
+    @ui.button(label="Disable", emoji=get_animated_emoji("economy"), style=discord.ButtonStyle.danger, row=0, custom_id="cfg_eco_toggle")
     async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
+        c = self.get_config(i.guild_id)
+        c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, i.guild_id, i.client, i)
         log_panel_action(i.guild_id, i.user.id, f"Toggled economy to {c.get('enabled')}")
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
-        # Update toggle button label and style
-        for item in self.children:
-            if isinstance(item, ui.Button) and item.custom_id == "cfg_eco_toggle":
-                if c.get("enabled", True):
-                    item.label = "Disable"
-                    item.style = discord.ButtonStyle.danger
-                    item.emoji = "❌"
-                else:
-                    item.label = "Enable"
-                    item.style = discord.ButtonStyle.success
-                    item.emoji = "✅"
-                break
-        await self.update_panel(i)
-
-    @ui.button(label="Currency Name", emoji="✏️", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_eco_name")
-    async def set_name(self, i, b):
-        await i.response.send_modal(_TextModal(self, "currency_name", "Currency Name", i.guild_id))
-
-    @ui.button(label="Currency Emoji", emoji="🪙", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_eco_emoji")
-    async def set_emoji(self, i, b):
-        await i.response.send_modal(_TextModal(self, "currency_emoji", "Currency Emoji", i.guild_id))
-
-    @ui.button(label="Start Balance", emoji="💵", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_eco_start")
-    async def set_start(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "starting_balance", "Starting Balance", i.guild_id))
-
-    @ui.button(label="Beg Rewards", emoji="🙏", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_eco_beg")
-    async def set_beg(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "beg_min", "Min Beg Reward", i.guild_id, second_label="Max Beg Reward"))
-
-    @ui.button(label="Daily Reward", emoji="📅", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_eco_daily")
-    async def set_daily(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "daily_amount", "Daily Reward Amount", i.guild_id))
-
-    @ui.button(label="Streak Bonus", emoji="🔥", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_eco_streak")
-    async def set_streak(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "daily_streak_bonus", "Daily Streak Bonus", i.guild_id))
-
-    @ui.button(label="Work Rewards", emoji="⚒️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_eco_work")
-    async def set_work(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "work_min", "Min Work Reward", i.guild_id, second_label="Max Work Reward"))
-
-    @ui.button(label="Daily Cooldown", emoji="⏱️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_eco_daily_cd")
-    async def set_daily_cd(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "daily_cooldown_seconds", "Daily Cooldown (Seconds)", i.guild_id))
-
-    @ui.button(label="Add/Remove Coins", emoji="💰", style=discord.ButtonStyle.primary, row=2, custom_id="cfg_eco_modify_coins")
-    async def modify_coins(self, i, b):
-        class ModifyCoinsModal(ui.Modal, title="Modify User Coins"):
-            user_id = ui.TextInput(label="User ID")
-            amount = ui.TextInput(label="Amount (Negative to remove)")
-            async def on_submit(self, it):
-                try:
-                    uid = int(self.user_id.value)
-                    amt = int(self.amount.value)
-                    balances = dm.get_guild_data(it.guild_id, "economy_balances", {})
-                    balances[str(uid)] = balances.get(str(uid), 0) + amt
-                    dm.update_guild_data(it.guild_id, "economy_balances", balances)
-                    await it.response.send_message(f"✅ Adjusted coins for <@{uid}> by {amt}", ephemeral=True)
-                except ValueError: await it.response.send_message("❌ Invalid input.", ephemeral=True)
-        await i.response.send_modal(ModifyCoinsModal())
-
-    @ui.button(label="Add/Remove Gems", emoji="💎", style=discord.ButtonStyle.primary, row=2, custom_id="cfg_eco_modify_gems")
-    async def modify_gems(self, i, b):
-        class ModifyGemsModal(ui.Modal, title="Modify User Gems"):
-            user_id = ui.TextInput(label="User ID")
-            amount = ui.TextInput(label="Amount (Negative to remove)")
-            async def on_submit(self, it):
-                try:
-                    uid = int(self.user_id.value)
-                    amt = int(self.amount.value)
-                    gems = dm.get_guild_data(it.guild_id, "economy_gems", {})
-                    gems[str(uid)] = gems.get(str(uid), 0) + amt
-                    dm.update_guild_data(it.guild_id, "economy_gems", gems)
-                    await it.response.send_message(f"✅ Adjusted gems for <@{uid}> by {amt}", ephemeral=True)
-                except ValueError: await it.response.send_message("❌ Invalid input.", ephemeral=True)
-        await i.response.send_modal(ModifyGemsModal())
-
-    @ui.button(label="Earn Rates", emoji="📈", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_eco_rates")
-    async def set_rates(self, i, b):
-        class RatesModal(ui.Modal, title="Set Earn Rates"):
-            msg = ui.TextInput(label="Coins Per Message", default="2")
-            voice = ui.TextInput(label="Coins Per Voice Minute", default="5")
-            gem = ui.TextInput(label="Gem Chance (0.0 to 1.0)", default="0.01")
-            async def on_submit(self, it):
-                try:
-                    c = dm.get_guild_data(it.guild_id, "economy_config", {})
-                    c["earn_rates"] = {
-                        "coins_per_message": int(self.msg.value),
-                        "coins_per_voice_minute": int(self.voice.value),
-                        "gem_chance": float(self.gem.value)
-                    }
-                    dm.update_guild_data(it.guild_id, "economy_config", c)
-                    await it.response.send_message("✅ Earn rates updated.", ephemeral=True)
-                except ValueError: await it.response.send_message("❌ Invalid input.", ephemeral=True)
-        await i.response.send_modal(RatesModal())
-
-    @ui.button(label="Transaction Log", emoji="📜", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_eco_log")
-    async def view_log(self, i, b):
-        logs = dm.get_guild_data(i.guild_id, "economy_logs", [])[-15:][::-1]
-        msg = "\n".join([f"<t:{int(e['ts'])}:R> <@{e['user_id']}>: {e['action']} ({e['amt']})" for e in logs]) or "No recent transactions."
-        await i.response.send_message(embed=discord.Embed(title="Economy Transaction Log", description=msg, color=discord.Color.gold()), ephemeral=True)
-
-    @ui.button(label="Reset User Balance", emoji="🧹", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_eco_reset_user")
-    async def reset_user(self, i, b):
-        class ResetUserModal(ui.Modal, title="Reset User Balance"):
-            uid = ui.TextInput(label="User ID")
-            confirm = ui.TextInput(label="Type 'RESET' to confirm")
-            async def on_submit(self, it):
-                if self.confirm.value == "RESET":
-                    balances = dm.get_guild_data(it.guild_id, "economy_balances", {})
-                    uid_str = str(self.uid.value)
-                    if uid_str in balances:
-                        del balances[uid_str]
-                        dm.update_guild_data(it.guild_id, "economy_balances", balances)
-                        await it.response.send_message(f"✅ Reset balance for <@{uid_str}>", ephemeral=True)
-                    else: await it.response.send_message("❌ User not found in database.", ephemeral=True)
-                else: await it.response.send_message("❌ Cancelled.", ephemeral=True)
-        await i.response.send_modal(ResetUserModal())
-
-    @ui.button(label="Leaderboard", emoji="🏆", style=discord.ButtonStyle.primary, row=3, custom_id="cfg_eco_lb")
-    async def leaderboard(self, i, b):
-        balances = dm.get_guild_data(i.guild_id, "economy_balances", {})
-        sorted_lb = sorted(balances.items(), key=lambda x: x[1], reverse=True)[:10]
-        msg = "\n".join([f"**#{idx+1}** <@{uid}>: {amt} coins" for idx, (uid, amt) in enumerate(sorted_lb)]) or "Empty leaderboard."
-        await i.response.send_message(embed=discord.Embed(title="Economy Leaderboard", description=msg, color=discord.Color.gold()), ephemeral=True)
-
-    @ui.button(label="Economy Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_eco_stats_full")
-    async def full_stats(self, i, b):
-        balances = dm.get_guild_data(i.guild_id, "economy_balances", {})
-        total = sum(balances.values())
-        count = len(balances)
-        avg = total / count if count > 0 else 0
-        await i.response.send_message(f"📊 **Economy Stats**\nTotal Money: {total}\nUsers: {count}\nAverage: {avg:.2f}", ephemeral=True)
-
-    @ui.button(label="Set Eco Channel", emoji="📣", style=discord.ButtonStyle.primary, row=4, custom_id="cfg_eco_chan")
-    async def set_chan(self, i, b):
-        await i.response.send_message("Select Channel:", view=_picker_view(_GenericChannelSelect(self, "economy_channel_id", "Economy Channel")), ephemeral=True)
-
-    @ui.button(label="Reset All Data", emoji="💀", style=discord.ButtonStyle.danger, row=4, custom_id="cfg_eco_reset")
-    async def reset_data(self, i, b):
-        class ConfirmReset(ui.Modal, title="RESET ALL ECONOMY DATA"):
-            confirm = ui.TextInput(label="Type 'CONFIRM RESET' to confirm")
-            async def on_submit(self, it):
-                if self.confirm.value == "CONFIRM RESET":
-                    dm.update_guild_data(it.guild_id, "economy_balances", {})
-                    dm.update_guild_data(it.guild_id, "economy_gems", {})
-                    await it.response.send_message("✅ All economy data has been reset.", ephemeral=True)
-                else: await it.response.send_message("❌ Reset cancelled.", ephemeral=True)
-        await i.response.send_modal(ConfirmReset())
-
-
-class LevelingConfigView(ConfigPanelView):
-    def __init__(self, guild_id: int):
-        super().__init__(guild_id, "leveling")
-        # Set initial toggle button state
-        c = self.get_config(guild_id)
-        for item in self.children:
-            if isinstance(item, ui.Button) and item.custom_id == "cfg_lvl_toggle":
-                if c.get("enabled", True):
-                    item.label = "Disable"
-                    item.style = discord.ButtonStyle.danger
-                    item.emoji = "❌"
-                else:
-                    item.label = "Enable"
-                    item.style = discord.ButtonStyle.success
-                    item.emoji = "✅"
-                break
-    def __init__(self, guild_id: int):
-        super().__init__(guild_id, "leveling")
-
-    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
-        c = self.get_config(guild_id or self.guild_id)
-        embed = discord.Embed(title="🆙 Leveling System Configuration", color=discord.Color.blue())
-        embed.set_footer(text="Tip: Active voice channels provide higher XP retention!")
-
-        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
-        embed.add_field(name="XP Per Message", value=f"{c.get('xp_per_message_min', 15)} - {c.get('xp_per_message_max', 25)}", inline=True)
-        embed.add_field(name="XP Per Voice", value=f"{c.get('xp_per_voice_minute', 10)}/min", inline=True)
-        embed.add_field(name="XP Cooldown", value=f"{c.get('xp_cooldown_seconds', 60)}s", inline=True)
-        embed.add_field(name="Double XP", value="🔥 ON" if c.get("double_xp_enabled") else "❌ OFF", inline=True)
-        embed.add_field(name="Level Up Announcements", value="✅ Enabled" if c.get("level_up_announcements", True) else "❌ Disabled", inline=True)
-        embed.add_field(name="Level Up Channel", value=f"<#{c.get('level_up_channel_id')}>" if c.get('level_up_channel_id') else "_Current Channel_", inline=True)
-
-        multipliers = c.get("xp_multiplier_roles", {})
-        active_mults = [f"<@&{k}> ({v}x)" for k, v in multipliers.items()]
-        embed.add_field(name="Role Multipliers", value=", ".join(active_mults) or "None", inline=False)
-
-        rewards = dm.get_guild_data(guild_id or self.guild_id, "level_rewards", {})
-        embed.add_field(name="Role Rewards", value=f"{len(rewards)} configured", inline=True)
-        return embed
-
-    @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_lvl_toggle")
-    async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
-        log_panel_action(i.guild_id, i.user.id, f"Toggled leveling to {c.get('enabled')}")
-        await i.client.auto_setup.update_system_status_embed(i.guild_id)
-        # Update toggle button label and style
-        for item in self.children:
-            if isinstance(item, ui.Button) and item.custom_id == "cfg_lvl_toggle":
-                if c.get("enabled", True):
-                    item.label = "Disable"
-                    item.style = discord.ButtonStyle.danger
-                    item.emoji = "❌"
-                else:
-                    item.label = "Enable"
-                    item.style = discord.ButtonStyle.success
-                    item.emoji = "✅"
-                break
-        await self.update_panel(i)
-
-    @ui.button(label="XP Range", emoji="📊", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_lvl_range")
-    async def set_range(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "xp_per_message_min", "Min XP Per Message", i.guild_id, second_label="Max XP Per Message"))
-
-    @ui.button(label="XP Cooldown", emoji="⏱️", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_lvl_cool")
-    async def set_cooldown(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "xp_cooldown_seconds", "XP Cooldown (Seconds)", i.guild_id))
-
-    @ui.button(label="Toggle Level Msg", emoji="💬", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_lvl_msg")
-    async def toggle_msg(self, i, b):
-        c = self.get_config(i.guild_id); c["level_up_announcements"] = not c.get("level_up_announcements", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
-
-    @ui.button(label="Set Level Channel", emoji="📣", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_lvl_chan")
-    async def set_chan(self, i, b):
-        await i.response.send_message("Select Channel:", view=_picker_view(_GenericChannelSelect(self, "level_up_channel_id", "Level Up Channel")), ephemeral=True)
-
-    @ui.button(label="Voice XP", emoji="🎙️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_lvl_voice")
-    async def set_voice_xp(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "xp_per_voice_minute", "XP Per Voice Minute", i.guild_id))
-
-    @ui.button(label="XP Multiplier Role", emoji="✨", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_lvl_mults")
-    async def set_mults(self, i, b):
-        class RoleMultModal(ui.Modal, title="Set Role XP Multiplier"):
-            role_id = ui.TextInput(label="Role ID")
-            mult = ui.TextInput(label="Multiplier (e.g. 1.5)", default="1.5")
-            async def on_submit(self, it):
-                try:
-                    rid = int(self.role_id.value)
-                    val = float(self.mult.value)
-                    c = dm.get_guild_data(it.guild_id, "leveling_config", {})
-                    m = c.get("xp_multiplier_roles", {})
-                    m[str(rid)] = val
-                    c["xp_multiplier_roles"] = m
-                    dm.update_guild_data(it.guild_id, "leveling_config", c)
-                    await it.response.send_message(f"✅ Multiplier {val}x set for role <@&{rid}>", ephemeral=True)
-                except ValueError: await it.response.send_message("❌ Invalid input.", ephemeral=True)
-        await i.response.send_modal(RoleMultModal())
-
-    @ui.button(label="Toggle Double XP", emoji="🔥", style=discord.ButtonStyle.success, row=2, custom_id="cfg_lvl_double")
-    async def toggle_double(self, i, b):
-        c = self.get_config(i.guild_id); c["double_xp_enabled"] = not c.get("double_xp_enabled", False); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
-
-    @ui.button(label="Edit Level-Up Msg", emoji="📝", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_lvl_edit_msg")
-    async def edit_msg(self, i, b):
-        await i.response.send_modal(_TextModal(self, "level_up_message", "Level Up Message (Use {user}, {level})", i.guild_id))
-
-    @ui.button(label="View Rank", emoji="🔍", style=discord.ButtonStyle.primary, row=2, custom_id="cfg_lvl_rank")
-    async def view_rank(self, i, b):
-        class UIDModal(ui.Modal, title="View User Rank"):
-            uid = ui.TextInput(label="User ID")
-            async def on_submit(self, it):
-                xp = dm.get_guild_data(it.guild_id, "leveling_xp", {}).get(str(self.uid.value), 0)
-                await it.response.send_message(f"👤 <@{self.uid.value}> has **{xp} XP**", ephemeral=True)
-        await i.response.send_modal(UIDModal())
-
-    @ui.button(label="No-XP Channels", emoji="🚫", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_lvl_no_xp_ch")
-    async def no_xp_ch(self, i, b):
-        await i.response.send_message("Select channel to toggle XP:", view=_picker_view(_GenericChannelSelect(self, "no_xp_channel_ids_toggle", "Toggle XP Channel")), ephemeral=True)
-
-    @ui.button(label="Reset User XP", emoji="🧹", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_lvl_reset_user")
-    async def reset_user(self, i, b):
-        class ResetUserModal(ui.Modal, title="Reset User XP"):
-            uid = ui.TextInput(label="User ID")
-            confirm = ui.TextInput(label="Type 'RESET' to confirm")
-            async def on_submit(self, it):
-                if self.confirm.value == "RESET":
-                    xp_data = dm.get_guild_data(it.guild_id, "leveling_xp", {})
-                    uid_str = str(self.uid.value)
-                    if uid_str in xp_data:
-                        del xp_data[uid_str]
-                        dm.update_guild_data(it.guild_id, "leveling_xp", xp_data)
-                        await it.response.send_message(f"✅ Reset XP for <@{uid_str}>", ephemeral=True)
-                    else: await it.response.send_message("❌ User not found.", ephemeral=True)
-                else: await it.response.send_message("❌ Cancelled.", ephemeral=True)
-        await i.response.send_modal(ResetUserModal())
-
-    @ui.button(label="Level Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_lvl_stats_full")
-    async def full_stats(self, i, b):
-        xp_data = dm.get_guild_data(i.guild_id, "leveling_xp", {})
-        total_xp = sum(xp_data.values())
-        count = len(xp_data)
-        await i.response.send_message(f"📊 **Leveling Stats**\nTotal XP Earned: {total_xp}\nUsers Tracked: {count}", ephemeral=True)
-
-    @ui.button(label="Reset All XP", emoji="💀", style=discord.ButtonStyle.danger, row=4, custom_id="cfg_lvl_reset")
-    async def reset_xp(self, i, b):
-        class ConfirmReset(ui.Modal, title="RESET ALL LEVELING DATA"):
-            confirm = ui.TextInput(label="Type 'CONFIRM RESET' to confirm")
-            async def on_submit(self, it):
-                if self.confirm.value == "CONFIRM RESET":
-                    dm.update_guild_data(it.guild_id, "leveling_xp", {})
-                    dm.update_guild_data(it.guild_id, "leveling_data", {})
-                    await it.response.send_message("✅ All leveling data has been reset.", ephemeral=True)
-                else: await it.response.send_message("❌ Reset cancelled.", ephemeral=True)
-        await i.response.send_modal(ConfirmReset())
-
-    async def save_config(self, config: Dict[str, Any], guild_id: int = None, bot: discord.Client = None):
-        if "no_xp_channel_ids_toggle" in config:
-            cid = config.pop("no_xp_channel_ids_toggle")
-            channels = config.get("no_xp_channel_ids", [])
-            if cid in channels: channels.remove(cid)
-            else: channels.append(cid)
-            config["no_xp_channel_ids"] = channels
-        super().save_config(config, guild_id, bot)
-
-
-class StarboardConfigView(ConfigPanelView):
-    def __init__(self, guild_id: int):
-        super().__init__(guild_id, "starboard")
-        # Set initial toggle button state
-        c = self.get_config(guild_id)
-        for item in self.children:
-            if isinstance(item, ui.Button) and item.custom_id == "cfg_stb_toggle":
-                if c.get("enabled", True):
-                    item.label = "Disable"
-                    item.style = discord.ButtonStyle.danger
-                    item.emoji = "❌"
-                else:
-                    item.label = "Enable"
-                    item.style = discord.ButtonStyle.success
-                    item.emoji = "✅"
-                break
-    def __init__(self, guild_id: int):
-        super().__init__(guild_id, "starboard")
-
-    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
-        c = self.get_config(guild_id or self.guild_id)
-        embed = discord.Embed(title="⭐ Starboard Configuration", color=discord.Color.gold())
-        embed.set_footer(text="Tip: Lower thresholds allow more community-curated content!")
-        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
-        embed.add_field(name="Channel", value=f"<#{c.get('channel_id')}>" if c.get("channel_id") else "Not Set", inline=True)
-        embed.add_field(name="Threshold", value=str(c.get("threshold", 3)), inline=True)
-        embed.add_field(name="Emoji", value=c.get("emoji", "⭐"), inline=True)
-        embed.add_field(name="Auto Pin", value="ON" if c.get("auto_pin", True) else "OFF", inline=True)
-        embed.add_field(name="Pin Threshold", value=str(c.get("pin_threshold", 10)), inline=True)
-        embed.add_field(name="Reactions", value="ON" if c.get("reactions_enabled", True) else "OFF", inline=True)
-
-        rewards = c.get("reward_thresholds", {})
-        embed.add_field(name="Rewards", value=f"{len(rewards)} thresholds", inline=True)
-
-        ignored = c.get("blacklisted_channels", [])
-        embed.add_field(name="Ignored Channels", value=str(len(ignored)), inline=True)
-
-        return embed
-
-    @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_stb_toggle")
-    async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client)
-        log_panel_action(i.guild_id, i.user.id, f"Toggled starboard to {c.get('enabled')}")
-        await i.client.auto_setup.update_system_status_embed(i.guild_id)
-        # Update toggle button label and style
-        for item in self.children:
-            if isinstance(item, ui.Button) and item.custom_id == "cfg_stb_toggle":
-                if c.get("enabled", True):
-                    item.label = "Disable"
-                    item.style = discord.ButtonStyle.danger
-                    item.emoji = "❌"
-                else:
-                    item.label = "Enable"
-                    item.style = discord.ButtonStyle.success
-                    item.emoji = "✅"
-                break
-        await self.update_panel(i)
-
-    @ui.button(label="Set Channel", emoji="📺", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_stb_chan")
-    async def set_channel(self, i, b):
-        await i.response.send_message("Select Channel:", view=_picker_view(_GenericChannelSelect(self, "channel_id", "Starboard Channel")), ephemeral=True)
-
-    @ui.button(label="Threshold", emoji="🔢", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_stb_thresh")
-    async def set_threshold(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "threshold", "Starboard Threshold", i.guild_id))
-
-    @ui.button(label="Star Emoji", emoji="✨", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_stb_emoji")
-    async def set_emoji(self, i, b):
-        await i.response.send_modal(_TextModal(self, "emoji", "Starboard Emoji", i.guild_id))
-
-    @ui.button(label="Toggle Auto Pin", emoji="📌", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_stb_pin")
-    async def toggle_pin(self, i, b):
-        c = self.get_config(i.guild_id); c["auto_pin"] = not c.get("auto_pin", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
-
-    @ui.button(label="Toggle Reactions", emoji="⭐", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_stb_react")
-    async def toggle_react(self, i, b):
-        c = self.get_config(i.guild_id); c["reactions_enabled"] = not c.get("reactions_enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
-
-    @ui.button(label="Pin Threshold", emoji="📍", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_stb_pin_th")
-    async def set_pin_th(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "pin_threshold", "Pin Threshold", i.guild_id))
-
-    @ui.button(label="Set Rewards", emoji="🎁", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_stb_rewards")
-    async def set_rewards(self, i, b):
-        class RewardModal(ui.Modal, title="Set Starboard Reward"):
-            th = ui.TextInput(label="Threshold (Stars)", placeholder="e.g. 5")
-            coins = ui.TextInput(label="Coins Reward", default="10")
-            xp = ui.TextInput(label="XP Reward", default="5")
-            async def on_submit(self, it):
-                try:
-                    c = dm.get_guild_data(it.guild_id, "starboard_config", {})
-                    rew = c.get("reward_thresholds", {})
-                    rew[self.th.value] = {"coins": int(self.coins.value), "xp": int(self.xp.value)}
-                    c["reward_thresholds"] = rew
-                    dm.update_guild_data(it.guild_id, "starboard_config", c)
-                    await it.response.send_message(f"✅ Reward set for {self.th.value} stars.", ephemeral=True)
-                except: await it.response.send_message("❌ Invalid numbers.", ephemeral=True)
-        await i.response.send_modal(RewardModal())
-
-    @ui.button(label="Clear Rewards", emoji="🧹", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_stb_rew_clr")
-    async def clr_rewards(self, i, b):
-        c = self.get_config(i.guild_id); c["reward_thresholds"] = {}; self.save_config(c, i.guild_id, i.client); await i.response.send_message("✅ Rewards cleared.", ephemeral=True)
-
-    @ui.button(label="Toggle Reactions", emoji="🎭", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_stb_react")
-    async def toggle_react(self, i, b):
-        c = self.get_config(i.guild_id); c["reactions_enabled"] = not c.get("reactions_enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
-
-    @ui.button(label="Ignored Channels", emoji="🚫", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_stb_black")
-    async def stb_black(self, i, b):
-        await i.response.send_message("Select channel to toggle from blacklist:", view=_picker_view(_GenericChannelSelect(self, "blacklisted_channels_toggle", "Toggle Blacklist Channel")), ephemeral=True)
-
-    @ui.button(label="Starboard Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_stb_stats")
-    async def stb_stats(self, i, b):
-        data = dm.get_guild_data(i.guild_id, "starboard_system_data", {})
-        count = len(data.get("starred_messages", {}))
-        await i.response.send_message(f"📊 **Starboard Stats**\nTotal Starred Messages: {count}", ephemeral=True)
-
-    @ui.button(label="View Top Posts", emoji="🏆", style=discord.ButtonStyle.primary, row=3, custom_id="cfg_stb_top")
-    async def stb_top(self, i, b):
-        # Access through bot instance
-        stb = getattr(i.client, "starboard", None)
-        if not stb: return await i.response.send_message("❌ Starboard module not loaded.", ephemeral=True)
-        lb = stb.get_leaderboard(i.guild_id)
-        if not lb: return await i.response.send_message("No starred messages yet.", ephemeral=True)
-        text = "\n".join([f"**#{e['rank']}** [Message](https://discord.com/channels/{i.guild_id}/{e['channel_id']}/{e['message_id']}) - ⭐ {e['star_count']}" for e in lb[:10]])
-        await i.response.send_message(embed=discord.Embed(title="⭐ Top Starred Posts", description=text, color=discord.Color.gold()), ephemeral=True)
-
-    @ui.button(label="Reset Starboard", emoji="💀", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_stb_reset")
-    async def stb_reset(self, i, b):
-        class Confirm(ui.Modal, title="Reset Starboard Data"):
-            confirm = ui.TextInput(label="Type 'CONFIRM RESET' to confirm")
-            async def on_submit(self, it):
-                if self.confirm.value == "CONFIRM RESET":
-                    dm.update_guild_data(it.guild_id, "starboard_system_data", {"starred_messages": {}})
-                    await it.response.send_message("✅ Starboard history reset.", ephemeral=True)
-                else: await it.response.send_message("❌ Reset cancelled.", ephemeral=True)
-        await i.response.send_modal(Confirm())
-
-    async def save_config(self, config: Dict[str, Any], guild_id: int = None, bot: discord.Client = None):
-        if "blacklisted_channels_toggle" in config:
-            cid = config.pop("blacklisted_channels_toggle")
-            channels = config.get("blacklisted_channels", [])
-            if cid in channels: channels.remove(cid)
-            else: channels.append(cid)
-            config["blacklisted_channels"] = channels
-        super().save_config(config, guild_id, bot)
-
-
-class AutoResponderConfigView(ConfigPanelView):
-    def __init__(self, guild_id: int):
-        super().__init__(guild_id, "auto_responder")
-
-    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
-        c = self.get_config(guild_id or self.guild_id)
-        embed = discord.Embed(title="🤖 Auto-Responder Configuration", color=discord.Color.blue())
-        responders = dm.get_guild_data(guild_id or self.guild_id, "auto_responders", [])
-        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
-        embed.add_field(name="Total Responders", value=str(len(responders)), inline=True)
-        embed.add_field(name="Global Cooldown", value=f"{c.get('cooldown', 5)}s", inline=True)
-
-        if responders:
-            preview = "\n".join([f"• `{r.get('trigger')}` -> {r.get('response', '')[:30]}..." for r in responders[:10]])
-            if len(responders) > 10: preview += "\n...and more"
-            embed.add_field(name="Responders List", value=preview, inline=False)
-        else:
-            embed.add_field(name="Responders List", value="_No responders configured._", inline=False)
-
-        return embed
-
-    @ui.button(label="Toggle System", emoji="🔌", style=discord.ButtonStyle.success, row=0, custom_id="cfg_ar_toggle")
-    async def toggle_system(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
 
     @ui.button(label="Add Responder", emoji="➕", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_ar_add")
     async def add_responder(self, i, b):
@@ -4203,11 +3828,17 @@ class ChatChannelsConfigView(ConfigPanelView):
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         is_enabled = c.get("enabled", True)
+        # Use animated emoji in title
+        title = create_animated_embed_title("chat", "AI Chat Channels Configuration")
         embed = discord.Embed(
-            title="🧠 AI Chat Channels Configuration",
+            title=title,
             description="━━━━━━━━━━━━━━",
             color=discord.Color.teal() if is_enabled else discord.Color.red()
         )
+        # Set thumbnail
+        thumbnail_url = get_panel_thumbnail("chat")
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
 
         embed.add_field(name="Status", value="🟢 Active" if is_enabled else "🔴 Disabled", inline=True)
         embed.add_field(name="Model Core", value=f"🤖 `{c.get('model', 'gpt-4o')}`", inline=True)
@@ -4226,7 +3857,7 @@ class ChatChannelsConfigView(ConfigPanelView):
     @ui.button(label="Toggle AI Chat", emoji="🔌", style=discord.ButtonStyle.success, row=0, custom_id="cfg_chat_toggle")
     async def toggle_auto(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
-        await self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         await self.update_panel(i)
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
@@ -4411,7 +4042,7 @@ class EventsConfigView(ConfigPanelView):
     @ui.button(label="Toggle System", emoji="🔌", style=discord.ButtonStyle.success, row=0, custom_id="cfg_evt_toggle")
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
-        await self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         await self.update_panel(i)
 
     @ui.button(label="Set Log Channel", emoji="📝", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_evt_log")
@@ -4425,7 +4056,7 @@ class EventsConfigView(ConfigPanelView):
     @ui.button(label="Toggle Auto-Remind", emoji="⏰", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_evt_remind")
     async def toggle_remind(self, i, b):
         c = self.get_config(i.guild_id); c["auto_remind"] = not c.get("auto_remind", True)
-        await self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         await self.update_panel(i)
 
     @ui.button(label="Set Ping Role", emoji="🔔", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_evt_role")
@@ -4473,7 +4104,7 @@ class EventsConfigView(ConfigPanelView):
 
     @ui.button(label="Auto-Archive", emoji="📁", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_evt_arch")
     async def set_arch(self, i, b):
-        c = self.get_config(i.guild_id); c["auto_archive"] = not c.get("auto_archive", True); self.save_config(c, i.guild_id, i.client); await self.update_panel(i)
+        c = self.get_config(i.guild_id); c["auto_archive"] = not c.get("auto_archive", True); await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Clear History", emoji="🧹", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_evt_clear_h")
     async def clr_hist(self, i, b):
@@ -4681,13 +4312,49 @@ class EconomyShopConfigView(ConfigPanelView):
         await i.response.send_modal(SaleModal())
 
 
+class LevelingConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "leveling")
+
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
+        c = self.get_config(guild_id or self.guild_id)
+        # Use animated emoji in title
+        title = create_animated_embed_title("leveling", "Leveling System Configuration")
+        embed = discord.Embed(title=title, color=discord.Color.blue() if c.get("enabled", True) else discord.Color.dark_grey())
+        # Set thumbnail
+        thumbnail_url = get_panel_thumbnail("leveling")
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
+        elif guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        elif guild:
+            embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="XP per Message", value=f"{c.get('xp_per_message', 15)}-{c.get('xp_per_message_max', 25)}", inline=True)
+        embed.add_field(name="XP per Minute (Voice)", value=f"{c.get('xp_per_voice_minute', 10)}", inline=True)
+        embed.add_field(name="Level Up Reward", value=f"{c.get('level_up_reward', 50)} coins", inline=True)
+        embed.add_field(name="Voice XP Enabled", value="✅ Yes" if c.get("voice_xp_enabled", True) else "❌ No", inline=True)
+        embed.add_field(name="Double XP Weekend", value="✅ Yes" if c.get("double_xp_weekend", False) else "❌ No", inline=True)
+        embed.add_field(name="Debt System", value="✅ Yes" if c.get("debt_system_enabled", False) else "❌ No", inline=True)
+        embed.add_field(name="Prestige Enabled", value="✅ Yes" if c.get("prestige_enabled", False) else "❌ No", inline=True)
+        return embed
+
+    @ui.button(label="Disable", emoji=get_animated_emoji("leveling"), style=discord.ButtonStyle.danger, row=0, custom_id="cfg_lvl_toggle")
+    async def toggle(self, i, b):
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
+        self.save_config(c, i.guild_id, i.client, i)
+        await self.update_panel(i)
+
+
 class LevelingShopConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "leveling_shop")
 
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         rewards = dm.get_guild_data(guild_id or self.guild_id, "level_rewards", {})
-        embed = discord.Embed(title="🆙 Leveling Rewards Configuration", color=discord.Color.blue())
+        # Use animated emoji in title
+        title = create_animated_embed_title("leveling", "Leveling Rewards Configuration")
+        embed = discord.Embed(title=title, color=discord.Color.blue())
         embed.add_field(name="Total Rewards", value=str(len(rewards)), inline=True)
 
         if rewards:
