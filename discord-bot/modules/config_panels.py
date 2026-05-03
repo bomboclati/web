@@ -4522,6 +4522,191 @@ class LevelingShopConfigView(ConfigPanelView):
         await i.response.send_message("Please use `!leveling import` and attach your JSON file.", ephemeral=True)
 
 
+class StarboardConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "starboard")
+
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
+        from modules.starboard import StarboardSystem
+        starboard = StarboardSystem(None)  # We don't need the bot for settings
+        c = starboard.get_guild_settings(guild_id or self.guild_id)
+
+        # Use animated emoji in title
+        title = create_animated_embed_title("starboard", "Starboard Configuration")
+        embed = discord.Embed(title=title, color=discord.Color.gold() if c.get("enabled", True) else discord.Color.dark_grey())
+
+        # Set thumbnail
+        thumbnail_url = get_panel_thumbnail("starboard")
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
+        elif guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        elif guild:
+            embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+
+        # Get starboard channel from starboard system data
+        starboard_data = dm.get_guild_data(guild_id or self.guild_id, "starboard_system_data", {})
+        channel_id = starboard_data.get("channel_id")
+
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Starboard Channel", value=f"<#{channel_id}>" if channel_id else "_None_", inline=True)
+        embed.add_field(name="Star Emoji", value=c.get("emoji", "⭐"), inline=True)
+        embed.add_field(name="Threshold", value=f"{c.get('threshold', 3)} stars", inline=True)
+        embed.add_field(name="Auto-Pin", value="✅ Yes" if c.get("auto_pin", True) else "❌ No", inline=True)
+        embed.add_field(name="Pin Threshold", value=f"{c.get('pin_threshold', 10)} stars", inline=True)
+        embed.add_field(name="Reactions Enabled", value="✅ Yes" if c.get("reactions_enabled", True) else "❌ No", inline=True)
+
+        # Show reward thresholds
+        rewards = c.get("reward_thresholds", {})
+        if rewards:
+            reward_text = "\n".join([f"• {stars} stars: {data.get('coins', 0)} coins, {data.get('xp', 0)} XP" for stars, data in sorted(rewards.items(), key=lambda x: int(x[0]))])
+            embed.add_field(name="Reward Thresholds", value=reward_text, inline=False)
+        else:
+            embed.add_field(name="Reward Thresholds", value="_None configured_", inline=False)
+
+        return embed
+
+    @ui.button(label="Toggle Starboard", emoji=get_animated_emoji("starboard"), style=discord.ButtonStyle.success, row=0, custom_id="cfg_starboard_toggle")
+    async def toggle(self, i, b):
+        from modules.starboard import StarboardSystem
+        starboard = StarboardSystem(i.client)
+        c = starboard.get_guild_settings(i.guild_id)
+        c["enabled"] = not c.get("enabled", True)
+        dm.update_guild_data(i.guild_id, "starboard_config", c)
+        await self.save_config(c, i.guild_id, i.client, i)
+        log_panel_action(i.guild_id, i.user.id, f"Toggled starboard to {c.get('enabled')}")
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
+
+    @ui.button(label="Set Threshold", emoji="📊", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_starboard_threshold")
+    async def set_threshold(self, i, b):
+        class ThresholdModal(ui.Modal, title="Set Star Threshold"):
+            threshold = ui.TextInput(label="Stars Required", placeholder="e.g. 3", default="3")
+            async def on_submit(self, it):
+                try:
+                    val = int(self.threshold.value)
+                    from modules.starboard import StarboardSystem
+                    starboard = StarboardSystem(it.client)
+                    c = starboard.get_guild_settings(it.guild_id)
+                    c["threshold"] = val
+                    dm.update_guild_data(it.guild_id, "starboard_config", c)
+                    await it.response.send_message(f"✅ Star threshold set to {val}", ephemeral=True)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid number.", ephemeral=True)
+        await i.response.send_modal(ThresholdModal())
+
+    @ui.button(label="Set Emoji", emoji="⭐", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_starboard_emoji")
+    async def set_emoji(self, i, b):
+        class EmojiModal(ui.Modal, title="Set Star Emoji"):
+            emoji = ui.TextInput(label="Star Emoji", placeholder="⭐", default="⭐")
+            async def on_submit(self, it):
+                from modules.starboard import StarboardSystem
+                starboard = StarboardSystem(it.client)
+                c = starboard.get_guild_settings(it.guild_id)
+                c["emoji"] = self.emoji.value
+                dm.update_guild_data(it.guild_id, "starboard_config", c)
+                await it.response.send_message(f"✅ Star emoji set to {self.emoji.value}", ephemeral=True)
+        await i.response.send_modal(EmojiModal())
+
+    @ui.button(label="Toggle Auto-Pin", emoji="📌", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_starboard_pin")
+    async def toggle_pin(self, i, b):
+        from modules.starboard import StarboardSystem
+        starboard = StarboardSystem(i.client)
+        c = starboard.get_guild_settings(i.guild_id)
+        c["auto_pin"] = not c.get("auto_pin", True)
+        dm.update_guild_data(i.guild_id, "starboard_config", c)
+        await self.save_config(c, i.guild_id, i.client, i)
+
+    @ui.button(label="Set Pin Threshold", emoji="📍", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_starboard_pin_thresh")
+    async def set_pin_thresh(self, i, b):
+        class PinThreshModal(ui.Modal, title="Set Pin Threshold"):
+            threshold = ui.TextInput(label="Stars for Auto-Pin", placeholder="e.g. 10", default="10")
+            async def on_submit(self, it):
+                try:
+                    val = int(self.threshold.value)
+                    from modules.starboard import StarboardSystem
+                    starboard = StarboardSystem(it.client)
+                    c = starboard.get_guild_settings(it.guild_id)
+                    c["pin_threshold"] = val
+                    dm.update_guild_data(it.guild_id, "starboard_config", c)
+                    await it.response.send_message(f"✅ Pin threshold set to {val} stars", ephemeral=True)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid number.", ephemeral=True)
+        await i.response.send_modal(PinThreshModal())
+
+    @ui.button(label="Add Reward", emoji="🎁", style=discord.ButtonStyle.success, row=2, custom_id="cfg_starboard_add_reward")
+    async def add_reward(self, i, b):
+        class RewardModal(ui.Modal, title="Add Star Reward"):
+            stars = ui.TextInput(label="Stars Required", placeholder="e.g. 5")
+            coins = ui.TextInput(label="Coins Reward", placeholder="e.g. 10", default="0")
+            xp = ui.TextInput(label="XP Reward", placeholder="e.g. 5", default="0")
+            async def on_submit(self, it):
+                try:
+                    stars = str(int(self.stars.value))
+                    coins = int(self.coins.value)
+                    xp = int(self.xp.value)
+                    from modules.starboard import StarboardSystem
+                    starboard = StarboardSystem(it.client)
+                    c = starboard.get_guild_settings(it.guild_id)
+                    rewards = c.get("reward_thresholds", {})
+                    rewards[stars] = {"coins": coins, "xp": xp}
+                    c["reward_thresholds"] = rewards
+                    dm.update_guild_data(it.guild_id, "starboard_config", c)
+                    await it.response.send_message(f"✅ Added reward for {stars} stars", ephemeral=True)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid numbers.", ephemeral=True)
+        await i.response.send_modal(RewardModal())
+
+    @ui.button(label="Remove Reward", emoji="🗑️", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_starboard_rem_reward")
+    async def rem_reward(self, i, b):
+        from modules.starboard import StarboardSystem
+        starboard = StarboardSystem(i.client)
+        c = starboard.get_guild_settings(i.guild_id)
+        rewards = c.get("reward_thresholds", {})
+        if not rewards:
+            return await i.response.send_message("❌ No rewards configured.", ephemeral=True)
+
+        class RemSelect(ui.Select):
+            async def callback(self, it):
+                from modules.starboard import StarboardSystem
+                starboard = StarboardSystem(it.client)
+                c = starboard.get_guild_settings(it.guild_id)
+                rewards = c.get("reward_thresholds", {})
+                if self.values[0] in rewards:
+                    del rewards[self.values[0]]
+                    c["reward_thresholds"] = rewards
+                    dm.update_guild_data(it.guild_id, "starboard_config", c)
+                    await it.response.send_message(f"✅ Removed reward for {self.values[0]} stars", ephemeral=True)
+
+        view = ui.View()
+        opts = [discord.SelectOption(label=f"{stars} stars", value=stars) for stars in sorted(rewards.keys(), key=lambda x: int(x))[:25]]
+        view.add_item(RemSelect(placeholder="Select reward to remove...", options=opts))
+        await i.response.send_message("Select reward:", view=view, ephemeral=True)
+
+    @ui.button(label="Set Starboard Channel", emoji="📢", style=discord.ButtonStyle.primary, row=3, custom_id="cfg_starboard_channel")
+    async def set_channel(self, i, b):
+        class StarboardChannelSelect(ui.ChannelSelect):
+            def __init__(self):
+                super().__init__(
+                    placeholder="Select Starboard Channel",
+                    channel_types=[discord.ChannelType.text],
+                    min_values=1, max_values=1,
+                )
+
+            async def callback(self, interaction: Interaction):
+                from modules.starboard import StarboardSystem
+                starboard = StarboardSystem(interaction.client)
+                starboard.set_starboard_channel(interaction.guild_id, self.values[0].id)
+                starboard._save_guild_data(interaction.guild_id)  # Save the data
+                await interaction.response.send_message(f"✅ Starboard channel set to <#{self.values[0].id}>", ephemeral=True)
+                # Update the config panel
+                if self.view and hasattr(self.view, 'config_panel'):
+                    await self.view.config_panel.save_config({}, interaction.guild_id, interaction.client, interaction)
+
+        view = ui.View()
+        view.add_item(StarboardChannelSelect())
+        await i.response.send_message("Select Channel:", view=view, ephemeral=True)
+
+
 # --- Registry ---
 
 SPECIALIZED_VIEWS = {
