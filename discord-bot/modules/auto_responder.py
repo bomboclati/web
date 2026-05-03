@@ -47,16 +47,22 @@ class AutoResponder:
         """Check if message triggers any auto-responder."""
         if message.author.bot or not message.guild:
             return None
-        
+
         guild_id = message.guild.id
+
+        # Check if auto-responder system is globally enabled
+        config = dm.get_guild_data(guild_id, "auto_responder_config", {"enabled": True})
+        if not config.get("enabled", True):
+            return None
+
         content = message.content.lower()
         responders = self.get_responders(guild_id)
-        
+
         # Check channel restrictions
         allowed_channels = dm.get_guild_data(guild_id, "auto_responder_channels", None)
         if allowed_channels and str(message.channel.id) not in allowed_channels:
             return None
-        
+
         # Check role restrictions
         allowed_roles = dm.get_guild_data(guild_id, "auto_responder_roles", None)
         if allowed_roles:

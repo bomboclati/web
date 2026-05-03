@@ -3691,132 +3691,7 @@ class EconomyConfigView(ConfigPanelView):
         log_panel_action(i.guild_id, i.user.id, f"Toggled economy to {c.get('enabled')}")
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
-    @ui.button(label="Add Responder", emoji="➕", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_ar_add")
-    async def add_responder(self, i, b):
-        class AddModal(ui.Modal, title="Add Auto-Responder"):
-            trigger = ui.TextInput(label="Trigger Keyword/Phrase")
-            response = ui.TextInput(label="Response Message", style=discord.TextStyle.paragraph)
-            async def on_submit(self, it):
-                rs = dm.get_guild_data(it.guild_id, "auto_responders", [])
-                rs.append({"id": int(time.time()), "trigger": self.trigger.value, "response": self.response.value, "match": "exact"})
-                dm.update_guild_data(it.guild_id, "auto_responders", rs)
-                await it.response.send_message(f"✅ Added responder for '{self.trigger.value}'", ephemeral=True)
-        await i.response.send_modal(AddModal())
 
-    @ui.button(label="Remove Responder", emoji="➖", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_ar_rem")
-    async def remove_responder(self, i, b):
-        rs = dm.get_guild_data(i.guild_id, "auto_responders", [])
-        if not rs: return await i.response.send_message("❌ No responders.", ephemeral=True)
-        class RemSelect(ui.Select):
-            async def callback(self, it):
-                rs = dm.get_guild_data(it.guild_id, "auto_responders", [])
-                rs = [r for r in rs if str(r.get('id')) != self.values[0]]
-                dm.update_guild_data(it.guild_id, "auto_responders", rs)
-                await it.response.send_message(f"✅ Responder removed.", ephemeral=True)
-        v = ui.View(); opts = [discord.SelectOption(label=r.get('trigger', 'Unknown')[:25], value=str(r.get('id'))) for r in rs[:25]]
-        v.add_item(RemSelect(placeholder="Select responder...", options=opts)); await i.response.send_message("Choose to remove:", view=v, ephemeral=True)
-
-    @ui.button(label="Edit Responder", emoji="✏️", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_ar_edit")
-    async def edit_responder(self, i, b):
-        rs = dm.get_guild_data(i.guild_id, "auto_responders", [])
-        if not rs: return await i.response.send_message("❌ No responders.", ephemeral=True)
-        class EditSelect(ui.Select):
-            async def callback(self, it):
-                rs = dm.get_guild_data(it.guild_id, "auto_responders", [])
-                r = next((r for r in rs if str(r.get('id')) == self.values[0]), None)
-                if not r: return await it.response.send_message("Not found.", ephemeral=True)
-                class EditModal(ui.Modal, title="Edit Responder"):
-                    trigger = ui.TextInput(label="Trigger", default=r.get('trigger'))
-                    response = ui.TextInput(label="Response", style=discord.TextStyle.paragraph, default=r.get('response'))
-                    async def on_submit(self, it2):
-                        r['trigger'] = self.trigger.value; r['response'] = self.response.value
-                        dm.update_guild_data(it2.guild_id, "auto_responders", rs)
-                        await it2.response.send_message("✅ Updated.", ephemeral=True)
-                await it.response.send_modal(EditModal())
-        v = ui.View(); opts = [discord.SelectOption(label=r.get('trigger', 'Unknown')[:25], value=str(r.get('id'))) for r in rs[:25]]
-        v.add_item(EditSelect(placeholder="Select responder...", options=opts)); await i.response.send_message("Choose to edit:", view=v, ephemeral=True)
-
-    @ui.button(label="Cooldown", emoji="⏱️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_ar_cd")
-    async def set_cd(self, i, b):
-        await i.response.send_modal(_NumberModal(self, "cooldown", "Global Cooldown (Seconds)", i.guild_id))
-
-    @ui.button(label="Allowed Channels", emoji="📣", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_ar_ch")
-    async def set_ch(self, i, b):
-        await i.response.send_message("Select channel to toggle:", view=_picker_view(_GenericChannelSelect(self, "allowed_channels", "Toggle Auto-Responder Channel")), ephemeral=True)
-
-    @ui.button(label="Allowed Roles", emoji="🎭", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_ar_rl")
-    async def set_rl(self, i, b):
-        await i.response.send_message("Select role to toggle:", view=_picker_view(_GenericRoleSelect(self, "allowed_roles", "Toggle Auto-Responder Role")), ephemeral=True)
-
-    @ui.button(label="Match Type", emoji="🔍", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_ar_match")
-    async def set_match(self, i, b):
-        rs = dm.get_guild_data(i.guild_id, "auto_responders", [])
-        if not rs: return await i.response.send_message("No responders.", ephemeral=True)
-        class MatchSelect(ui.Select):
-            async def callback(self, it):
-                rid = self.values[0]
-                class TypeSelect(ui.Select):
-                    async def callback(self, it2):
-                        rs2 = dm.get_guild_data(it2.guild_id, "auto_responders", [])
-                        for r2 in rs2:
-                            if str(r2.get('id')) == rid: r2['match'] = self.values[0]; break
-                        dm.update_guild_data(it2.guild_id, "auto_responders", rs2)
-                        await it2.response.send_message(f"✅ Match type set to {self.values[0]}", ephemeral=True)
-                v2 = ui.View(); v2.add_item(TypeSelect(placeholder="Choose match type...", options=[
-                    discord.SelectOption(label="Exact Match", value="exact"),
-                    discord.SelectOption(label="Contains Word", value="contains"),
-                    discord.SelectOption(label="Starts With", value="starts"),
-                    discord.SelectOption(label="Ends With", value="ends"),
-                    discord.SelectOption(label="Regex", value="regex")
-                ])); await it.response.send_message("Select match type:", view=v2, ephemeral=True)
-        v = ui.View(); opts = [discord.SelectOption(label=r.get('trigger', 'Unknown')[:25], value=str(r.get('id'))) for r in rs[:25]]
-        v.add_item(MatchSelect(placeholder="Select responder...", options=opts)); await i.response.send_message("Choose responder:", view=v, ephemeral=True)
-
-    @ui.button(label="Clear All", emoji="🧹", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_ar_clear_all")
-    async def clr_all(self, i, b):
-        class ConfirmModal(ui.Modal, title="Clear All Responders"):
-            confirm = ui.TextInput(label="Type 'CLEAR' to confirm")
-            async def on_submit(self, it):
-                if self.confirm.value == "CLEAR":
-                    dm.update_guild_data(it.guild_id, "auto_responders", [])
-                    await it.response.send_message("✅ All responders have been cleared.", ephemeral=True)
-                else: await it.response.send_message("❌ Cancelled.", ephemeral=True)
-        await i.response.send_modal(ConfirmModal())
-
-    @ui.button(label="Test Responder", emoji="🧪", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_ar_test")
-    async def test_ar(self, i, b):
-        class TestModal(ui.Modal, title="Test Auto-Responder"):
-            msg = ui.TextInput(label="Message to Test")
-            async def on_submit(self, it):
-                await it.response.send_message("🧪 Testing... (Check bot response simulation below)", ephemeral=True)
-        await i.response.send_modal(TestModal())
-
-    @ui.button(label="Bulk Import (JSON)", emoji="📤", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_ar_import")
-    async def bulk_import(self, i, b):
-        class ImportModal(ui.Modal, title="Bulk Import JSON"):
-            data = ui.TextInput(label="JSON Data", style=discord.TextStyle.paragraph, placeholder='[{"trigger": "hi", "response": "hello"}]')
-            async def on_submit(self, it):
-                try:
-                    new = json.loads(self.data.value)
-                    curr = dm.get_guild_data(it.guild_id, "auto_responders", [])
-                    curr.extend(new)
-                    dm.update_guild_data(it.guild_id, "auto_responders", curr)
-                    await it.response.send_message(f"✅ Imported {len(new)} responders.", ephemeral=True)
-                except: await it.response.send_message("❌ Invalid JSON format.", ephemeral=True)
-        await i.response.send_modal(ImportModal())
-
-    @ui.button(label="Export (JSON)", emoji="📥", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_ar_export")
-    async def export_ar(self, i, b):
-        rs = dm.get_guild_data(i.guild_id, "auto_responders", [])
-        import io, json
-        buf = io.BytesIO(json.dumps(rs, indent=2).encode())
-        await i.response.send_message("Exported Responders:", file=discord.File(buf, filename="auto_responders.json"), ephemeral=True)
-
-    @ui.button(label="Responder Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_ar_stats")
-    async def ar_stats(self, i, b):
-        rs = dm.get_guild_data(i.guild_id, "auto_responders", [])
-        total_triggered = sum(r.get('uses', 0) for r in rs)
-        await i.response.send_message(f"📊 **Auto-Responder Stats**\nTotal Responders: {len(rs)}\nTotal Activations: {total_triggered}", ephemeral=True)
 
 
 class ChatChannelsConfigView(ConfigPanelView):
@@ -4705,6 +4580,220 @@ class StarboardConfigView(ConfigPanelView):
         view = ui.View()
         view.add_item(StarboardChannelSelect())
         await i.response.send_message("Select Channel:", view=view, ephemeral=True)
+
+
+class AutoResponderConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "auto_responder")
+
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
+        gid = guild_id or self.guild_id
+        config = dm.get_guild_data(gid, "auto_responder_config", {"enabled": True, "cooldown": 5})
+        responders = dm.get_guild_data(gid, "auto_responders", [])
+
+        # Use animated emoji in title
+        title = create_animated_embed_title("auto_responder", "Auto-Responder Configuration")
+        embed = discord.Embed(title=title, color=discord.Color.blue() if config.get("enabled", True) else discord.Color.dark_grey())
+
+        # Set thumbnail
+        thumbnail_url = get_panel_thumbnail("auto_responder")
+        if thumbnail_url:
+            embed.set_thumbnail(url=thumbnail_url)
+        elif guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        elif guild:
+            embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+
+        embed.add_field(name="Status", value="✅ Enabled" if config.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Total Responders", value=str(len(responders)), inline=True)
+        embed.add_field(name="Global Cooldown", value=f"{config.get('cooldown', 5)}s", inline=True)
+
+        enabled_count = sum(1 for r in responders if r.get("enabled", True))
+        embed.add_field(name="Active Responders", value=str(enabled_count), inline=True)
+        embed.add_field(name="Disabled Responders", value=str(len(responders) - enabled_count), inline=True)
+
+        # Channel restrictions
+        channels = dm.get_guild_data(gid, "auto_responder_channels", None)
+        if channels:
+            embed.add_field(name="Allowed Channels", value=f"{len(channels)} restricted", inline=True)
+        else:
+            embed.add_field(name="Allowed Channels", value="All channels", inline=True)
+
+        # Role restrictions
+        roles = dm.get_guild_data(gid, "auto_responder_roles", None)
+        if roles:
+            embed.add_field(name="Allowed Roles", value=f"{len(roles)} restricted", inline=True)
+        else:
+            embed.add_field(name="Allowed Roles", value="All roles", inline=True)
+
+        # Show sample responders
+        if responders:
+            sample = responders[:3]
+            trigger_list = "\n".join([f"• `{r.get('trigger', 'Unknown')[:20]}...`" for r in sample])
+            embed.add_field(name="Sample Triggers", value=trigger_list or "_None_", inline=False)
+        else:
+            embed.add_field(name="Sample Triggers", value="_No responders configured_", inline=False)
+
+        return embed
+
+    @ui.button(label="Toggle System", emoji=get_animated_emoji("auto_responder"), style=discord.ButtonStyle.success, row=0, custom_id="cfg_ar_toggle")
+    async def toggle_system(self, i, b):
+        config = dm.get_guild_data(i.guild_id, "auto_responder_config", {"enabled": True, "cooldown": 5})
+        config["enabled"] = not config.get("enabled", True)
+        dm.update_guild_data(i.guild_id, "auto_responder_config", config)
+        await self.save_config(config, i.guild_id, i.client, i)
+        log_panel_action(i.guild_id, i.user.id, f"Toggled auto-responder to {config.get('enabled')}")
+        await i.client.auto_setup.update_system_status_embed(i.guild_id)
+
+    @ui.button(label="Add Responder", emoji="➕", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_ar_add")
+    async def add_responder(self, i, b):
+        class AddModal(ui.Modal, title="Add Auto-Responder"):
+            trigger = ui.TextInput(label="Trigger Keyword/Phrase", placeholder="e.g. hello, !help")
+            response = ui.TextInput(label="Response Message", style=discord.TextStyle.paragraph, placeholder="Enter the response message...")
+            match_type = ui.TextInput(label="Match Type", placeholder="exact/contains/starts_with/ends_with/regex", default="contains")
+            async def on_submit(self, it):
+                from modules.auto_responder import AutoResponder
+                ar = AutoResponder(it.client)
+                responder = {
+                    "trigger": self.trigger.value.strip(),
+                    "response": self.response.value.strip(),
+                    "match_type": self.match_type.value.strip().lower()
+                }
+                ar.add_responder(it.guild_id, responder)
+                await it.response.send_message(f"✅ Added responder for '{self.trigger.value}'", ephemeral=True)
+        await i.response.send_modal(AddModal())
+
+    @ui.button(label="Remove Responder", emoji="➖", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_ar_rem")
+    async def remove_responder(self, i, b):
+        responders = dm.get_guild_data(i.guild_id, "auto_responders", [])
+        if not responders:
+            return await i.response.send_message("❌ No responders configured.", ephemeral=True)
+
+        class RemSelect(ui.Select):
+            async def callback(self, it):
+                from modules.auto_responder import AutoResponder
+                ar = AutoResponder(it.client)
+                # Find responder by ID
+                responder_id = int(self.values[0])
+                ar.delete_responder(it.guild_id, responder_id)
+                await it.response.send_message("✅ Responder removed.", ephemeral=True)
+
+        view = ui.View()
+        opts = [discord.SelectOption(label=f"{r.get('trigger', 'Unknown')[:25]} ({r.get('match_type', 'contains')})", value=str(r.get('id'))) for r in responders[:25]]
+        view.add_item(RemSelect(placeholder="Select responder to remove...", options=opts))
+        await i.response.send_message("Choose to remove:", view=view, ephemeral=True)
+
+    @ui.button(label="Edit Responder", emoji="✏️", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_ar_edit")
+    async def edit_responder(self, i, b):
+        responders = dm.get_guild_data(i.guild_id, "auto_responders", [])
+        if not responders:
+            return await i.response.send_message("❌ No responders configured.", ephemeral=True)
+
+        class EditSelect(ui.Select):
+            async def callback(self, it):
+                responders = dm.get_guild_data(it.guild_id, "auto_responders", [])
+                responder = next((r for r in responders if str(r.get('id')) == self.values[0]), None)
+                if not responder:
+                    return await it.response.send_message("❌ Responder not found.", ephemeral=True)
+
+                class EditModal(ui.Modal, title="Edit Responder"):
+                    trigger = ui.TextInput(label="Trigger", default=responder.get('trigger', ''))
+                    response = ui.TextInput(label="Response", style=discord.TextStyle.paragraph, default=responder.get('response', ''))
+                    match_type = ui.TextInput(label="Match Type", default=responder.get('match_type', 'contains'))
+                    async def on_submit(self, it2):
+                        from modules.auto_responder import AutoResponder
+                        ar = AutoResponder(it2.client)
+                        updates = {
+                            "trigger": self.trigger.value.strip(),
+                            "response": self.response.value.strip(),
+                            "match_type": self.match_type.value.strip().lower()
+                        }
+                        ar.update_responder(it2.guild_id, responder['id'], updates)
+                        await it2.response.send_message("✅ Responder updated.", ephemeral=True)
+                await it.response.send_modal(EditModal())
+
+        view = ui.View()
+        opts = [discord.SelectOption(label=f"{r.get('trigger', 'Unknown')[:25]} ({r.get('match_type', 'contains')})", value=str(r.get('id'))) for r in responders[:25]]
+        view.add_item(EditSelect(placeholder="Select responder to edit...", options=opts))
+        await i.response.send_message("Choose to edit:", view=view, ephemeral=True)
+
+    @ui.button(label="Set Cooldown", emoji="⏱️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_ar_cd")
+    async def set_cooldown(self, i, b):
+        class CooldownModal(ui.Modal, title="Set Global Cooldown"):
+            cooldown = ui.TextInput(label="Cooldown (seconds)", placeholder="e.g. 5", default="5")
+            async def on_submit(self, it):
+                try:
+                    cd = max(0, int(self.cooldown.value))
+                    config = dm.get_guild_data(it.guild_id, "auto_responder_config", {"enabled": True, "cooldown": 5})
+                    config["cooldown"] = cd
+                    dm.update_guild_data(it.guild_id, "auto_responder_config", config)
+                    await it.response.send_message(f"✅ Global cooldown set to {cd} seconds.", ephemeral=True)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid number.", ephemeral=True)
+        await i.response.send_modal(CooldownModal())
+
+    @ui.button(label="Channel Restrictions", emoji="📢", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_ar_channels")
+    async def set_channels(self, i, b):
+        await i.response.send_message("Select Allowed Channels:", view=_picker_view(_GenericChannelSelect(self, "auto_responder_channels", "Auto-Responder Channels")), ephemeral=True)
+
+    @ui.button(label="Role Restrictions", emoji="👥", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_ar_roles")
+    async def set_roles(self, i, b):
+        await i.response.send_message("Select Allowed Roles:", view=_picker_view(_GenericRoleSelect(self, "auto_responder_roles", "Auto-Responder Roles")), ephemeral=True)
+
+    @ui.button(label="Toggle Responder", emoji="🔄", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_ar_toggle_resp")
+    async def toggle_responder(self, i, b):
+        responders = dm.get_guild_data(i.guild_id, "auto_responders", [])
+        if not responders:
+            return await i.response.send_message("❌ No responders configured.", ephemeral=True)
+
+        class ToggleSelect(ui.Select):
+            async def callback(self, it):
+                from modules.auto_responder import AutoResponder
+                ar = AutoResponder(it.client)
+                responder_id = int(self.values[0])
+                responder = next((r for r in responders if r.get('id') == responder_id), None)
+                if responder:
+                    new_state = not responder.get("enabled", True)
+                    ar.update_responder(it.guild_id, responder_id, {"enabled": new_state})
+                    await it.response.send_message(f"✅ Responder {'enabled' if new_state else 'disabled'}.", ephemeral=True)
+
+        view = ui.View()
+        opts = [discord.SelectOption(label=f"{r.get('trigger', 'Unknown')[:20]}... ({'✅' if r.get('enabled', True) else '❌'})", value=str(r.get('id'))) for r in responders[:25]]
+        view.add_item(ToggleSelect(placeholder="Select responder to toggle...", options=opts))
+        await i.response.send_message("Choose to toggle:", view=view, ephemeral=True)
+
+    @ui.button(label="List All", emoji="📋", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_ar_list")
+    async def list_responders(self, i, b):
+        responders = dm.get_guild_data(i.guild_id, "auto_responders", [])
+        if not responders:
+            return await i.response.send_message("❌ No responders configured.", ephemeral=True)
+
+        # Split into chunks if too many
+        chunks = [responders[i:i+10] for i in range(0, len(responders), 10)]
+        for idx, chunk in enumerate(chunks):
+            text = f"**Auto-Responders (Page {idx+1}/{len(chunks)}):**\n\n"
+            for r in chunk:
+                status = "✅" if r.get("enabled", True) else "❌"
+                text += f"{status} **{r.get('trigger', 'Unknown')}**\n"
+                text += f"   └ {r.get('response', 'No response')[:50]}{'...' if len(r.get('response', '')) > 50 else ''}\n"
+                text += f"   └ Match: {r.get('match_type', 'contains')}\n\n"
+
+            embed = discord.Embed(title=f"Auto-Responders List", description=text, color=discord.Color.blue())
+            await i.response.send_message(embed=embed, ephemeral=True)
+            if idx < len(chunks) - 1:
+                await asyncio.sleep(0.5)  # Brief pause between pages
+
+    @ui.button(label="Clear All", emoji="🧹", style=discord.ButtonStyle.danger, row=4, custom_id="cfg_ar_clear")
+    async def clear_all(self, i, b):
+        dm.update_guild_data(i.guild_id, "auto_responders", [])
+        await i.response.send_message("✅ All auto-responders cleared.", ephemeral=True)
+
+    @ui.button(label="Export", emoji="📤", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_ar_export")
+    async def export_responders(self, i, b):
+        responders = dm.get_guild_data(i.guild_id, "auto_responders", [])
+        import json, io
+        buf = io.BytesIO(json.dumps(responders, indent=2).encode())
+        await i.response.send_message("Auto-Responders Export:", file=discord.File(buf, filename="auto_responders.json"), ephemeral=True)
 
 
 # --- Registry ---
