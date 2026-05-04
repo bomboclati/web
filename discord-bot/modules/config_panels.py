@@ -420,34 +420,6 @@ class VerificationConfigView(ConfigPanelView):
         await self.save_config(c, i.guild_id, i.client, i)
         log_panel_action(i.guild_id, i.user.id, f"Toggled verification to {c.get('enabled')}")
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
-        for item in self.children:
-            if isinstance(item, ui.Button) and item.custom_id == "cfg_verify_toggle":
-                if c.get("enabled", True):
-                    item.label = "Disable"
-                    item.style = discord.ButtonStyle.danger
-                    item.emoji = get_animated_emoji("verification")
-                else:
-                    item.label = "Enable"
-                    item.style = discord.ButtonStyle.success
-                    item.emoji = get_animated_emoji("verification")
-                break
-    async def toggle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
-        await self.save_config(c, i.guild_id, i.client, i)
-        log_panel_action(i.guild_id, i.user.id, f"Toggled verification to {c.get('enabled')}")
-        await i.client.auto_setup.update_system_status_embed(i.guild_id)
-        for item in self.children:
-            if isinstance(item, ui.Button) and item.custom_id == "cfg_verify_toggle":
-                if c.get("enabled", True):
-                    item.label = "Disable"
-                    item.style = discord.ButtonStyle.danger
-                    item.emoji = get_animated_emoji("verification")
-                else:
-                    item.label = "Enable"
-                    item.style = discord.ButtonStyle.success
-                    item.emoji = get_animated_emoji("verification")
-                break
-        await self.update_panel(i)
 
     @ui.button(label="Set Verified Role", emoji="🔢", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_verify_set_v")
     async def set_v(self, i, b):
@@ -3691,161 +3663,7 @@ class EconomyConfigView(ConfigPanelView):
         log_panel_action(i.guild_id, i.user.id, f"Toggled economy to {c.get('enabled')}")
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
-    @ui.button(label="Check Balance", emoji="💰", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_eco_balance")
-    async def check_balance(self, i, b):
-        from actions import ActionHandler
-        handler = ActionHandler(i.client)
-        # Create a fake message to trigger the balance command
-        fake_msg = type('FakeMessage', (), {
-            'content': '!balance',
-            'author': i.user,
-            'guild': i.guild,
-            'channel': i.channel
-        })()
-        await handler.handle_economy_balance(fake_msg)
-
-    @ui.button(label="Daily Reward", emoji="📅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_eco_daily")
-    async def daily_reward(self, i, b):
-        from actions import ActionHandler
-        handler = ActionHandler(i.client)
-        # Create a fake message to trigger the daily command
-        fake_msg = type('FakeMessage', (), {
-            'content': '!daily',
-            'author': i.user,
-            'guild': i.guild,
-            'channel': i.channel
-        })()
-        await handler.handle_economy_daily(fake_msg)
-
-    @ui.button(label="Work Job", emoji="💼", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_eco_work")
-    async def work_job(self, i, b):
-        from actions import ActionHandler
-        handler = ActionHandler(i.client)
-        # Create a fake message to trigger the work command
-        fake_msg = type('FakeMessage', (), {
-            'content': '!work',
-            'author': i.user,
-            'guild': i.guild,
-            'channel': i.channel
-        })()
-        await handler.handle_economy_work(fake_msg)
-
-    @ui.button(label="Shop", emoji="🛒", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_eco_shop")
-    async def view_shop(self, i, b):
-        from actions import ActionHandler
-        handler = ActionHandler(i.client)
-        # Create a fake message to trigger the shop command
-        fake_msg = type('FakeMessage', (), {
-            'content': '!shop',
-            'author': i.user,
-            'guild': i.guild,
-            'channel': i.channel
-        })()
-        await handler.handle_economy_shop(fake_msg)
-
-    @ui.button(label="Leaderboard", emoji="🏆", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_eco_leaderboard")
-    async def view_leaderboard(self, i, b):
-        from actions import ActionHandler
-        handler = ActionHandler(i.client)
-        # Create a fake message to trigger the leaderboard command
-        fake_msg = type('FakeMessage', (), {
-            'content': '!leaderboard',
-            'author': i.user,
-            'guild': i.guild,
-            'channel': i.channel
-        })()
-        await handler.handle_economy_leaderboard(fake_msg)
-
-    @ui.button(label="Transfer Coins", emoji="💸", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_eco_transfer")
-    async def transfer_coins(self, i, b):
-        class TransferModal(ui.Modal, title="Transfer Coins"):
-            recipient = ui.TextInput(label="Recipient User ID", placeholder="Enter user ID")
-            amount = ui.TextInput(label="Amount", placeholder="Enter amount to transfer")
-            async def on_submit(self, it):
-                try:
-                    recipient_id = int(self.recipient.value)
-                    amount = int(self.amount.value)
-                    from modules.economy import Economy
-                    economy = Economy(it.client)
-                    success = economy.transfer_coins(it.guild_id, it.user.id, recipient_id, amount)
-                    if success:
-                        await it.response.send_message(f"✅ Transferred {amount} coins!", ephemeral=True)
-                    else:
-                        await it.response.send_message("❌ Transfer failed. Check balance and recipient.", ephemeral=True)
-                except ValueError:
-                    await it.response.send_message("❌ Invalid user ID or amount.", ephemeral=True)
-        await i.response.send_modal(TransferModal())
-
-    @ui.button(label="Rob User", emoji="🏴‍☠️", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_eco_rob")
-    async def rob_user(self, i, b):
-        from actions import ActionHandler
-        handler = ActionHandler(i.client)
-        # Create a fake message to trigger the rob command
-        fake_msg = type('FakeMessage', (), {
-            'content': '!rob',
-            'author': i.user,
-            'guild': i.guild,
-            'channel': i.channel
-        })()
-        await handler.handle_economy_rob(fake_msg)
-
-    @ui.button(label="Beg for Coins", emoji="🙏", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_eco_beg")
-    async def beg_coins(self, i, b):
-        from actions import ActionHandler
-        handler = ActionHandler(i.client)
-        # Create a fake message to trigger the beg command
-        fake_msg = type('FakeMessage', (), {
-            'content': '!beg',
-            'author': i.user,
-            'guild': i.guild,
-            'channel': i.channel
-        })()
-        await handler.handle_economy_beg(fake_msg)
-
-    @ui.button(label="Buy Item", emoji="🛍️", style=discord.ButtonStyle.primary, row=3, custom_id="cfg_eco_buy")
-    async def buy_item(self, i, b):
-        class BuyModal(ui.Modal, title="Buy Shop Item"):
-            item_name = ui.TextInput(label="Item Name", placeholder="Enter item name from shop")
-            async def on_submit(self, it):
-                from actions import ActionHandler
-                handler = ActionHandler(it.client)
-                # Create a fake message to trigger the buy command
-                fake_msg = type('FakeMessage', (), {
-                    'content': f'!buy {self.item_name.value}',
-                    'author': it.user,
-                    'guild': it.guild,
-                    'channel': it.channel
-                })()
-                await handler.handle_economy_buy(fake_msg)
-        await i.response.send_modal(BuyModal())
-
-    @ui.button(label="Reset Balance", emoji="🔄", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_eco_reset")
-    async def reset_balance(self, i, b):
-        class ConfirmModal(ui.Modal, title="Reset Balance"):
-            confirm = ui.TextInput(label="Type 'RESET' to confirm", placeholder="This will set balance to 0")
-            async def on_submit(self, it):
-                if self.confirm.value.upper() == "RESET":
-                    from modules.economy import Economy
-                    economy = Economy(it.client)
-                    await economy.reset_balance_simple(it.guild_id, it.user.id, it)
-                else:
-                    await it.response.send_message("❌ Confirmation failed.", ephemeral=True)
-        await i.response.send_modal(ConfirmModal())
-
-    @ui.button(label="Economy Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_eco_stats")
-    async def economy_stats(self, i, b):
-        from modules.economy import Economy
-        economy = Economy(i.client)
-        total_users = len(dm.get_guild_data(i.guild_id, "economy_balances", {}))
-        total_coins = sum(dm.get_guild_data(i.guild_id, "economy_balances", {}).values())
-        embed = discord.Embed(
-            title="📊 Economy Statistics",
-            description=f"Total Users: {total_users}\nTotal Coins in Circulation: {total_coins:,}",
-            color=discord.Color.gold()
-        )
-        await i.response.send_message(embed=embed, ephemeral=True)
-
-    @ui.button(label="Set Currency", emoji="💱", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_eco_currency")
+    @ui.button(label="Set Currency", emoji="💱", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_eco_currency")
     async def set_currency(self, i, b):
         class CurrencyModal(ui.Modal, title="Set Currency Settings"):
             name = ui.TextInput(label="Currency Name", placeholder="e.g. Coins", default="Coins")
@@ -3854,24 +3672,154 @@ class EconomyConfigView(ConfigPanelView):
             async def on_submit(self, it):
                 try:
                     c = dm.get_guild_data(it.guild_id, "economy_config", {})
-                    c["currency_name"] = self.name.value
-                    c["currency_emoji"] = self.emoji.value
+                    c["currency_name"] = self.name.value.strip()
+                    c["currency_emoji"] = self.emoji.value.strip()
                     c["starting_balance"] = int(self.starting_balance.value)
                     dm.update_guild_data(it.guild_id, "economy_config", c)
                     await it.response.send_message("✅ Currency settings updated!", ephemeral=True)
-                    # Update the config panel embed
-                    if hasattr(it, 'message') and it.message:
-                        new_embed = it.message.embeds[0] if it.message.embeds else None
-                        if new_embed:
-                            # Re-create the embed with updated config
-                            config = dm.get_guild_data(it.guild_id, "economy_config", {})
-                            title = create_animated_embed_title("economy", "Economy System Configuration")
-                            new_embed.title = title
-                            new_embed.description = f"**Status:** {'✅ Enabled' if config.get('enabled', True) else '❌ Disabled'}\n**Currency:** {config.get('currency_emoji', '🪙')} {config.get('currency_name', 'Coins')}\n**Starting Balance:** {config.get('starting_balance', 100)}"
-                            await it.message.edit(embed=new_embed)
                 except ValueError:
                     await it.response.send_message("❌ Invalid starting balance.", ephemeral=True)
         await i.response.send_modal(CurrencyModal())
+
+    @ui.button(label="Daily Settings", emoji="📅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_eco_daily_settings")
+    async def set_daily_settings(self, i, b):
+        class DailyModal(ui.Modal, title="Daily Reward Settings"):
+            amount = ui.TextInput(label="Daily Amount", placeholder="e.g. 100", default="100")
+            streak_bonus = ui.TextInput(label="Streak Bonus %", placeholder="e.g. 50", default="50")
+            cooldown = ui.TextInput(label="Cooldown Hours", placeholder="e.g. 24", default="24")
+            async def on_submit(self, it):
+                try:
+                    c = dm.get_guild_data(it.guild_id, "economy_config", {})
+                    c["daily_amount"] = int(self.amount.value)
+                    c["daily_streak_bonus"] = int(self.streak_bonus.value)
+                    c["daily_cooldown_seconds"] = int(self.cooldown.value) * 3600
+                    dm.update_guild_data(it.guild_id, "economy_config", c)
+                    await self.save_config(c, it.guild_id, it.client, it)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid numbers.", ephemeral=True)
+        await i.response.send_modal(DailyModal())
+
+    @ui.button(label="Work Rewards", emoji="💼", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_eco_work_settings")
+    async def set_work_settings(self, i, b):
+        class WorkModal(ui.Modal, title="Work Reward Settings"):
+            min_reward = ui.TextInput(label="Min Reward", placeholder="e.g. 50", default="50")
+            max_reward = ui.TextInput(label="Max Reward", placeholder="e.g. 200", default="200")
+            cooldown = ui.TextInput(label="Cooldown Minutes", placeholder="e.g. 60", default="60")
+            async def on_submit(self, it):
+                try:
+                    c = dm.get_guild_data(it.guild_id, "economy_config", {})
+                    c["work_min"] = int(self.min_reward.value)
+                    c["work_max"] = int(self.max_reward.value)
+                    c["work_cooldown_seconds"] = int(self.cooldown.value) * 60
+                    dm.update_guild_data(it.guild_id, "economy_config", c)
+                    await self.save_config(c, it.guild_id, it.client, it)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid numbers.", ephemeral=True)
+        await i.response.send_modal(WorkModal())
+
+    @ui.button(label="Beg Settings", emoji="🙏", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_eco_beg_settings")
+    async def set_beg_settings(self, i, b):
+        class BegModal(ui.Modal, title="Beg Reward Settings"):
+            min_reward = ui.TextInput(label="Min Reward", placeholder="e.g. 10", default="10")
+            max_reward = ui.TextInput(label="Max Reward", placeholder="e.g. 50", default="50")
+            cooldown = ui.TextInput(label="Cooldown Seconds", placeholder="e.g. 60", default="60")
+            async def on_submit(self, it):
+                try:
+                    c = dm.get_guild_data(it.guild_id, "economy_config", {})
+                    c["beg_min"] = int(self.min_reward.value)
+                    c["beg_max"] = int(self.max_reward.value)
+                    c["beg_cooldown_seconds"] = int(self.cooldown.value)
+                    dm.update_guild_data(it.guild_id, "economy_config", c)
+                    await self.save_config(c, it.guild_id, it.client, it)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid numbers.", ephemeral=True)
+        await i.response.send_modal(BegModal())
+
+    @ui.button(label="Rob Settings", emoji="🏴‍☠️", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_eco_rob_settings")
+    async def set_rob_settings(self, i, b):
+        class RobModal(ui.Modal, title="Rob Settings"):
+            success_rate = ui.TextInput(label="Success Rate %", placeholder="e.g. 40", default="40")
+            cooldown = ui.TextInput(label="Cooldown Minutes", placeholder="e.g. 60", default="60")
+            async def on_submit(self, it):
+                try:
+                    c = dm.get_guild_data(it.guild_id, "economy_config", {})
+                    c["rob_success_rate"] = float(self.success_rate.value) / 100
+                    c["rob_cooldown_seconds"] = int(self.cooldown.value) * 60
+                    dm.update_guild_data(it.guild_id, "economy_config", c)
+                    await self.save_config(c, it.guild_id, it.client, it)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid numbers.", ephemeral=True)
+        await i.response.send_modal(RobModal())
+
+    @ui.button(label="Earn Rates", emoji="📈", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_eco_earn_rates")
+    async def set_earn_rates(self, i, b):
+        class EarnModal(ui.Modal, title="Message/Voice Earn Rates"):
+            msg_coins = ui.TextInput(label="Coins per Message", placeholder="e.g. 2", default="2")
+            voice_coins = ui.TextInput(label="Coins per Voice Minute", placeholder="e.g. 5", default="5")
+            gem_chance = ui.TextInput(label="Gem Chance %", placeholder="e.g. 1", default="1")
+            async def on_submit(self, it):
+                try:
+                    c = dm.get_guild_data(it.guild_id, "economy_config", {})
+                    rates = c.get("earn_rates", {})
+                    rates["coins_per_message"] = int(self.msg_coins.value)
+                    rates["coins_per_voice_minute"] = int(self.voice_coins.value)
+                    rates["gem_chance"] = float(self.gem_chance.value) / 100
+                    c["earn_rates"] = rates
+                    dm.update_guild_data(it.guild_id, "economy_config", c)
+                    await self.save_config(c, it.guild_id, it.client, it)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid numbers.", ephemeral=True)
+        await i.response.send_modal(EarnModal())
+
+    @ui.button(label="Toggle Voice XP", emoji="🎧", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_eco_voice_toggle")
+    async def toggle_voice_xp(self, i, b):
+        c = dm.get_guild_data(i.guild_id, "economy_config", {})
+        c["voice_xp_enabled"] = not c.get("voice_xp_enabled", True)
+        dm.update_guild_data(i.guild_id, "economy_config", c)
+        await self.save_config(c, i.guild_id, i.client, i)
+
+    @ui.button(label="Weekly Double XP", emoji="📊", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_eco_weekend_toggle")
+    async def toggle_weekend_bonus(self, i, b):
+        c = dm.get_guild_data(i.guild_id, "economy_config", {})
+        c["double_xp_weekend"] = not c.get("double_xp_weekend", False)
+        dm.update_guild_data(i.guild_id, "economy_config", c)
+        await self.save_config(c, i.guild_id, i.client, i)
+
+    @ui.button(label="Economy Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_eco_stats")
+    async def economy_stats(self, i, b):
+        balances = dm.get_guild_data(i.guild_id, "economy_balances", {})
+        total_users = len(balances)
+        total_coins = sum(balances.values())
+        transactions = dm.get_guild_data(i.guild_id, "economy_transactions", [])
+        embed = discord.Embed(
+            title="📊 Economy Statistics",
+            description=f"**Total Users:** {total_users}\n**Total Coins:** {total_coins:,}\n**Transactions:** {len(transactions)}",
+            color=discord.Color.gold()
+        )
+        await i.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="Reset All Balances", emoji="🔄", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_eco_reset_all")
+    async def reset_all_balances(self, i, b):
+        class ConfirmModal(ui.Modal, title="Reset ALL Balances"):
+            confirm = ui.TextInput(label="Type 'RESET ALL' to confirm", placeholder="This will reset EVERYONE's balance to starting amount")
+            async def on_submit(self, it):
+                if self.confirm.value.upper() == "RESET ALL":
+                    config = dm.get_guild_data(it.guild_id, "economy_config", {})
+                    starting = config.get("starting_balance", 100)
+                    balances = {}
+                    user_ids = dm.list_user_ids(it.guild_id)
+                    for uid in user_ids:
+                        balances[str(uid)] = starting
+                    dm.update_guild_data(it.guild_id, "economy_balances", balances)
+                    await it.response.send_message(f"✅ Reset all balances to {starting}!", ephemeral=True)
+                else:
+                    await it.response.send_message("❌ Confirmation failed.", ephemeral=True)
+        await i.response.send_modal(ConfirmModal())
+
+    @ui.button(label="Clear Transactions", emoji="🗑️", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_eco_clear_tx")
+    async def clear_transactions(self, i, b):
+        dm.update_guild_data(i.guild_id, "economy_transactions", [])
+        await i.response.send_message("✅ Transaction history cleared.", ephemeral=True)
 
 
 
@@ -4399,8 +4347,133 @@ class LevelingConfigView(ConfigPanelView):
     @ui.button(label="Disable", emoji=get_animated_emoji("leveling"), style=discord.ButtonStyle.danger, row=0, custom_id="cfg_lvl_toggle")
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
-        self.save_config(c, i.guild_id, i.client, i)
-        await self.update_panel(i)
+        await self.save_config(c, i.guild_id, i.client, i)
+
+    @ui.button(label="XP per Message", emoji="💬", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_lvl_xp_msg")
+    async def set_xp_per_message(self, i, b):
+        class XPModal(ui.Modal, title="XP per Message Settings"):
+            min_xp = ui.TextInput(label="Min XP per Message", placeholder="e.g. 15", default="15")
+            max_xp = ui.TextInput(label="Max XP per Message", placeholder="e.g. 25", default="25")
+            async def on_submit(self, it):
+                try:
+                    c = dm.get_guild_data(it.guild_id, "leveling_config", {})
+                    c["xp_per_message"] = int(self.min_xp.value)
+                    c["xp_per_message_max"] = int(self.max_xp.value)
+                    dm.update_guild_data(it.guild_id, "leveling_config", c)
+                    await self.save_config(c, it.guild_id, it.client, it)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid XP values.", ephemeral=True)
+        await i.response.send_modal(XPModal())
+
+    @ui.button(label="Voice XP", emoji="🎧", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_lvl_voice_xp")
+    async def set_voice_xp(self, i, b):
+        class VoiceModal(ui.Modal, title="Voice XP Settings"):
+            xp_per_minute = ui.TextInput(label="XP per Voice Minute", placeholder="e.g. 10", default="10")
+            async def on_submit(self, it):
+                try:
+                    c = dm.get_guild_data(it.guild_id, "leveling_config", {})
+                    c["xp_per_voice_minute"] = int(self.xp_per_minute.value)
+                    dm.update_guild_data(it.guild_id, "leveling_config", c)
+                    await self.save_config(c, it.guild_id, it.client, it)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid XP value.", ephemeral=True)
+        await i.response.send_modal(VoiceModal())
+
+    @ui.button(label="Level Up Reward", emoji="🎁", style=discord.ButtonStyle.success, row=1, custom_id="cfg_lvl_reward")
+    async def set_level_reward(self, i, b):
+        class RewardModal(ui.Modal, title="Level Up Reward"):
+            coins = ui.TextInput(label="Coins per Level Up", placeholder="e.g. 50", default="50")
+            async def on_submit(self, it):
+                try:
+                    c = dm.get_guild_data(it.guild_id, "leveling_config", {})
+                    c["level_up_reward"] = int(self.coins.value)
+                    dm.update_guild_data(it.guild_id, "leveling_config", c)
+                    await self.save_config(c, it.guild_id, it.client, it)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid coin amount.", ephemeral=True)
+        await i.response.send_modal(RewardModal())
+
+    @ui.button(label="Toggle Voice XP", emoji="🔊", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_lvl_toggle_voice")
+    async def toggle_voice_xp(self, i, b):
+        c = dm.get_guild_data(i.guild_id, "leveling_config", {})
+        c["voice_xp_enabled"] = not c.get("voice_xp_enabled", True)
+        dm.update_guild_data(i.guild_id, "leveling_config", c)
+        await self.save_config(c, i.guild_id, i.client, i)
+
+    @ui.button(label="Weekend Double XP", emoji="📅", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_lvl_weekend")
+    async def toggle_weekend_bonus(self, i, b):
+        c = dm.get_guild_data(i.guild_id, "leveling_config", {})
+        c["double_xp_weekend"] = not c.get("double_xp_weekend", False)
+        dm.update_guild_data(i.guild_id, "leveling_config", c)
+        await self.save_config(c, i.guild_id, i.client, i)
+
+    @ui.button(label="Toggle Debt System", emoji="💸", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_lvl_debt")
+    async def toggle_debt_system(self, i, b):
+        c = dm.get_guild_data(i.guild_id, "leveling_config", {})
+        c["debt_system_enabled"] = not c.get("debt_system_enabled", False)
+        dm.update_guild_data(i.guild_id, "leveling_config", c)
+        await self.save_config(c, i.guild_id, i.client, i)
+
+    @ui.button(label="Toggle Prestige", emoji="👑", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_lvl_prestige")
+    async def toggle_prestige(self, i, b):
+        c = dm.get_guild_data(i.guild_id, "leveling_config", {})
+        c["prestige_enabled"] = not c.get("prestige_enabled", False)
+        dm.update_guild_data(i.guild_id, "leveling_config", c)
+        await self.save_config(c, i.guild_id, i.client, i)
+
+    @ui.button(label="XP Multipliers", emoji="✨", style=discord.ButtonStyle.primary, row=2, custom_id="cfg_lvl_multipliers")
+    async def set_multipliers(self, i, b):
+        class MultModal(ui.Modal, title="XP Multipliers"):
+            weekend_mult = ui.TextInput(label="Weekend Multiplier", placeholder="e.g. 2.0", default="2.0")
+            vip_mult = ui.TextInput(label="VIP Multiplier", placeholder="e.g. 1.5", default="1.5")
+            new_user_mult = ui.TextInput(label="New User Multiplier", placeholder="e.g. 2.0", default="2.0")
+            async def on_submit(self, it):
+                try:
+                    multipliers = {
+                        "weekend": float(self.weekend_mult.value),
+                        "vip": float(self.vip_mult.value),
+                        "new_user": float(self.new_user_mult.value)
+                    }
+                    c = dm.get_guild_data(it.guild_id, "leveling_config", {})
+                    c["xp_multipliers"] = multipliers
+                    dm.update_guild_data(it.guild_id, "leveling_config", c)
+                    await self.save_config(c, it.guild_id, it.client, it)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid multiplier values.", ephemeral=True)
+        await i.response.send_modal(MultModal())
+
+    @ui.button(label="Leveling Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_lvl_stats")
+    async def leveling_stats(self, i, b):
+        xp_data = dm.get_guild_data(i.guild_id, "leveling_xp", {})
+        total_users = len(xp_data)
+        total_xp = sum(xp_data.values())
+        gems_data = dm.get_guild_data(i.guild_id, "leveling_gems", {})
+        total_gems = sum(gems_data.values())
+        embed = discord.Embed(
+            title="📊 Leveling Statistics",
+            description=f"**Total Users:** {total_users}\n**Total XP Earned:** {total_xp:,}\n**Total Gems:** {total_gems}",
+            color=discord.Color.blue()
+        )
+        await i.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="Reset All XP", emoji="🔄", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_lvl_reset_xp")
+    async def reset_all_xp(self, i, b):
+        class ConfirmModal(ui.Modal, title="Reset ALL XP"):
+            confirm = ui.TextInput(label="Type 'RESET XP' to confirm", placeholder="This will reset EVERYONE's XP to 0")
+            async def on_submit(self, it):
+                if self.confirm.value.upper() == "RESET XP":
+                    dm.update_guild_data(it.guild_id, "leveling_xp", {})
+                    dm.update_guild_data(it.guild_id, "leveling_gems", {})
+                    dm.update_guild_data(it.guild_id, "leveling_streaks", {})
+                    await it.response.send_message("✅ Reset all XP and gems!", ephemeral=True)
+                else:
+                    await it.response.send_message("❌ Confirmation failed.", ephemeral=True)
+        await i.response.send_modal(ConfirmModal())
+
+    @ui.button(label="Clear Transactions", emoji="🗑️", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_lvl_clear_tx")
+    async def clear_leveling_tx(self, i, b):
+        dm.update_guild_data(i.guild_id, "leveling_transactions", [])
+        await i.response.send_message("✅ Leveling transaction history cleared.", ephemeral=True)
 
 
 class LevelingShopConfigView(ConfigPanelView):
