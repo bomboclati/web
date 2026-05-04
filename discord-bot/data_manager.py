@@ -567,5 +567,24 @@ class DataManager:
 
 # Initialize global DataManager
 # Use SQLite by default for better performance, but can be overridden
+    def list_user_ids(self, guild_id: int) -> List[int]:
+        """Return all user IDs that have data in this guild"""
+        # Get all keys from guild data that contain user IDs
+        user_ids = set()
+
+        # Check economy balances
+        balances = self.get_guild_data(guild_id, "economy_balances", {})
+        user_ids.update(int(uid) for uid in balances.keys())
+
+        # Check leveling data
+        xp_data = self.get_guild_data(guild_id, "leveling_xp", {})
+        user_ids.update(int(uid) for uid in xp_data.keys())
+
+        # Check warnings
+        warnings = self.get_guild_data(guild_id, "warnings", {})
+        user_ids.update(int(uid) for uid in warnings.keys())
+
+        return list(user_ids)
+
 use_sqlite = os.getenv("USE_SQLITE", "true").lower() == "true"
 dm = DataManager(use_sqlite=use_sqlite)

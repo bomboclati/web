@@ -51,6 +51,35 @@ class Economy:
         gems[str(user_id)] = current + amount
         dm.update_guild_data(guild_id, "economy_gems", gems)
     
+    def transfer_coins(self, guild_id: int, from_user_id: int, to_user_id: int, amount: int) -> bool:
+        """Transfer coins from one user to another"""
+        if amount <= 0:
+            return False
+
+        from_balance = self.get_coins(guild_id, from_user_id)
+        if from_balance < amount:
+            return False
+
+        # Deduct from sender
+        self.add_coins(guild_id, from_user_id, -amount)
+        # Add to recipient
+        self.add_coins(guild_id, to_user_id, amount)
+
+        # Log transactions
+        self.log_transaction(guild_id, from_user_id, -amount, "transfer_out", f"Transferred to {to_user_id}")
+        self.log_transaction(guild_id, to_user_id, amount, "transfer_in", f"Received from {from_user_id}")
+
+        return True
+
+    async def reset_balance_simple(self, guild_id: int, user_id: int, interaction: discord.Interaction):
+        """Reset a user's balance to 0"""
+        old_balance = self.get_coins(guild_id, user_id)
+        balances = dm.get_guild_data(guild_id, "economy_balances", {})
+        balances[str(user_id)] = 0
+        dm.update_guild_data(guild_id, "economy_balances", balances)
+        self.log_transaction(guild_id, user_id, -old_balance, "reset", "Admin reset")
+        await interaction.response.send_message(f"Reset balance from {old_balance} to 0!", ephemeral=True)
+
     def log_transaction(self, guild_id: int, user_id: int, amount: int, tx_type: str, reason: str):
         transactions = dm.get_guild_data(guild_id, "economy_transactions", [])
         transactions.append({
@@ -596,3 +625,9 @@ class ResetBalanceModal(Modal, title="Reset User Balance"):
         from actions import ActionHandler
         handler = ActionHandler(message.guild._state._get_client())
         return await handler.handle_economy_leaderboard(message)
+
+    async def buy(self, message, args):
+        """Handle !buy command"""
+        from actions import ActionHandler
+        handler = ActionHandler(message.guild._state._get_client())
+        return await handler.handle_economy_buy(message)

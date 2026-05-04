@@ -203,7 +203,7 @@ class _GenericRoleSelect(ui.RoleSelect):
     async def callback(self, interaction: Interaction):
         config = self.config_panel.get_config(interaction.guild_id)
         config[self.key] = self.values[0].id
-        self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+        await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {self.values[0].name}")
         await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to {self.values[0].mention}", ephemeral=True)
         # Update the original config panel
@@ -228,7 +228,7 @@ class _GenericChannelSelect(ui.ChannelSelect):
     async def callback(self, interaction: Interaction):
         config = self.config_panel.get_config(interaction.guild_id)
         config[self.key] = self.values[0].id
-        self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+        await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to #{self.values[0].name}")
         await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to <#{self.values[0].id}>", ephemeral=True)
         # Update the original config panel
@@ -279,7 +279,7 @@ class _NumberModal(ui.Modal):
             if user_id not in whitelist:
                 whitelist.append(user_id)
                 config["whitelist"] = whitelist
-                self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+                await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
                 log_panel_action(interaction.guild_id, interaction.user.id, f"Added {user_id} to whitelist")
                 return await interaction.response.send_message(f"✅ User `{user_id}` added to whitelist.", ephemeral=True)
             else:
@@ -292,20 +292,20 @@ class _NumberModal(ui.Modal):
                     y = int(self.second_value.value)
                     config["duplicate_threshold"] = v
                     config["duplicate_window"] = y
-                    self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+                    await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set duplicate filter to {v} msgs in {y}s")
                     return await interaction.response.send_message(f"✅ Duplicate filter: **{v}** messages in **{y}** seconds.", ephemeral=True)
                 except ValueError:
                     return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
             config["duplicate_threshold"] = v
-            self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+            await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set duplicate threshold to {v}")
             return await interaction.response.send_message(f"✅ Duplicate threshold set to **{v}** messages.", ephemeral=True)
         
         # Special handling for mention threshold config
         if self.key == "mention_threshold_config":
             config["mention_threshold"] = v
-            self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+            await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set mention threshold to {v}")
             return await interaction.response.send_message(f"✅ Max mentions per message: **{v}**.", ephemeral=True)
         
@@ -316,13 +316,13 @@ class _NumberModal(ui.Modal):
                     max_v = int(self.second_value.value)
                     config["work_min"] = v
                     config["work_max"] = max_v
-                    self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+                    await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set work rewards to {v}-{max_v}")
                     return await interaction.response.send_message(f"✅ Work rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
                 except ValueError:
                     return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
             config["work_min"] = v
-            self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+            await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set work min to {v}")
             return await interaction.response.send_message(f"✅ Work min reward set to **{v}**.", ephemeral=True)
         
@@ -333,19 +333,19 @@ class _NumberModal(ui.Modal):
                     max_v = int(self.second_value.value)
                     config["beg_min"] = v
                     config["beg_max"] = max_v
-                    self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+                    await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set beg rewards to {v}-{max_v}")
                     return await interaction.response.send_message(f"✅ Beg rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
                 except ValueError:
                     return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
             config["beg_min"] = v
-            self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+            await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set beg min to {v}")
             return await interaction.response.send_message(f"✅ Beg min reward set to **{v}**.", ephemeral=True)
         
         # Default: single value storage
         config[self.key] = v
-        self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+        await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {v}")
         await interaction.response.send_message(f"✅ {self.key.replace('_',' ').title()} set to **{v}**.", ephemeral=True)
 
@@ -364,7 +364,7 @@ class _TextModal(ui.Modal):
     async def on_submit(self, interaction: Interaction):
         config = self.config_panel.get_config(interaction.guild_id)
         config[self.key] = self.value_input.value
-        self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+        await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Updated text field {self.key}")
         await interaction.response.send_message(f"✅ {self.key.replace('_',' ').title()} updated.", ephemeral=True)
 
@@ -804,7 +804,7 @@ class GuardianConfigView(ConfigPanelView):
                 if self.confirm.value == "RESET":
                     c = self.config_panel.get_config(it.guild_id)
                     c.clear()
-                    self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                    await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                     await it.response.send_message("✅ Guardian rules have been reset.", ephemeral=True)
                 else: await it.response.send_message("❌ Cancelled.", ephemeral=True)
         modal = ConfirmModal()
@@ -1089,7 +1089,7 @@ class ApplicationConfigView(ConfigPanelView):
             async def on_submit(self, it):
                 qs = [q.strip() for q in self.input.value.split("\n") if q.strip()][:5]
                 c = self.config_panel.get_config(it.guild_id); c["questions"] = qs
-                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message(f"✅ Questions updated ({len(qs)} set).", ephemeral=True)
         await i.response.send_modal(QModal(self))
 
@@ -1169,7 +1169,7 @@ class ApplicationConfigView(ConfigPanelView):
                 if self.input.value not in types:
                     types.append(self.input.value)
                     c["application_types"] = types
-                    self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                    await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                     await it.response.send_message(f"✅ Added application type: {self.input.value}", ephemeral=True)
                 else:
                     await it.response.send_message("❌ Type already exists.", ephemeral=True)
@@ -1251,7 +1251,7 @@ class AppealsConfigView(ConfigPanelView):
             async def on_submit(self, it):
                 qs = [s.strip() for s in self.q.value.split("\n") if s.strip()][:4]
                 c = self.config_panel.get_config(it.guild_id); c["questions"] = qs
-                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message(f"✅ Questions updated.", ephemeral=True)
         await i.response.send_modal(QModal(self))
 
@@ -2576,7 +2576,7 @@ class WarningConfigView(ConfigPanelView):
                 c["thresholds"]["moderate"]["count"] = int(self.moderate.value)
                 c["thresholds"]["severe"]["count"] = int(self.severe.value)
                 c["thresholds"]["critical"]["count"] = int(self.critical.value)
-                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Threshold counts updated.", ephemeral=True)
         await i.response.send_modal(ThreshModal(self))
 
@@ -2675,7 +2675,7 @@ class AutoModConfigView(ConfigPanelView):
                     "action": self.action.value.lower(),
                     "enabled": True
                 })
-                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Spam filter updated.", ephemeral=True)
         await i.response.send_modal(SpamModal(self))
 
@@ -2698,7 +2698,7 @@ class AutoModConfigView(ConfigPanelView):
                     "action": self.action.value.lower(),
                     "enabled": True
                 })
-                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Mention filter updated.", ephemeral=True)
         await i.response.send_modal(MentModal(self))
 
@@ -2721,7 +2721,7 @@ class AutoModConfigView(ConfigPanelView):
                     "action": self.action.value.lower(),
                     "enabled": True
                 })
-                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Caps filter updated.", ephemeral=True)
         await i.response.send_modal(CapsModal(self))
 
@@ -2750,7 +2750,7 @@ class AutoModConfigView(ConfigPanelView):
                     "whitelisted_domains": domains,
                     "enabled": True
                 })
-                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Link filter updated.", ephemeral=True)
         await i.response.send_modal(LinkModal(self))
 
@@ -2831,7 +2831,7 @@ class AutoModConfigView(ConfigPanelView):
                     "4": self.p4.value.lower(),
                     "5": "ban"
                 })
-                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Escalation settings updated.", ephemeral=True)
         await i.response.send_modal(EscModal(self))
 
@@ -3036,7 +3036,7 @@ class StaffReviewsConfigView(ConfigPanelView):
                     if ":" in line:
                         name, weight = line.split(":")
                         new_crit.append({"name": name.strip(), "weight": float(weight.strip())})
-                c = self.config_panel.get_config(it.guild_id); c["criteria"] = new_crit; self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                c = self.config_panel.get_config(it.guild_id); c["criteria"] = new_crit; await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Criteria updated.", ephemeral=True)
         await i.response.send_modal(CritModal(self))
 
@@ -3044,7 +3044,7 @@ class StaffReviewsConfigView(ConfigPanelView):
     async def set_cycle(self, i, b):
         class CycleSelect(ui.Select):
             async def callback(self, it):
-                c = self.config_panel.get_config(it.guild_id); c["cycle"] = self.values[0]; self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                c = self.config_panel.get_config(it.guild_id); c["cycle"] = self.values[0]; await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message(f"✅ Cycle set to {self.values[0]}.", ephemeral=True)
         v = ui.View(); v.add_item(CycleSelect(options=[discord.SelectOption(label="Weekly", value="weekly"), discord.SelectOption(label="Bi-Weekly", value="bi-weekly"), discord.SelectOption(label="Monthly", value="monthly")])); await i.response.send_message("Select cycle frequency:", view=v, ephemeral=True)
 
@@ -3054,7 +3054,7 @@ class StaffReviewsConfigView(ConfigPanelView):
             warn = ui.TextInput(label="Warning Threshold (e.g. 2.5)", default="2.5")
             promo = ui.TextInput(label="Promotion Threshold (e.g. 4.5)", default="4.5")
             async def on_submit(self, it):
-                c = self.config_panel.get_config(it.guild_id); c["thresholds"] = {"warning": float(self.warn.value), "promotion": float(self.promo.value)}; self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                c = self.config_panel.get_config(it.guild_id); c["thresholds"] = {"warning": float(self.warn.value), "promotion": float(self.promo.value)}; await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Thresholds updated.", ephemeral=True)
         await i.response.send_modal(ThreshModal())
 
@@ -3454,7 +3454,7 @@ class SuggestionsConfigView(ConfigPanelView):
                 c = self.config_panel.get_config(it.guild_id) if hasattr(self, 'parent') else {}
                 c["categories"] = categories
                 if hasattr(self, 'parent'):
-                    self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                    await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 else:
                     dm.update_guild_data(it.guild_id, "suggestions_config", c)
                 await it.response.send_message(f"✅ Categories updated: {', '.join(categories)}", ephemeral=True)
@@ -3542,7 +3542,7 @@ class _TicketEmbedModal(ui.Modal):
             c["panel_title"] = self.title_in.value
             c["panel_description"] = self.desc_in.value
             c["panel_color"] = color
-            self.config_panel.save_config(c, interaction.guild_id, interaction.client, interaction)
+            await self.config_panel.save_config(c, interaction.guild_id, interaction.client, interaction)
             await interaction.response.send_message("✅ Ticket panel customized.", ephemeral=True)
         except:
             await interaction.response.send_message("❌ Invalid color.", ephemeral=True)
@@ -3596,7 +3596,7 @@ class GamificationConfigView(ConfigPanelView):
             async def on_submit(self, it):
                 c = self.config_panel.get_config(it.guild_id)
                 c["prestige_level"] = int(self.level.value)
-                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ Prestige level updated.", ephemeral=True)
         await i.response.send_modal(PrestigeModal(self))
 
@@ -3610,7 +3610,7 @@ class GamificationConfigView(ConfigPanelView):
             async def on_submit(self, it):
                 c = self.config_panel.get_config(it.guild_id)
                 c["xp_multiplier"] = float(self.mult.value)
-                self.config_panel.save_config(c, it.guild_id, it.client, interaction)
+                await self.config_panel.save_config(c, it.guild_id, it.client, interaction)
                 await it.response.send_message("✅ XP multiplier updated.", ephemeral=True)
         await i.response.send_modal(XPModal(self))
 
@@ -3690,6 +3690,188 @@ class EconomyConfigView(ConfigPanelView):
         await self.save_config(c, i.guild_id, i.client, i)
         log_panel_action(i.guild_id, i.user.id, f"Toggled economy to {c.get('enabled')}")
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
+
+    @ui.button(label="Check Balance", emoji="💰", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_eco_balance")
+    async def check_balance(self, i, b):
+        from actions import ActionHandler
+        handler = ActionHandler(i.client)
+        # Create a fake message to trigger the balance command
+        fake_msg = type('FakeMessage', (), {
+            'content': '!balance',
+            'author': i.user,
+            'guild': i.guild,
+            'channel': i.channel
+        })()
+        await handler.handle_economy_balance(fake_msg)
+
+    @ui.button(label="Daily Reward", emoji="📅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_eco_daily")
+    async def daily_reward(self, i, b):
+        from actions import ActionHandler
+        handler = ActionHandler(i.client)
+        # Create a fake message to trigger the daily command
+        fake_msg = type('FakeMessage', (), {
+            'content': '!daily',
+            'author': i.user,
+            'guild': i.guild,
+            'channel': i.channel
+        })()
+        await handler.handle_economy_daily(fake_msg)
+
+    @ui.button(label="Work Job", emoji="💼", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_eco_work")
+    async def work_job(self, i, b):
+        from actions import ActionHandler
+        handler = ActionHandler(i.client)
+        # Create a fake message to trigger the work command
+        fake_msg = type('FakeMessage', (), {
+            'content': '!work',
+            'author': i.user,
+            'guild': i.guild,
+            'channel': i.channel
+        })()
+        await handler.handle_economy_work(fake_msg)
+
+    @ui.button(label="Shop", emoji="🛒", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_eco_shop")
+    async def view_shop(self, i, b):
+        from actions import ActionHandler
+        handler = ActionHandler(i.client)
+        # Create a fake message to trigger the shop command
+        fake_msg = type('FakeMessage', (), {
+            'content': '!shop',
+            'author': i.user,
+            'guild': i.guild,
+            'channel': i.channel
+        })()
+        await handler.handle_economy_shop(fake_msg)
+
+    @ui.button(label="Leaderboard", emoji="🏆", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_eco_leaderboard")
+    async def view_leaderboard(self, i, b):
+        from actions import ActionHandler
+        handler = ActionHandler(i.client)
+        # Create a fake message to trigger the leaderboard command
+        fake_msg = type('FakeMessage', (), {
+            'content': '!leaderboard',
+            'author': i.user,
+            'guild': i.guild,
+            'channel': i.channel
+        })()
+        await handler.handle_economy_leaderboard(fake_msg)
+
+    @ui.button(label="Transfer Coins", emoji="💸", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_eco_transfer")
+    async def transfer_coins(self, i, b):
+        class TransferModal(ui.Modal, title="Transfer Coins"):
+            recipient = ui.TextInput(label="Recipient User ID", placeholder="Enter user ID")
+            amount = ui.TextInput(label="Amount", placeholder="Enter amount to transfer")
+            async def on_submit(self, it):
+                try:
+                    recipient_id = int(self.recipient.value)
+                    amount = int(self.amount.value)
+                    from modules.economy import Economy
+                    economy = Economy(it.client)
+                    success = economy.transfer_coins(it.guild_id, it.user.id, recipient_id, amount)
+                    if success:
+                        await it.response.send_message(f"✅ Transferred {amount} coins!", ephemeral=True)
+                    else:
+                        await it.response.send_message("❌ Transfer failed. Check balance and recipient.", ephemeral=True)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid user ID or amount.", ephemeral=True)
+        await i.response.send_modal(TransferModal())
+
+    @ui.button(label="Rob User", emoji="🏴‍☠️", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_eco_rob")
+    async def rob_user(self, i, b):
+        from actions import ActionHandler
+        handler = ActionHandler(i.client)
+        # Create a fake message to trigger the rob command
+        fake_msg = type('FakeMessage', (), {
+            'content': '!rob',
+            'author': i.user,
+            'guild': i.guild,
+            'channel': i.channel
+        })()
+        await handler.handle_economy_rob(fake_msg)
+
+    @ui.button(label="Beg for Coins", emoji="🙏", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_eco_beg")
+    async def beg_coins(self, i, b):
+        from actions import ActionHandler
+        handler = ActionHandler(i.client)
+        # Create a fake message to trigger the beg command
+        fake_msg = type('FakeMessage', (), {
+            'content': '!beg',
+            'author': i.user,
+            'guild': i.guild,
+            'channel': i.channel
+        })()
+        await handler.handle_economy_beg(fake_msg)
+
+    @ui.button(label="Buy Item", emoji="🛍️", style=discord.ButtonStyle.primary, row=3, custom_id="cfg_eco_buy")
+    async def buy_item(self, i, b):
+        class BuyModal(ui.Modal, title="Buy Shop Item"):
+            item_name = ui.TextInput(label="Item Name", placeholder="Enter item name from shop")
+            async def on_submit(self, it):
+                from actions import ActionHandler
+                handler = ActionHandler(it.client)
+                # Create a fake message to trigger the buy command
+                fake_msg = type('FakeMessage', (), {
+                    'content': f'!buy {self.item_name.value}',
+                    'author': it.user,
+                    'guild': it.guild,
+                    'channel': it.channel
+                })()
+                await handler.handle_economy_buy(fake_msg)
+        await i.response.send_modal(BuyModal())
+
+    @ui.button(label="Reset Balance", emoji="🔄", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_eco_reset")
+    async def reset_balance(self, i, b):
+        class ConfirmModal(ui.Modal, title="Reset Balance"):
+            confirm = ui.TextInput(label="Type 'RESET' to confirm", placeholder="This will set balance to 0")
+            async def on_submit(self, it):
+                if self.confirm.value.upper() == "RESET":
+                    from modules.economy import Economy
+                    economy = Economy(it.client)
+                    await economy.reset_balance_simple(it.guild_id, it.user.id, it)
+                else:
+                    await it.response.send_message("❌ Confirmation failed.", ephemeral=True)
+        await i.response.send_modal(ConfirmModal())
+
+    @ui.button(label="Economy Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_eco_stats")
+    async def economy_stats(self, i, b):
+        from modules.economy import Economy
+        economy = Economy(i.client)
+        total_users = len(dm.get_guild_data(i.guild_id, "economy_balances", {}))
+        total_coins = sum(dm.get_guild_data(i.guild_id, "economy_balances", {}).values())
+        embed = discord.Embed(
+            title="📊 Economy Statistics",
+            description=f"Total Users: {total_users}\nTotal Coins in Circulation: {total_coins:,}",
+            color=discord.Color.gold()
+        )
+        await i.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="Set Currency", emoji="💱", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_eco_currency")
+    async def set_currency(self, i, b):
+        class CurrencyModal(ui.Modal, title="Set Currency Settings"):
+            name = ui.TextInput(label="Currency Name", placeholder="e.g. Coins", default="Coins")
+            emoji = ui.TextInput(label="Currency Emoji", placeholder="e.g. 🪙", default="🪙")
+            starting_balance = ui.TextInput(label="Starting Balance", placeholder="e.g. 100", default="100")
+            async def on_submit(self, it):
+                try:
+                    c = dm.get_guild_data(it.guild_id, "economy_config", {})
+                    c["currency_name"] = self.name.value
+                    c["currency_emoji"] = self.emoji.value
+                    c["starting_balance"] = int(self.starting_balance.value)
+                    dm.update_guild_data(it.guild_id, "economy_config", c)
+                    await it.response.send_message("✅ Currency settings updated!", ephemeral=True)
+                    # Update the config panel embed
+                    if hasattr(it, 'message') and it.message:
+                        new_embed = it.message.embeds[0] if it.message.embeds else None
+                        if new_embed:
+                            # Re-create the embed with updated config
+                            config = dm.get_guild_data(it.guild_id, "economy_config", {})
+                            title = create_animated_embed_title("economy", "Economy System Configuration")
+                            new_embed.title = title
+                            new_embed.description = f"**Status:** {'✅ Enabled' if config.get('enabled', True) else '❌ Disabled'}\n**Currency:** {config.get('currency_emoji', '🪙')} {config.get('currency_name', 'Coins')}\n**Starting Balance:** {config.get('starting_balance', 100)}"
+                            await it.message.edit(embed=new_embed)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid starting balance.", ephemeral=True)
+        await i.response.send_modal(CurrencyModal())
 
 
 
