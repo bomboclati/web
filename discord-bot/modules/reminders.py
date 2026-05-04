@@ -91,7 +91,11 @@ class RemindersPanelView(ConfigPanelView):
     @ui.button(label="View All Active", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_remind_viewall")
     async def view_all(self, interaction: discord.Interaction, button: ui.Button):
         reminders = dm.get_guild_data(interaction.guild_id, "reminders", {})
-        active = [r for r in reminders.values() if r.get("remind_at", 0) > time.time()]
+        if isinstance(reminders, list):
+            all_reminders = reminders
+        else:
+            all_reminders = list(reminders.values())
+        active = [r for r in all_reminders if r.get("remind_at", 0) > time.time()]
         
         if not active:
             return await interaction.response.send_message("📭 No active reminders.", ephemeral=True)
@@ -110,17 +114,21 @@ class RemindersPanelView(ConfigPanelView):
     @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_remind_stats")
     async def stats(self, interaction: discord.Interaction, button: ui.Button):
         reminders = dm.get_guild_data(interaction.guild_id, "reminders", {})
+        if isinstance(reminders, list):
+            all_reminders = reminders
+        else:
+            all_reminders = list(reminders.values())
         now = time.time()
         today_start = now - 86400
         week_start = now - 604800
-        
-        total_active = sum(1 for r in reminders.values() if r.get("remind_at", 0) > now)
-        set_today = sum(1 for r in reminders.values() if r.get("created_at", 0) > today_start)
-        sent_week = sum(1 for r in reminders.values() if r.get("remind_at", 0) < now and r.get("remind_at", 0) > week_start)
-        
+
+        total_active = sum(1 for r in all_reminders if r.get("remind_at", 0) > now)
+        set_today = sum(1 for r in all_reminders if r.get("created_at", 0) > today_start)
+        sent_week = sum(1 for r in all_reminders if r.get("remind_at", 0) < now and r.get("remind_at", 0) > week_start)
+
         # Most active user
         user_counts = {}
-        for r in reminders.values():
+        for r in all_reminders:
             uid = r.get("user_id")
             user_counts[uid] = user_counts.get(uid, 0) + 1
         most_active = max(user_counts.items(), key=lambda x: x[1])[0] if user_counts else None
@@ -893,7 +901,7 @@ class AnnouncementsPanelView(ConfigPanelView):
     def save_config(self, config: dict, guild_id: int = None, client = None):
         dm.update_guild_data(guild_id or self.guild_id, "announcements_config", config)
 
-    def create_embed(self, guild_id: int = None) -> discord.Embed:
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
         embed = discord.Embed(title="📢 Announcements System Configuration", color=discord.Color.gold())
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)

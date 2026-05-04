@@ -5,7 +5,7 @@ Handles suggestion submission, voting, staff review, and complete admin panel
 
 import discord
 from discord import ui, app_commands
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict
 import time
 
@@ -53,8 +53,8 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
             if last_submission:
                 last_time = datetime.fromisoformat(last_submission)
                 cooldown_end = last_time + timedelta(minutes=cooldown_minutes)
-                if datetime.utcnow() < cooldown_end:
-                    time_left = (cooldown_end - datetime.utcnow()).seconds // 60
+                if datetime.now(timezone.utc) < cooldown_end:
+                    time_left = (cooldown_end - datetime.now(timezone.utc)).seconds // 60
                     await interaction.response.send_message(
                         f"⏱️ Please wait **{time_left} more minutes** before submitting another suggestion.",
                         ephemeral=True
@@ -73,7 +73,7 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
             'title': self.title_input.value,
             'description': self.description_input.value,
             'category': 'Other',  # Will be set via select
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'status': 'pending',
             'upvotes': [],
             'downvotes': [],
@@ -136,7 +136,7 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
             'user_id': interaction.user.id,
             'username': interaction.user.name,
             'suggestion_id': suggestion_id,
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'details': f"Suggestion: {self.title_input.value[:100]}"
         })
         guild_data['action_logs'] = action_log[-1000:]

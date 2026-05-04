@@ -119,7 +119,8 @@ class ModmailSystem:
             embed = Embed(title="📬 New Modmail Thread", color=discord.Color.blue())
             embed.set_author(name=f"{user} ({user.id})", icon_url=user.display_avatar.url)
             embed.add_field(name="Account Age", value=f"<t:{int(user.created_at.timestamp())}:R>")
-            embed.add_field(name="Joined Server", value=f"<t:{int(user.joined_at.timestamp())}:R>" if user in guild.members else "Not in server")
+            member = guild.get_member(user.id)
+            embed.add_field(name="Joined Server", value=f"<t:{int(member.joined_at.timestamp())}:R>" if member else "Not in server")
 
             view = ModmailThreadView()
 
