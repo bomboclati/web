@@ -1582,9 +1582,19 @@ class GiveawayConfigView(ConfigPanelView):
             prize = ui.TextInput(label="Prize")
             winners = ui.TextInput(label="Winner Count", default="1")
             duration = ui.TextInput(label="Duration (Hours)", default="24")
+            min_level = ui.TextInput(label="Min Level Required", default="0", required=False)
+            min_coins = ui.TextInput(label="Min Coins Required", default="0", required=False)
+            req_roles = ui.TextInput(label="Required Roles (IDs, comma-separated)", required=False)
             async def on_submit(self, it):
                 try:
-                    await it.client.giveaways.create_giveaway(it.guild_id, it.channel_id, it.user.id, self.prize.value, "Good luck!", self.prize.value, int(self.winners.value), {}, int(self.duration.value))
+                    requirements = {}
+                    if self.min_level.value and self.min_level.value.isdigit():
+                        requirements["min_level"] = int(self.min_level.value)
+                    if self.min_coins.value and self.min_coins.value.isdigit():
+                        requirements["min_coins"] = int(self.min_coins.value)
+                    if self.req_roles.value:
+                        requirements["required_roles"] = [int(r.strip()) for r in self.req_roles.value.split(",") if r.strip().isdigit()]
+                    await it.client.giveaways.create_giveaway(it.guild_id, it.channel_id, it.user.id, self.prize.value, "Good luck!", self.prize.value, int(self.winners.value), requirements, int(self.duration.value))
                     await it.response.send_message("Giveaway created!", ephemeral=True)
                 except Exception as e: await it.response.send_message(f"Error: {e}", ephemeral=True)
         await i.response.send_modal(GModal())
@@ -1672,21 +1682,7 @@ class GiveawayConfigView(ConfigPanelView):
         ended = sum(1 for g in data.values() if g.get("ended"))
         await i.response.send_message(f"📊 **Giveaway Stats**\nTotal Hosted: {total}\nEnded: {ended}\nActive: {total-ended}", ephemeral=True)
 
-    @ui.button(label="Set Requirements", emoji="📋", style=discord.ButtonStyle.primary, row=3, custom_id="cfg_gw_requirements")
-    async def set_requirements(self, i, b):
-        class ReqModal(ui.Modal, title="Set Giveaway Requirements"):
-            min_xp = ui.TextInput(label="Min XP Required", placeholder="0 for none", default="0")
-            roles = ui.TextInput(label="Required Roles (IDs, comma-separated)", placeholder="123456789,987654321", required=False)
-            async def on_submit(self, it):
-                await it.response.defer(ephemeral=True)
-                c = dm.get_guild_data(it.guild_id, "giveaway_settings", {})
-                c["requirements"] = {
-                    "min_xp": int(self.min_xp.value) if self.min_xp.value.isdigit() else 0,
-                    "roles": [int(r.strip()) for r in self.roles.value.split(",") if r.strip().isdigit()] if self.roles.value else []
-                }
-                dm.update_guild_data(it.guild_id, "giveaway_settings", c)
-                await it.followup.send("✅ Giveaway requirements updated.", ephemeral=True)
-        await i.response.send_modal(ReqModal())
+
 
 
     async def config_games(self, i, b):
