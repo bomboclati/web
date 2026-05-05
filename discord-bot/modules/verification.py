@@ -55,7 +55,7 @@ class Verification:
 
     def _get_roles(self, guild: discord.Guild):
         config = self._get_admin_config(guild.id)
-        uv_id = config.get("unverified_role_id")
+        uv_id = config.get("unverified_role")
         v_id = config.get("verified_role_id") or config.get("role_id")
 
         unverified = guild.get_role(uv_id) if uv_id else discord.utils.get(guild.roles, name="Unverified")

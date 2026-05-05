@@ -215,6 +215,26 @@ class _GenericRoleSelect(ui.RoleSelect):
                 from logger import logger
                 logger.error(f"Failed to update config panel after role select: {e}")
 
+class UnverifiedRoleSelect(ui.RoleSelect):
+    def __init__(self, parent: ConfigPanelView):
+        super().__init__(placeholder="Select Unverified Role", min_values=1, max_values=1)
+        self.config_panel = parent
+
+    async def callback(self, interaction: Interaction):
+        config = self.config_panel.get_config(interaction.guild_id)
+        config["unverified_role"] = self.values[0].id
+        await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+        log_panel_action(interaction.guild_id, interaction.user.id, f"Set unverified_role to {self.values[0].name}")
+        await interaction.response.send_message(f"✅ Unverified role set to {self.values[0].mention}", ephemeral=True)
+        # Update the verification panel embed
+        if self.config_panel.panel_message:
+            try:
+                new_embed = self.config_panel.create_embed(guild_id=interaction.guild_id, guild=interaction.guild)
+                await self.config_panel.panel_message.edit(embed=new_embed, view=self.config_panel)
+            except Exception as e:
+                from logger import logger
+                logger.error(f"Failed to update config panel after unverified role select: {e}")
+
 class _GenericChannelSelect(ui.ChannelSelect):
     def __init__(self, parent: ConfigPanelView, key: str, placeholder: str, channel_types=None):
         super().__init__(
@@ -427,7 +447,7 @@ class VerificationConfigView(ConfigPanelView):
 
     @ui.button(label="Set Unverified Role", emoji="🔒", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_verify_set_uv")
     async def set_uv(self, i, b):
-        await i.response.send_message("Select Role:", view=_picker_view(_GenericRoleSelect(self, "unverified_role_id", "Unverified Role")), ephemeral=True)
+        await i.response.send_message("Select Role:", view=_picker_view(UnverifiedRoleSelect(self)), ephemeral=True)
 
     @ui.button(label="Set Verify Channel", emoji="📣", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_verify_set_ch")
     async def set_ch(self, i, b):
@@ -666,16 +686,22 @@ class GuardianConfigView(ConfigPanelView):
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
         # Use animated emoji in title
-        title = create_animated_embed_title("leveling", "Leveling System Configuration")
-        embed = discord.Embed(title=title, color=discord.Color.blue() if c.get("enabled", True) else discord.Color.dark_grey())
+        title = create_animated_embed_title("verification", "Verification System")
+        embed = discord.Embed(title=title, color=discord.Color.green() if c.get("enabled", True) else discord.Color.red())
         # Set thumbnail
-        thumbnail_url = get_panel_thumbnail("leveling")
+        thumbnail_url = get_panel_thumbnail("verification")
         if thumbnail_url:
             embed.set_thumbnail(url=thumbnail_url)
-        if guild and guild.icon:
+        elif guild and guild.icon:
             embed.set_thumbnail(url=guild.icon.url)
         elif guild:
             embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+        unverified_role_id = c.get('unverified_role')
+        if unverified_role_id and guild:
+            role = guild.get_role(unverified_role_id)
+            unverified_value = f"<@&{unverified_role_id}>" if role else "Deleted - Set New"
+        else:
+            unverified_value = "_None_"
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
         embed.add_field(name="XP per Message", value=f"{c.get('xp_per_message', 15)}-{c.get('xp_per_message_max', 25)}", inline=True)
         embed.add_field(name="XP per Minute (Voice)", value=f"{c.get('xp_per_voice_minute', 10)}", inline=True)
