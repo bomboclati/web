@@ -33,7 +33,7 @@ class SnoozeButton(ui.Button):
         self.reminder_id = reminder_id
 
     async def callback(self, interaction: discord.Interaction):
-        rs = interaction.client.reminder_system
+        rs = interaction.client.reminders
         if rs.snooze_reminder(self.reminder_id, 600):
             await interaction.response.send_message("✅ Reminder snoozed for 10 minutes!", ephemeral=True)
         else:
@@ -46,7 +46,7 @@ class DismissButton(ui.Button):
         self.reminder_id = reminder_id
 
     async def callback(self, interaction: discord.Interaction):
-        rs = interaction.client.reminder_system
+        rs = interaction.client.reminders
         if rs.cancel_reminder(self.reminder_id):
             await interaction.response.edit_message(view=None)
             await interaction.followup.send("✅ Reminder dismissed.", ephemeral=True)
@@ -84,13 +84,13 @@ class RemindersPanelView(ConfigPanelView):
         embed.add_field(name="Max Per User", value=str(c.get("max_per_user", 10)), inline=True)
         embed.add_field(name="Fallback Channel", value=f"<#{c.get('fallback_channel')}>" if c.get('fallback_channel') else "_None_", inline=True)
 
-        reminders = dm.get_guild_data(guild_id or self.guild_id, "reminders", {})
+        reminders = dm.get_guild_data(guild_id or self.guild_id, "reminders", [])
         embed.add_field(name="Active Reminders", value=str(len(reminders)), inline=True)
         return embed
 
     @ui.button(label="View All Active", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_remind_viewall")
     async def view_all(self, interaction: discord.Interaction, button: ui.Button):
-        reminders = dm.get_guild_data(interaction.guild_id, "reminders", {})
+        reminders = dm.get_guild_data(interaction.guild_id, "reminders", [])
         if isinstance(reminders, list):
             all_reminders = reminders
         else:
@@ -113,7 +113,7 @@ class RemindersPanelView(ConfigPanelView):
 
     @ui.button(label="Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_remind_stats")
     async def stats(self, interaction: discord.Interaction, button: ui.Button):
-        reminders = dm.get_guild_data(interaction.guild_id, "reminders", {})
+        reminders = dm.get_guild_data(interaction.guild_id, "reminders", [])
         if isinstance(reminders, list):
             all_reminders = reminders
         else:

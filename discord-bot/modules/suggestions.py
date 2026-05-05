@@ -130,7 +130,7 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
                 pass
 
         # Log action
-        action_log = guild_data.get('action_logs', [])
+        action_log = dm.get_guild_data(self.guild_id, 'action_logs', [])
         action_log.append({
             'action': 'suggestion_submitted',
             'user_id': interaction.user.id,
@@ -139,8 +139,7 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'details': f"Suggestion: {self.title_input.value[:100]}"
         })
-        guild_data['action_logs'] = action_log[-1000:]
-        dm.update_guild_data(self.guild_id, guild_data)
+        dm.update_guild_data(self.guild_id, 'action_logs', action_log[-1000:])
         
         await interaction.response.send_message(
             f"✅ Your suggestion **#{suggestion_id}** has been submitted!",
@@ -153,9 +152,8 @@ class SuggestionVoteView(ui.View):
         super().__init__(timeout=None)
         self.suggestion_id = suggestion_id
         self.guild_id = guild_id
-    
-    def _get_suggestion(self, guild_data: dict) -> Optional[dict]:
-        suggestions = guild_data.get('suggestions', [])
+
+    def _get_suggestion(self, suggestions: list) -> Optional[dict]:
         for s in suggestions:
             if s['id'] == self.suggestion_id:
                 return s
@@ -163,8 +161,8 @@ class SuggestionVoteView(ui.View):
     
     @ui.button(label="Upvote", style=discord.ButtonStyle.success, emoji="✅", custom_id="suggestion_upvote")
     async def upvote(self, interaction: discord.Interaction, button: ui.Button):
-        guild_data = dm.get_guild_data(self.guild_id)
-        suggestion = self._get_suggestion(guild_data)
+        suggestions = dm.get_guild_data(self.guild_id, 'suggestions', [])
+        suggestion = self._get_suggestion(suggestions)
         
         if not suggestion:
             await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
@@ -174,14 +172,14 @@ class SuggestionVoteView(ui.View):
         user_id_str = str(user_id)
         
         # Toggle upvote
-        if user_id in suggestion['upvotes']:
-            suggestion['upvotes'].remove(user_id)
-        else:
-            suggestion['upvotes'].append(user_id)
-            if user_id in suggestion.get('downvotes', []):
-                suggestion['downvotes'].remove(user_id)
-        
-        dm.update_guild_data(self.guild_id, guild_data)
+            if user_id in suggestion['upvotes']:
+                suggestion['upvotes'].remove(user_id)
+            else:
+                suggestion['upvotes'].append(user_id)
+                if user_id in suggestion.get('downvotes', []):
+                    suggestion['downvotes'].remove(user_id)
+
+        dm.update_guild_data(self.guild_id, 'suggestions', suggestions)
         
         # Update embed
         if interaction.message and interaction.message.embeds:
@@ -211,8 +209,8 @@ class SuggestionVoteView(ui.View):
     
     @ui.button(label="Downvote", style=discord.ButtonStyle.danger, emoji="❌", custom_id="suggestion_downvote")
     async def downvote(self, interaction: discord.Interaction, button: ui.Button):
-        guild_data = dm.get_guild_data(self.guild_id)
-        suggestion = self._get_suggestion(guild_data)
+        suggestions = dm.get_guild_data(self.guild_id, 'suggestions', [])
+        suggestion = self._get_suggestion(suggestions)
         
         if not suggestion:
             await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
@@ -221,16 +219,16 @@ class SuggestionVoteView(ui.View):
         user_id = interaction.user.id
         
         # Toggle downvote
-        if user_id in suggestion.get('downvotes', []):
-            suggestion['downvotes'].remove(user_id)
-        else:
-            if 'downvotes' not in suggestion:
-                suggestion['downvotes'] = []
-            suggestion['downvotes'].append(user_id)
-            if user_id in suggestion['upvotes']:
-                suggestion['upvotes'].remove(user_id)
-        
-        dm.update_guild_data(self.guild_id, guild_data)
+            if user_id in suggestion.get('downvotes', []):
+                suggestion['downvotes'].remove(user_id)
+            else:
+                if 'downvotes' not in suggestion:
+                    suggestion['downvotes'] = []
+                suggestion['downvotes'].append(user_id)
+                if user_id in suggestion['upvotes']:
+                    suggestion['upvotes'].remove(user_id)
+
+        dm.update_guild_data(self.guild_id, 'suggestions', suggestions)
         
         # Update embed
         if interaction.message and interaction.message.embeds:
@@ -259,8 +257,8 @@ class SuggestionVoteView(ui.View):
     
     @ui.button(label="Results", style=discord.ButtonStyle.secondary, emoji="📊", custom_id="suggestion_results")
     async def results(self, interaction: discord.Interaction, button: ui.Button):
-        guild_data = dm.get_guild_data(self.guild_id)
-        suggestion = self._get_suggestion(guild_data)
+        suggestions = dm.get_guild_data(self.guild_id, 'suggestions', [])
+        suggestion = self._get_suggestion(suggestions)
         
         if not suggestion:
             await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
@@ -289,9 +287,8 @@ class SuggestionReviewView(ui.View):
         super().__init__(timeout=None)
         self.suggestion_id = suggestion_id
         self.guild_id = guild_id
-    
-    def _get_suggestion(self, guild_data: dict) -> Optional[dict]:
-        suggestions = guild_data.get('suggestions', [])
+
+    def _get_suggestion(self, suggestions: list) -> Optional[dict]:
         for s in suggestions:
             if s['id'] == self.suggestion_id:
                 return s
@@ -302,9 +299,9 @@ class SuggestionReviewView(ui.View):
         if not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
             return
-        
-        guild_data = dm.get_guild_data(self.guild_id)
-        suggestion = self._get_suggestion(guild_data)
+
+        suggestions = dm.get_guild_data(self.guild_id, 'suggestions', [])
+        suggestion = self._get_suggestion(suggestions)
         
         if not suggestion:
             await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
@@ -313,10 +310,10 @@ class SuggestionReviewView(ui.View):
         suggestion['status'] = 'approved'
         suggestion['reviewed_by'] = interaction.user.id
         suggestion['review_timestamp'] = datetime.now(timezone.utc).isoformat()
-        dm.update_guild_data(self.guild_id, guild_data)
+        dm.update_guild_data(self.guild_id, 'suggestions', suggestions)
         
         # Update original embed
-        suggestions_channel_id = guild_data.get('suggestions_channel_id')
+        suggestions_channel_id = dm.get_guild_data(self.guild_id, 'suggestions_channel_id')
         if suggestions_channel_id:
             channel = interaction.client.get_channel(suggestions_channel_id)
             if channel:
@@ -331,31 +328,30 @@ class SuggestionReviewView(ui.View):
                         await msg.edit(embed=embed, view=None)
                 except:
                     pass
-        
+
         # DM submitter
-        send_dms = guild_data.get('suggestions_send_dms', True)
+        send_dms = dm.get_guild_data(self.guild_id, 'suggestions_send_dms', True)
         if send_dms:
-            approval_dm = guild_data.get('suggestions_approval_dm',
+            approval_dm = dm.get_guild_data(self.guild_id, 'suggestions_approval_dm',
                 "🎉 **Your suggestion has been approved!**\n\nThank you for contributing to {server}. "
                 "Our team will work on implementing it.")
             approval_dm = approval_dm.replace('{server}', interaction.guild.name)
-            
+
             try:
                 user = await interaction.client.fetch_user(suggestion['user_id'])
                 await user.send(approval_dm)
             except:
                 pass
-        
+
         # Log
-        action_log = guild_data.get('action_logs', [])
+        action_log = dm.get_guild_data(self.guild_id, 'action_logs', [])
         action_log.append({
             'action': 'suggestion_approved',
             'moderator_id': interaction.user.id,
             'suggestion_id': self.suggestion_id,
             'timestamp': datetime.now(timezone.utc).isoformat()
         })
-        guild_data['action_logs'] = action_log[-1000:]
-        dm.update_guild_data(self.guild_id, guild_data)
+        dm.update_guild_data(self.guild_id, 'action_logs', action_log[-1000:])
         
         await interaction.response.send_message("✅ Suggestion approved!", ephemeral=True)
     
@@ -372,19 +368,19 @@ class SuggestionReviewView(ui.View):
         if not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
             return
-        
-        guild_data = dm.get_guild_data(self.guild_id)
-        suggestion = self._get_suggestion(guild_data)
-        
+
+        suggestions = dm.get_guild_data(self.guild_id, 'suggestions', [])
+        suggestion = self._get_suggestion(suggestions)
+
         if not suggestion:
             await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
             return
-        
+
         suggestion['status'] = 'in_progress'
-        dm.update_guild_data(self.guild_id, guild_data)
+        dm.update_guild_data(self.guild_id, 'suggestions', suggestions)
         
         # Update embed
-        suggestions_channel_id = guild_data.get('suggestions_channel_id')
+        suggestions_channel_id = dm.get_guild_data(self.guild_id, 'suggestions_channel_id')
         if suggestions_channel_id:
             channel = interaction.client.get_channel(suggestions_channel_id)
             if channel:
@@ -399,9 +395,9 @@ class SuggestionReviewView(ui.View):
                         await msg.edit(embed=embed)
                 except:
                     pass
-        
+
         # DM
-        send_dms = guild_data.get('suggestions_send_dms', True)
+        send_dms = dm.get_guild_data(self.guild_id, 'suggestions_send_dms', True)
         if send_dms:
             try:
                 user = await interaction.client.fetch_user(suggestion['user_id'])
@@ -416,19 +412,19 @@ class SuggestionReviewView(ui.View):
         if not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
             return
-        
-        guild_data = dm.get_guild_data(self.guild_id)
-        suggestion = self._get_suggestion(guild_data)
-        
+
+        suggestions = dm.get_guild_data(self.guild_id, 'suggestions', [])
+        suggestion = self._get_suggestion(suggestions)
+
         if not suggestion:
             await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
             return
-        
+
         suggestion['status'] = 'completed'
-        dm.update_guild_data(self.guild_id, guild_data)
+        dm.update_guild_data(self.guild_id, 'suggestions', suggestions)
         
         # Update embed
-        suggestions_channel_id = guild_data.get('suggestions_channel_id')
+        suggestions_channel_id = dm.get_guild_data(self.guild_id, 'suggestions_channel_id')
         if suggestions_channel_id:
             channel = interaction.client.get_channel(suggestions_channel_id)
             if channel:
@@ -443,9 +439,9 @@ class SuggestionReviewView(ui.View):
                         await msg.edit(embed=embed)
                 except:
                     pass
-        
+
         # DM
-        send_dms = guild_data.get('suggestions_send_dms', True)
+        send_dms = dm.get_guild_data(self.guild_id, 'suggestions_send_dms', True)
         if send_dms:
             try:
                 user = await interaction.client.fetch_user(suggestion['user_id'])
@@ -460,23 +456,23 @@ class SuggestionReviewView(ui.View):
         if not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
             return
-        
-        guild_data = dm.get_guild_data(self.guild_id)
-        suggestions = guild_data.get('suggestions', [])
-        
+
+        suggestions = dm.get_guild_data(self.guild_id, 'suggestions', [])
+
         # Remove from list
         suggestions = [s for s in suggestions if s['id'] != self.suggestion_id]
-        guild_data['suggestions'] = suggestions
-        dm.update_guild_data(self.guild_id, guild_data)
+        dm.update_guild_data(self.guild_id, 'suggestions', suggestions)
         
         # Delete message
-        suggestions_channel_id = guild_data.get('suggestions_channel_id')
+        suggestions_channel_id = dm.get_guild_data(self.guild_id, 'suggestions_channel_id')
         if suggestions_channel_id:
             channel = interaction.client.get_channel(suggestions_channel_id)
             if channel:
                 try:
-                    msg = await channel.fetch_message(suggestion.get('message_id'))
-                    await msg.delete()
+                    suggestion_data = next((s for s in dm.get_guild_data(self.guild_id, 'suggestions', []) if s['id'] == self.suggestion_id), None)
+                    if suggestion_data:
+                        msg = await channel.fetch_message(suggestion_data.get('message_id'))
+                        await msg.delete()
                 except:
                     pass
         
@@ -487,15 +483,15 @@ class SuggestionReviewView(ui.View):
         if not interaction.user.guild_permissions.manage_messages:
             await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
             return
-        
-        guild_data = dm.get_guild_data(self.guild_id)
-        suggestion = self._get_suggestion(guild_data)
+
+        suggestions = dm.get_guild_data(self.guild_id, 'suggestions', [])
+        suggestion = self._get_suggestion(suggestions)
         
         if not suggestion:
             await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
             return
         
-        suggestions_channel_id = guild_data.get('suggestions_channel_id')
+        suggestions_channel_id = dm.get_guild_data(self.guild_id, 'suggestions_channel_id')
         if suggestions_channel_id:
             channel = interaction.client.get_channel(suggestions_channel_id)
             if channel:
@@ -524,24 +520,24 @@ class DenySuggestionModal(ui.Modal, title="Deny Suggestion"):
         self.add_item(self.reason)
     
     async def on_submit(self, interaction: discord.Interaction):
-        guild_data = dm.get_guild_data(self.guild_id)
+        suggestions = dm.get_guild_data(self.guild_id, 'suggestions', [])
         suggestion = None
-        for s in guild_data.get('suggestions', []):
+        for s in suggestions:
             if s['id'] == self.suggestion_id:
                 suggestion = s
                 break
-        
+
         if not suggestion:
             await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
             return
-        
+
         suggestion['status'] = 'denied'
         suggestion['deny_reason'] = self.reason.value
         suggestion['reviewed_by'] = interaction.user.id
-        dm.update_guild_data(self.guild_id, guild_data)
+        dm.update_guild_data(self.guild_id, 'suggestions', suggestions)
         
         # Update embed
-        suggestions_channel_id = guild_data.get('suggestions_channel_id')
+        suggestions_channel_id = dm.get_guild_data(self.guild_id, 'suggestions_channel_id')
         if suggestions_channel_id:
             channel = interaction.client.get_channel(suggestions_channel_id)
             if channel:
@@ -557,15 +553,15 @@ class DenySuggestionModal(ui.Modal, title="Deny Suggestion"):
                         await msg.edit(embed=embed, view=None)
                 except:
                     pass
-        
+
         # DM
-        send_dms = guild_data.get('suggestions_send_dms', True)
+        send_dms = dm.get_guild_data(self.guild_id, 'suggestions_send_dms', True)
         if send_dms:
-            denial_dm = guild_data.get('suggestions_denial_dm',
+            denial_dm = dm.get_guild_data(self.guild_id, 'suggestions_denial_dm',
                 "❌ **Your suggestion has been denied.**\n\nReason: {reason}\n\n"
                 "Thank you for your contribution.")
             denial_dm = denial_dm.replace('{reason}', self.reason.value)
-            
+
             try:
                 user = await interaction.client.fetch_user(suggestion['user_id'])
                 await user.send(denial_dm)

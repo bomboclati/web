@@ -263,18 +263,13 @@ class _GenericChannelSelect(ui.ChannelSelect):
                 logger.error(f"Failed to update config panel after channel select: {e}")
 
 class _NumberModal(ui.Modal):
-    value_input = ui.TextInput(label="Value", required=True, max_length=15)
-    second_value = ui.TextInput(label="Secondary Value (optional)", required=False, max_length=15)
-
     def __init__(self, parent: ConfigPanelView, key: str, label: str, guild_id: int, min_v: int = 0, max_v: int = 999999999999, second_label: str = None):
         super().__init__(title=label)
         self.config_panel = parent
         self.key = key
         self.min_v, self.max_v = min_v, max_v
-        self.value_input.label = label
-        if second_label:
-            self.second_value.label = second_label
-            self.second_value.required = False
+        self.value_input = ui.TextInput(label=label, required=True, max_length=15)
+        self.second_value = ui.TextInput(label=second_label or "Secondary Value (optional)", required=False, max_length=15)
         existing = parent.get_config(guild_id).get(key)
         if existing is not None:
             if isinstance(existing, (list, tuple)) and len(existing) >= 1:
@@ -373,13 +368,11 @@ class _NumberModal(ui.Modal):
         await interaction.followup.send(f"✅ {self.key.replace('_',' ').title()} set to **{v}**.", ephemeral=True)
 
 class _TextModal(ui.Modal):
-    value_input = ui.TextInput(label="Value", style=discord.TextStyle.paragraph, required=True, max_length=1500)
-
     def __init__(self, parent: ConfigPanelView, key: str, label: str, guild_id: int):
         super().__init__(title=label)
         self.config_panel = parent
         self.key = key
-        self.value_input.label = label
+        self.value_input = ui.TextInput(label=label, style=discord.TextStyle.paragraph, required=True, max_length=1500)
         existing = parent.get_config(guild_id).get(key, "")
         if existing:
             self.value_input.default = str(existing)
@@ -1139,6 +1132,7 @@ class ApplicationConfigView(ConfigPanelView):
     async def toggle_dm(self, i, b):
         c = self.get_config(i.guild_id); c["applicant_dms_enabled"] = not c.get("applicant_dms_enabled", True)
         await self.save_config(c, i.guild_id, i.client, i)
+        await i.response.send_message(f"✅ Applicant DMs {'enabled' if c['applicant_dms_enabled'] else 'disabled'}.", ephemeral=True)
 
     @ui.button(label="Edit Accept DM", emoji="✏️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_app_edit_acc_dm")
     async def edit_acc_dm(self, i, b):
@@ -1184,6 +1178,7 @@ class ApplicationConfigView(ConfigPanelView):
     async def toggle_ping(self, i, b):
         c = self.get_config(i.guild_id); c["auto_ping_enabled"] = not c.get("auto_ping_enabled", False)
         await self.save_config(c, i.guild_id, i.client, i)
+        await i.response.send_message(f"✅ Auto-ping {'enabled' if c['auto_ping_enabled'] else 'disabled'}.", ephemeral=True)
 
     @ui.button(label="Add App Type", emoji="🏷️", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_app_add_type")
     async def add_type(self, i, b):
@@ -1403,7 +1398,33 @@ class ModmailConfigView(ConfigPanelView):
 
     @ui.button(label="Close Inactive", emoji="🗑️", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_modmail_close_inactive")
     async def close_inactive(self, i, b):
-        await i.response.send_message("Processing inactive threads...", ephemeral=True)
+        await i.response.defer(ephemeral=True)
+        threads = dm.get_guild_data(i.guild_id, "modmail_threads", {})
+        config = self.get_config(i.guild_id)
+        auto_close_hours = config.get("auto_close_hours", 168)  # Default 7 days
+        cutoff = time.time() - (auto_close_hours * 3600)
+        closed_count = 0
+
+        for uid, t in list(threads.items()):
+            if t["status"] == "open" and t.get("last_activity", t["opened_at"]) < cutoff:
+                # Close the thread
+                t["status"] = "closed"
+                t["closed_at"] = time.time()
+                t["closed_by"] = i.user.id
+                closed_count += 1
+
+                # Delete the channel/thread if exists
+                if "channel_id" in t:
+                    try:
+                        channel = i.client.get_channel(t["channel_id"])
+                        if channel:
+                            await channel.delete(reason="Auto-closed inactive modmail")
+                    except:
+                        pass
+
+        dm.update_guild_data(i.guild_id, "modmail_threads", threads)
+
+        await i.followup.send(f"✅ Closed {closed_count} inactive threads.", ephemeral=True)
 
     @ui.button(label="View Transcripts", emoji="📋", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_modmail_transcripts")
     async def view_transcripts(self, i, b):
@@ -1820,10 +1841,10 @@ class ReactionMenusConfigView(ConfigPanelView):
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id)
         # Use animated emoji in title
-        title = create_animated_embed_title("verification", "Verification System")
+        title = create_animated_embed_title("reaction_menus", "Reaction Menus System")
         embed = discord.Embed(title=title, color=discord.Color.green() if c.get("enabled", True) else discord.Color.red())
         # Set thumbnail
-        thumbnail_url = get_panel_thumbnail("verification")
+        thumbnail_url = get_panel_thumbnail("reaction_menus")
         if thumbnail_url:
             embed.set_thumbnail(url=thumbnail_url)
         elif guild and guild.icon:
@@ -1978,10 +1999,10 @@ class RoleButtonsConfigView(ConfigPanelView):
     def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
         c = self.get_config(guild_id or self.guild_id)
         # Use animated emoji in title
-        title = create_animated_embed_title("welcome", "Welcome System Configuration")
+        title = create_animated_embed_title("role_buttons", "Role Buttons System Configuration")
         embed = discord.Embed(title=title, color=discord.Color.blue() if c.get("enabled", True) else discord.Color.red())
         # Set thumbnail
-        thumbnail_url = get_panel_thumbnail("welcome")
+        thumbnail_url = get_panel_thumbnail("role_buttons")
         if thumbnail_url:
             embed.set_thumbnail(url=thumbnail_url)
         elif guild and guild.icon:
@@ -2253,6 +2274,7 @@ class StaffPromoConfigView(ConfigPanelView):
         embed.add_field(name="Auto-Promote", value="✅ ON" if settings.get("auto_promote", True) else "❌ OFF", inline=True)
         embed.add_field(name="Review Mode", value="✅ ON" if settings.get("review_mode", False) else "❌ OFF", inline=True)
         embed.add_field(name="Review Channel", value=f"<#{settings.get('review_channel')}>" if settings.get('review_channel') else "None", inline=True)
+        embed.add_field(name="Promotion DMs", value="✅ Enabled" if settings.get("notify_on_promotion", True) else "❌ Disabled", inline=True)
 
         tiers = c.get("tiers", [])
         embed.add_field(name="Hierarchy", value=" → ".join([t['name'] for t in tiers]) or "None", inline=False)
@@ -2985,7 +3007,8 @@ class StaffReviewsConfigView(ConfigPanelView):
 
     @ui.button(label="Pause Cycle", emoji="⏸️", style=discord.ButtonStyle.secondary, row=0, custom_id="cfg_rev_pause")
     async def pause_cycle(self, i, b):
-        c = self.get_config(i.guild_id); c["enabled"] = False; await self.save_config(c, i.guild_id, i.client, i)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); await self.save_config(c, i.guild_id, i.client, i)
+        await i.response.send_message(f"✅ Reviews {'enabled' if c['enabled'] else 'disabled'}.", ephemeral=True)
 
     @ui.button(label="Active Reviews", emoji="📋", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_rev_active")
     async def v_active(self, i, b):
@@ -3141,6 +3164,7 @@ class StaffShiftsConfigView(ConfigPanelView):
         embed.add_field(name="On-Duty Role", value=f"<@&{c.get('on_duty_role_id')}>" if c.get('on_duty_role_id') else "None", inline=True)
         embed.add_field(name="Log Channel", value=f"<#{c.get('shift_channel_id')}>" if c.get('shift_channel_id') else "None", inline=True)
         embed.add_field(name="Idle Timeout", value=f"{c.get('idle_timeout_minutes', 30)} mins", inline=True)
+        embed.add_field(name="Notifications", value="✅ Enabled" if c.get("notifications_enabled", True) else "❌ Disabled", inline=True)
 
         # Stats
         history = dm.get_guild_data(guild_id or self.guild_id, "staff_shifts_history", [])
@@ -3279,6 +3303,7 @@ class StaffShiftsConfigView(ConfigPanelView):
     @ui.button(label="Toggle Notifs", emoji="🔕", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_shift_notif")
     async def t_notif(self, i, b):
         c = self.get_config(i.guild_id); c["notifications_enabled"] = not c.get("notifications_enabled", True); await self.save_config(c, i.guild_id, i.client, i)
+        await i.response.send_message(f"✅ Notifications {'enabled' if c['notifications_enabled'] else 'disabled'}.", ephemeral=True)
 
 class LoggingConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
@@ -3951,7 +3976,7 @@ class ChatChannelsConfigView(ConfigPanelView):
     @ui.button(label="Toggle AI Chat", emoji="🔌", style=discord.ButtonStyle.success, row=0, custom_id="cfg_chat_toggle")
     async def toggle_auto(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
-        await self.save_config(c, i.guild_id, i.client)
+        await self.save_config(c, i.guild_id, i.client, i)
         await self.update_panel(i)
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
@@ -4113,7 +4138,20 @@ class ChatChannelsConfigView(ConfigPanelView):
 
     @ui.button(label="Test AI", emoji="🧪", style=discord.ButtonStyle.success, row=2, custom_id="cfg_chat_test")
     async def test_ai(self, i, b):
-        await i.response.send_message("🧪 Sending test prompt to AI... (Check any AI channel for response)", ephemeral=True)
+        c = self.get_config(i.guild_id)
+        channels = c.get("channels", [])
+        if not channels:
+            await i.response.send_message("❌ No AI channels configured. Add channels first.", ephemeral=True)
+            return
+        channel = i.guild.get_channel(channels[0])
+        if not channel:
+            await i.response.send_message("❌ AI channel not found.", ephemeral=True)
+            return
+        try:
+            await channel.send("🧪 **AI Test Message:** Hello! This is a test to verify AI functionality.")
+            await i.response.send_message("✅ Test message sent to AI channel. Check for AI response.", ephemeral=True)
+        except:
+            await i.response.send_message("❌ Failed to send test message.", ephemeral=True)
 
 
 class EventsConfigView(ConfigPanelView):
@@ -5212,7 +5250,12 @@ def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
         _view_cache["ScheduledPanelView"] = ScheduledPanelView
         _view_cache["AnnouncementsPanelView"] = AnnouncementsPanelView
     
-    system_key = system.lower().replace("_", "").replace(" ", "").replace("system", "")
+    system = system.lower().strip()
+    if system.endswith(" system"):
+        system = system[:-7].strip()
+    elif system.endswith(" systems"):
+        system = system[:-8].strip()
+    system_key = system.replace("_", "").replace(" ", "")
     class_name = SPECIALIZED_VIEWS.get(system_key)
     if class_name and class_name in _view_cache:
         return _view_cache[class_name](guild_id)

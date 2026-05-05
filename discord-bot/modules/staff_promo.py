@@ -1063,6 +1063,9 @@ class TierSelect(discord.ui.Select):
             config["tiers"] = tiers
             dm.update_guild_data(self.view.guild_id, "staffpromo_config", config)
             await interaction.response.send_message(f"✅ Removed tier '{removed['name']}'!", ephemeral=True)
+        elif self.action == "requirements":
+            modal = RequirementsModal(self.view.guild_id, index, tier)
+            await interaction.response.send_modal(modal)
 
 
 class TierSelectView(discord.ui.View):
@@ -1104,6 +1107,32 @@ class EditTierModal(discord.ui.Modal):
         dm.update_guild_data(self.guild_id, "staffpromo_config", config)
 
         await interaction.response.send_message(f"✅ Updated tier '{self.name_input.value}'!", ephemeral=True)
+
+
+class RequirementsModal(discord.ui.Modal):
+    def __init__(self, guild_id: int, index: int, tier: dict):
+        super().__init__(title=f"Set Requirements for {tier['name']}")
+        self.guild_id = guild_id
+        self.index = index
+        self.tier = tier
+
+        self.requirements_input = discord.ui.TextInput(
+            label="Requirements",
+            style=discord.TextStyle.long,
+            default=tier.get('requirements', 'None'),
+            placeholder="Describe the requirements for this tier"
+        )
+        self.add_item(self.requirements_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        config = dm.get_guild_data(self.guild_id, "staffpromo_config", {})
+        tiers = config.get("tiers", [])
+
+        tiers[self.index]['requirements'] = self.requirements_input.value
+        config["tiers"] = tiers
+        dm.update_guild_data(self.guild_id, "staffpromo_config", config)
+
+        await interaction.response.send_message(f"✅ Updated requirements for '{tiers[self.index]['name']}'!", ephemeral=True)
 
 
 class StaffPromoRequirementsView(discord.ui.View):

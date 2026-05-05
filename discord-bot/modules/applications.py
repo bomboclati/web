@@ -178,10 +178,13 @@ class ApplicationReviewView(ui.View):
         role_error = None
         applicant = interaction.guild.get_member(app["user_id"])
         if role and applicant:
-            try:
-                await applicant.add_roles(role)
-            except:
-                role_error = f"⚠️ Failed to add role <@&{role_id}> to {applicant.mention}."
+            if interaction.guild.me.top_role > role:
+                try:
+                    await applicant.add_roles(role)
+                except Exception as e:
+                    role_error = f"⚠️ Failed to add role <@&{role_id}> to {applicant.mention}."
+            else:
+                role_error = f"⚠️ Cannot add role <@&{role_id}> - bot's role is not high enough."
 
         if config.get("applicant_dms_enabled", True) and applicant:
             msg = config.get("acceptance_dm", "Congratulations {user}! Your application was accepted for {role}.").format(
