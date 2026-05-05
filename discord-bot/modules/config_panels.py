@@ -283,12 +283,13 @@ class _NumberModal(ui.Modal):
                 self.value_input.default = str(existing)
 
     async def on_submit(self, interaction: Interaction):
+        await interaction.response.defer(ephemeral=True)
         try:
             v = int(self.value_input.value)
             if v < self.min_v or v > self.max_v:
                 raise ValueError
         except ValueError:
-            return await interaction.response.send_message(f"❌ Enter a valid number.", ephemeral=True)
+            return await interaction.followup.send(f"❌ Enter a valid number.", ephemeral=True)
         
         config = self.config_panel.get_config(interaction.guild_id)
         
@@ -299,11 +300,11 @@ class _NumberModal(ui.Modal):
             if user_id not in whitelist:
                 whitelist.append(user_id)
                 config["whitelist"] = whitelist
-                await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+                await self.config_panel.save_config(config, interaction.guild_id, interaction.client)
                 log_panel_action(interaction.guild_id, interaction.user.id, f"Added {user_id} to whitelist")
-                return await interaction.response.send_message(f"✅ User `{user_id}` added to whitelist.", ephemeral=True)
+                return await interaction.followup.send(f"✅ User `{user_id}` added to whitelist.", ephemeral=True)
             else:
-                return await interaction.response.send_message(f"⚠️ User `{user_id}` is already whitelisted.", ephemeral=True)
+                return await interaction.followup.send(f"⚠️ User `{user_id}` is already whitelisted.", ephemeral=True)
         
         # Special handling for duplicate filter (X messages in Y seconds)
         if self.key == "duplicate_threshold_config":
@@ -312,22 +313,22 @@ class _NumberModal(ui.Modal):
                     y = int(self.second_value.value)
                     config["duplicate_threshold"] = v
                     config["duplicate_window"] = y
-                    await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+                    await self.config_panel.save_config(config, interaction.guild_id, interaction.client)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set duplicate filter to {v} msgs in {y}s")
-                    return await interaction.response.send_message(f"✅ Duplicate filter: **{v}** messages in **{y}** seconds.", ephemeral=True)
+                    return await interaction.followup.send(f"✅ Duplicate filter: **{v}** messages in **{y}** seconds.", ephemeral=True)
                 except ValueError:
-                    return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
+                    return await interaction.followup.send("❌ Second value must be a number.", ephemeral=True)
             config["duplicate_threshold"] = v
-            await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+            await self.config_panel.save_config(config, interaction.guild_id, interaction.client)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set duplicate threshold to {v}")
-            return await interaction.response.send_message(f"✅ Duplicate threshold set to **{v}** messages.", ephemeral=True)
+            return await interaction.followup.send(f"✅ Duplicate threshold set to **{v}** messages.", ephemeral=True)
         
         # Special handling for mention threshold config
         if self.key == "mention_threshold_config":
             config["mention_threshold"] = v
-            await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+            await self.config_panel.save_config(config, interaction.guild_id, interaction.client)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set mention threshold to {v}")
-            return await interaction.response.send_message(f"✅ Max mentions per message: **{v}**.", ephemeral=True)
+            return await interaction.followup.send(f"✅ Max mentions per message: **{v}**.", ephemeral=True)
         
         # Special handling for work rewards (min and max)
         if self.key == "work_min":
@@ -336,15 +337,15 @@ class _NumberModal(ui.Modal):
                     max_v = int(self.second_value.value)
                     config["work_min"] = v
                     config["work_max"] = max_v
-                    await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+                    await self.config_panel.save_config(config, interaction.guild_id, interaction.client)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set work rewards to {v}-{max_v}")
-                    return await interaction.response.send_message(f"✅ Work rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
+                    return await interaction.followup.send(f"✅ Work rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
                 except ValueError:
-                    return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
+                    return await interaction.followup.send("❌ Second value must be a number.", ephemeral=True)
             config["work_min"] = v
-            await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+            await self.config_panel.save_config(config, interaction.guild_id, interaction.client)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set work min to {v}")
-            return await interaction.response.send_message(f"✅ Work min reward set to **{v}**.", ephemeral=True)
+            return await interaction.followup.send(f"✅ Work min reward set to **{v}**.", ephemeral=True)
         
         # Special handling for beg rewards (min and max)
         if self.key == "beg_min":
@@ -353,21 +354,21 @@ class _NumberModal(ui.Modal):
                     max_v = int(self.second_value.value)
                     config["beg_min"] = v
                     config["beg_max"] = max_v
-                    await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+                    await self.config_panel.save_config(config, interaction.guild_id, interaction.client)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set beg rewards to {v}-{max_v}")
-                    return await interaction.response.send_message(f"✅ Beg rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
+                    return await interaction.followup.send(f"✅ Beg rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
                 except ValueError:
-                    return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
+                    return await interaction.followup.send("❌ Second value must be a number.", ephemeral=True)
             config["beg_min"] = v
-            await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+            await self.config_panel.save_config(config, interaction.guild_id, interaction.client)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set beg min to {v}")
-            return await interaction.response.send_message(f"✅ Beg min reward set to **{v}**.", ephemeral=True)
+            return await interaction.followup.send(f"✅ Beg min reward set to **{v}**.", ephemeral=True)
         
         # Default: single value storage
         config[self.key] = v
-        await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+        await self.config_panel.save_config(config, interaction.guild_id, interaction.client)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {v}")
-        await interaction.response.send_message(f"✅ {self.key.replace('_',' ').title()} set to **{v}**.", ephemeral=True)
+        await interaction.followup.send(f"✅ {self.key.replace('_',' ').title()} set to **{v}**.", ephemeral=True)
 
 class _TextModal(ui.Modal):
     value_input = ui.TextInput(label="Value", style=discord.TextStyle.paragraph, required=True, max_length=1500)
@@ -382,11 +383,12 @@ class _TextModal(ui.Modal):
             self.value_input.default = str(existing)
 
     async def on_submit(self, interaction: Interaction):
+        await interaction.response.defer(ephemeral=True)
         config = self.config_panel.get_config(interaction.guild_id)
         config[self.key] = self.value_input.value
-        await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+        await self.config_panel.save_config(config, interaction.guild_id, interaction.client)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Updated text field {self.key}")
-        await interaction.response.send_message(f"✅ {self.key.replace('_',' ').title()} updated.", ephemeral=True)
+        await interaction.followup.send(f"✅ {self.key.replace('_',' ').title()} updated.", ephemeral=True)
 
 def _picker_view(component: ui.Item) -> ui.View:
     v = ui.View(timeout=120)
