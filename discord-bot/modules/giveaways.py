@@ -426,8 +426,10 @@ class GiveawaySystem:
 
 
 class GiveawayEntryView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, *args):
         super().__init__(timeout=None)
+        if len(args) == 2:
+            self.giveaways, self.gw_id = args
 
     @discord.ui.button(label="Enter Giveaway", style=discord.ButtonStyle.success, emoji="🎉", custom_id="gw_enter_btn")
     async def enter(self, interaction: discord.Interaction, button: discord.ui.Button):
