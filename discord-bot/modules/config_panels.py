@@ -1672,6 +1672,22 @@ class GiveawayConfigView(ConfigPanelView):
         ended = sum(1 for g in data.values() if g.get("ended"))
         await i.response.send_message(f"📊 **Giveaway Stats**\nTotal Hosted: {total}\nEnded: {ended}\nActive: {total-ended}", ephemeral=True)
 
+    @ui.button(label="Set Requirements", emoji="📋", style=discord.ButtonStyle.primary, row=3, custom_id="cfg_gw_requirements")
+    async def set_requirements(self, i, b):
+        class ReqModal(ui.Modal, title="Set Giveaway Requirements"):
+            min_xp = ui.TextInput(label="Min XP Required", placeholder="0 for none", default="0")
+            roles = ui.TextInput(label="Required Roles (IDs, comma-separated)", placeholder="123456789,987654321", required=False)
+            async def on_submit(self, it):
+                await it.response.defer(ephemeral=True)
+                c = dm.get_guild_data(it.guild_id, "giveaway_settings", {})
+                c["requirements"] = {
+                    "min_xp": int(self.min_xp.value) if self.min_xp.value.isdigit() else 0,
+                    "roles": [int(r.strip()) for r in self.roles.value.split(",") if r.strip().isdigit()] if self.roles.value else []
+                }
+                dm.update_guild_data(it.guild_id, "giveaway_settings", c)
+                await it.followup.send("✅ Giveaway requirements updated.", ephemeral=True)
+        await i.response.send_modal(ReqModal())
+
 
     async def config_games(self, i, b):
         await i.response.send_message("Mini-games (dice, flip, slots, trivia) are active. Default bet: 10 coins.", ephemeral=True)
