@@ -459,10 +459,11 @@ class VerificationConfigView(ConfigPanelView):
 
     @ui.button(label="Reset Log", emoji="🗑️", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_verify_reset")
     async def reset(self, i, b):
+        await i.response.defer(ephemeral=True)
         c = self.get_config(i.guild_id); c["verification_log"] = []
-        await self.save_config(c, i.guild_id, i.client, i)
+        dm.update_guild_data(i.guild_id, self.key, c)
         log_panel_action(i.guild_id, i.user.id, "Reset verification log")
-        await i.response.send_message("Log Reset", ephemeral=True)
+        await i.followup.send("Log Reset", ephemeral=True)
 
     @ui.button(label="Re-verify All", emoji="🔁", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_verify_reverify")
     async def reverify(self, i: Interaction, b):
