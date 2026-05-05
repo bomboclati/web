@@ -461,7 +461,7 @@ class VerificationConfigView(ConfigPanelView):
     async def reset(self, i, b):
         await i.response.defer(ephemeral=True)
         c = self.get_config(i.guild_id); c["verification_log"] = []
-        dm.update_guild_data(i.guild_id, self.key, c)
+        dm.update_guild_data(i.guild_id, self._storage_key(), c)
         log_panel_action(i.guild_id, i.user.id, "Reset verification log")
         await i.followup.send("Log Reset", ephemeral=True)
 
