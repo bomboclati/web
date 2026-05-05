@@ -1584,7 +1584,6 @@ class GiveawayConfigView(ConfigPanelView):
             duration = ui.TextInput(label="Duration (Hours)", default="24")
             min_level = ui.TextInput(label="Min Level Required", default="0", required=False)
             min_coins = ui.TextInput(label="Min Coins Required", default="0", required=False)
-            req_roles = ui.TextInput(label="Required Roles (IDs, comma-separated)", required=False)
             async def on_submit(self, it):
                 try:
                     requirements = {}
@@ -1592,8 +1591,6 @@ class GiveawayConfigView(ConfigPanelView):
                         requirements["min_level"] = int(self.min_level.value)
                     if self.min_coins.value and self.min_coins.value.isdigit():
                         requirements["min_coins"] = int(self.min_coins.value)
-                    if self.req_roles.value:
-                        requirements["required_roles"] = [int(r.strip()) for r in self.req_roles.value.split(",") if r.strip().isdigit()]
                     await it.client.giveaways.create_giveaway(it.guild_id, it.channel_id, it.user.id, self.prize.value, "Good luck!", self.prize.value, int(self.winners.value), requirements, int(self.duration.value))
                     await it.response.send_message("Giveaway created!", ephemeral=True)
                 except Exception as e: await it.response.send_message(f"Error: {e}", ephemeral=True)
