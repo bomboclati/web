@@ -269,7 +269,7 @@ class _NumberModal(ui.Modal):
         self.config_panel = parent
         self.key = key
         self.min_v, self.max_v = min_v, max_v
-        self.value_input.label = label
+        self.value_input.label = discord.ui.Label(text=label)
         if second_label:
             self.second_value.label = second_label
             self.second_value.required = False
@@ -376,7 +376,7 @@ class _TextModal(ui.Modal):
         super().__init__(title=label)
         self.config_panel = parent
         self.key = key
-        self.value_input.label = label
+        self.value_input.label = discord.ui.Label(text=label)
         existing = parent.get_config(guild_id).get(key, "")
         if existing:
             self.value_input.default = str(existing)

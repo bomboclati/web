@@ -3598,7 +3598,7 @@ class ActionHandler:
 
         import datetime
         try:
-            start = datetime.datetime.fromisoformat(start_time) if start_time else datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+            start = datetime.datetime.fromisoformat(start_time) if start_time else datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)
             end = datetime.datetime.fromisoformat(end_time) if end_time else start + datetime.timedelta(hours=1)
 
             event = await interaction.guild.create_scheduled_event(

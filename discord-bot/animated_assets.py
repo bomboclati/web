@@ -214,21 +214,14 @@ SUCCESS_GIFS = {
 def get_animated_emoji(system_name: str) -> str:
     """
     Get animated emoji for a system, with fallback to static emoji
-    
+
     Args:
         system_name: Name of the system (e.g., 'economy', 'leveling')
-        
+
     Returns:
         Animated emoji string or fallback static emoji
     """
-    emoji_data = ANIMATED_EMOJIS.get(system_name)
-    if emoji_data:
-        # If it's already a proper emoji format (<a:name:id> or static), return as-is
-        if emoji_data.startswith('<a:') or len(emoji_data) == 1:
-            return emoji_data
-        # Otherwise treat as fallback
-        return ANIMATED_EMOJIS.get(f"{system_name}_fallback", "✨")
-    return "✨"  # Default fallback
+    return ANIMATED_EMOJIS.get(f"{system_name}_fallback", "✨")
 
 def get_panel_thumbnail(system_name: str) -> Optional[str]:
     """
