@@ -1,0 +1,590 @@
+import json
+import os
+import shutil
+import sqlite3
+import aiosqlite
+from typing import Any, Dict, Optional, List, Tuple
+import threading
+import time
+from datetime import datetime, timedelta
+from cryptography.fernet import Fernet
+import base64
+import hashlib
+
+from logger import logger
+
+class DataManager:
+    """
+    Atomic writing system to ensure Zero Data Loss.
+    Ensures state is written to disk immediately and safely.
+    Now includes SQLite backend option for better performance.
+    """
+    def __init__(self, data_dir: str = "data", use_sqlite: bool = False):
+        self.data_dir = data_dir
+        self.use_sqlite = use_sqlite
+        self._lock = threading.Lock()
+        
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir)
+            
+        if self.use_sqlite:
+            self._init_sqlite()
+        
+        self._init_encryption()
+        self._cache = {}  # In-memory cache for JSON data
+    
+    def _init_encryption(self):
+        """Initialize Fernet encryption for sensitive data."""
+        self.cipher = None
+        key_file = os.path.join(self.data_dir, ".encryption_key")
+        
+        if os.getenv("ENCRYPTION_KEY"):
+            key = os.getenv("ENCRYPTION_KEY")
+            self.cipher = Fernet(key.encode() if isinstance(key, str) else key)
+        elif os.path.exists(key_file):
+            with open(key_file, "rb") as f:
+                self.cipher = Fernet(f.read())
+        else:
+            key = Fernet.generate_key()
+            with open(key_file, "wb") as f:
+                f.write(key)
+            self.cipher = Fernet(key)
+            os.chmod(key_file, 0o600)
+    
+    def rotate_api_key(self, guild_id: int) -> str:
+        """Generate and store a new API key for a guild."""
+        import secrets
+        new_key = secrets.token_urlsafe(32)
+        
+        if self.cipher:
+            new_key = self.cipher.encrypt(new_key.encode()).decode()
+        
+        api_keys = self.load_json("api_keys", default={})
+        api_keys[str(guild_id)] = {
+            "key": new_key,
+            "created_at": time.time(),
+            "last_rotated": time.time()
+        }
+        self.save_json("api_keys", api_keys)
+        
+        return new_key if self.cipher else new_key
+    
+    def get_api_key(self, guild_id: int) -> str:
+        """Retrieve API key for a guild."""
+        api_keys = self.load_json("api_keys", default={})
+        key_data = api_keys.get(str(guild_id))
+        if not key_data:
+            return None
+        
+        encrypted_key = key_data.get("key")
+        if self.cipher and encrypted_key:
+            try:
+                return self.cipher.decrypt(encrypted_key.encode()).decode()
+            except Exception:
+                return None
+        return encrypted_key
+
+    def _get_path(self, filename: str) -> str:
+        import re
+        safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', filename)
+        if not safe_name:
+            raise ValueError("Invalid filename")
+        
+        if not safe_name.endswith(".json"):
+            safe_name += ".json"
+        
+        full_path = os.path.join(self.data_dir, safe_name)
+        resolved = os.path.abspath(full_path)
+        data_dir_resolved = os.path.abspath(self.data_dir)
+        
+        if not resolved.startswith(data_dir_resolved):
+            raise ValueError("Path traversal attempt detected")
+        
+        return full_path
+
+    def _init_sqlite(self):
+        """Initialize SQLite database for history storage"""
+        self.db_path = os.path.join(self.data_dir, "conversation_history.db")
+        with self._lock:
+            conn = sqlite3.connect(self.db_path, check_same_thread=False, isolation_level=None)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS exchanges (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    timestamp REAL NOT NULL,
+                    importance_score REAL DEFAULT 0.5
+                )
+            """)
+            
+            # Create indexes for better query performance
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_guild_user_timestamp 
+                ON exchanges(guild_id, user_id, timestamp DESC)
+            """)
+            
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_timestamp 
+                ON exchanges(timestamp DESC)
+            """)
+            
+            # Create table for summarized conversations
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS conversation_summaries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    start_timestamp REAL NOT NULL,
+                    end_timestamp REAL NOT NULL,
+                    summary_text TEXT NOT NULL,
+                    message_count INTEGER NOT NULL,
+                    created_at REAL NOT NULL
+                )
+            """)
+            
+            conn.commit()
+            conn.close()
+
+    def save_json(self, filename: str, data: Any):
+        """
+        Atomic Write: Writes to a temporary file, then renames it.
+        This prevents data corruption if the bot crashes during the write.
+        """
+        if self.use_sqlite and filename == "conversation_history":
+            # For history, we'll use SQLite instead
+            return
+            
+        path = self._get_path(filename)
+        temp_path = f"{path}.tmp"
+
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+
+        # Replace original with the new temp file
+        os.replace(temp_path, path)
+        
+        # Update cache
+        self._cache[filename] = data
+
+    def load_json(self, filename: str, default: Any = None) -> Any:
+        path = self._get_path(filename)
+        if not os.path.exists(path):
+            return default if default is not None else {}
+        
+        try:
+            # Check cache first
+            if filename in self._cache:
+                return self._cache[filename]
+                
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                self._cache[filename] = data
+                return data
+        except json.JSONDecodeError as e:
+            logger.error("Corrupted JSON in %s: %s", filename, e)
+            return default if default is not None else {}
+        except IOError as e:
+            logger.critical("IO error reading %s: %s - DATA LOSS RISK", filename, e)
+            # Handle gracefully by returning default value to prevent crashes
+            return default if default is not None else {}
+
+    async def save_exchange(self, guild_id: int, user_id: int, role: str, content: str, importance_score: float = 0.5):
+        """Save a single exchange to SQLite database"""
+        if not self.use_sqlite:
+            return False
+        async with aiosqlite.connect(self.db_path, isolation_level=None) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA synchronous=NORMAL")
+            await db.execute(
+                "INSERT INTO exchanges (guild_id, user_id, role, content, timestamp, importance_score) VALUES (?, ?, ?, ?, ?, ?)",
+                (guild_id, user_id, role, content, time.time(), importance_score)
+            )
+            await db.commit()
+        return True
+
+    async def load_exchanges(self, guild_id: int, user_id: int, limit: Optional[int] = None, 
+                          start_time: Optional[float] = None, end_time: Optional[float] = None) -> List[Dict]:
+        """Load exchanges from SQLite with optional filtering"""
+        if not self.use_sqlite:
+            return []
+        async with aiosqlite.connect(self.db_path, isolation_level=None) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA synchronous=NORMAL")
+            db.row_factory = aiosqlite.Row
+            query = "SELECT role, content, timestamp, importance_score FROM exchanges WHERE guild_id=? AND user_id=?"
+            params = [guild_id, user_id]
+            if start_time is not None:
+                query += " AND timestamp >= ?"
+                params.append(start_time)
+            if end_time is not None:
+                query += " AND timestamp <= ?"
+                params.append(end_time)
+            query += " ORDER BY timestamp DESC"
+            if limit is not None:
+                query += " LIMIT ?"
+                params.append(limit)
+            async with db.execute(query, params) as cursor:
+                rows = await cursor.fetchall()
+        return [
+            {"role": r["role"], "content": r["content"], "timestamp": r["timestamp"], "importance_score": r["importance_score"]}
+            for r in reversed(rows)
+        ]
+
+    async def save_conversation_summary(self, guild_id: int, user_id: int, 
+                                      end_timestamp: float, summary_text: str, message_count: int):
+        """Save a conversation summary"""
+        if not self.use_sqlite:
+            return False
+        async with aiosqlite.connect(self.db_path, isolation_level=None) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA synchronous=NORMAL")
+            await db.execute(
+                """INSERT INTO conversation_summaries 
+                   (guild_id, user_id, start_timestamp, end_timestamp, summary_text, message_count, created_at) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (guild_id, user_id, time.time() - (message_count * 2), end_timestamp, summary_text, message_count, time.time())
+            )
+            await db.commit()
+        return True
+
+    async def load_conversation_summaries(self, guild_id: int, user_id: int, 
+                                       start_time: Optional[float] = None, 
+                                       end_time: Optional[float] = None) -> List[Dict]:
+        """Load conversation summaries"""
+        if not self.use_sqlite:
+            return []
+        async with aiosqlite.connect(self.db_path, isolation_level=None) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA synchronous=NORMAL")
+            db.row_factory = aiosqlite.Row
+            query = "SELECT start_timestamp, end_timestamp, summary_text, message_count, created_at FROM conversation_summaries WHERE guild_id=? AND user_id=?"
+            params = [guild_id, user_id]
+            if start_time is not None:
+                query += " AND end_timestamp >= ?"
+                params.append(start_time)
+            if end_time is not None:
+                query += " AND start_timestamp <= ?"
+                params.append(end_time)
+            query += " ORDER BY start_timestamp DESC"
+            async with db.execute(query, params) as cursor:
+                rows = await cursor.fetchall()
+        return [
+            {"start_timestamp": r["start_timestamp"], "end_timestamp": r["end_timestamp"], 
+             "summary_text": r["summary_text"], "message_count": r["message_count"], "created_at": r["created_at"]}
+            for r in rows
+        ]
+
+    def update_guild_data(self, guild_id: int, key: str, value: Any):
+        """Helper to update a specific guild's data block in a large file."""
+        filename = f"guild_{guild_id}.json"
+        data = self.load_json(filename)
+        data[key] = value
+        self.save_json(filename, data)
+
+    def get_guild_data(self, guild_id: int, key: str, default: Any = None) -> Any:
+        filename = f"guild_{guild_id}.json"
+        data = self.load_json(filename)
+        return data.get(key, default)
+
+    def save_resumable_setup(self, guild_id: int, data: Dict[str, Any]):
+        """Save a setup task that can be resumed after restart."""
+        setups = self.load_json("resumable_setups", default={})
+        setups[str(guild_id)] = data
+        self.save_json("resumable_setups", setups)
+
+    def get_resumable_setups(self) -> Dict[str, Any]:
+        """Get all pending setups that need to be resumed."""
+        return self.load_json("resumable_setups", default={})
+
+    def remove_resumable_setup(self, guild_id: int):
+        """Remove a completed or cancelled resumable setup."""
+        setups = self.load_json("resumable_setups", default={})
+        if str(guild_id) in setups:
+            del setups[str(guild_id)]
+            self.save_json("resumable_setups", setups)
+
+    def _get_encryption_key(self) -> bytes:
+        """Get or create encryption key from environment or generate one"""
+        key_env = os.getenv("ENCRYPTION_KEY")
+        if key_env:
+            # Use provided key (must be base64 encoded 32 bytes)
+            return base64.urlsafe_b64encode(hashlib.sha256(key_env.encode()).digest())
+        
+        # Check for stored key or generate new one
+        key_file = os.path.join(self.data_dir, ".key")
+        if os.path.exists(key_file):
+            with open(key_file, "rb") as f:
+                return f.read()
+        
+        # Generate new key and store it
+        key = Fernet.generate_key()
+        with open(key_file, "wb") as f:
+            f.write(key)
+        return key
+
+    def set_guild_api_key(self, guild_id: int, api_key: str, provider: str = "openrouter"):
+        """Set guild-specific API key for a specific provider (encrypted)"""
+        f = Fernet(self._get_encryption_key())
+        encrypted_key = f.encrypt(api_key.encode()).decode()
+        
+        api_keys = self.load_json("guild_api_keys", default={})
+        guild_id_str = str(guild_id)
+        
+        if guild_id_str not in api_keys or not isinstance(api_keys[guild_id_str].get("providers"), dict):
+            # Migration/Initial setup
+            old_provider = api_keys.get(guild_id_str, {}).get("provider", "openrouter")
+            old_key = api_keys.get(guild_id_str, {}).get("api_key")
+            
+            api_keys[guild_id_str] = {
+                "active_provider": provider,
+                "providers": {provider: encrypted_key},
+                "updated_at": datetime.now().isoformat()
+            }
+            if old_key and old_provider != provider:
+                api_keys[guild_id_str]["providers"][old_provider] = old_key
+        else:
+            api_keys[guild_id_str]["providers"][provider] = encrypted_key
+            api_keys[guild_id_str]["active_provider"] = provider
+            api_keys[guild_id_str]["updated_at"] = datetime.now().isoformat()
+            
+        self.save_json("guild_api_keys", api_keys)
+
+    def get_guild_api_key(self, guild_id: int, provider: str = None) -> Optional[Dict[str, str]]:
+        """Get guild-specific API key (decrypted) for the active or specified provider"""
+        api_keys = self.load_json("guild_api_keys", default={})
+        guild_data = api_keys.get(str(guild_id))
+        
+        if not guild_data:
+            return None
+        
+        # Determine target provider and encrypted key
+        target_provider = provider
+        encrypted_key = None
+        
+        if "providers" in guild_data and isinstance(guild_data["providers"], dict):
+            # New format
+            active_provider = guild_data.get("active_provider", "openrouter")
+            target_provider = provider or active_provider
+            encrypted_key = guild_data["providers"].get(target_provider)
+        else:
+            # Old format migration
+            old_provider = guild_data.get("provider", "openrouter")
+            target_provider = provider or old_provider
+        if not encrypted_key:
+            return None
+            
+        # Decrypt the API key
+        try:
+            f = Fernet(self._get_encryption_key())
+            decrypted_key = f.decrypt(encrypted_key.encode()).decode()
+            return {
+                "api_key": decrypted_key,
+                "provider": target_provider
+            }
+        except Exception:
+             # If decryption fails, return as-is (might be old unencrypted key)
+             return guild_data
+
+    def save_guild_api_key(self, guild_id: int, api_key: str, provider: str = "openrouter"):
+        """Save guild-specific API key for a specific provider (encrypted)"""
+        self.set_guild_api_key(guild_id, api_key, provider)
+
+    def record_global_action_result(self, action_name: str, success: bool, error: str = None):
+        """Record anonymized action result for cross-server intelligence sharing."""
+        intelligence = self.load_json("global_intelligence", default={})
+        
+        if "actions" not in intelligence:
+            intelligence["actions"] = {}
+        
+        if action_name not in intelligence["actions"]:
+            intelligence["actions"][action_name] = {
+                "successes": 0,
+                "failures": 0,
+                "total_guilds": 0,
+                "errors": {},
+                "last_updated": 0
+            }
+        
+        action_data = intelligence["actions"][action_name]
+        
+        if success:
+            action_data["successes"] += 1
+        else:
+            action_data["failures"] += 1
+            if error:
+                error_key = error[:100]
+                if error_key not in action_data["errors"]:
+                    action_data["errors"][error_key] = 0
+                action_data["errors"][error_key] += 1
+        
+        action_data["total_guilds"] = action_data["successes"] + action_data["failures"]
+        action_data["last_updated"] = time.time()
+        
+        self.save_json("global_intelligence", intelligence)
+
+    def get_global_intelligence(self, min_guilds: int = 1) -> Dict[str, Any]:
+        """Get aggregated cross-server intelligence for AI prompt injection."""
+        intelligence = self.load_json("global_intelligence", default={"actions": {}})
+        actions = intelligence.get("actions", {})
+        
+        filtered = {}
+        for action_name, data in actions.items():
+            if data["total_guilds"] >= min_guilds:
+                success_rate = data["successes"] / max(data["total_guilds"], 1)
+                top_errors = sorted(data.get("errors", {}).items(), key=lambda x: x[1], reverse=True)[:3]
+                
+                filtered[action_name] = {
+                    "success_rate": round(success_rate, 2),
+                    "total_uses": data["total_guilds"],
+                    "top_errors": [{"error": e, "count": c} for e, c in top_errors] if top_errors else []
+                }
+        
+        return filtered
+
+    def backup_data(self, backup_dir: str = "backups"):
+        if not os.path.exists(backup_dir):
+            os.makedirs(backup_dir)
+         
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        if self.use_sqlite:
+            # Backup SQLite database
+            backup_path = os.path.join(backup_dir, f"history_backup_{timestamp}.db")
+            shutil.copy2(self.db_path, backup_path)
+        else:
+            # Backup JSON files
+            base_name = os.path.join(backup_dir, f"backup_{timestamp}")
+            # shutil.make_archive returns the path to the created zip file
+            backup_path = shutil.make_archive(base_name, 'zip', self.data_dir)
+        
+        # Verify backup
+        if not os.path.exists(backup_path):
+            raise Exception(f"Backup verification failed: {backup_path} not found")
+
+    async def cleanup_old_data(self, days_to_keep: int = 30):
+        """Remove data older than specified days"""
+        cutoff_time = time.time() - (days_to_keep * 24 * 60 * 60)
+        
+        if self.use_sqlite:
+            async with aiosqlite.connect(self.db_path, isolation_level=None) as db:
+                await db.execute("PRAGMA journal_mode=WAL")
+                await db.execute("PRAGMA synchronous=NORMAL")
+                await db.execute("DELETE FROM exchanges WHERE timestamp < ?", (cutoff_time,))
+                await db.execute("DELETE FROM conversation_summaries WHERE created_at < ?", (cutoff_time,))
+                await db.commit()
+        else:
+            for f in os.listdir(self.data_dir):
+                if f.startswith("guild_") and f.endswith(".json"):
+                    filename = f[:-5]
+                    data = self.load_json(filename, {})
+                    history = data.get("conversation_history", {})
+                    changed = False
+                    for uid in list(history.keys()):
+                        before = len(history[uid])
+                        history[uid] = [e for e in history[uid] if e.get("timestamp", 0) > cutoff_time]
+                        if len(history[uid]) != before:
+                            changed = True
+                    if changed:
+                        data["conversation_history"] = history
+                        self.save_json(filename, data)
+
+    async def export_memory(self, guild_id: int = None) -> dict:
+        """Export conversation memory as JSON (for backup/migration)."""
+        export_data = {"version": "1.0", "exported_at": datetime.now().isoformat(), "guilds": {}}
+        
+        if self.use_sqlite:
+            async with aiosqlite.connect(self.db_path, isolation_level=None) as db:
+                await db.execute("PRAGMA journal_mode=WAL")
+                await db.execute("PRAGMA synchronous=NORMAL")
+                db.row_factory = aiosqlite.Row
+                if guild_id:
+                    guild_ids = [guild_id]
+                else:
+                    async with db.execute("SELECT DISTINCT guild_id FROM exchanges") as cursor:
+                        guild_ids = [r[0] for r in await cursor.fetchall()]
+                
+                for gid in guild_ids:
+                    async with db.execute("SELECT DISTINCT user_id FROM exchanges WHERE guild_id=?", (gid,)) as cursor:
+                        users = [r[0] for r in await cursor.fetchall()]
+                    export_data["guilds"][str(gid)] = {"users": {}}
+                    
+                    for uid in users:
+                        async with db.execute("SELECT role, content, timestamp, importance_score FROM exchanges WHERE guild_id=? AND user_id=? ORDER BY timestamp", (gid, uid)) as cursor:
+                            exchanges = await cursor.fetchall()
+                        export_data["guilds"][str(gid)]["users"][str(uid)] = {
+                            "exchanges": [{"role": r["role"], "content": r["content"], "timestamp": r["timestamp"], "importance_score": r["importance_score"]} for r in exchanges]
+                        }
+        else:
+            if guild_id:
+                data = self.load_json(f"guild_{guild_id}", {})
+                export_data["guilds"][str(guild_id)] = data.get("conversation_history", {})
+            else:
+                for f in os.listdir(self.data_dir):
+                    if f.startswith("guild_") and f.endswith(".json"):
+                        gid = f.replace("guild_", "").replace(".json", "")
+                        if gid.isdigit():
+                            data = self.load_json(f[:-5], {})
+                            export_data["guilds"][gid] = data.get("conversation_history", {})
+        
+        return export_data
+
+    async def import_memory(self, import_data: dict, merge: bool = True) -> dict:
+        """Import conversation memory from JSON export."""
+        result = {"success": True, "imported": 0, "skipped": 0, "errors": []}
+        
+        if not self.use_sqlite:
+            result["success"] = False
+            result["errors"].append("Import only supported with SQLite backend")
+            return result
+        
+        guilds = import_data.get("guilds", {})
+        async with aiosqlite.connect(self.db_path, isolation_level=None) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA synchronous=NORMAL")
+            for gid_str, guild_data in guilds.items():
+                try:
+                    gid = int(gid_str)
+                    for uid_str, user_data in guild_data.get("users", {}).items():
+                        uid = int(uid_str)
+                        for ex in user_data.get("exchanges", []):
+                            async with db.execute("SELECT id FROM exchanges WHERE guild_id=? AND user_id=? AND timestamp=? AND role=?", (gid, uid, ex.get("timestamp"), ex.get("role"))) as cursor:
+                                existing = await cursor.fetchone()
+                            if not existing:
+                                await db.execute("INSERT INTO exchanges (guild_id, user_id, role, content, timestamp, importance_score) VALUES (?, ?, ?, ?, ?, ?)", (gid, uid, ex.get("role", "user"), ex.get("content", ""), ex.get("timestamp", time.time()), ex.get("importance_score", 0.5)))
+                                result["imported"] += 1
+                            else:
+                                result["skipped"] = result.get("skipped", 0) + 1
+                except Exception as e:
+                    result["errors"].append(f"Guild {gid_str}: {str(e)}")
+            await db.commit()
+        
+        return result
+
+
+# Initialize global DataManager
+# Use SQLite by default for better performance, but can be overridden
+    def list_user_ids(self, guild_id: int) -> List[int]:
+        """Return all user IDs that have data in this guild"""
+        # Get all keys from guild data that contain user IDs
+        user_ids = set()
+
+        # Check economy balances
+        balances = self.get_guild_data(guild_id, "economy_balances", {})
+        user_ids.update(int(uid) for uid in balances.keys())
+
+        # Check leveling data
+        xp_data = self.get_guild_data(guild_id, "leveling_xp", {})
+        user_ids.update(int(uid) for uid in xp_data.keys())
+
+        # Check warnings
+        warnings = self.get_guild_data(guild_id, "warnings", {})
+        user_ids.update(int(uid) for uid in warnings.keys())
+
+        return list(user_ids)
+
+use_sqlite = os.getenv("USE_SQLITE", "true").lower() == "true"
+dm = DataManager(use_sqlite=use_sqlite)
