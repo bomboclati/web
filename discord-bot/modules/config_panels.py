@@ -597,6 +597,7 @@ class AntiRaidConfigView(ConfigPanelView):
         class WhitelistModal(discord.ui.Modal, title="Add User to Whitelist"):
             user_input = ui.TextInput(label="User ID or Username", placeholder="Enter user ID or username", required=True)
             async def on_submit(self, it):
+                await it.response.defer(ephemeral=True)
                 c = self.config_panel.get_config(it.guild_id)
                 whitelist = c.get("whitelist", [])
                 value = self.user_input.value.strip()
@@ -608,15 +609,15 @@ class AntiRaidConfigView(ConfigPanelView):
                     if user:
                         user_id = user.id
                     else:
-                        await it.response.send_message("❌ User not found. Please enter a valid user ID or exact username.", ephemeral=True)
+                        await it.followup.send("❌ User not found. Please enter a valid user ID or exact username.", ephemeral=True)
                         return
                 if user_id not in whitelist:
                     whitelist.append(user_id)
                     c["whitelist"] = whitelist
                     await self.config_panel.save_config(c, it.guild_id, it.client, it)
-                    await it.response.send_message("✅ User added to whitelist.", ephemeral=True)
+                    await it.followup.send("✅ User added to whitelist.", ephemeral=True)
                 else:
-                    await it.response.send_message("⚠️ User is already whitelisted.", ephemeral=True)
+                    await it.followup.send("⚠️ User is already whitelisted.", ephemeral=True)
         modal = WhitelistModal()
         modal.config_panel = self
         await i.response.send_modal(modal)
