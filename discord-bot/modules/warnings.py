@@ -107,7 +107,8 @@ class WarningSystem:
                         next_action = f"{data['action']} at {data['count']} warnings"
                         break
 
-                dm_text = config.get("dm_template").format(
+                dm_template = config.get("dm_template", "Hello {user}, you have been warned for: {reason}. Severity: {severity}. Total active warnings: {count}. Next threshold action: {next_action}.")
+                dm_text = dm_template.format(
                     user=member.name,
                     reason=reason,
                     severity=severity,
