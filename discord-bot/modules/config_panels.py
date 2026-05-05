@@ -698,12 +698,13 @@ class AntiRaidConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle Raid Alerts", emoji="🔕", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_antiraid_silence")
     async def silence(self, i, b):
+        await i.response.defer(ephemeral=True)
         c = self.get_config(i.guild_id)
         c["alerts_silenced"] = not c.get("alerts_silenced", False)
-        await self.save_config(c, i.guild_id, i.client, i)
+        await self.save_config(c, i.guild_id, i.client)
         log_panel_action(i.guild_id, i.user.id, f"Anti-raid alerts silenced={c['alerts_silenced']}")
         state = "silenced" if c["alerts_silenced"] else "active"
-        await i.response.send_message(f"🔕 Raid alerts are now **{state}**.", ephemeral=True)
+        await i.followup.send(f"🔕 Raid alerts are now **{state}**.", ephemeral=True)
 
 class GuardianConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
@@ -3854,10 +3855,13 @@ class EconomyConfigView(ConfigPanelView):
 
     @ui.button(label="Weekly Double XP", emoji="📊", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_eco_weekend_toggle")
     async def toggle_weekend_bonus(self, i, b):
+        await i.response.defer(ephemeral=True)
         c = dm.get_guild_data(i.guild_id, "economy_config", {})
         c["double_xp_weekend"] = not c.get("double_xp_weekend", False)
         dm.update_guild_data(i.guild_id, "economy_config", c)
-        await self.save_config(c, i.guild_id, i.client, i)
+        await self.save_config(c, i.guild_id, i.client)
+        state = "enabled" if c["double_xp_weekend"] else "disabled"
+        await i.followup.send(f"✅ Weekly Double XP {state}.", ephemeral=True)
 
     @ui.button(label="Economy Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_eco_stats")
     async def economy_stats(self, i, b):

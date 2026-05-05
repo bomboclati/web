@@ -4261,7 +4261,7 @@ class ActionHandler:
         if cooldown_key in self._custom_cmd_cooldowns:
             remaining = self._custom_cmd_cooldown_seconds - (now - self._custom_cmd_cooldowns[cooldown_key])
             if remaining > 0:
-                await message.channel.send(f"⏳ Command on cooldown. Wait {int(remaining)}s.", delete_after=2)
+                # await message.channel.send(f"⏳ Command on cooldown. Wait {int(remaining)}s.", delete_after=2)
                 return None
         self._custom_cmd_cooldowns[cooldown_key] = now
 
@@ -11211,4 +11211,158 @@ class ActionHandler:
                 color=discord.Color.red()
             )
             await message.channel.send(embed=error_embed)
+            return False
+
+    async def handle_warn(self, message: discord.Message) -> bool:
+        """Handle !warn command"""
+        try:
+            from modules.warnings import WarningSystem
+            warnings = WarningSystem(self.bot)
+
+            # Check permissions
+            if not message.author.guild_permissions.kick_members:
+                await message.channel.send("❌ You need kick permissions to warn users.")
+                return False
+
+            parts = message.content.split()
+            if len(parts) < 3:
+                await message.channel.send("❌ Usage: `!warn @user reason`")
+                return False
+
+            # Get user
+            user_mention = parts[1]
+            user = None
+            if user_mention.startswith('<@') and user_mention.endswith('>'):
+                user_id = user_mention.strip('<@!>')
+                user = message.guild.get_member(int(user_id))
+            else:
+                await message.channel.send("❌ Please mention the user to warn.")
+                return False
+
+            if not user:
+                await message.channel.send("❌ User not found in this server.")
+                return False
+
+            reason = ' '.join(parts[2:])
+            if not reason:
+                reason = "No reason provided"
+
+            # Issue warning
+            severity = "minor"  # Default
+            await warnings.issue_warning(message.guild, user.id, message.author.id, reason, severity)
+
+            await message.channel.send(f"✅ Warned {user.mention} for: {reason}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in handle_warn: {e}")
+            await message.channel.send("❌ An error occurred while issuing the warning.")
+            return False
+
+    async def handle_warnings(self, message: discord.Message) -> bool:
+        """Handle !warnings command"""
+        try:
+            from modules.warnings import WarningSystem
+            warnings = WarningSystem(self.bot)
+
+            parts = message.content.split()
+            if len(parts) < 2:
+                await message.channel.send("❌ Usage: `!warnings @user`")
+                return False
+
+            user_mention = parts[1]
+            if user_mention.startswith('<@') and user_mention.endswith('>'):
+                user_id = int(user_mention.strip('<@!>'))
+            else:
+                await message.channel.send("❌ Please mention the user.")
+                return False
+
+            user_warnings = warnings.get_warnings(message.guild.id, user_id)
+            if not user_warnings:
+                await message.channel.send("📭 No warnings found for this user.")
+                return True
+
+            embed = discord.Embed(title=f"Warnings for <@{user_id}>", color=discord.Color.orange())
+            for w in user_warnings[-10:]:  # Last 10
+                embed.add_field(
+                    name=f"#{w['id']} - {w['severity'].title()}",
+                    value=f"Reason: {w['reason']}\nModerator: <@{w['moderator_id']}>\nDate: <t:{w['timestamp']}:F>",
+                    inline=False
+                )
+            await message.channel.send(embed=embed)
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in handle_warnings: {e}")
+            await message.channel.send("❌ An error occurred.")
+            return False
+
+    async def handle_clear_warn(self, message: discord.Message) -> bool:
+        """Handle !clearwarn command"""
+        try:
+            from modules.warnings import WarningSystem
+            warnings = WarningSystem(self.bot)
+
+            if not message.author.guild_permissions.kick_members:
+                await message.channel.send("❌ You need kick permissions.")
+                return False
+
+            parts = message.content.split()
+            if len(parts) < 3:
+                await message.channel.send("❌ Usage: `!clearwarn @user warning_id`")
+                return False
+
+            user_mention = parts[1]
+            if user_mention.startswith('<@') and user_mention.endswith('>'):
+                user_id = int(user_mention.strip('<@!>'))
+            else:
+                await message.channel.send("❌ Please mention the user.")
+                return False
+
+            try:
+                warn_id = int(parts[2])
+            except:
+                await message.channel.send("❌ Invalid warning ID.")
+                return False
+
+            if warnings.clear_warning(message.guild.id, user_id, warn_id):
+                await message.channel.send("✅ Warning cleared.")
+            else:
+                await message.channel.send("❌ Warning not found.")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in handle_clear_warn: {e}")
+            await message.channel.send("❌ An error occurred.")
+            return False
+
+    async def handle_clear_all_warns(self, message: discord.Message) -> bool:
+        """Handle !clearallwarns command"""
+        try:
+            from modules.warnings import WarningSystem
+            warnings = WarningSystem(self.bot)
+
+            if not message.author.guild_permissions.administrator:
+                await message.channel.send("❌ You need administrator permissions.")
+                return False
+
+            parts = message.content.split()
+            if len(parts) < 2:
+                await message.channel.send("❌ Usage: `!clearallwarns @user`")
+                return False
+
+            user_mention = parts[1]
+            if user_mention.startswith('<@') and user_mention.endswith('>'):
+                user_id = int(user_mention.strip('<@!>'))
+            else:
+                await message.channel.send("❌ Please mention the user.")
+                return False
+
+            warnings.clear_all_warnings(message.guild.id, user_id)
+            await message.channel.send("✅ All warnings cleared.")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in handle_clear_all_warns: {e}")
+            await message.channel.send("❌ An error occurred.")
             return False

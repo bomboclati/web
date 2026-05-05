@@ -826,6 +826,13 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 "verify": "handle_verify",
             }
 
+            warning_commands = {
+                "warn": "handle_warn",
+                "warnings": "handle_warnings",
+                "clearwarn": "handle_clear_warn",
+                "clearallwarns": "handle_clear_all_warns",
+            }
+
             staff_commands = {
                 "apply": "handle_application_apply",
                 "appeal": "handle_appeal_create",
@@ -876,6 +883,14 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 from actions import ActionHandler
                 handler = ActionHandler(self)
                 method = getattr(handler, verification_commands[cmd_content])
+                await method(message)
+                return
+
+            # Check warning commands
+            if cmd_content in warning_commands:
+                from actions import ActionHandler
+                handler = ActionHandler(self)
+                method = getattr(handler, warning_commands[cmd_content])
                 await method(message)
                 return
 
