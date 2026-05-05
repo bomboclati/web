@@ -201,11 +201,12 @@ class _GenericRoleSelect(ui.RoleSelect):
         self.key = key
 
     async def callback(self, interaction: Interaction):
+        await interaction.response.defer(ephemeral=True)
         config = self.config_panel.get_config(interaction.guild_id)
         config[self.key] = self.values[0].id
-        await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
+        await self.config_panel.save_config(config, interaction.guild_id, interaction.client)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {self.values[0].name}")
-        await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to {self.values[0].mention}", ephemeral=True)
+        await interaction.followup.send(f"✅ Set **{self.key.replace('_',' ').title()}** to {self.values[0].mention}", ephemeral=True)
         # Update the original config panel
         if self.config_panel.panel_message:
             try:
@@ -5290,7 +5291,7 @@ def register_all_persistent_views(bot: discord.Client):
     bot.add_view(TicketPersistentView())
     bot.add_view(WelcomeDMView())
     bot.add_view(CategorySelectionView(None, 0))
-    bot.add_view(GiveawayEntryView())
+
     bot.add_view(ApplicationPersistentView())
     bot.add_view(ApplicationReviewView())
     bot.add_view(SuggestionVoteView(0, 0))
