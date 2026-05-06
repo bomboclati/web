@@ -3450,11 +3450,11 @@ class SuggestionsConfigView(ConfigPanelView):
                     dm.update_guild_data(it.guild_id, "suggestions_config", c)
                 await it.response.send_message(f"✅ Categories updated: {', '.join(categories)}", ephemeral=True)
 
-    modal = CatsModal()
-    modal.parent = self
-    existing = self.get_config(i.guild_id).get("categories", ["Feature", "Bug", "Content", "Other"])
-    modal.cats.default = ", ".join(existing)
-    await i.response.send_modal(modal)
+        modal = CatsModal()
+        modal.parent = self
+        existing = self.get_config(i.guild_id).get("categories", ["Feature", "Bug", "Content", "Other"])
+        modal.cats.default = ", ".join(existing)
+        await i.response.send_modal(modal)
 
     @ui.button(label="Set Cooldown", emoji="⏱️", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_suggest_cooldown")
     async def set_cooldown(self, i, b):
