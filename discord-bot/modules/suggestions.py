@@ -469,5 +469,351 @@ async def setup_suggestions_system(guild: discord.Guild):
     )
     
     await guide_channel.send(embed=guide_embed)
-    
+
     return suggestions_channel, review_channel
+
+
+class SuggestionVoteView(discord.ui.View):
+    """Persistent view for users to vote on suggestions"""
+    def __init__(self, suggestion_id: int, guild_id: int):
+        super().__init__(timeout=None)
+        self.suggestion_id = suggestion_id
+        self.guild_id = guild_id
+
+    def _get_suggestion(self, suggestions: list) -> Optional[dict]:
+        for s in suggestions:
+            if s['id'] == self.suggestion_id:
+                return s
+        return None
+
+    @discord.ui.button(label="Upvote", style=discord.ButtonStyle.success, emoji="✅", custom_id="suggestion_upvote")
+    async def upvote(self, interaction: discord.Interaction, button: discord.ui.Button):
+        suggestions = dm.get_guild_data(self.guild_id, "suggestions", [])
+        suggestion = self._get_suggestion(suggestions)
+
+        if not suggestion:
+            await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
+            return
+
+        user_id = interaction.user.id
+        if user_id in suggestion['upvotes']:
+            await interaction.response.send_message("❌ You already upvoted this suggestion.", ephemeral=True)
+            return
+
+        suggestion['upvotes'].append(user_id)
+        if user_id in suggestion.get('downvotes', []):
+            suggestion['downvotes'].remove(user_id)
+
+        dm.update_guild_data(self.guild_id, "suggestions", suggestions)
+
+        # Update embed
+        if interaction.message and interaction.message.embeds:
+            embed = interaction.message.embeds[0]
+            upvotes = len(suggestion['upvotes'])
+            downvotes = len(suggestion.get('downvotes', []))
+
+            # Update fields
+            for field in embed.fields:
+                if "Upvote" in field.name or "👍" in field.name:
+                    embed.set_field_at(embed.fields.index(field), name="👍 Upvotes", value=str(upvotes), inline=True)
+                elif "Downvote" in field.name or "👎" in field.name:
+                    embed.set_field_at(embed.fields.index(field), name="👎 Downvotes", value=str(downvotes), inline=True)
+
+            await interaction.message.edit(embed=embed, view=self)
+
+        await interaction.response.send_message("✅ Upvoted!", ephemeral=True)
+
+    @discord.ui.button(label="Downvote", style=discord.ButtonStyle.danger, emoji="❌", custom_id="suggestion_downvote")
+    async def downvote(self, interaction: discord.Interaction, button: discord.ui.Button):
+        suggestions = dm.get_guild_data(self.guild_id, "suggestions", [])
+        suggestion = self._get_suggestion(suggestions)
+
+        if not suggestion:
+            await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
+            return
+
+        user_id = interaction.user.id
+        if user_id in suggestion.get('downvotes', []):
+            await interaction.response.send_message("❌ You already downvoted this suggestion.", ephemeral=True)
+            return
+
+        if 'downvotes' not in suggestion:
+            suggestion['downvotes'] = []
+        suggestion['downvotes'].append(user_id)
+        if user_id in suggestion['upvotes']:
+            suggestion['upvotes'].remove(user_id)
+
+        dm.update_guild_data(self.guild_id, "suggestions", suggestions)
+
+        # Update embed
+        if interaction.message and interaction.message.embeds:
+            embed = interaction.message.embeds[0]
+            upvotes = len(suggestion['upvotes'])
+            downvotes = len(suggestion.get('downvotes', []))
+
+            # Update fields
+            for field in embed.fields:
+                if "Upvote" in field.name or "👍" in field.name:
+                    embed.set_field_at(embed.fields.index(field), name="👍 Upvotes", value=str(upvotes), inline=True)
+                elif "Downvote" in field.name or "👎" in field.name:
+                    embed.set_field_at(embed.fields.index(field), name="👎 Downvotes", value=str(downvotes), inline=True)
+
+            await interaction.message.edit(embed=embed, view=self)
+
+        await interaction.response.send_message("❌ Downvoted!", ephemeral=True)
+
+    @discord.ui.button(label="Results", style=discord.ButtonStyle.secondary, emoji="📊", custom_id="suggestion_results")
+    async def results(self, interaction: discord.Interaction, button: discord.ui.Button):
+        suggestions = dm.get_guild_data(self.guild_id, "suggestions", [])
+        suggestion = self._get_suggestion(suggestions)
+
+        if not suggestion:
+            await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
+            return
+
+        upvotes = len(suggestion['upvotes'])
+        downvotes = len(suggestion.get('downvotes', []))
+        total = upvotes + downvotes
+        approval = (upvotes / total * 100) if total > 0 else 50
+
+        embed = discord.Embed(
+            title="📊 Suggestion Results",
+            description=f"**{suggestion['title']}**\n\n👍 {upvotes} upvotes\n👎 {downvotes} downvotes\n📈 {approval:.1f}% approval",
+            color=discord.Color.blue()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class SuggestionReviewView(discord.ui.View):
+    """Staff review buttons for suggestions in review channel"""
+    def __init__(self, suggestion_id: int, guild_id: int):
+        super().__init__(timeout=None)
+        self.suggestion_id = suggestion_id
+        self.guild_id = guild_id
+
+    def _get_suggestion(self, suggestions: list) -> Optional[dict]:
+        for s in suggestions:
+            if s['id'] == self.suggestion_id:
+                return s
+        return None
+
+    @discord.ui.button(label="Approve", style=discord.ButtonStyle.success, emoji="✅", custom_id="suggestion_approve")
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.manage_messages:
+            await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
+            return
+
+        config = dm.get_guild_data(self.guild_id, "suggestions_config", {})
+        suggestions = dm.get_guild_data(self.guild_id, "suggestions", [])
+        suggestion = self._get_suggestion(suggestions)
+
+        if not suggestion:
+            await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
+            return
+
+        suggestion['status'] = 'approved'
+        suggestion['reviewed_by'] = interaction.user.id
+        suggestion['review_timestamp'] = datetime.now(datetime.UTC).isoformat()
+        dm.update_guild_data(self.guild_id, "suggestions", suggestions)
+
+        # Update original embed
+        suggestions_channel_id = config.get('suggestions_channel_id')
+        if suggestions_channel_id:
+            channel = interaction.client.get_channel(suggestions_channel_id)
+            if channel:
+                try:
+                    msg = await channel.fetch_message(suggestion.get('message_id'))
+                    if msg and msg.embeds:
+                        embed = msg.embeds[0]
+                        embed.color = discord.Color.green()
+                        original_title = embed.title
+                        if "APPROVED" not in original_title:
+                            embed.title = f"✅ APPROVED - {original_title}"
+                        await msg.edit(embed=embed)
+                except:
+                    pass
+
+        await interaction.response.send_message("✅ Suggestion approved!", ephemeral=True)
+
+    @discord.ui.button(label="Deny", style=discord.ButtonStyle.danger, emoji="❌", custom_id="suggestion_deny")
+    async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.manage_messages:
+            await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
+            return
+
+        await interaction.response.send_modal(DenySuggestionModal(self.suggestion_id, self.guild_id))
+
+    @discord.ui.button(label="In Progress", style=discord.ButtonStyle.primary, emoji="🚧", custom_id="suggestion_progress")
+    async def in_progress(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.manage_messages:
+            await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
+            return
+
+        config = dm.get_guild_data(self.guild_id, "suggestions_config", {})
+        suggestions = dm.get_guild_data(self.guild_id, "suggestions", [])
+        suggestion = self._get_suggestion(suggestions)
+
+        if not suggestion:
+            await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
+            return
+
+        suggestion['status'] = 'in_progress'
+        dm.update_guild_data(self.guild_id, "suggestions", suggestions)
+
+        # Update embed
+        suggestions_channel_id = config.get('suggestions_channel_id')
+        if suggestions_channel_id:
+            channel = interaction.client.get_channel(suggestions_channel_id)
+            if channel:
+                try:
+                    msg = await channel.fetch_message(suggestion.get('message_id'))
+                    if msg and msg.embeds:
+                        embed = msg.embeds[0]
+                        embed.color = discord.Color.blue()
+                        original_title = embed.title
+                        if "IN PROGRESS" not in original_title:
+                            embed.title = f"🚧 IN PROGRESS - {original_title}"
+                        await msg.edit(embed=embed)
+                except:
+                    pass
+
+        await interaction.response.send_message("🚧 Marked as in progress.", ephemeral=True)
+
+    @discord.ui.button(label="Completed", style=discord.ButtonStyle.primary, emoji="✅", custom_id="suggestion_completed")
+    async def completed(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.manage_messages:
+            await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
+            return
+
+        config = dm.get_guild_data(self.guild_id, "suggestions_config", {})
+        suggestions = dm.get_guild_data(self.guild_id, "suggestions", [])
+        suggestion = self._get_suggestion(suggestions)
+
+        if not suggestion:
+            await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
+            return
+
+        suggestion['status'] = 'completed'
+        dm.update_guild_data(self.guild_id, "suggestions", suggestions)
+
+        # Update embed
+        suggestions_channel_id = config.get('suggestions_channel_id')
+        if suggestions_channel_id:
+            channel = interaction.client.get_channel(suggestions_channel_id)
+            if channel:
+                try:
+                    msg = await channel.fetch_message(suggestion.get('message_id'))
+                    if msg and msg.embeds:
+                        embed = msg.embeds[0]
+                        embed.color = discord.Color.dark_blue()
+                        original_title = embed.title
+                        if "COMPLETED" not in original_title:
+                            embed.title = f"✅ COMPLETED - {original_title}"
+                        await msg.edit(embed=embed)
+                except:
+                    pass
+
+        await interaction.response.send_message("✅ Marked as completed.", ephemeral=True)
+
+    @discord.ui.button(label="Delete", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="suggestion_delete")
+    async def delete(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.manage_messages:
+            await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
+            return
+
+        config = dm.get_guild_data(self.guild_id, "suggestions_config", {})
+        suggestions = dm.get_guild_data(self.guild_id, "suggestions", [])
+
+        # Find suggestion to get message_id
+        suggestion = next((s for s in suggestions if s['id'] == self.suggestion_id), None)
+
+        # Remove from list
+        suggestions = [s for s in suggestions if s['id'] != self.suggestion_id]
+        dm.update_guild_data(self.guild_id, "suggestions", suggestions)
+
+        # Delete message
+        suggestions_channel_id = config.get('suggestions_channel_id')
+        if suggestions_channel_id and suggestion:
+            channel = interaction.client.get_channel(suggestions_channel_id)
+            if channel:
+                try:
+                    msg = await channel.fetch_message(suggestion.get('message_id'))
+                    await msg.delete()
+                except:
+                    pass
+
+        await interaction.response.send_message("🗑️ Suggestion deleted.", ephemeral=True)
+
+    @discord.ui.button(label="Pin", style=discord.ButtonStyle.secondary, emoji="📌", custom_id="suggestion_pin")
+    async def pin(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.manage_messages:
+            await interaction.response.send_message("❌ You need Manage Messages permission.", ephemeral=True)
+            return
+
+        config = dm.get_guild_data(self.guild_id, "suggestions_config", {})
+        suggestions = dm.get_guild_data(self.guild_id, "suggestions", [])
+        suggestion = self._get_suggestion(suggestions)
+
+        if not suggestion:
+            await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
+            return
+
+        suggestions_channel_id = config.get('suggestions_channel_id')
+        if suggestions_channel_id:
+            channel = interaction.client.get_channel(suggestions_channel_id)
+            if channel:
+                try:
+                    msg = await channel.fetch_message(suggestion.get('message_id'))
+                    await msg.pin()
+                except:
+                    pass
+
+        await interaction.response.send_message("📌 Suggestion pinned.", ephemeral=True)
+
+
+class DenySuggestionModal(discord.ui.Modal, title="Deny Suggestion"):
+    reason = discord.ui.TextInput(label="Reason for denial", placeholder="Provide a reason...", required=True, max_length=500)
+
+    def __init__(self, suggestion_id: int, guild_id: int):
+        super().__init__()
+        self.suggestion_id = suggestion_id
+        self.guild_id = guild_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        config = dm.get_guild_data(self.guild_id, "suggestions_config", {})
+        suggestions = dm.get_guild_data(self.guild_id, "suggestions", [])
+        suggestion = None
+        for s in suggestions:
+            if s['id'] == self.suggestion_id:
+                suggestion = s
+                break
+
+        if not suggestion:
+            await interaction.response.send_message("❌ Suggestion not found.", ephemeral=True)
+            return
+
+        suggestion['status'] = 'denied'
+        suggestion['reviewed_by'] = interaction.user.id
+        suggestion['review_timestamp'] = datetime.now(datetime.UTC).isoformat()
+        suggestion['deny_reason'] = self.reason.value
+        dm.update_guild_data(self.guild_id, "suggestions", suggestions)
+
+        # Update original embed
+        suggestions_channel_id = config.get('suggestions_channel_id')
+        if suggestions_channel_id:
+            channel = interaction.client.get_channel(suggestions_channel_id)
+            if channel:
+                try:
+                    msg = await channel.fetch_message(suggestion.get('message_id'))
+                    if msg and msg.embeds:
+                        embed = msg.embeds[0]
+                        embed.color = discord.Color.red()
+                        original_title = embed.title
+                        if "DENIED" not in original_title:
+                            embed.title = f"❌ DENIED - {original_title}"
+                        embed.add_field(name="❌ Denial Reason", value=self.reason.value, inline=False)
+                        await msg.edit(embed=embed)
+                except:
+                    pass
+
+        await interaction.response.send_message("❌ Suggestion denied.", ephemeral=True)
