@@ -420,7 +420,7 @@ class VerificationConfigView(ConfigPanelView):
         embed.add_field(name="Log Count", value=str(len(c.get("verification_log", []))), inline=True)
         return embed
 
-    @ui.button(label="Disable", emoji=get_animated_emoji("verification"), style=discord.ButtonStyle.danger, row=0, custom_id="cfg_verify_toggle")
+    @ui.button(label="Disable", emoji="🔒", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_verify_toggle")
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
         await self.save_config(c, i.guild_id, i.client, i)
@@ -1395,7 +1395,7 @@ class TicketsConfigView(ConfigPanelView):
         embed.add_field(name="📊 Stats", value=f"Total: {stats['total']} | Open: {stats['open']} | Closed: {stats['closed']}", inline=False)
         return embed
 
-    @ui.button(label="Disable", emoji=get_animated_emoji("tickets"), style=discord.ButtonStyle.danger, row=0, custom_id="cfg_tickets_toggle")
+    @ui.button(label="Disable", emoji="🎫", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_tickets_toggle")
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); await self.save_config(c, i.guild_id, i.client, i)
         log_panel_action(i.guild_id, i.user.id, f"Toggled tickets to {c.get('enabled')}")
@@ -3448,10 +3448,10 @@ class SuggestionsConfigView(ConfigPanelView):
             cats = ui.TextInput(label="Categories (comma-separated)", placeholder="Feature, Bug, Content, Other", required=True)
             async def on_submit(self, it):
                 categories = [c.strip() for c in self.cats.value.split(",") if c.strip()]
-                c = self.config_panel.get_config(it.guild_id) if hasattr(self, 'parent') else {}
+                c = self.parent.get_config(it.guild_id) if hasattr(self, 'parent') else {}
                 c["categories"] = categories
                 if hasattr(self, 'parent'):
-                    await self.config_panel.save_config(c, it.guild_id, it.client, it)
+                    await self.parent.save_config(c, it.guild_id, it.client, it)
                 else:
                     dm.update_guild_data(it.guild_id, "suggestions_config", c)
                 await it.response.send_message(f"✅ Categories updated: {', '.join(categories)}", ephemeral=True)
@@ -3679,7 +3679,7 @@ class EconomyConfigView(ConfigPanelView):
 
         return embed
 
-    @ui.button(label="Disable", emoji=get_animated_emoji("economy"), style=discord.ButtonStyle.danger, row=0, custom_id="cfg_eco_toggle")
+    @ui.button(label="Disable", emoji="💰", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_eco_toggle")
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id)
         c["enabled"] = not c.get("enabled", True)
@@ -4364,7 +4364,7 @@ class LevelingConfigView(ConfigPanelView):
         embed.add_field(name="Prestige Enabled", value="✅ Yes" if c.get("prestige_enabled", False) else "❌ No", inline=True)
         return embed
 
-    @ui.button(label="Disable", emoji=get_animated_emoji("leveling"), style=discord.ButtonStyle.danger, row=0, custom_id="cfg_lvl_toggle")
+    @ui.button(label="Disable", emoji="📈", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_lvl_toggle")
     async def toggle(self, i, b):
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
         await self.save_config(c, i.guild_id, i.client, i)
@@ -4665,7 +4665,7 @@ class StarboardConfigView(ConfigPanelView):
 
         return embed
 
-    @ui.button(label="Toggle Starboard", emoji=get_animated_emoji("starboard"), style=discord.ButtonStyle.success, row=0, custom_id="cfg_starboard_toggle")
+    @ui.button(label="Toggle Starboard", emoji="⭐", style=discord.ButtonStyle.success, row=0, custom_id="cfg_starboard_toggle")
     async def toggle(self, i, b):
         from modules.starboard import StarboardSystem
         starboard = StarboardSystem(i.client)
@@ -4858,7 +4858,7 @@ class AutoResponderConfigView(ConfigPanelView):
 
         return embed
 
-    @ui.button(label="Toggle System", emoji=get_animated_emoji("auto_responder"), style=discord.ButtonStyle.success, row=0, custom_id="cfg_ar_toggle")
+    @ui.button(label="Toggle System", emoji="🤖", style=discord.ButtonStyle.success, row=0, custom_id="cfg_ar_toggle")
     async def toggle_system(self, i, b):
         config = dm.get_guild_data(i.guild_id, "auto_responder_config", {"enabled": True, "cooldown": 5})
         config["enabled"] = not config.get("enabled", True)
