@@ -87,7 +87,7 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
         # Update user tracking
         if user_id_str not in user_suggestions:
             user_suggestions[user_id_str] = {}
-        user_suggestions[user_id_str]['last_submission'] = datetime.now(datetime.UTC).isoformat()
+        user_suggestions[user_id_str]['last_submission'] = datetime.now(timezone.utc).isoformat()
         user_suggestions[user_id_str]['count'] = user_suggestions[user_id_str].get('count', 0) + 1
         dm.update_guild_data(self.guild_id, 'suggestions_by_user', user_suggestions)
 
@@ -100,7 +100,7 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
                     title=f"💡 {self.title_input.value}",
                     description=self.description_input.value,
                     color=discord.Color.blue(),
-                    timestamp=datetime.now(datetime.UTC)
+                    timestamp=datetime.now(timezone.utc)
                 )
                 embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url if interaction.user.avatar else None)
                 embed.add_field(name="📝 Category", value=suggestion_data['category'], inline=True)
@@ -135,7 +135,7 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
             'action': 'suggestion_approved',
             'moderator_id': interaction.user.id,
             'suggestion_id': self.suggestion_id,
-            'timestamp': datetime.now(datetime.UTC).isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         })
         dm.update_guild_data(self.guild_id, 'action_logs', action_log[-1000:])
         
@@ -324,7 +324,7 @@ class DenySuggestionModal(ui.Modal, title="Deny Suggestion"):
 
         suggestion['status'] = 'denied'
         suggestion['reviewed_by'] = interaction.user.id
-        suggestion['review_timestamp'] = datetime.now(datetime.UTC).isoformat()
+        suggestion['review_timestamp'] = datetime.now(timezone.utc).isoformat()
         suggestion['deny_reason'] = self.reason.value
         dm.update_guild_data(self.guild_id, 'suggestions', suggestions)
         
@@ -613,7 +613,7 @@ class SuggestionReviewView(discord.ui.View):
 
         suggestion['status'] = 'approved'
         suggestion['reviewed_by'] = interaction.user.id
-        suggestion['review_timestamp'] = datetime.now(datetime.UTC).isoformat()
+        suggestion['review_timestamp'] = datetime.now(timezone.utc).isoformat()
         dm.update_guild_data(self.guild_id, "suggestions", suggestions)
 
         # Update original embed
@@ -794,7 +794,7 @@ class DenySuggestionModal(discord.ui.Modal, title="Deny Suggestion"):
 
         suggestion['status'] = 'denied'
         suggestion['reviewed_by'] = interaction.user.id
-        suggestion['review_timestamp'] = datetime.now(datetime.UTC).isoformat()
+        suggestion['review_timestamp'] = datetime.now(timezone.utc).isoformat()
         suggestion['deny_reason'] = self.reason.value
         dm.update_guild_data(self.guild_id, "suggestions", suggestions)
 
