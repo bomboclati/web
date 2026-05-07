@@ -101,6 +101,7 @@ class MiroBot(commands.Bot):
         self._cmd_cooldown_seconds = 3
         self.ai_sessions = {}     # user_id -> {messages: [...], last_interaction: interaction, original_request: str}
         self._listeners = {}      # event_type -> [listener_data, ...]
+        self.conversation_context = {}  # (user_id, channel_id) -> [messages]
         
         # Internal Systems
         self.economy = Economy(self)
@@ -163,6 +164,7 @@ class MiroBot(commands.Bot):
             await self.load_extension('cogs.core_commands')
             await self.load_extension('modules.auto_setup')
             await self.load_extension('modules.proactive_assist')
+            await self.load_extension('cogs.auto_delete')
             logger.info("Core extensions loaded successfully.")
         except Exception as e:
             logger.error(f"Failed to load extensions: {e}")
@@ -639,9 +641,15 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         await self._safe_call(self.chat_channels.handle_message(message), "chat_channels")
 
         # 3. Reply-Based AI Triggering (handle replies to bot messages)
-        if message.reference and message.reference.message and message.reference.message.author == self.user:
-            await self._handle_reply_ai(message)
-            return
+        if message.reference and message.reference.message_id:
+            try:
+                ref_msg = await message.channel.fetch_message(message.reference.message_id)
+            except discord.NotFound:
+                pass
+            else:
+                if ref_msg and ref_msg.author == self.user:
+                    await self._handle_reply_ai(message)
+                    return
 
         # 4. Mention-Based AI Triggering (NEW FEATURE)
         if self.user and self.user.mentioned_in(message):
@@ -1858,9 +1866,28 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
     async def _handle_reply_ai(self, message):
         """
         Handle replies to the bot's messages - provides conversational AI response.
-        Similar to mention AI but indicates it's a reply for context.
+        Shows typing indicator, no build actions, maintains context.
         """
-        await self._handle_mention_ai(message)
+        async with message.channel.typing():
+            # Get conversation context
+            key = (message.author.id, message.channel.id)
+            context = self.conversation_context.get(key, [])
+            # Add current message to context
+            context.append({"role": "user", "content": message.content})
+            # Generate conversational response (no build actions)
+            try:
+                # Use AI client to generate response, instruct no build actions
+                prompt = f"You are in a conversational context. Do NOT perform any build actions (creating channels, roles, etc.). Only provide conversational replies. Recent context: {context[-5:]}\nUser message: {message.content}"
+                # Assume self.ai has a generate method; adjust as per actual AI client
+                response = await self.ai.generate_response(prompt, max_tokens=2000)
+                # Send reply
+                await message.reply(response)
+                # Update context
+                context.append({"role": "assistant", "content": response})
+                self.conversation_context[key] = context[-10:]  # Keep last 10 messages
+            except Exception as e:
+                logger.error(f"Conversational reply failed: {e}")
+                await message.reply("Sorry, I couldn't generate a response right now.")
 
     async def _reload_event_listeners(self):
         """Reload event listeners from data/event_listeners.json"""

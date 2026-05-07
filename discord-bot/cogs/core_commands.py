@@ -6,6 +6,7 @@ import logging
 from data_manager import dm
 from typing import List
 import time
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -228,15 +229,14 @@ class CoreCommands(commands.Cog):
         last_time = last_daily.get(str(user_id))
 
         if last_time:
-            import datetime
-            last_date = datetime.datetime.fromisoformat(last_time)
-            if (datetime.datetime.now() - last_date).days < 1:
+            last_date = datetime.fromisoformat(last_time).replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - last_date).days < 1:
                 await interaction.response.send_message("🎉 Daily reward already claimed today!", ephemeral=True)
                 return
 
         reward = 100
         economy.add_coins(guild_id, user_id, reward)
-        last_daily[str(user_id)] = str(datetime.datetime.now())
+        last_daily[str(user_id)] = datetime.now(timezone.utc).isoformat()
         dm.update_guild_data(guild_id, "last_daily", last_daily)
 
         await interaction.response.send_message(f"🎉 You claimed **{reward} coins**!", ephemeral=True)
@@ -253,15 +253,14 @@ class CoreCommands(commands.Cog):
         last_time = last_daily.get(str(user_id))
 
         if last_time:
-            import datetime
-            last_date = datetime.datetime.fromisoformat(last_time)
-            if (datetime.datetime.now() - last_date).days < 1:
+            last_date = datetime.fromisoformat(last_time).replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - last_date).days < 1:
                 await interaction.response.send_message("🎉 Daily reward already claimed today!", ephemeral=True)
                 return
 
         reward = 100
         economy.add_coins(guild_id, user_id, reward)
-        last_daily[str(user_id)] = str(datetime.datetime.now())
+        last_daily[str(user_id)] = datetime.now(timezone.utc).isoformat()
         dm.update_guild_data(guild_id, "last_daily", last_daily)
 
         await interaction.response.send_message(f"🎉 You claimed **{reward} coins**!", ephemeral=True)

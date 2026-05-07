@@ -129,8 +129,19 @@ class Verification:
         config = self._get_admin_config(guild.id)
 
         try:
-            if uv: await member.remove_roles(uv)
-            if v: await member.add_roles(v)
+            if uv: 
+                try:
+                    await member.remove_roles(uv)
+                except discord.Forbidden:
+                    logger.warning(f"No permission to remove role {uv.id} from member {member.id}")
+            if v: 
+                try:
+                    await member.add_roles(v)
+                except discord.Forbidden:
+                    logger.warning(f"No permission to add role {v.id} to member {member.id}")
+                    # Send error message to channel if possible
+                    if hasattr(message, 'channel'):
+                        await message.channel.send("❌ I don't have permission to assign roles. Please check my role hierarchy and permissions.")
 
             # Log
             log = config.get("verification_log", [])

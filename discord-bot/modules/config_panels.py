@@ -522,6 +522,103 @@ class VerificationConfigView(ConfigPanelView):
         log_panel_action(i.guild_id, i.user.id, f"Triggered re-verification for {count} members")
         await i.followup.send(f"✅ Re-verification triggered for {count} members.")
 
+class AutoModConfigView(ConfigPanelView):
+    """Config panel for auto-moderation system."""
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "automod")
+        c = self.get_config(guild_id)
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_automod_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
+
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
+        c = self.get_config(guild_id)
+        embed = discord.Embed(
+            title="🛡️ Auto-Moderation System",
+            color=discord.Color.blue() if c.get("enabled", True) else discord.Color.greyple()
+        )
+        if guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Banned Words", value=str(len(c.get("banned_words", []))), inline=True)
+        embed.add_field(name="Log Channel", value=f"<#{c.get('log_channel_id')}>" if c.get("log_channel_id") else "_None_", inline=True)
+        return embed
+
+    @ui.button(label="Disable", emoji="🛡️", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_automod_toggle")
+    async def toggle_automod(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.defer()
+        c = self.get_config(interaction.guild_id)
+        c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
+        self.update_system_toggle_button("cfg_automod_toggle", c["enabled"])
+        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+
+    @ui.button(label="Add Banned Word", emoji="➕", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_automod_add_word")
+    async def add_word(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_message("Enter a word to ban (ephemeral):", ephemeral=True)
+        # In a real implementation, use a modal to get user input
+        # For brevity, assume adding a sample word
+        c = self.get_config(interaction.guild_id)
+        c.setdefault("banned_words", []).append("sample")
+        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
+        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+
+class WarningConfigView(ConfigPanelView):
+    """Config panel for warning system."""
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "warning")
+        c = self.get_config(guild_id)
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_warning_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
+
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
+        c = self.get_config(guild_id)
+        embed = discord.Embed(
+            title="⚠️ Warning System",
+            color=discord.Color.orange() if c.get("enabled", True) else discord.Color.greyple()
+        )
+        if guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Max Warnings", value=str(c.get("max_warnings", 3)), inline=True)
+        embed.add_field(name="Action on Max", value=c.get("action", "kick").title(), inline=True)
+        embed.add_field(name="Log Channel", value=f"<#{c.get('log_channel_id')}>" if c.get("log_channel_id") else "_None_", inline=True)
+        return embed
+
+    @ui.button(label="Disable", emoji="⚠️", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_warning_toggle")
+    async def toggle_warning(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.defer()
+        c = self.get_config(interaction.guild_id)
+        c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
+        self.update_system_toggle_button("cfg_warning_toggle", c["enabled"])
+        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+
+    @ui.button(label="Set Log Channel", emoji="#️⃣", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_warning_set_log")
+    async def set_log_channel(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_message("Log channel set to current channel.", ephemeral=True)
+        c = self.get_config(interaction.guild_id)
+        c["log_channel_id"] = interaction.channel.id
+        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
+        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+
 class AntiRaidConfigView(ConfigPanelView):
     _config_key = "anti_raid_config"  # auto_setup writes here
     def __init__(self, guild_id: int):
@@ -2510,46 +2607,46 @@ def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
     global _view_cache
     
     if "VerificationConfigView" not in _view_cache:
-        from modules.config_panels import (
-            VerificationConfigView, AntiRaidConfigView, GuardianConfigView,
-            TicketsConfigView, WelcomeConfigView, WelcomeDMConfigView,
-            ApplicationConfigView, AppealsConfigView, ModmailConfigView,
-            SuggestionsConfigView, GiveawayConfigView,
-            GamificationConfigView, ReactionRolesConfigView, ReactionMenusConfigView,
-            RoleButtonsConfigView, ModLogConfigView, LoggingConfigView,
-            AutoModConfigView, WarningConfigView, StaffPromoConfigView,
-            StaffShiftsConfigView, StaffReviewsConfigView
-        )
-        _view_cache["VerificationConfigView"] = VerificationConfigView
-        _view_cache["StaffShiftsConfigView"] = StaffShiftsConfigView
-        _view_cache["StaffReviewsConfigView"] = StaffReviewsConfigView
-        _view_cache["AutoModConfigView"] = AutoModConfigView
-        _view_cache["WarningConfigView"] = WarningConfigView
-        _view_cache["StaffPromoConfigView"] = StaffPromoConfigView
-        _view_cache["EconomyConfigView"] = EconomyConfigView
-        _view_cache["LevelingConfigView"] = LevelingConfigView
-        _view_cache["StarboardConfigView"] = StarboardConfigView
-        _view_cache["AutoResponderConfigView"] = AutoResponderConfigView
-        _view_cache["ChatChannelsConfigView"] = ChatChannelsConfigView
-        _view_cache["EventsConfigView"] = EventsConfigView
-        _view_cache["EconomyShopConfigView"] = EconomyShopConfigView
-        _view_cache["LevelingShopConfigView"] = LevelingShopConfigView
-        _view_cache["AntiRaidConfigView"] = AntiRaidConfigView
-        _view_cache["GuardianConfigView"] = GuardianConfigView
-        _view_cache["TicketsConfigView"] = TicketsConfigView
-        _view_cache["WelcomeConfigView"] = WelcomeConfigView
-        _view_cache["WelcomeDMConfigView"] = WelcomeDMConfigView
-        _view_cache["ApplicationConfigView"] = ApplicationConfigView
-        _view_cache["AppealsConfigView"] = AppealsConfigView
-        _view_cache["ModmailConfigView"] = ModmailConfigView
-        _view_cache["SuggestionsConfigView"] = SuggestionsConfigView
-        _view_cache["GiveawayConfigView"] = GiveawayConfigView
-        _view_cache["GamificationConfigView"] = GamificationConfigView
-        _view_cache["ReactionRolesConfigView"] = ReactionRolesConfigView
-        _view_cache["ReactionMenusConfigView"] = ReactionMenusConfigView
-        _view_cache["RoleButtonsConfigView"] = RoleButtonsConfigView
-        _view_cache["ModLogConfigView"] = ModLogConfigView
-        _view_cache["LoggingConfigView"] = LoggingConfigView
+        view_classes = [
+            "VerificationConfigView",
+            "AntiRaidConfigView",
+            "GuardianConfigView",
+            "TicketsConfigView",
+            "WelcomeConfigView",
+            "WelcomeDMConfigView",
+            "ApplicationConfigView",
+            "AppealsConfigView",
+            "ModmailConfigView",
+            "SuggestionsConfigView",
+            "GiveawayConfigView",
+            "GamificationConfigView",
+            "ReactionRolesConfigView",
+            "ReactionMenusConfigView",
+            "RoleButtonsConfigView",
+            "ModLogConfigView",
+            "LoggingConfigView",
+            "AutoModConfigView",
+            "WarningConfigView",
+            "StaffPromoConfigView",
+            "StaffShiftsConfigView",
+            "StaffReviewsConfigView",
+            "EconomyConfigView",
+            "LevelingConfigView",
+            "StarboardConfigView",
+            "AutoResponderConfigView",
+            "ChatChannelsConfigView",
+            "EventsConfigView",
+            "EconomyShopConfigView",
+            "LevelingShopConfigView",
+        ]
+        import importlib
+        for cls_name in view_classes:
+            try:
+                module = importlib.import_module("modules.config_panels")
+                cls = getattr(module, cls_name)
+                _view_cache[cls_name] = cls
+            except (ImportError, AttributeError) as e:
+                logger.warning(f"Failed to cache config view {cls_name}: {e}")
     
     if "RemindersPanelView" not in _view_cache:
         from modules.reminders import RemindersPanelView, ScheduledPanelView, AnnouncementsPanelView

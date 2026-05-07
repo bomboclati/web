@@ -310,7 +310,7 @@ Only suggest actions from this list. Do not invent new actions:
                     "model": self.model,
                     "messages": [{"role": "user", "content": enhancement_prompt}],
                     "temperature": 0.3,
-                    "max_tokens": 500
+                    "max_tokens": 2000
                 }
                 
                 async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
