@@ -227,14 +227,12 @@ class _GenericChannelSelect(ui.ChannelSelect):
         self.key = key
 
     async def callback(self, interaction: Interaction):
+        await interaction.response.defer(ephemeral=True)
         config = self.config_panel.get_config(interaction.guild_id)
         config[self.key] = self.values[0].id
         await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to #{self.values[0].name}")
-        if interaction.response.is_done():
-            await interaction.followup.send(f"✅ Set **{self.key.replace('_',' ').title()}** to <#{self.values[0].id}>", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to <#{self.values[0].id}>", ephemeral=True)
+        await interaction.followup.send(f"✅ Set **{self.key.replace('_',' ').title()}** to <#{self.values[0].id}>", ephemeral=True)
         # Update the original config panel
         if self.config_panel.panel_message:
             try:
