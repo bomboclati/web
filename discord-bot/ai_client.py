@@ -365,7 +365,80 @@ Only suggest actions from this list. Do not invent new actions:
             raise last_error
         
         raise Exception("AI failed to respond after trying all configured fallback providers.")
-
+    
+    async def generate_response(self, messages: List[Dict[str, str]], guild_id: int, user_id: int, max_tokens: int = 800) -> str:
+        """
+        Generate a text response from the AI using the provided messages.
+        Returns just the text string (not a dict).
+        """
+        # Get API key and provider for this guild
+        keys_to_try = self._get_all_guild_keys(guild_id)
+        if not keys_to_try:
+            logger.error(f"[AI ERROR] No API keys configured for guild {guild_id}")
+            return ""
+        
+        # Use the first key
+        key_bundle = keys_to_try[0]
+        api_key = key_bundle["api_key"]
+        provider = key_bundle["provider"]
+        
+        # Determine model
+        active_model = self.model or "gpt-3.5-turbo"
+        
+        # Build payload
+        payload = {
+            "model": active_model,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": max_tokens,
+        }
+        
+        # Set headers
+        if provider == "anthropic":
+            headers = {
+                "x-api-key": api_key.strip(),
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json"
+            }
+        else:
+            headers = {
+                "Authorization": f"Bearer {api_key.strip()}",
+                "Content-Type": "application/json"
+            }
+            if provider == "openrouter":
+                headers["HTTP-Referer"] = "https://github.com/antigravity"
+                headers["X-Title"] = "Miro AI Discord Bot"
+        
+        # Make request
+        timeout = aiohttp.ClientTimeout(total=45, connect=10)
+        async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+            provider_url = self.base_urls.get(provider)
+            if not provider_url:
+                logger.error(f"Unsupported AI provider: {provider}")
+                return ""
+            
+            async with session.post(provider_url, json=payload) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    logger.error(f"AI API Error from {provider} ({resp.status}): {text}")
+                    return ""
+                
+                res_data = await resp.json()
+                
+                # Extract text from response
+                try:
+                    if 'choices' in res_data:
+                        return res_data['choices'][0]['message']['content']
+                    elif 'content' in res_data:
+                        return res_data['content'][0]['text']
+                    elif 'message' in res_data and 'content' in res_data['message']:
+                        return res_data['message']['content']
+                    else:
+                        logger.error(f"Unknown response structure from {provider}: {res_data}")
+                        return ""
+                except (KeyError, IndexError, TypeError) as e:
+                    logger.error(f"Failed to parse {provider} response: {e}")
+                    return ""
 
     async def safe_chat(self, guild_id: int, user_id: int, user_input: str, system_prompt: str) -> Dict[str, Any]:
         """

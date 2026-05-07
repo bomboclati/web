@@ -1877,19 +1877,31 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
 
         async with message.channel.typing():
             try:
-                # Build prompt with context, instruct no build actions
-                prompt = f"You are a conversational assistant. Do NOT perform any build actions (creating channels, roles, commands). Only reply conversationally. Recent context (last 5 messages): {context[-5:]}\nUser: {message.content}"
-                # Offload AI call to background task to avoid blocking event loop
-                task = asyncio.create_task(self.ai.generate_response(prompt, max_tokens=2000))
-                response = await task
-                # Send reply
-                await message.reply(response)
-                # Update context
-                context.append({"role": "assistant", "content": response})
-                self.conversation_context[key] = context[-10:]
+                # Build messages for AI - instruct no build actions
+                messages = [
+                    {"role": "system", "content": "You are a conversational assistant. Do NOT perform any build actions (creating channels, roles, commands). Only reply conversationally."}
+                ]
+                # Add recent context (last 5 messages)
+                messages.extend(context[-5:])
+                
+                # Call AI to generate response
+                response = await self.ai.generate_response(
+                    messages=messages,
+                    guild_id=message.guild.id if message.guild else 0,
+                    user_id=message.author.id,
+                    max_tokens=800
+                )
+                
+                if response:
+                    # Send reply
+                    await message.reply(response)
+                    # Update context
+                    context.append({"role": "assistant", "content": response})
+                    self.conversation_context[key] = context[-10:]
+                else:
+                    logger.warning("Empty response from AI for conversational reply")
             except Exception as e:
                 logger.error(f"Conversational reply failed: {e}")
-                await message.reply("Sorry, I couldn't generate a response right now.")
 
     async def _reload_event_listeners(self):
         """Reload event listeners from data/event_listeners.json"""
