@@ -679,8 +679,17 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                 if system:
                     # Check if user is admin or owner
                     if not message.author.guild_permissions.administrator and message.author.id != message.guild.owner_id:
-                        await message.channel.send("❌ Only administrators can use this command.")
+                        try:
+                            await message.author.send("❌ Only administrators can use this command.")
+                        except:
+                            pass  # DM might fail
                         return
+                    # Send ephemeral-like feedback via DM
+                    system_name = system.replace('_', ' ').title()
+                    try:
+                        await message.author.send(f"Opening {system_name} configuration…")
+                    except:
+                        pass  # DM might fail
                     from modules.config_panels import handle_config_panel_command
                     await handle_config_panel_command(message, system)
                     return
