@@ -8,6 +8,7 @@ from discord import ui, app_commands
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict
 import time
+import uuid
 
 from data_manager import dm
 
@@ -16,6 +17,7 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
     def __init__(self, guild_id: int):
         super().__init__()
         self.guild_id = guild_id
+        self.suggestion_id = str(uuid.uuid4())
 
         # Get categories from config
         config = dm.get_guild_data(guild_id, "suggestions_config", {})
@@ -61,9 +63,9 @@ class SuggestionModal(ui.Modal, title="Submit a Suggestion"):
                     )
                     return
 
-        # Generate suggestion ID
+        # Use pre-generated suggestion ID
         suggestions = dm.get_guild_data(self.guild_id, 'suggestions', [])
-        suggestion_id = len(suggestions) + 1
+        suggestion_id = self.suggestion_id
 
         # Create suggestion data
         suggestion_data = {

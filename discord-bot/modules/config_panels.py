@@ -205,7 +205,10 @@ class _GenericRoleSelect(ui.RoleSelect):
         config[self.key] = self.values[0].id
         await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {self.values[0].name}")
-        await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to {self.values[0].mention}", ephemeral=True)
+        if interaction.response.is_done():
+            await interaction.followup.send(f"✅ Set **{self.key.replace('_',' ').title()}** to {self.values[0].mention}", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to {self.values[0].mention}", ephemeral=True)
         # Update the original config panel
         if self.config_panel.panel_message:
             try:
@@ -230,7 +233,10 @@ class _GenericChannelSelect(ui.ChannelSelect):
         config[self.key] = self.values[0].id
         await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to #{self.values[0].name}")
-        await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to <#{self.values[0].id}>", ephemeral=True)
+        if interaction.response.is_done():
+            await interaction.followup.send(f"✅ Set **{self.key.replace('_',' ').title()}** to <#{self.values[0].id}>", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to <#{self.values[0].id}>", ephemeral=True)
         # Update the original config panel
         if self.config_panel.panel_message:
             try:
@@ -249,9 +255,9 @@ class _NumberModal(ui.Modal):
         self.config_panel = parent
         self.key = key
         self.min_v, self.max_v = min_v, max_v
-        self.value_input.label = label
+        self.value_input.label = discord.ui.Label(text=label)
         if second_label:
-            self.second_value.label = second_label
+            self.second_value.label = discord.ui.Label(text=second_label)
             self.second_value.required = False
         existing = parent.get_config(guild_id).get(key)
         if existing is not None:
@@ -356,7 +362,7 @@ class _TextModal(ui.Modal):
         super().__init__(title=label)
         self.config_panel = parent
         self.key = key
-        self.value_input.label = label
+        self.value_input.label = discord.ui.Label(text=label)
         existing = parent.get_config(guild_id).get(key, "")
         if existing:
             self.value_input.default = str(existing)
