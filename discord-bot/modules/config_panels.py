@@ -2896,9 +2896,6 @@ class WelcomeDMConfigView(ConfigPanelView):
         await self.save_config(c, interaction.guild_id, interaction.client, interaction)
         self.update_system_toggle_button("cfg_welcomedm_toggle", c["enabled"])
         await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
-            await interaction.followup.send("Ticket category set to current channel's category.", ephemeral=True)
-        else:
-            await interaction.followup.send("Current channel has no category.", ephemeral=True)
 
 class ApplicationConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
