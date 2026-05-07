@@ -2810,7 +2810,10 @@ class TicketsConfigView(ConfigPanelView):
         if interaction.channel.category:
             c["category_id"] = interaction.channel.category.id
             await self.save_config(c, interaction.guild_id, interaction.client, interaction)
-        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+            await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+            await interaction.followup.send("Ticket category set to current channel's category.", ephemeral=True)
+        else:
+            await interaction.followup.send("Current channel has no category.", ephemeral=True)
 
 class ApplicationConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
@@ -2848,93 +2851,7 @@ class ApplicationConfigView(ConfigPanelView):
         await self.save_config(c, interaction.guild_id, interaction.client, interaction)
         self.update_system_toggle_button("cfg_application_toggle", c["enabled"])
         await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
-            await interaction.followup.send("Ticket category set to current channel's category.", ephemeral=True)
-        else:
-            await interaction.followup.send("Current channel has no category.", ephemeral=True)
 
-class WelcomeConfigView(ConfigPanelView):
-    def __init__(self, guild_id: int):
-        super().__init__(guild_id, "welcome")
-        c = self.get_config(guild_id)
-        for item in self.children:
-            if isinstance(item, ui.Button) and item.custom_id == "cfg_welcome_toggle":
-                if c.get("enabled", True):
-                    item.label = "Disable"
-                    item.style = discord.ButtonStyle.danger
-                    item.emoji = "❌"
-                else:
-                    item.label = "Enable"
-                    item.style = discord.ButtonStyle.success
-                    item.emoji = "✅"
-                break
-
-    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
-        c = self.get_config(guild_id)
-        embed = discord.Embed(
-            title="👋 Welcome System",
-            color=discord.Color.green() if c.get("enabled", True) else discord.Color.greyple()
-        )
-        if guild and guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
-        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
-        embed.add_field(name="Welcome Channel", value=f"<#{c.get('welcome_channel_id')}>" if c.get("welcome_channel_id") else "_None_", inline=True)
-        embed.add_field(name="Welcome Message", value=c.get("welcome_message", "_Default_")[:100], inline=False)
-        return embed
-
-    @ui.button(label="Disable", emoji="👋", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_welcome_toggle")
-    async def toggle_welcome(self, interaction: Interaction, button: ui.Button):
-        await interaction.response.defer()
-        c = self.get_config(interaction.guild_id)
-        c["enabled"] = not c.get("enabled", True)
-        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
-        self.update_system_toggle_button("cfg_welcome_toggle", c["enabled"])
-        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
-
-    @ui.button(label="Set Channel", emoji="#️⃣", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_welcome_set_channel")
-    async def set_channel(self, interaction: Interaction, button: ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        c = self.get_config(interaction.guild_id)
-        c["welcome_channel_id"] = interaction.channel.id
-        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
-        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
-        await interaction.followup.send("Welcome channel set to current channel.", ephemeral=True)
-
-class WelcomeDMConfigView(ConfigPanelView):
-    def __init__(self, guild_id: int):
-        super().__init__(guild_id, "welcomedm")
-        c = self.get_config(guild_id)
-        for item in self.children:
-            if isinstance(item, ui.Button) and item.custom_id == "cfg_welcomedm_toggle":
-                if c.get("enabled", True):
-                    item.label = "Disable"
-                    item.style = discord.ButtonStyle.danger
-                    item.emoji = "❌"
-                else:
-                    item.label = "Enable"
-                    item.style = discord.ButtonStyle.success
-                    item.emoji = "✅"
-                break
-
-    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
-        c = self.get_config(guild_id)
-        embed = discord.Embed(
-            title="✉️ Welcome DM System",
-            color=discord.Color.green() if c.get("enabled", True) else discord.Color.greyple()
-        )
-        if guild and guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
-        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
-        embed.add_field(name="DM Message", value=c.get("dm_message", "_Default_")[:100], inline=False)
-        return embed
-
-    @ui.button(label="Disable", emoji="✉️", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_welcomedm_toggle")
-    async def toggle_welcomedm(self, interaction: Interaction, button: ui.Button):
-        await interaction.response.defer()
-        c = self.get_config(interaction.guild_id)
-        c["enabled"] = not c.get("enabled", True)
-        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
-        self.update_system_toggle_button("cfg_welcomedm_toggle", c["enabled"])
-        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
 class AppealsConfigView(ConfigPanelView):
     def __init__(self, guild_id: int):
         super().__init__(guild_id, "appeals")
