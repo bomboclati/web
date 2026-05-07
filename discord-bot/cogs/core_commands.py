@@ -14,45 +14,39 @@ class CoreCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # Model lists for each provider - Enhanced from bot.py
+    # Model lists for each provider - Real models only
     COMMON_MODELS = [
         "llama-3.3-70b-versatile", "llama-3.3-8b-instant",
         "llama-3.2-1b-preview", "llama-3.2-3b-preview", "llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview",
         "llama-3.1-8b-instant", "llama-guard-3-8b", "whisper-large-v3-turbo", "whisper-large-v3",
         "gemma2-9b-it", "gemma-7b-it", "mixtral-8x7b-32768",
-        "qwen-2.5-coder-32b-instruct", "qwen-2.5-32b-instruct", "qwen-k1-0905",
-        "mistral-saba-24b", "moonshot-v1-8k", "deepseek-r1-distill-qwen-32b",
-        "meta-llama/llama-4-maverick-17b-128e-instruct-fp8", "meta-llama/llama-4-scout-17b-16e-instruct",
-        "llama-3-groq-70b-tool-use-preview", "llama-3-groq-8b-tool-use-preview",
-        "qwen3.6-plus", "qwen3.6-max", "qwen3.5-omni", "qwen-max-latest", "qwen-turbo-latest",
-        "gemini-3.1-pro", "gemini-3.1-flash", "gemini-3.1-flash-lite", "gemini-3.1-flash-live",
-        "gemini-3-pro", "gemini-3-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite",
-        "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash",
-        "gpt-5", "gpt-4o", "gpt-4o-mini", "o1", "o3-mini",
-        "claude-3-5-sonnet", "claude-3-7-sonnet", "claude-4-opus",
-        "llama-4-405b", "llama-3.1-405b",
-        "google/gemini-3.1-pro", "deepseek/deepseek-v3", "meta-llama/llama-3.1-70b"
+        "qwen-2.5-coder-32b-instruct", "qwen-2.5-32b-instruct", "qwen-2.5-72b-instruct",
+        "mistral-large-latest", "mistral-medium-latest", "mistral-small-latest", "codestral-latest",
+        "deepseek-v3", "deepseek-r1",
+        "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash",
+        "gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo",
+        "claude-3-5-sonnet-20240620", "claude-3-opus-20240229"
     ]
-
+    
     MODEL_CHOICES = {
-        "openrouter": ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash"],
-        "openai": ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
-        "gemini": ["gemini-2.5-pro", "gemini-2.5-flash-lite", "gemini-2.0-flash"],
+        "openrouter": ["openai/gpt-4o", "anthropic/claude-3-5-sonnet", "google/gemini-2.0-flash", "meta-llama/llama-3.3-70b"],
+        "openai": ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"],
+        "gemini": ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash"],
         "groq": ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
-        "mistral": ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"],
+        "mistral": ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest", "codestral-latest"],
         "deepseek": ["deepseek-chat", "deepseek-coder"],
         "anthropic": ["claude-3-5-sonnet-20240620", "claude-3-opus-20240229"],
         "dashscope": ["qwen-turbo", "qwen-plus", "qwen-max"]
     }
-
+    
     def get_default_model(self, provider: str) -> str:
         """Get the default model for a provider"""
         defaults = {
             "openrouter": "openai/gpt-4o",
             "openai": "gpt-4o",
-            "gemini": "gemini-2.5-pro",
+            "gemini": "gemini-1.5-flash",
             "groq": "llama-3.3-70b-versatile",
-            "mistral": "mistral-large-latest",
+            "mistral": "mistral-small-latest",
             "deepseek": "deepseek-chat",
             "anthropic": "claude-3-5-sonnet-20240620",
             "dashscope": "qwen-turbo"

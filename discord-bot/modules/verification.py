@@ -43,6 +43,7 @@ class VerifyView(ui.View):
 class Verification:
     def __init__(self, bot):
         self.bot = bot
+        self._last_403_warn = {}  # guild_id -> last warning timestamp
 
     def _get_admin_config(self, guild_id: int) -> dict:
         return dm.get_guild_data(guild_id, "verification_config", {
@@ -139,9 +140,15 @@ class Verification:
                     await member.add_roles(v)
                 except discord.Forbidden:
                     logger.warning(f"No permission to add role {v.id} to member {member.id}")
-                    # Send error message to channel if possible
-                    if hasattr(message, 'channel'):
-                        await message.channel.send("❌ I don't have permission to assign roles. Please check my role hierarchy and permissions.")
+                    # Send error message to channel if possible (rate-limited)
+                    if not hasattr(self, '_last_403_warn') or time.time() - self._last_403_warn.get(guild.id, 0) > 1800:
+                        if not hasattr(self, '_last_403_warn'):
+                            self._last_403_warn = {}
+                        self._last_403_warn[guild.id] = time.time()
+                        try:
+                            await interaction.channel.send("❌ I don't have permission to assign roles. Please check my role hierarchy and permissions.")
+                        except:
+                            pass
 
             # Log
             log = config.get("verification_log", [])

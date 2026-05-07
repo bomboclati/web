@@ -366,7 +366,7 @@ Only suggest actions from this list. Do not invent new actions:
         
         raise Exception("AI failed to respond after trying all configured fallback providers.")
     
-    async def generate_response(self, messages: List[Dict[str, str]], guild_id: int, user_id: int, max_tokens: int = 800) -> str:
+    async def generate_response(self, messages: List[Dict[str, str]], guild_id: int, user_id: int, max_tokens: int = 400) -> str:
         """
         Generate a text response from the AI using the provided messages.
         Returns just the text string (not a dict).
