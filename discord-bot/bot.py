@@ -1868,23 +1868,25 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
         Handle replies to the bot's messages - provides conversational AI response.
         Shows typing indicator, no build actions, maintains context.
         """
+        # Get conversation context
+        key = (message.author.id, message.channel.id)
+        context = self.conversation_context.get(key, [])
+        # Add current message to context
+        context.append({"role": "user", "content": message.content})
+        self.conversation_context[key] = context[-10:]  # Keep last 10 messages
+
         async with message.channel.typing():
-            # Get conversation context
-            key = (message.author.id, message.channel.id)
-            context = self.conversation_context.get(key, [])
-            # Add current message to context
-            context.append({"role": "user", "content": message.content})
-            # Generate conversational response (no build actions)
             try:
-                # Use AI client to generate response, instruct no build actions
-                prompt = f"You are in a conversational context. Do NOT perform any build actions (creating channels, roles, etc.). Only provide conversational replies. Recent context: {context[-5:]}\nUser message: {message.content}"
-                # Assume self.ai has a generate method; adjust as per actual AI client
-                response = await self.ai.generate_response(prompt, max_tokens=2000)
+                # Build prompt with context, instruct no build actions
+                prompt = f"You are a conversational assistant. Do NOT perform any build actions (creating channels, roles, commands). Only reply conversationally. Recent context (last 5 messages): {context[-5:]}\nUser: {message.content}"
+                # Offload AI call to background task to avoid blocking event loop
+                task = asyncio.create_task(self.ai.generate_response(prompt, max_tokens=2000))
+                response = await task
                 # Send reply
                 await message.reply(response)
                 # Update context
                 context.append({"role": "assistant", "content": response})
-                self.conversation_context[key] = context[-10:]  # Keep last 10 messages
+                self.conversation_context[key] = context[-10:]
             except Exception as e:
                 logger.error(f"Conversational reply failed: {e}")
                 await message.reply("Sorry, I couldn't generate a response right now.")
