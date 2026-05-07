@@ -1,4 +1,4 @@
-﻿import discord
+import discord
 from discord import ui, Interaction, app_commands
 import asyncio
 import json
