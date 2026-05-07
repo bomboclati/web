@@ -2530,70 +2530,26 @@ class StaffShiftsConfigView(ConfigPanelView):
 # --- Registry ---
 
 SPECIALIZED_VIEWS = {
-    "staffreview": "StaffReviewsConfigView",
-    "staffreviews": "StaffReviewsConfigView",
-    "staffshift": "StaffShiftsConfigView",
-    "staffshifts": "StaffShiftsConfigView",
-    "automod": "AutoModConfigView",
-    "auto-mod": "AutoModConfigView",
-    "automod": "AutoModConfigView",
-    "warning": "WarningConfigView",
-    "warnings": "WarningConfigView",
-    "staffpromo": "StaffPromoConfigView",
-    "staffpromotion": "StaffPromoConfigView",
-    "staffpromotions": "StaffPromoConfigView",
     "verification": "VerificationConfigView",
-    "antiraid": "AntiRaidConfigView",
+    "verify": "VerificationConfigView",
     "anti-raid": "AntiRaidConfigView",
+    "antiraid": "AntiRaidConfigView",
     "guardian": "GuardianConfigView",
     "tickets": "TicketsConfigView",
     "welcome": "WelcomeConfigView",
     "welcomedm": "WelcomeDMConfigView",
-    "welcome-dm": "WelcomeDMConfigView",
-    "welcomedms": "WelcomeDMConfigView",
     "application": "ApplicationConfigView",
-    "applications": "ApplicationConfigView",
-    "applicationmodal": "ApplicationConfigView",
     "appeals": "AppealsConfigView",
-    "appeal": "AppealsConfigView",
     "modmail": "ModmailConfigView",
     "suggestions": "SuggestionsConfigView",
     "giveaway": "GiveawayConfigView",
-    "giveaways": "GiveawayConfigView",
     "gamification": "GamificationConfigView",
     "reactionroles": "ReactionRolesConfigView",
-    "reactionrole": "ReactionRolesConfigView",
-    "reaction-roles": "ReactionRolesConfigView",
-    "reactionroles": "ReactionRolesConfigView",
     "reactionmenus": "ReactionMenusConfigView",
-    "reactionmenu": "ReactionMenusConfigView",
-    "reaction-menus": "ReactionMenusConfigView",
     "rolebuttons": "RoleButtonsConfigView",
-    "rolebutton": "RoleButtonsConfigView",
-    "role-buttons": "RoleButtonsConfigView",
     "modlog": "ModLogConfigView",
-    "modlogging": "ModLogConfigView",
-    "moderation": "ModLogConfigView",
-    "moderationlogging": "ModLogConfigView",
-    "moderation-logging": "ModLogConfigView",
     "logging": "LoggingConfigView",
-    "reminders": "RemindersPanelView",
-    "scheduled": "ScheduledPanelView",
-    "announcements": "AnnouncementsPanelView",
-    "economy": "EconomyConfigView",
-    "economyshop": "EconomyShopConfigView",
-    "economy-shop": "EconomyShopConfigView",
-    "leveling": "LevelingConfigView",
-    "levelingshop": "LevelingShopConfigView",
-    "leveling-shop": "LevelingShopConfigView",
-    "starboard": "StarboardConfigView",
-    "autoresponder": "AutoResponderConfigView",
-    "auto-responder": "AutoResponderConfigView",
-    "autoresponders": "AutoResponderConfigView",
-    "chatchannels": "ChatChannelsConfigView",
-    "chat-channels": "ChatChannelsConfigView",
-    "chat channels": "ChatChannelsConfigView",
-    "aichatchannels": "ChatChannelsConfigView",
+    "staffpromo": "StaffPromoConfigView",
     "ai-chat-channels": "ChatChannelsConfigView",
     "ai chat channels": "ChatChannelsConfigView",
     "events": "EventsConfigView",
@@ -2761,3 +2717,221 @@ def register_all_persistent_views(bot: discord.Client):
     bot.add_view(SuggestionReviewView(0, 0))
 
     logger.info("All system persistent views registered.")
+
+class GuardianConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "guardian")
+        c = self.get_config(guild_id)
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_guardian_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
+
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
+        c = self.get_config(guild_id)
+        embed = discord.Embed(
+            title="🛡️ Guardian System",
+            color=discord.Color.purple() if c.get("enabled", True) else discord.Color.greyple()
+        )
+        if guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Protected Channels", value=str(len(c.get("protected_channels", []))), inline=True)
+        embed.add_field(name="Log Channel", value=f"<#{c.get('log_channel_id')}>" if c.get("log_channel_id") else "_None_", inline=True)
+        return embed
+
+    @ui.button(label="Disable", emoji="🛡️", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_guardian_toggle")
+    async def toggle_guardian(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.defer()
+        c = self.get_config(interaction.guild_id)
+        c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
+        self.update_system_toggle_button("cfg_guardian_toggle", c["enabled"])
+        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+
+    @ui.button(label="Set Log Channel", emoji="#️⃣", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_guardian_set_log")
+    async def set_log_channel(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        c = self.get_config(interaction.guild_id)
+        c["log_channel_id"] = interaction.channel.id
+        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
+        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+        await interaction.followup.send("Log channel set to current channel.", ephemeral=True)
+
+class TicketsConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "tickets")
+        c = self.get_config(guild_id)
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_tickets_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
+
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
+        c = self.get_config(guild_id)
+        embed = discord.Embed(
+            title="🎫 Tickets System",
+            color=discord.Color.blue() if c.get("enabled", True) else discord.Color.greyple()
+        )
+        if guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Ticket Category", value=f"<#{c.get('category_id')}>" if c.get("category_id") else "_None_", inline=True)
+        embed.add_field(name="Support Role", value=f"<@&{c.get('support_role_id')}>" if c.get("support_role_id") else "_None_", inline=True)
+        return embed
+
+    @ui.button(label="Disable", emoji="🎫", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_tickets_toggle")
+    async def toggle_tickets(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.defer()
+        c = self.get_config(interaction.guild_id)
+        c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
+        self.update_system_toggle_button("cfg_tickets_toggle", c["enabled"])
+        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+
+    @ui.button(label="Set Category", emoji="📁", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_tickets_set_category")
+    async def set_category(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        c = self.get_config(interaction.guild_id)
+        if interaction.channel.category:
+            c["category_id"] = interaction.channel.category.id
+            await self.save_config(c, interaction.guild_id, interaction.client, interaction)
+        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+
+class ApplicationConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "application")
+        c = self.get_config(guild_id)
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_application_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
+
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
+        c = self.get_config(guild_id)
+        embed = discord.Embed(
+            title="📝 Application System",
+            color=discord.Color.blue() if c.get("enabled", True) else discord.Color.greyple()
+        )
+        if guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Application Channel", value=f"<#{c.get('app_channel_id')}>" if c.get("app_channel_id") else "_None_", inline=True)
+        return embed
+
+    @ui.button(label="Disable", emoji="📝", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_application_toggle")
+    async def toggle_application(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.defer()
+        c = self.get_config(interaction.guild_id)
+        c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
+        self.update_system_toggle_button("cfg_application_toggle", c["enabled"])
+        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+            await interaction.followup.send("Ticket category set to current channel's category.", ephemeral=True)
+        else:
+            await interaction.followup.send("Current channel has no category.", ephemeral=True)
+
+class WelcomeConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "welcome")
+        c = self.get_config(guild_id)
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_welcome_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
+
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
+        c = self.get_config(guild_id)
+        embed = discord.Embed(
+            title="👋 Welcome System",
+            color=discord.Color.green() if c.get("enabled", True) else discord.Color.greyple()
+        )
+        if guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="Welcome Channel", value=f"<#{c.get('welcome_channel_id')}>" if c.get("welcome_channel_id") else "_None_", inline=True)
+        embed.add_field(name="Welcome Message", value=c.get("welcome_message", "_Default_")[:100], inline=False)
+        return embed
+
+    @ui.button(label="Disable", emoji="👋", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_welcome_toggle")
+    async def toggle_welcome(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.defer()
+        c = self.get_config(interaction.guild_id)
+        c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
+        self.update_system_toggle_button("cfg_welcome_toggle", c["enabled"])
+        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+
+    @ui.button(label="Set Channel", emoji="#️⃣", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_welcome_set_channel")
+    async def set_channel(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        c = self.get_config(interaction.guild_id)
+        c["welcome_channel_id"] = interaction.channel.id
+        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
+        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+        await interaction.followup.send("Welcome channel set to current channel.", ephemeral=True)
+
+class WelcomeDMConfigView(ConfigPanelView):
+    def __init__(self, guild_id: int):
+        super().__init__(guild_id, "welcomedm")
+        c = self.get_config(guild_id)
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.custom_id == "cfg_welcomedm_toggle":
+                if c.get("enabled", True):
+                    item.label = "Disable"
+                    item.style = discord.ButtonStyle.danger
+                    item.emoji = "❌"
+                else:
+                    item.label = "Enable"
+                    item.style = discord.ButtonStyle.success
+                    item.emoji = "✅"
+                break
+
+    def create_embed(self, guild_id: int = None, guild: discord.Guild = None) -> discord.Embed:
+        c = self.get_config(guild_id)
+        embed = discord.Embed(
+            title="✉️ Welcome DM System",
+            color=discord.Color.green() if c.get("enabled", True) else discord.Color.greyple()
+        )
+        if guild and guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
+        embed.add_field(name="DM Message", value=c.get("dm_message", "_Default_")[:100], inline=False)
+        return embed
+
+    @ui.button(label="Disable", emoji="✉️", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_welcomedm_toggle")
+    async def toggle_welcomedm(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.defer()
+        c = self.get_config(interaction.guild_id)
+        c["enabled"] = not c.get("enabled", True)
+        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
+        self.update_system_toggle_button("cfg_welcomedm_toggle", c["enabled"])
+        await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)

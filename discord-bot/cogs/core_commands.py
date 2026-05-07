@@ -99,15 +99,15 @@ class CoreCommands(commands.Cog):
         app_commands.Choice(name="Alibaba DashScope (Qwen)", value="dashscope")
     ])
     async def config_provider(self, interaction: discord.Interaction, provider: str):
+        await interaction.response.defer(ephemeral=True)
         if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("Only Administrators can change configuration.", ephemeral=True)
+            await interaction.followup.send("Only Administrators can change configuration.", ephemeral=True)
             return
-
         dm.update_guild_data(interaction.guild.id, "active_provider", provider)
         # Reset custom_model to provider's default
         default_model = self.get_default_model(provider)
         dm.update_guild_data(interaction.guild.id, "custom_model", default_model)
-        await interaction.response.send_message(f"✅ AI provider switched to **{provider}** and model reset to **{default_model}**.", ephemeral=True)
+        await interaction.followup.send(f"✅ AI provider switched to **{provider}** and model reset to **{default_model}**.", ephemeral=True)
 
     @config.command(name="key", description="Set your own API key for a specific provider")
     @app_commands.choices(provider=[
@@ -122,12 +122,13 @@ class CoreCommands(commands.Cog):
     ])
     @app_commands.describe(api_key="Your API key for this provider")
     async def config_key(self, interaction: discord.Interaction, provider: str, api_key: str):
+        await interaction.response.defer(ephemeral=True)
         if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("Only Administrators can change configuration.", ephemeral=True)
+            await interaction.followup.send("Only Administrators can change configuration.", ephemeral=True)
             return
         
         dm.set_guild_api_key(interaction.guild.id, api_key, provider)
-        await interaction.response.send_message(f"✅ API key for **{provider}** has been updated and encrypted.", ephemeral=True)
+        await interaction.followup.send(f"✅ API key for **{provider}** has been updated and encrypted.", ephemeral=True)
 
     @config.command(name="prefix", description="Set the server command prefix")
     @app_commands.describe(prefix="New prefix character (max 5 chars)")
