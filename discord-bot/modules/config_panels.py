@@ -201,14 +201,12 @@ class _GenericRoleSelect(ui.RoleSelect):
         self.key = key
 
     async def callback(self, interaction: Interaction):
+        await interaction.response.defer(ephemeral=True)
         config = self.config_panel.get_config(interaction.guild_id)
         config[self.key] = self.values[0].id
         await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {self.values[0].name}")
-        if interaction.response.is_done():
-            await interaction.followup.send(f"✅ Set **{self.key.replace('_',' ').title()}** to {self.values[0].mention}", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"✅ Set **{self.key.replace('_',' ').title()}** to {self.values[0].mention}", ephemeral=True)
+        await interaction.followup.send(f"✅ Set **{self.key.replace('_',' ').title()}** to {self.values[0].mention}", ephemeral=True)
         # Update the original config panel
         if self.config_panel.panel_message:
             try:
@@ -280,6 +278,7 @@ class _NumberModal(ui.Modal):
         
         # Special handling for whitelist operations
         if self.key == "whitelist_add":
+            await interaction.response.defer(ephemeral=True)
             user_id = v
             whitelist = config.get("whitelist", [])
             if user_id not in whitelist:
@@ -287,12 +286,13 @@ class _NumberModal(ui.Modal):
                 config["whitelist"] = whitelist
                 await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
                 log_panel_action(interaction.guild_id, interaction.user.id, f"Added {user_id} to whitelist")
-                return await interaction.response.send_message(f"✅ User `{user_id}` added to whitelist.", ephemeral=True)
+                return await interaction.followup.send_message(f"✅ User `{user_id}` added to whitelist.", ephemeral=True)
             else:
-                return await interaction.response.send_message(f"⚠️ User `{user_id}` is already whitelisted.", ephemeral=True)
+                return await interaction.followup.send_message(f"⚠️ User `{user_id}` is already whitelisted.", ephemeral=True)
         
         # Special handling for duplicate filter (X messages in Y seconds)
         if self.key == "duplicate_threshold_config":
+            await interaction.response.defer(ephemeral=True)
             if self.second_value.value:
                 try:
                     y = int(self.second_value.value)
@@ -300,23 +300,25 @@ class _NumberModal(ui.Modal):
                     config["duplicate_window"] = y
                     await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set duplicate filter to {v} msgs in {y}s")
-                    return await interaction.response.send_message(f"✅ Duplicate filter: **{v}** messages in **{y}** seconds.", ephemeral=True)
+                    return await interaction.followup.send_message(f"✅ Duplicate filter: **{v}** messages in **{y}** seconds.", ephemeral=True)
                 except ValueError:
-                    return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
+                    return await interaction.followup.send_message("❌ Second value must be a number.", ephemeral=True)
             config["duplicate_threshold"] = v
             await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set duplicate threshold to {v}")
-            return await interaction.response.send_message(f"✅ Duplicate threshold set to **{v}** messages.", ephemeral=True)
+            return await interaction.followup.send_message(f"✅ Duplicate threshold set to **{v}** messages.", ephemeral=True)
         
         # Special handling for mention threshold config
         if self.key == "mention_threshold_config":
+            await interaction.response.defer(ephemeral=True)
             config["mention_threshold"] = v
             await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set mention threshold to {v}")
-            return await interaction.response.send_message(f"✅ Max mentions per message: **{v}**.", ephemeral=True)
+            return await interaction.followup.send_message(f"✅ Max mentions per message: **{v}**.", ephemeral=True)
         
         # Special handling for work rewards (min and max)
         if self.key == "work_min":
+            await interaction.response.defer(ephemeral=True)
             if self.second_value.value:
                 try:
                     max_v = int(self.second_value.value)
@@ -324,16 +326,17 @@ class _NumberModal(ui.Modal):
                     config["work_max"] = max_v
                     await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set work rewards to {v}-{max_v}")
-                    return await interaction.response.send_message(f"✅ Work rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
+                    return await interaction.followup.send_message(f"✅ Work rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
                 except ValueError:
-                    return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
+                    return await interaction.followup.send_message("❌ Second value must be a number.", ephemeral=True)
             config["work_min"] = v
             await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set work min to {v}")
-            return await interaction.response.send_message(f"✅ Work min reward set to **{v}**.", ephemeral=True)
+            return await interaction.followup.send_message(f"✅ Work min reward set to **{v}**.", ephemeral=True)
         
         # Special handling for beg rewards (min and max)
         if self.key == "beg_min":
+            await interaction.response.defer(ephemeral=True)
             if self.second_value.value:
                 try:
                     max_v = int(self.second_value.value)
@@ -341,19 +344,20 @@ class _NumberModal(ui.Modal):
                     config["beg_max"] = max_v
                     await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
                     log_panel_action(interaction.guild_id, interaction.user.id, f"Set beg rewards to {v}-{max_v}")
-                    return await interaction.response.send_message(f"✅ Beg rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
+                    return await interaction.followup.send_message(f"✅ Beg rewards: **{v}** - **{max_v}** coins.", ephemeral=True)
                 except ValueError:
-                    return await interaction.response.send_message("❌ Second value must be a number.", ephemeral=True)
+                    return await interaction.followup.send_message("❌ Second value must be a number.", ephemeral=True)
             config["beg_min"] = v
             await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
             log_panel_action(interaction.guild_id, interaction.user.id, f"Set beg min to {v}")
-            return await interaction.response.send_message(f"✅ Beg min reward set to **{v}**.", ephemeral=True)
+            return await interaction.followup.send_message(f"✅ Beg min reward set to **{v}**.", ephemeral=True)
         
         # Default: single value storage
+        await interaction.response.defer(ephemeral=True)
         config[self.key] = v
         await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Set {self.key} to {v}")
-        await interaction.response.send_message(f"✅ {self.key.replace('_',' ').title()} set to **{v}**.", ephemeral=True)
+        await interaction.followup.send_message(f"✅ {self.key.replace('_',' ').title()} set to **{v}**.", ephemeral=True)
 
 class _TextModal(ui.Modal):
     value_input = ui.TextInput(label="Value", style=discord.TextStyle.paragraph, required=True, max_length=1500)
@@ -368,11 +372,12 @@ class _TextModal(ui.Modal):
             self.value_input.default = str(existing)
 
     async def on_submit(self, interaction: Interaction):
+        await interaction.response.defer(ephemeral=True)
         config = self.config_panel.get_config(interaction.guild_id)
         config[self.key] = self.value_input.value
         await self.config_panel.save_config(config, interaction.guild_id, interaction.client, interaction)
         log_panel_action(interaction.guild_id, interaction.user.id, f"Updated text field {self.key}")
-        await interaction.response.send_message(f"✅ {self.key.replace('_',' ').title()} updated.", ephemeral=True)
+        await interaction.followup.send_message(f"✅ {self.key.replace('_',' ').title()} updated.", ephemeral=True)
 
 def _picker_view(component: ui.Item) -> ui.View:
     v = ui.View(timeout=120)
@@ -422,6 +427,7 @@ class VerificationConfigView(ConfigPanelView):
 
     @ui.button(label="Disable", emoji="🔒", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_verify_toggle")
     async def toggle(self, i, b):
+        await i.response.defer()
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True)
         await self.save_config(c, i.guild_id, i.client, i)
         log_panel_action(i.guild_id, i.user.id, f"Toggled verification to {c.get('enabled')}")
@@ -445,6 +451,7 @@ class VerificationConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle CAPTCHA", emoji="🧮", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_verify_toggle_c")
     async def toggle_c(self, i, b):
+        await i.response.defer()
         c = self.get_config(i.guild_id); c["captcha_enabled"] = not c.get("captcha_enabled", False)
         await self.save_config(c, i.guild_id, i.client, i)
 
@@ -465,10 +472,11 @@ class VerificationConfigView(ConfigPanelView):
 
     @ui.button(label="Reset Log", emoji="🗑️", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_verify_reset")
     async def reset(self, i, b):
+        await i.response.defer()
         c = self.get_config(i.guild_id); c["verification_log"] = []
         await self.save_config(c, i.guild_id, i.client, i)
         log_panel_action(i.guild_id, i.user.id, "Reset verification log")
-        await i.response.send_message("Log Reset", ephemeral=True)
+        await i.followup.send_message("Log Reset", ephemeral=True)
 
     @ui.button(label="Re-verify All", emoji="🔁", style=discord.ButtonStyle.danger, row=2, custom_id="cfg_verify_reverify")
     async def reverify(self, i: Interaction, b):
@@ -536,6 +544,7 @@ class AntiRaidConfigView(ConfigPanelView):
 
     @ui.button(label="Disable", emoji="❌", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_antiraid_toggle")
     async def toggle(self, i, b):
+        await i.response.defer()
         c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", True); await self.save_config(c, i.guild_id, i.client, i)
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
         # Update toggle button label and style
@@ -566,7 +575,8 @@ class AntiRaidConfigView(ConfigPanelView):
             discord.SelectOption(label="Mute", value="mute")
         ])
         async def callback(it):
-            c = self.get_config(i.guild_id); c["action"] = select.values[0]; await self.save_config(c, i.guild_id, i.client, i); await it.response.send_message(f"Action set to {c['action']}", ephemeral=True)
+            await it.response.defer(ephemeral=True)
+            c = self.get_config(i.guild_id); c["action"] = select.values[0]; await self.save_config(c, i.guild_id, i.client, i); await it.followup.send_message(f"Action set to {c['action']}", ephemeral=True)
         select.callback = callback
         view.add_item(select)
         await i.response.send_message("Choose action:", view=view, ephemeral=True)
@@ -811,8 +821,8 @@ class WelcomeConfigView(ConfigPanelView):
 
     @ui.button(label="Toggle Welcome", style=discord.ButtonStyle.success, row=0, custom_id="cfg_wl_toggle_w")
     async def toggle_w(self, i, b):
-        c = dm.get_guild_data(i.guild_id, "welcome_config", {}); c["enabled"] = not c.get("enabled", False)
-        dm.update_guild_data(i.guild_id, "welcome_config", c)
+        c = self.get_config(i.guild_id); c["enabled"] = not c.get("enabled", False)
+        await self.save_config(c, i.guild_id, i.client, i)
         await i.client.auto_setup.update_system_status_embed(i.guild_id)
 
     @ui.button(label="Toggle Leave", style=discord.ButtonStyle.success, row=0, custom_id="cfg_wl_toggle_l")
@@ -824,20 +834,24 @@ class WelcomeConfigView(ConfigPanelView):
     @ui.button(label="Set Welcome Ch", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_wl_set_wch")
     async def set_wch(self, i, b):
         class ChSelect(ui.ChannelSelect):
+            def __init__(self, parent):
+                super().__init__(placeholder="Welcome Channel")
+                self.parent = parent
             async def callback(self, it):
-                c = dm.get_guild_data(it.guild_id, "welcome_config", {}); c["channel_id"] = self.values[0].id
-                dm.update_guild_data(it.guild_id, "welcome_config", c); await it.response.send_message("✅ Welcome channel set.", ephemeral=True)
-        await i.response.send_message("Select channel:", view=_picker_view(ChSelect(placeholder="Welcome Channel")), ephemeral=True)
+                c = self.parent.get_config(it.guild_id); c["channel_id"] = self.values[0].id
+                await self.parent.save_config(c, it.guild_id, it.client, it); await it.response.send_message("✅ Welcome channel set.", ephemeral=True)
+        await i.response.send_message("Select channel:", view=_picker_view(ChSelect(self)), ephemeral=True)
 
     @ui.button(label="Set Leave Ch", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_wl_set_lch")
     async def set_lch(self, i, b):
-        parent_view = self
         class ChSelect(ui.ChannelSelect):
+            def __init__(self, parent):
+                super().__init__(placeholder="Leave Channel")
+                self.parent = parent
             async def callback(self, it):
-                c = dm.get_guild_data(it.guild_id, "leave_config", {}); c["channel_id"] = self.values[0].id
-                dm.update_guild_data(it.guild_id, "leave_config", c); await it.response.send_message("✅ Leave channel set.", ephemeral=True)
-                await parent_view.update_panel(it)
-        await i.response.send_message("Select channel:", view=_picker_view(ChSelect(placeholder="Leave Channel")), ephemeral=True)
+                c = self.parent.get_config(it.guild_id); c["channel_id"] = self.values[0].id
+                await self.parent.save_config(c, it.guild_id, it.client, it); await it.response.send_message("✅ Leave channel set.", ephemeral=True)
+        await i.response.send_message("Select channel:", view=_picker_view(ChSelect(self)), ephemeral=True)
 
     @ui.button(label="Edit Welcome Msg", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_wl_edit_wmsg")
     async def edit_wmsg(self, i, b):
@@ -3690,123 +3704,156 @@ class EconomyConfigView(ConfigPanelView):
     @ui.button(label="Set Currency", emoji="💱", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_eco_currency")
     async def set_currency(self, i, b):
         class CurrencyModal(ui.Modal, title="Set Currency Settings"):
-            name = ui.TextInput(label="Currency Name", placeholder="e.g. Coins", default="Coins")
-            emoji = ui.TextInput(label="Currency Emoji", placeholder="e.g. 🪙", default="🪙")
-            starting_balance = ui.TextInput(label="Starting Balance", placeholder="e.g. 100", default="100")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+                self.name = ui.TextInput(label="Currency Name", placeholder="e.g. Coins", default="Coins")
+                self.emoji = ui.TextInput(label="Currency Emoji", placeholder="e.g. 🪙", default="🪙")
+                self.starting_balance = ui.TextInput(label="Starting Balance", placeholder="e.g. 100", default="100")
+                self.add_item(self.name)
+                self.add_item(self.emoji)
+                self.add_item(self.starting_balance)
             async def on_submit(self, it):
                 try:
-                    c = dm.get_guild_data(it.guild_id, "economy_config", {})
+                    c = self.parent.get_config(it.guild_id)
                     c["currency_name"] = self.name.value.strip()
                     c["currency_emoji"] = self.emoji.value.strip()
                     c["starting_balance"] = int(self.starting_balance.value)
-                    dm.update_guild_data(it.guild_id, "economy_config", c)
+                    await self.parent.save_config(c, it.guild_id, it.client, it)
                     await it.response.send_message("✅ Currency settings updated!", ephemeral=True)
                 except ValueError:
                     await it.response.send_message("❌ Invalid starting balance.", ephemeral=True)
-        await i.response.send_modal(CurrencyModal())
+        await i.response.send_modal(CurrencyModal(self))
 
     @ui.button(label="Daily Settings", emoji="📅", style=discord.ButtonStyle.success, row=0, custom_id="cfg_eco_daily_settings")
     async def set_daily_settings(self, i, b):
         class DailyModal(ui.Modal, title="Daily Reward Settings"):
-            amount = ui.TextInput(label="Daily Amount", placeholder="e.g. 100", default="100")
-            streak_bonus = ui.TextInput(label="Streak Bonus %", placeholder="e.g. 50", default="50")
-            cooldown = ui.TextInput(label="Cooldown Hours", placeholder="e.g. 24", default="24")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+                self.amount = ui.TextInput(label="Daily Amount", placeholder="e.g. 100", default="100")
+                self.streak_bonus = ui.TextInput(label="Streak Bonus %", placeholder="e.g. 50", default="50")
+                self.cooldown = ui.TextInput(label="Cooldown Hours", placeholder="e.g. 24", default="24")
+                self.add_item(self.amount)
+                self.add_item(self.streak_bonus)
+                self.add_item(self.cooldown)
             async def on_submit(self, it):
                 try:
-                    c = dm.get_guild_data(it.guild_id, "economy_config", {})
+                    c = self.parent.get_config(it.guild_id)
                     c["daily_amount"] = int(self.amount.value)
                     c["daily_streak_bonus"] = int(self.streak_bonus.value)
                     c["daily_cooldown_seconds"] = int(self.cooldown.value) * 3600
-                    dm.update_guild_data(it.guild_id, "economy_config", c)
+                    await self.parent.save_config(c, it.guild_id, it.client, it)
                     await it.response.send_message("✅ Daily settings updated!", ephemeral=True)
                 except ValueError:
                     await it.response.send_message("❌ Invalid numbers.", ephemeral=True)
-        await i.response.send_modal(DailyModal())
+        await i.response.send_modal(DailyModal(self))
 
     @ui.button(label="Work Rewards", emoji="💼", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_eco_work_settings")
     async def set_work_settings(self, i, b):
         class WorkModal(ui.Modal, title="Work Reward Settings"):
-            min_reward = ui.TextInput(label="Min Reward", placeholder="e.g. 50", default="50")
-            max_reward = ui.TextInput(label="Max Reward", placeholder="e.g. 200", default="200")
-            cooldown = ui.TextInput(label="Cooldown Minutes", placeholder="e.g. 60", default="60")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+                self.min_reward = ui.TextInput(label="Min Reward", placeholder="e.g. 50", default="50")
+                self.max_reward = ui.TextInput(label="Max Reward", placeholder="e.g. 200", default="200")
+                self.cooldown = ui.TextInput(label="Cooldown Minutes", placeholder="e.g. 60", default="60")
+                self.add_item(self.min_reward)
+                self.add_item(self.max_reward)
+                self.add_item(self.cooldown)
             async def on_submit(self, it):
                 try:
-                    c = dm.get_guild_data(it.guild_id, "economy_config", {})
+                    c = self.parent.get_config(it.guild_id)
                     c["work_min"] = int(self.min_reward.value)
                     c["work_max"] = int(self.max_reward.value)
                     c["work_cooldown_seconds"] = int(self.cooldown.value) * 60
-                    dm.update_guild_data(it.guild_id, "economy_config", c)
+                    await self.parent.save_config(c, it.guild_id, it.client, it)
                     await it.response.send_message("✅ Work settings updated!", ephemeral=True)
                 except ValueError:
                     await it.response.send_message("❌ Invalid numbers.", ephemeral=True)
-        await i.response.send_modal(WorkModal())
+        await i.response.send_modal(WorkModal(self))
 
     @ui.button(label="Beg Settings", emoji="🙏", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_eco_beg_settings")
     async def set_beg_settings(self, i, b):
         class BegModal(ui.Modal, title="Beg Reward Settings"):
-            min_reward = ui.TextInput(label="Min Reward", placeholder="e.g. 10", default="10")
-            max_reward = ui.TextInput(label="Max Reward", placeholder="e.g. 50", default="50")
-            cooldown = ui.TextInput(label="Cooldown Seconds", placeholder="e.g. 60", default="60")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+                self.min_reward = ui.TextInput(label="Min Reward", placeholder="e.g. 10", default="10")
+                self.max_reward = ui.TextInput(label="Max Reward", placeholder="e.g. 50", default="50")
+                self.cooldown = ui.TextInput(label="Cooldown Seconds", placeholder="e.g. 60", default="60")
+                self.add_item(self.min_reward)
+                self.add_item(self.max_reward)
+                self.add_item(self.cooldown)
             async def on_submit(self, it):
                 try:
-                    c = dm.get_guild_data(it.guild_id, "economy_config", {})
+                    c = self.parent.get_config(it.guild_id)
                     c["beg_min"] = int(self.min_reward.value)
                     c["beg_max"] = int(self.max_reward.value)
                     c["beg_cooldown_seconds"] = int(self.cooldown.value)
-                    dm.update_guild_data(it.guild_id, "economy_config", c)
+                    await self.parent.save_config(c, it.guild_id, it.client, it)
                     await it.response.send_message("✅ Beg settings updated!", ephemeral=True)
                 except ValueError:
                     await it.response.send_message("❌ Invalid numbers.", ephemeral=True)
-        await i.response.send_modal(BegModal())
+        await i.response.send_modal(BegModal(self))
 
     @ui.button(label="Rob Settings", emoji="🏴‍☠️", style=discord.ButtonStyle.danger, row=1, custom_id="cfg_eco_rob_settings")
     async def set_rob_settings(self, i, b):
         class RobModal(ui.Modal, title="Rob Settings"):
-            success_rate = ui.TextInput(label="Success Rate %", placeholder="e.g. 40", default="40")
-            cooldown = ui.TextInput(label="Cooldown Minutes", placeholder="e.g. 60", default="60")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+                self.success_rate = ui.TextInput(label="Success Rate %", placeholder="e.g. 40", default="40")
+                self.cooldown = ui.TextInput(label="Cooldown Minutes", placeholder="e.g. 60", default="60")
+                self.add_item(self.success_rate)
+                self.add_item(self.cooldown)
             async def on_submit(self, it):
                 try:
-                    c = dm.get_guild_data(it.guild_id, "economy_config", {})
+                    c = self.parent.get_config(it.guild_id)
                     c["rob_success_rate"] = float(self.success_rate.value) / 100
                     c["rob_cooldown_seconds"] = int(self.cooldown.value) * 60
-                    dm.update_guild_data(it.guild_id, "economy_config", c)
+                    await self.parent.save_config(c, it.guild_id, it.client, it)
                     await it.response.send_message("✅ Rob settings updated!", ephemeral=True)
                 except ValueError:
                     await it.response.send_message("❌ Invalid numbers.", ephemeral=True)
-        await i.response.send_modal(RobModal())
+        await i.response.send_modal(RobModal(self))
 
     @ui.button(label="Earn Rates", emoji="📈", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_eco_earn_rates")
     async def set_earn_rates(self, i, b):
         class EarnModal(ui.Modal, title="Message/Voice Earn Rates"):
-            msg_coins = ui.TextInput(label="Coins per Message", placeholder="e.g. 2", default="2")
-            voice_coins = ui.TextInput(label="Coins per Voice Minute", placeholder="e.g. 5", default="5")
-            gem_chance = ui.TextInput(label="Gem Chance %", placeholder="e.g. 1", default="1")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+                self.msg_coins = ui.TextInput(label="Coins per Message", placeholder="e.g. 2", default="2")
+                self.voice_coins = ui.TextInput(label="Coins per Voice Minute", placeholder="e.g. 5", default="5")
+                self.gem_chance = ui.TextInput(label="Gem Chance %", placeholder="e.g. 1", default="1")
+                self.add_item(self.msg_coins)
+                self.add_item(self.voice_coins)
+                self.add_item(self.gem_chance)
             async def on_submit(self, it):
                 try:
-                    c = dm.get_guild_data(it.guild_id, "economy_config", {})
+                    c = self.parent.get_config(it.guild_id)
                     rates = c.get("earn_rates", {})
                     rates["coins_per_message"] = int(self.msg_coins.value)
                     rates["coins_per_voice_minute"] = int(self.voice_coins.value)
                     rates["gem_chance"] = float(self.gem_chance.value) / 100
                     c["earn_rates"] = rates
-                    dm.update_guild_data(it.guild_id, "economy_config", c)
+                    await self.parent.save_config(c, it.guild_id, it.client, it)
                     await it.response.send_message("✅ Earn rates updated!", ephemeral=True)
                 except ValueError:
                     await it.response.send_message("❌ Invalid numbers.", ephemeral=True)
-        await i.response.send_modal(EarnModal())
+        await i.response.send_modal(EarnModal(self))
 
     @ui.button(label="Toggle Voice XP", emoji="🎧", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_eco_voice_toggle")
     async def toggle_voice_xp(self, i, b):
-        c = dm.get_guild_data(i.guild_id, "economy_config", {})
+        c = self.get_config(i.guild_id)
         c["voice_xp_enabled"] = not c.get("voice_xp_enabled", True)
-        dm.update_guild_data(i.guild_id, "economy_config", c)
         await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Weekly Double XP", emoji="📊", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_eco_weekend_toggle")
     async def toggle_weekend_bonus(self, i, b):
-        c = dm.get_guild_data(i.guild_id, "economy_config", {})
+        c = self.get_config(i.guild_id)
         c["double_xp_weekend"] = not c.get("double_xp_weekend", False)
-        dm.update_guild_data(i.guild_id, "economy_config", c)
         await self.save_config(c, i.guild_id, i.client, i)
 
     @ui.button(label="Economy Stats", emoji="📊", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_eco_stats")
@@ -4326,17 +4373,21 @@ class EconomyShopConfigView(ConfigPanelView):
     @ui.button(label="Set Sale", emoji="🏷️", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_ecos_sales")
     async def toggle_sales(self, i, b):
         class SaleModal(ui.Modal, title="Set Shop Sale"):
-            pct = ui.TextInput(label="Sale Percentage (0-100, 0 to disable)", default="20")
+            def __init__(self, parent):
+                super().__init__()
+                self.parent = parent
+                self.pct = ui.TextInput(label="Sale Percentage (0-100, 0 to disable)", default="20")
+                self.add_item(self.pct)
             async def on_submit(self, it):
                 try:
                     val = int(self.pct.value)
-                    c = dm.get_guild_data(it.guild_id, "economy_config", {})
+                    c = self.parent.get_config(it.guild_id)
                     c["sale_percentage"] = val
                     c["sales_enabled"] = val > 0
-                    dm.update_guild_data(it.guild_id, "economy_config", c)
+                    await self.parent.save_config(c, it.guild_id, it.client, it)
                     await it.response.send_message(f"✅ Shop sale set to {val}%", ephemeral=True)
                 except: await it.response.send_message("❌ Invalid number.", ephemeral=True)
-        await i.response.send_modal(SaleModal())
+        await i.response.send_modal(SaleModal(self))
 
 
 class LevelingConfigView(ConfigPanelView):
