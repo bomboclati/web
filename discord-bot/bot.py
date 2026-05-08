@@ -690,11 +690,17 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                         await message.channel.send("❌ Only administrators can use this command.")
                         return
                     
-                    # Get custom commands for this system
+                    # Get the config panel view
+                    from modules.config_panels import get_config_panel
+                    view = get_config_panel(message.guild.id, system)
+                    if not view:
+                        await message.channel.send(f"❌ System '{system}' not found.")
+                        return
+                    
+                    # Create embed with system info and custom commands
                     from actions import ActionHandler
                     custom_cmds = ActionHandler.get_commands_for_system(system)
                     
-                    # Create embed with system info and custom commands
                     embed = discord.Embed(
                         title=f"⚙️ {system.replace('_', ' ').title()} Configuration",
                         description=f"System configuration panel for {system.replace('_', ' ')}",
@@ -709,18 +715,14 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                     
                     embed.set_footer(text="Click the button below to open the config panel (only you can see)")
                     
-                    # Create a simple View with a button
-                    view = discord.ui.View(timeout=None)
+                    # Create a View with a button that opens config panel ephemerally
+                    view_wrapper = discord.ui.View(timeout=None)
                     
                     async def button_callback(interaction: discord.Interaction):
                         await interaction.response.defer(ephemeral=True)
-                        from modules.config_panels import get_config_panel
-                        config_view = get_config_panel(interaction.guild.id, system)
-                        if not config_view:
-                            await interaction.followup.send(f"❌ System '{system}' not found.", ephemeral=True)
-                            return
-                        embed = config_view.create_embed(guild_id=interaction.guild.id, guild=interaction.guild)
-                        await interaction.followup.send(embed=embed, view=config_view, ephemeral=True)
+                        # Create embed for ephemeral response
+                        embed_ephemeral = view.create_embed(guild_id=interaction.guild.id, guild=interaction.guild)
+                        await interaction.followup.send(embed=embed_ephemeral, view=view, ephemeral=True)
                     
                     button = discord.ui.Button(
                         label=f"Open {system.replace('_', ' ').title()} Config",
@@ -729,9 +731,9 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                         custom_id=f"open_cfg_{system}"
                     )
                     button.callback = button_callback
-                    view.add_item(button)
+                    view_wrapper.add_item(button)
                     
-                    await message.channel.send(embed=embed, view=view)
+                    await message.channel.send(embed=embed, view=view_wrapper)
                     return
             
             if cmd_content.startswith("scheduled"):
