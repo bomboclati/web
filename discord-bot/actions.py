@@ -263,7 +263,7 @@ class ActionHandler:
         This is used in !configpanel to show available commands.
         """
         system_commands = {
-            "verification": ["!setverifychannel", "!verify", "!configpanel verification"],
+            "verification": ["!setverifychannel", "!configpanel verification"],
             "antiraid": ["!raidstatus", "!configpanel antiraid"],
             "guardian": ["!guardian status", "!configpanel guardian"],
             "automod": ["!automod status", "!configpanel automod"],
@@ -6251,11 +6251,6 @@ class ActionHandler:
         await message.channel.send("📋 Application: Use buttons or `/setup` to configure applications.")
         return True
 
-    async def handle_verify(self, message: discord.Message) -> bool:
-        """!verify — verify user (DEPRECATED - use !setverifychannel)"""
-        await message.channel.send("🛡️ Verification: Use `!setverifychannel` to set up verification.")
-        return True
-
     async def handle_modlog_view(self, message: discord.Message) -> bool:
         """!modlog view — view mod logs"""
         embed = discord.Embed(
@@ -6358,65 +6353,6 @@ class ActionHandler:
     async def handle_leveling_shop(self, message: discord.Message) -> bool:
         """!levelshop — shop for leveling perks (placeholder)"""
         await message.channel.send("🛍️ Level shop coming soon! Use your gems here.")
-        return True
-
-    async def handle_verify(self, message: discord.Message) -> bool:
-        """!verify — manually verify a user (admin only)"""
-        if not message.author.guild_permissions.administrator:
-            await message.channel.send("❌ Only administrators can use this command.")
-            return False
-
-        config = dm.get_guild_data(message.guild.id, "verification_config", {})
-        role_id = config.get("verified_role_id")
-        if not role_id:
-            await message.channel.send("❌ Verification role not set.")
-            return False
-
-        role = message.guild.get_role(role_id)
-        if not role:
-            await message.channel.send("❌ Verification role not found.")
-            return False
-
-        parts = message.content.split()
-        if len(parts) > 1:
-            try:
-                user_id = int(parts[1].strip("<@!>"))
-                member = message.guild.get_member(user_id)
-                if member:
-                    await member.add_roles(role)
-                    await message.channel.send(f"✅ Verified {member.mention}")
-                else:
-                    await message.channel.send("❌ User not found.")
-            except ValueError:
-                await message.channel.send("❌ Invalid user.")
-        else:
-            await message.author.add_roles(role)
-            await message.channel.send("✅ You are now verified.")
-        return True
-
-    async def handle_kick(self, message: discord.Message) -> bool:
-        """!kick — kick a user"""
-        if not message.author.guild_permissions.kick_members:
-            await message.channel.send("❌ No permission.")
-            return False
-
-        parts = message.content.split()
-        if len(parts) < 2:
-            await message.channel.send("Usage: !kick @user [reason]")
-            return False
-
-        try:
-            user_id = int(parts[1].strip("<@!>"))
-            member = message.guild.get_member(user_id)
-            if not member:
-                await message.channel.send("❌ User not found.")
-                return False
-
-            reason = " ".join(parts[2:]) if len(parts) > 2 else "No reason"
-            await member.kick(reason=reason)
-            await message.channel.send(f"✅ Kicked {member.mention} for {reason}")
-        except Exception as e:
-            await message.channel.send(f"❌ Error: {e}")
         return True
 
     async def handle_ban(self, message: discord.Message) -> bool:
