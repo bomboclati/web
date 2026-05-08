@@ -366,7 +366,7 @@ Only suggest actions from this list. Do not invent new actions:
         
         raise Exception("AI failed to respond after trying all configured fallback providers.")
     
-    async def generate_response(self, messages: List[Dict[str, str]], guild_id: int, user_id: int, max_tokens: int = 400) -> str:
+    async def generate_response(self, messages: List[Dict[str, str]], guild_id: int, user_id: int, max_tokens: int = 1000) -> str:
         """
         Generate a text response from the AI using the provided messages.
         Returns just the text string (not a dict).
@@ -382,8 +382,41 @@ Only suggest actions from this list. Do not invent new actions:
         api_key = key_bundle["api_key"]
         provider = key_bundle["provider"]
         
-        # Determine model
+        # Determine model - validate it matches the provider
         active_model = self.model or "gpt-3.5-turbo"
+        
+        # Model validation: ensure model matches provider
+        provider_model_map = {
+            "openrouter": ["gpt", "claude", "gemini", "llama", "meta-llama", "google", "anthropic"],
+            "openai": ["gpt"],
+            "gemini": ["gemini"],
+            "anthropic": ["claude"],
+            "groq": ["llama", "mixtral"],
+            "mistral": ["mistral", "open-mixtral"],
+            "deepseek": ["deepseek"],
+            "dashscope": ["qwen"],
+            "qwen": ["qwen"],
+            "cerebras": ["llama"],
+            "sambanova": ["llama"],
+            "together": ["llama", "mistral"]
+        }
+        
+        valid_prefixes = provider_model_map.get(provider, [])
+        if not any(active_model.lower().startswith(prefix) for prefix in valid_prefixes):
+            # Model doesn't match provider, use default for this provider
+            defaults = {
+                "openrouter": "openai/gpt-4o",
+                "openai": "gpt-4o",
+                "gemini": "gemini-1.5-flash",
+                "anthropic": "claude-3-5-sonnet-20240620",
+                "groq": "llama-3.3-70b-versatile",
+                "mistral": "mistral-small-latest",
+                "deepseek": "deepseek-chat",
+                "dashscope": "qwen-turbo",
+                "qwen": "qwen-turbo"
+            }
+            active_model = defaults.get(provider, "gpt-3.5-turbo")
+            logger.warning(f"Model {self.model} doesn't match provider {provider}, using {active_model} instead")
         
         # Build payload
         payload = {

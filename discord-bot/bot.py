@@ -1889,7 +1889,7 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                     messages=messages,
                     guild_id=message.guild.id if message.guild else 0,
                     user_id=message.author.id,
-                    max_tokens=800
+                    max_tokens=1000
                 )
                 
                 if response:
