@@ -713,6 +713,35 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                         cmds_text = "\n".join([f"• `{cmd}`" for cmd in custom_cmds[:15]])
                         embed.add_field(name="Custom Commands", value=cmds_text or "No commands", inline=False)
                     
+                    embed.set_footer(text="Config panel below (only you can see)")
+                    
+                    # Send config panel ephemerally
+                    await message.channel.send(embed=embed, view=view)
+                    return
+                    
+                    # Get the config panel view
+                    from modules.config_panels import get_config_panel
+                    view = get_config_panel(message.guild.id, system)
+                    if not view:
+                        await message.channel.send(f"❌ System '{system}' not found.")
+                        return
+                    
+                    # Create embed with system info and custom commands
+                    from actions import ActionHandler
+                    custom_cmds = ActionHandler.get_commands_for_system(system)
+                    
+                    embed = discord.Embed(
+                        title=f"⚙️ {system.replace('_', ' ').title()} Configuration",
+                        description=f"System configuration panel for {system.replace('_', ' ')}",
+                        color=discord.Color.blue()
+                    )
+                    embed.add_field(name="System", value=system.replace('_', ' ').title(), inline=True)
+                    
+                    # Add custom commands if available
+                    if custom_cmds:
+                        cmds_text = "\n".join([f"• `{cmd}`" for cmd in custom_cmds[:15]])
+                        embed.add_field(name="Custom Commands", value=cmds_text or "No commands", inline=False)
+                    
                     embed.set_footer(text="Click the button below to open the config panel (only you can see)")
                     
                     # Create a View with a button that opens config panel ephemerally
