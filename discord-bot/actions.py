@@ -256,6 +256,44 @@ class ActionHandler:
         "create_automation"
     }
 
+    @classmethod
+    def get_commands_for_system(cls, system: str) -> list:
+        """
+        Get custom commands related to a system.
+        This is used in !configpanel to show available commands.
+        """
+        system_commands = {
+            "verification": ["!setverifychannel", "!verify", "!configpanel verification"],
+            "antiraid": ["!raidstatus", "!configpanel antiraid"],
+            "guardian": ["!guardian status", "!configpanel guardian"],
+            "automod": ["!automod status", "!configpanel automod"],
+            "warnings": ["!warn @user", "!warnings", "!clearwarn", "!clearallwarns", "!configpanel warnings"],
+            "moderation": ["!kick", "!ban", "!mute", "!modstats", "!configpanel moderation"],
+            "modlog": ["!modlog view", "!configpanel modlog"],
+            "logging": ["!configpanel logging"],
+            "economy": ["!balance", "!daily", "!work", "!ecoleaderboard", "!challenge", "!shop", "!buy", "!transfer", "!give", "!beg", "!rob", "!help economy", "!configpanel economy"],
+            "economyshop": ["!shop", "!buy", "!configpanel economyshop"],
+            "leveling": ["!rank", "!levelleaderboard", "!levels", "!rewards", "!levelshop", "!configpanel leveling"],
+            "levelingshop": ["!levelshop", "!configpanel levelingshop"],
+            "starboard": ["!starboard", "!configpanel starboard"],
+            "tickets": ["!configpanel tickets"],
+            "welcome": ["!configpanel welcome"],
+            "welcomedm": ["!configpanel welcomedm"],
+            "applications": ["!configpanel applications"],
+            "appeals": ["!configpanel appeals"],
+            "modmail": ["!configpanel modmail"],
+            "suggestions": ["!suggest", "!configpanel suggestions"],
+            "giveaway": ["!configpanel giveaway"],
+            "gamification": ["!configpanel gamification"],
+            "reactionroles": ["!configpanel reactionroles"],
+            "reactionmenus": ["!configpanel reactionmenus"],
+            "rolebuttons": ["!configpanel rolebuttons"],
+            "staffpromo": ["!staffpromo", "!staffpromo tiers", "!staffpromo requirements", "!staffpromo status", "!staffpromo leaderboard", "!staffpromo progress", "!configpanel staffpromo"],
+            "events": ["!configpanel events"],
+            "chatchannels": ["!configpanel chatchannels"],
+        }
+        return system_commands.get(system.lower(), [])
+    
     def __init__(self, bot):
         if bot is None:
             logger.error("ActionHandler initialized with None bot instance!")
@@ -6214,8 +6252,8 @@ class ActionHandler:
         return True
 
     async def handle_verify(self, message: discord.Message) -> bool:
-        """!verify — verify user"""
-        await message.channel.send("🛡️ Verification: Use buttons in verify channel.")
+        """!verify — verify user (DEPRECATED - use !setverifychannel)"""
+        await message.channel.send("🛡️ Verification: Use `!setverifychannel` to set up verification.")
         return True
 
     async def handle_modlog_view(self, message: discord.Message) -> bool:

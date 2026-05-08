@@ -683,23 +683,55 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                     system = cmd_content[len("configpanel "):].strip()
                 else:
                     system = cmd_content[len("configpanel"):].strip()
-
+                
                 if system:
                     # Check if user is admin or owner
                     if not message.author.guild_permissions.administrator and message.author.id != message.guild.owner_id:
-                        try:
-                            await message.author.send("❌ Only administrators can use this command.")
-                        except:
-                            pass  # DM might fail
+                        await message.channel.send("❌ Only administrators can use this command.")
                         return
-                    # Send ephemeral-like feedback via DM
-                    system_name = system.replace('_', ' ').title()
-                    try:
-                        await message.author.send(f"Opening {system_name} configuration…")
-                    except:
-                        pass  # DM might fail
-                    from modules.config_panels import handle_config_panel_command
-                    await handle_config_panel_command(message, system)
+                    
+                    # Get custom commands for this system
+                    from actions import ActionHandler
+                    custom_cmds = ActionHandler.get_commands_for_system(system)
+                    
+                    # Create embed with system info and custom commands
+                    embed = discord.Embed(
+                        title=f"⚙️ {system.replace('_', ' ').title()} Configuration",
+                        description=f"System configuration panel for {system.replace('_', ' ')}",
+                        color=discord.Color.blue()
+                    )
+                    embed.add_field(name="System", value=system.replace('_', ' ').title(), inline=True)
+                    
+                    # Add custom commands if available
+                    if custom_cmds:
+                        cmds_text = "\n".join([f"• `{cmd}`" for cmd in custom_cmds[:15]])
+                        embed.add_field(name="Custom Commands", value=cmds_text or "No commands", inline=False)
+                    
+                    embed.set_footer(text="Click the button below to open the config panel (only you can see)")
+                    
+                    # Create a simple View with a button
+                    view = discord.ui.View(timeout=None)
+                    
+                    async def button_callback(interaction: discord.Interaction):
+                        await interaction.response.defer(ephemeral=True)
+                        from modules.config_panels import get_config_panel
+                        config_view = get_config_panel(interaction.guild.id, system)
+                        if not config_view:
+                            await interaction.followup.send(f"❌ System '{system}' not found.", ephemeral=True)
+                            return
+                        embed = config_view.create_embed(guild_id=interaction.guild.id, guild=interaction.guild)
+                        await interaction.followup.send(embed=embed, view=config_view, ephemeral=True)
+                    
+                    button = discord.ui.Button(
+                        label=f"Open {system.replace('_', ' ').title()} Config",
+                        style=discord.ButtonStyle.primary,
+                        emoji="⚙️",
+                        custom_id=f"open_cfg_{system}"
+                    )
+                    button.callback = button_callback
+                    view.add_item(button)
+                    
+                    await message.channel.send(embed=embed, view=view)
                     return
             
             if cmd_content.startswith("scheduled"):
