@@ -689,27 +689,37 @@ Keep your reflection concise (2-3 sentences) and focus on actionable improvement
                     if not message.author.guild_permissions.administrator and message.author.id != message.guild.owner_id:
                         await message.channel.send("❌ Only administrators can use this command.")
                         return
-                    
-                    # Get the config panel view
-                    from modules.config_panels import get_config_panel
+                    # Check if system exists
+                    from modules.config_panels import get_config_panel, get_system_info, SystemOverviewView
+
                     view = get_config_panel(message.guild.id, system)
                     if not view:
                         await message.channel.send(f"❌ System '{system}' not found.")
                         return
-                    
+
+                    # Get system info
+                    emoji, description = get_system_info(system)
+
+                    # Create overview embed
+                    embed = discord.Embed(
+                        title=f"{emoji} {system.title()} System",
+                        description=description,
+                        color=discord.Color.blue()
+                    )
+
                     # Get custom commands for this system
                     from actions import ActionHandler
                     custom_cmds = ActionHandler.get_commands_for_system(system)
-                    
-                    # Create the config embed directly
-                    embed = view.create_embed(guild_id=message.guild.id, guild=message.guild)
 
                     # Add custom commands if available
                     if custom_cmds:
-                        cmds_text = "\n".join([f"• `{cmd}`" for cmd in custom_cmds[:20]])  # Increased limit
+                        cmds_text = "\n".join([f"• `{cmd}`" for cmd in custom_cmds[:20]])
                         embed.add_field(name="Custom Commands", value=cmds_text or "No commands", inline=False)
 
-                    embed.set_footer(text="Use the buttons below to configure the system")
+                    embed.set_footer(text="Click the button below to configure this system")
+
+                    # Create overview view
+                    view = SystemOverviewView(message.guild.id, system)
 
                     await message.channel.send(embed=embed, view=view)
                     return

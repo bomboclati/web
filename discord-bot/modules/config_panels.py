@@ -2529,6 +2529,17 @@ class StaffShiftsConfigView(ConfigPanelView):
 
 # --- Registry ---
 
+def get_system_info(system_key: str) -> tuple[str, str]:
+    """Get system emoji and description from help system data."""
+    from modules.help_system import SYSTEM_CATEGORIES
+
+    for category_data in SYSTEM_CATEGORIES.values():
+        if "systems" in category_data:
+            for sys_key, emoji, desc, cmds in category_data["systems"]:
+                if sys_key == system_key:
+                    return emoji, desc
+    return "⚙️", f"Configuration for {system_key}"
+
 SPECIALIZED_VIEWS = {
     "verification": "VerificationConfigView",
     "verify": "VerificationConfigView",
@@ -2557,6 +2568,43 @@ SPECIALIZED_VIEWS = {
 
 # Local cache for lazy-loaded view classes
 _view_cache = {}
+
+class SystemOverviewView(ui.View):
+    """View for system overview with configure button."""
+
+    def __init__(self, guild_id: int, system: str):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.system = system
+
+    @ui.button(label="Configure System", emoji="⚙️", style=discord.ButtonStyle.primary, custom_id="configure_system")
+    async def configure_system(self, interaction: Interaction, button: ui.Button):
+        # Check permissions
+        if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
+            await interaction.response.send_message("❌ Only administrators can configure systems.", ephemeral=True)
+            return
+
+        # Get the config panel
+        view = get_config_panel(self.guild_id, self.system)
+        if not view:
+            await interaction.response.send_message(f"❌ System '{self.system}' not found.", ephemeral=True)
+            return
+
+        # Get custom commands
+        from actions import ActionHandler
+        custom_cmds = ActionHandler.get_commands_for_system(self.system)
+
+        # Create the config embed
+        embed = view.create_embed(guild_id=self.guild_id, guild=interaction.guild)
+
+        # Add custom commands if available
+        if custom_cmds:
+            cmds_text = "\n".join([f"• `{cmd}`" for cmd in custom_cmds[:20]])
+            embed.add_field(name="Custom Commands", value=cmds_text or "No commands", inline=False)
+
+        embed.set_footer(text="Only you can see this configuration panel.")
+
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
     # Lazy import for all systems
