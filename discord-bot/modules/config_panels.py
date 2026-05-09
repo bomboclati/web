@@ -3367,6 +3367,8 @@ class StaffPromoConfigView(ConfigPanelView):
             embed.set_thumbnail(url=guild.icon.url)
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
         embed.add_field(name="Promo Role", value=f"<@&{c.get('promo_role_id')}>" if c.get("promo_role_id") else "_None_", inline=True)
+        embed.add_field(name="Requirements", value=c.get("requirements", "Not set")[:50] + "..." if len(c.get("requirements", "")) > 50 else c.get("requirements", "Not set"), inline=False)
+        embed.add_field(name="Tiers", value=c.get("tiers", "Not set")[:50] + "..." if len(c.get("tiers", "")) > 50 else c.get("tiers", "Not set"), inline=False)
         return embed
 
     @ui.button(label="Disable", emoji="🎖️", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_staffpromo_toggle")
@@ -3377,3 +3379,21 @@ class StaffPromoConfigView(ConfigPanelView):
         await self.save_config(c, interaction.guild_id, interaction.client, interaction)
         self.update_system_toggle_button("cfg_staffpromo_toggle", c["enabled"])
         await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+
+    @ui.button(label="Set Promo Role", emoji="👑", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_staffpromo_set_role")
+    async def set_role(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_message("Select Role:", view=_picker_view(_GenericRoleSelect(self, "promo_role_id", "Promo Role")), ephemeral=True)
+
+    @ui.button(label="Set Requirements", emoji="📋", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_staffpromo_set_req")
+    async def set_req(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_modal(_TextModal(self, "requirements", "Promotion Requirements", interaction.guild_id))
+
+    @ui.button(label="Configure Tiers", emoji="🏆", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_staffpromo_tiers")
+    async def config_tiers(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_modal(_TextModal(self, "tiers", "Promotion Tiers (JSON)", interaction.guild_id))
+
+    @ui.button(label="View Status", emoji="📊", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staffpromo_status")
+    async def view_status(self, interaction: Interaction, button: ui.Button):
+        c = self.get_config(interaction.guild_id)
+        status = f"Enabled: {c.get('enabled', True)}\nPromo Role: <@&{c.get('promo_role_id', 0)}>\nRequirements: {c.get('requirements', 'Not set')}\nTiers: {c.get('tiers', 'Not set')}"
+        await interaction.response.send_message(embed=discord.Embed(title="Staff Promo Status", description=status), ephemeral=True)
