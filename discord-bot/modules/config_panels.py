@@ -2531,12 +2531,15 @@ class StaffShiftsConfigView(ConfigPanelView):
 
 def get_system_info(system_key: str) -> tuple[str, str]:
     """Get system emoji and description from help system data."""
-    from modules.help_system import SYSTEM_CATEGORIES
+    from modules.help_system import CATEGORIES
 
-    for category_data in SYSTEM_CATEGORIES.values():
+    # Normalize the system key like in get_config_panel
+    normalized_key = system_key.lower().replace("_", "").replace(" ", "").replace("system", "")
+
+    for category_data in CATEGORIES.values():
         if "systems" in category_data:
             for sys_key, emoji, desc, cmds in category_data["systems"]:
-                if sys_key == system_key:
+                if sys_key == normalized_key:
                     return emoji, desc
     return "⚙️", f"Configuration for {system_key}"
 
@@ -2590,9 +2593,11 @@ class SystemOverviewView(ui.View):
             await interaction.response.send_message(f"❌ System '{self.system}' not found.", ephemeral=True)
             return
 
-        # Get custom commands
-        from actions import ActionHandler
-        custom_cmds = ActionHandler.get_commands_for_system(self.system)
+    # Get custom commands
+    from actions import ActionHandler
+    # Normalize system key for command lookup
+    normalized_system = self.system.lower().replace("_", "").replace(" ", "").replace("system", "")
+    custom_cmds = ActionHandler.get_commands_for_system(normalized_system)
 
         # Create the config embed
         embed = view.create_embed(guild_id=self.guild_id, guild=interaction.guild)
