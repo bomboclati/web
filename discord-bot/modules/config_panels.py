@@ -3411,23 +3411,21 @@ class StaffPromoConfigView(ConfigPanelView):
 
     @ui.button(label="View Staff Overview", emoji="👥", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_staffpromo_overview")
     async def view_overview(self, interaction: Interaction, button: ui.Button):
-        # Placeholder implementation
         embed = discord.Embed(title="Staff Overview", description="Staff member details and eligibility status.")
-        embed.add_field(name="Total Staff", value="5", inline=True)
-        embed.add_field(name="Eligible for Promotion", value="2", inline=True)
+        embed.add_field(name="Total Staff", value="Data not available", inline=True)
+        embed.add_field(name="Eligible for Promotion", value="Data not available", inline=True)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @ui.button(label="View Leaderboard", emoji="🏆", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_staffpromo_leaderboard")
     async def view_leaderboard(self, interaction: Interaction, button: ui.Button):
         embed = discord.Embed(title="Staff Leaderboard", description="Top staff by activity.")
-        embed.add_field(name="1. User1", value="100 points", inline=False)
-        embed.add_field(name="2. User2", value="80 points", inline=False)
+        embed.add_field(name="No leaderboard data", value="Feature under development", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @ui.button(label="View Promotion History", emoji="📜", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_staffpromo_history")
     async def view_history(self, interaction: Interaction, button: ui.Button):
         embed = discord.Embed(title="Promotion History", description="Recent promotions and demotions.")
-        embed.add_field(name="User1", value="Promoted to Mod - 2023-01-01", inline=False)
+        embed.add_field(name="No history available", value="Feature under development", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @ui.button(label="Promote Staff", emoji="⬆️", style=discord.ButtonStyle.success, row=0, custom_id="cfg_staffpromo_promote")
@@ -3485,17 +3483,14 @@ class StaffPromoConfigView(ConfigPanelView):
                     await it.response.send_message("❌ Invalid user ID.", ephemeral=True)
         await interaction.response.send_modal(ProfileModal())
 
-    @ui.button(label="Put on Probation", emoji="⏸️", style=discord.ButtonStyle.warning, row=2, custom_id="cfg_staffpromo_probation")
+    @ui.button(label="Put on Probation", emoji="⏸️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staffpromo_probation")
     async def put_on_probation(self, interaction: Interaction, button: ui.Button):
         class ProbationModal(ui.Modal, title="Put on Probation"):
             user_id = ui.TextInput(label="User ID")
             duration = ui.TextInput(label="Duration (days)")
             reason = ui.TextInput(label="Reason")
             async def on_submit(self, it):
-                # Basic: save to config
-                c = {}  # self.get_config(it.guild_id) but for probation
-                # Placeholder
-                await it.response.send_message(f"✅ Put user {self.user_id.value} on probation for {self.duration.value} days. Reason: {self.reason.value}", ephemeral=True)
+                await it.response.send_message("Feature under development: Probation management not yet implemented.", ephemeral=True)
         await interaction.response.send_modal(ProbationModal())
 
     @ui.button(label="Exclude from Promotions", emoji="🚫", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_staffpromo_exclude")
@@ -3504,12 +3499,11 @@ class StaffPromoConfigView(ConfigPanelView):
             user_id = ui.TextInput(label="User ID")
             reason = ui.TextInput(label="Reason")
             async def on_submit(self, it):
-                # Basic
-                await it.response.send_message(f"✅ Excluded user {self.user_id.value} from promotions. Reason: {self.reason.value}", ephemeral=True)
+                await it.response.send_message("Feature under development: Exclusion management not yet implemented.", ephemeral=True)
         await interaction.response.send_modal(ExcludeModal())
 
     @ui.button(label="View Eligible Staff", emoji="✅", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_staffpromo_eligible")
     async def view_eligible(self, interaction: Interaction, button: ui.Button):
         embed = discord.Embed(title="Eligible Staff", description="Staff members eligible for promotion.")
-        embed.add_field(name="Eligible", value="User1, User2", inline=False)
+        embed.add_field(name="No eligible staff", value="Feature under development", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
