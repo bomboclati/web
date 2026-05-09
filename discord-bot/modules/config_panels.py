@@ -2593,11 +2593,11 @@ class SystemOverviewView(ui.View):
             await interaction.response.send_message(f"❌ System '{self.system}' not found.", ephemeral=True)
             return
 
-    # Get custom commands
-    from actions import ActionHandler
-    # Normalize system key for command lookup
-    normalized_system = self.system.lower().replace("_", "").replace(" ", "").replace("system", "")
-    custom_cmds = ActionHandler.get_commands_for_system(normalized_system)
+        # Get custom commands
+        from actions import ActionHandler
+        # Normalize system key for command lookup
+        normalized_system = self.system.lower().replace("_", "").replace(" ", "").replace("system", "")
+        custom_cmds = ActionHandler.get_commands_for_system(normalized_system)
 
         # Create the config embed
         embed = view.create_embed(guild_id=self.guild_id, guild=interaction.guild)
