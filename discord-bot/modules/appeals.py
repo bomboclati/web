@@ -339,7 +339,7 @@ class RequestInfoModal(ui.Modal, title="Request More Info"):
         await interaction.message.edit(embed=embed)
         await interaction.response.send_message("✅ Information requested.", ephemeral=True)
 
-class Appeals:
+class AppealSystem:
     def __init__(self, bot):
         self.bot = bot
 
