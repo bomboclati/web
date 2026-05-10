@@ -1,136 +1,103 @@
-# ♾️ Immortal AI Discord Bot
+# Miro Discord Bot
 
-A world-class, self-improving Discord bot built with `discord.py` 2.4+. Designed for **Zero Data Loss**, **Infinite Memory**, and **Deep Reasoning-powered AI**.
+A comprehensive Discord bot with 33 systems for server management, economy, moderation, and entertainment.
 
-## 🌟 Key Features
+## Features
 
 ### Core Systems
-- **Immortal Persistence:** Every state change is written to disk immediately using atomic writes.
-- **Deep Reasoning AI:** The AI performs chain-of-thought analysis before executing any server management action.
-- **Unlimited Prefix Commands:** Bypasses slash command limits by allowing AI to create dynamic `!` prefix commands.
-- **Auto-Documentation:** Every system automatically creates help embeds and `!help <system>` commands.
+- **Verification**: CAPTCHA-based member verification
+- **Economy**: Coins, gems, shop, daily rewards, challenges
+- **Leveling**: XP system with role rewards
+- **Tickets**: Private support ticket system
+- **Suggestions**: Community voting on suggestions
+- **Giveaways**: Automated giveaway management
+- **Welcome/Leave**: Customizable join/leave messages
+- **Anti-Raid**: Automatic raid detection and prevention
+- **Auto-Mod**: Content moderation and filtering
+- **Warnings**: User warning and punishment system
+- **Reminders**: Scheduled personal reminders
+- **Announcements**: Announcement management system
+- **Auto-Responder**: Keyword-based automated responses
+- **Reaction Roles**: Role assignment via reactions
+- **Staff Shifts**: Staff shift tracking and management
+- **Staff Reviews**: Staff performance evaluation
+- **Starboard**: Popular message highlighting
+- **AI Chat**: AI-powered chat channels
+- **Modmail**: Private staff messaging
+- **Logging**: Comprehensive server event logging
 
-### AI Systems
-- **AI Chat Channels:** Dedicated AI-powered channels with customizable personas (General, Help, RPG, Counselor, Translator, Coding, Creative, Gaming)
-- **Multi-AI Providers:** Support for different AI models per channel
-- **Web Search:** AI can search the web using Tavily and include results in responses
-- **Command Execution:** AI can execute bot commands when needed
+## Installation
 
-### Moderation
-- **Anti-Raid:** Automatic raid detection and server locking
-- **Moderation:** Strike system with auto-mutes/bans
-- **Conflict Resolution:** AI-analyzes server conflicts
-- **Appeals System:** DM-based appeals (ban/mute/warn categories, evidence requests, history)
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd discord-bot
+   ```
 
-### Economy & Leveling
-- **Economy:** Coins system with daily rewards, transfers
-- **Leveling:** XP with streak bonuses (up to 2x at 30+ day streaks)
-- **XP Multipliers:** Weekend 2x, VIP 1.5x, Event 3x
-- **Daily Challenges:** Complete challenges for bonus coins
-- **Economy:** Coins, challenges, and rewards
+2. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### Shop System
-- **Premium Shop:** Roles, colors, channels, banners
-- **Limited Stock:** Individual item quantities
-- **Discounts:** Flash sales (50% off), weekend deals (25% off)
-- **Canned Responses:** Auto-replies to common issues
+3. **Configure environment**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your bot token and settings
+   ```
 
-### Tickets & Modmail
-- **Advanced Tickets:** Categories, priority, sentiment analysis
-- **Ticket Templates:** Bug report, feature request, billing, account, general
-- **Modmail:** DM the bot → forwarded to staff channel → staff replies via modal
+4. **Run the bot**
+   ```bash
+   python bot.py
+   ```
 
-### Events & Activities
-- **Event Scheduler:** Automated trivia, story building, debates
-- **Polls:** Create polls with multiple choices
-- **Contests:** Submission-based contests
-- **Giveaways:** Automated multi-winner giveaways
+## Configuration
 
-### Staff Management
-- **Staff Applications:** Modal-based with approval workflow
-- **Staff Reviews:** Performance tracking
-- **Staff Promo/Demo:** Tracking with cooldowns
-- **Shift Management:** Track staff activity
+1. **Invite the bot** to your server with the following permissions:
+   - Send Messages
+   - Use Slash Commands
+   - Embed Links
+   - Read Message History
+   - Manage Roles
+   - Manage Channels
+   - Kick Members
+   - Ban Members
+   - Moderate Members
 
-### Community
-- **Leveling:** XP and leveling up with role rewards
-- **Community Health:** AI-analyzes server engagement
-- **Welcome/Leave:** Customizable embeds
+2. **Set up systems** using the `/autosetup` command (Administrator only)
 
----
+3. **Configure individual systems** using `/configpanel <system>` (Administrator only)
 
-## 🚀 Getting Started
+## Deployment
 
-### 1. Prerequisites
-- Python 3.10+
-- Discord Bot Token (from [Discord Developer Portal](https://discord.com/developers/applications))
-- AI API Key (OpenRouter, Gemini, or OpenAI)
-- (Optional) Tavily API Key for Web Search
-- (Optional) Tenor/GIPHY API Keys for GIFs
+### Railway (Recommended)
+1. Connect your GitHub repository to Railway
+2. Set environment variables in Railway dashboard
+3. Deploy automatically
 
-### 2. Installation
-```powershell
-# 1. Clone or download the files
-pip install -r requirements.txt
-
-# 2. Configure environment
-cp .env.example .env
-# Edit .env with your tokens
+### Docker
+```bash
+docker build -t miro-bot .
+docker run -d --env-file .env miro-bot
 ```
 
-### 3. Run the Bot
-```powershell
+### Local/VPS
+```bash
 python bot.py
 ```
 
----
+## Data Persistence
 
-## 🛠️ Usage
+- All data is automatically saved to JSON files in the `data/` directory
+- SQLite database for conversation history
+- Automatic backups every 6 hours
+- Zero data loss on restarts
 
-### Primary Commands
-- `/bot <text>`: **The main AI portal.** Tell the AI what you want to build or do (e.g., "Build a staff application system" or "Setup a car shop").
-- `/status`: Check system health and memory depth.
-- `/help`: List all utility commands.
-- `/list`: See all active automations (custom commands, triggers).
-- `/config`: Adjust AI provider and model settings.
-- `/undo`: Reverses the latest administrative actions.
+## Support
 
-### Setting Up Systems
-Use `/setup` to configure:
-- Moderation System
-- Economy System
-- Leveling System
-- Ticket System
-- Modmail System
-- Welcome/Goodbye
-- And more...
+- Use `/ticket` to create support tickets
+- Check the created channels after setup
+- All systems are fully functional after `/autosetup`
 
-### AI Action Logic
-When you use `/bot`, the AI will:
-1.  **Reason**: Analyze your request and plan the steps.
-2.  **Walkthrough**: Present a bulleted plan and ask for confirmation.
-3.  **Execute**: Perform the actions (create channels, roles, prefix commands) once you click **Proceed**.
+## License
 
----
-
-## 📂 Architecture
-
-- `bot.py`: Central client logic and command sync.
-- `data_manager.py`: Atomic JSON writes for zero data loss.
-- `history_manager.py`: Infinite per-user conversation memory.
-- `ai_client.py`: Deep reasoning, web search, and retry logic.
-- `actions.py`: Bridge between AI JSON and Discord API.
-- `modules/`: Specialized logic for each system.
-  - `leveling.py`: XP, streaks, multipliers
-  - `economy.py`: Coins and challenges
-  - `shop.py`: Limited items, discounts
-  - `tickets.py`: Advanced tickets with templates
-  - `appeals.py`: DM-based appeals
-  - `events.py`: Polls, contests, trivia
-  - `chat_channels.py`: AI chat with personas
-  - And 25+ more modules...
-
----
-
-## 🛡️ License
-MIT License. Built with pride by **Antigravity**.
+This project is provided as-is for educational and server management purposes.

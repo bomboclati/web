@@ -1,498 +1,477 @@
 import discord
-from discord.ext import commands
-import asyncio
-import json
+from discord import ui
 import time
-import io
-from typing import Dict, List, Optional, Any
-from dataclasses import dataclass
-from enum import Enum
-from datetime import datetime, timezone, timedelta
-
+import asyncio
+from typing import Dict, List, Any, Optional
 from data_manager import dm
 from logger import logger
-from vector_memory import vector_memory
 
+class TicketSystem:
+    """
+    Complete ticket system with private channels, staff controls, and transcripts.
+    Features:
+    - Private ticket channels
+    - Staff assignment
+    - Ticket controls (close, add user, transcript)
+    - Category organization
+    - Ticket logging
+    - Auto-close inactive tickets
+    """
 
-class TicketStatus(Enum):
-    OPEN = "open"
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    RESOLVED = "resolved"
-    CLOSED = "closed"
-    ESCALATED = "escalated"
-
-
-class TicketPriority(Enum):
-    LOW = 1
-    MEDIUM = 2
-    HIGH = 3
-    URGENT = 4
-
-
-class TicketCategory(Enum):
-    GENERAL = "general"
-    SUPPORT = "support"
-    REPORT = "report"
-    APPEAL = "appeal"
-    SUGGESTION = "suggestion"
-    TECHNICAL = "technical"
-    BILLING = "billing"
-
-
-@dataclass
-class Ticket:
-    id: str
-    guild_id: int
-    channel_id: int
-    user_id: int
-    category: TicketCategory
-    priority: TicketPriority
-    status: TicketStatus
-    title: str
-    messages: List[dict]
-    created_at: float
-    updated_at: float
-    assigned_to: Optional[int]
-    sentiment_score: float
-    sentiment_label: str
-
-
-class TicketModal(discord.ui.Modal):
-    def __init__(self):
-        super().__init__(title="Open a Support Ticket")
-
-        self.subject = discord.ui.TextInput(
-            label="Subject",
-            placeholder="What is your ticket about?",
-            required=True,
-            max_length=100
-        )
-        self.description = discord.ui.TextInput(
-            label="Description",
-            placeholder="Please provide details about your issue...",
-            style=discord.TextStyle.paragraph,
-            required=True,
-            max_length=1000
-        )
-        self.priority = discord.ui.TextInput(
-            label="Priority",
-            placeholder="Low, Medium, or High",
-            required=True,
-            min_length=3,
-            max_length=6
-        )
-
-        self.add_item(self.subject)
-        self.add_item(self.description)
-        self.add_item(self.priority)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-
-        priority_map = {
-            "low": TicketPriority.LOW,
-            "medium": TicketPriority.MEDIUM,
-            "high": TicketPriority.HIGH
-        }
-        priority = priority_map.get(self.priority.value.lower(), TicketPriority.MEDIUM)
-
-        system = getattr(interaction.client, "tickets", None)
-        if system:
-            await system.create_ticket_from_modal(
-                interaction,
-                self.subject.value,
-                self.description.value,
-                priority
-            )
-        else:
-            await interaction.followup.send("❌ Ticket system not found.", ephemeral=True)
-
-class TicketOpenPanel(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="🎫 Open Ticket", style=discord.ButtonStyle.success, custom_id="ticket_open_btn")
-    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        system = getattr(interaction.client, "tickets", None)
-        if not system: return
-
-        # Check max per user
-        settings = system.get_guild_settings(interaction.guild_id)
-        max_per_user = settings.get("max_per_user", 0)
-
-        if max_per_user > 0:
-            open_tickets = system.get_user_tickets(interaction.guild_id, interaction.user.id)
-            if len(open_tickets) >= max_per_user:
-                return await interaction.response.send_message(f"❌ You already have {len(open_tickets)} open tickets. Please close one before opening another.", ephemeral=True)
-
-        await interaction.response.send_modal(TicketModal())
-
-class TicketPersistentView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="🔒 Close", style=discord.ButtonStyle.danger, custom_id="ticket_close_v3", row=0)
-    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        system = getattr(interaction.client, "tickets", None)
-        if system: await system.handle_close_ticket(interaction)
-
-    @discord.ui.button(label="📋 Transcript", style=discord.ButtonStyle.secondary, custom_id="ticket_transcript_v3", row=0)
-    async def transcript(self, interaction: discord.Interaction, button: discord.ui.Button):
-        system = getattr(interaction.client, "tickets", None)
-        if system: await system.handle_transcript(interaction)
-
-    @discord.ui.button(label="👤 Add", style=discord.ButtonStyle.primary, custom_id="ticket_add_user_v3", row=0)
-    async def add_user(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(_UserIDModal("Add User to Ticket", "add"))
-
-    @discord.ui.button(label="🚫 Remove", style=discord.ButtonStyle.primary, custom_id="ticket_remove_user_v3", row=0)
-    async def remove_user(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(_UserIDModal("Remove User from Ticket", "remove"))
-
-    @discord.ui.button(label="✋ Claim", style=discord.ButtonStyle.success, custom_id="ticket_claim_v3", row=1)
-    async def claim_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        system = getattr(interaction.client, "tickets", None)
-        if system: await system.handle_claim_ticket(interaction)
-
-    @discord.ui.button(label="🔁 Unclaim", style=discord.ButtonStyle.secondary, custom_id="ticket_unclaim_v3", row=1)
-    async def unclaim_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        system = getattr(interaction.client, "tickets", None)
-        if system: await system.handle_unclaim_ticket(interaction)
-
-    @discord.ui.button(label="⬆️ Escalate", style=discord.ButtonStyle.danger, custom_id="ticket_escalate_v3", row=1)
-    async def escalate(self, interaction: discord.Interaction, button: discord.ui.Button):
-        system = getattr(interaction.client, "tickets", None)
-        if system: await system.handle_escalate(interaction)
-
-    @discord.ui.button(label="📌 Pin", style=discord.ButtonStyle.secondary, custom_id="ticket_pin_v3", row=1)
-    async def pin_message(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(_MessageIDModal())
-
-    @discord.ui.button(label="❗ Resolve", style=discord.ButtonStyle.success, custom_id="ticket_resolve_v3", row=2)
-    async def mark_resolved(self, interaction: discord.Interaction, button: discord.ui.Button):
-        system = getattr(interaction.client, "tickets", None)
-        if system: await system.handle_mark_resolved(interaction)
-
-    @discord.ui.button(label="🔓 Reopen", style=discord.ButtonStyle.primary, custom_id="ticket_reopen_v3", row=2)
-    async def reopen(self, interaction: discord.Interaction, button: discord.ui.Button):
-        system = getattr(interaction.client, "tickets", None)
-        if system: await system.handle_reopen(interaction)
-
-
-class AdvancedTickets:
     def __init__(self, bot):
         self.bot = bot
-        self._active_tickets: Dict[str, Ticket] = {}
-        self._ticket_channels: Dict[int, int] = {}
-        self._load_tickets()
+        self.active_tickets = {}  # ticket_id -> ticket_data
 
-    def _load_tickets(self):
-        tickets_data = dm.load_json("tickets", default={})
-        
-        for ticket_id, data in tickets_data.items():
-            try:
-                ticket = Ticket(
-                    id=ticket_id,
-                    guild_id=data["guild_id"],
-                    channel_id=data["channel_id"],
-                    user_id=data["user_id"],
-                    category=TicketCategory(data["category"]),
-                    priority=TicketPriority(data["priority"]),
-                    status=TicketStatus(data["status"]),
-                    title=data["title"],
-                    messages=data.get("messages", []),
-                    created_at=data["created_at"],
-                    updated_at=data["updated_at"],
-                    assigned_to=data.get("assigned_to"),
-                    sentiment_score=data.get("sentiment_score", 0.5),
-                    sentiment_label=data.get("sentiment_label", "neutral")
-                )
-                self._active_tickets[ticket_id] = ticket
-                self._ticket_channels[ticket.channel_id] = ticket_id
-            except Exception as e:
-                logger.error(f"Failed to load ticket {ticket_id}: {e}")
+    # Ticket creation
+    async def create_ticket(self, interaction, reason: str = None):
+        """Create a new support ticket."""
+        config = dm.get_guild_data(interaction.guild.id, "tickets_config", {})
+        if not config.get("enabled", False):
+            return await interaction.response.send_message("❌ Ticket system is disabled.", ephemeral=True)
 
-    def _save_ticket(self, ticket: Ticket):
-        tickets_data = dm.load_json("tickets", default={})
-        tickets_data[ticket.id] = {
-            "guild_id": ticket.guild_id,
-            "channel_id": ticket.channel_id,
-            "user_id": ticket.user_id,
-            "category": ticket.category.value,
-            "priority": ticket.priority.value,
-            "status": ticket.status.value,
-            "title": ticket.title,
-            "messages": ticket.messages,
-            "created_at": ticket.created_at,
-            "updated_at": ticket.updated_at,
-            "assigned_to": ticket.assigned_to,
-            "sentiment_score": ticket.sentiment_score,
-            "sentiment_label": ticket.sentiment_label
-        }
-        dm.save_json("tickets", tickets_data)
+        # Check if user already has an open ticket
+        user_tickets = dm.get_guild_data(interaction.guild.id, "user_tickets", {})
+        if str(interaction.user.id) in user_tickets:
+            ticket_id = user_tickets[str(interaction.user.id)]
+            if ticket_id in self.active_tickets:
+                return await interaction.response.send_message("❌ You already have an open ticket.", ephemeral=True)
 
-    def get_guild_settings(self, guild_id: int) -> dict:
-        return dm.get_guild_data(guild_id, "tickets_config", {
-            "enabled": True,
-            "staff_role_id": None,
-            "category_id": None,
-            "log_channel_id": None,
-            "max_per_user": 3,
-            "auto_close_hours": 24,
-            "panel_title": "Support Tickets",
-            "panel_description": "Click below to open a ticket.",
-            "panel_color": 0x3498db,
-            "senior_staff_role_id": None,
-            "opener_dm_enabled": True
-        })
+        # Defer response
+        await interaction.response.defer(ephemeral=True)
 
-    def get_user_tickets(self, guild_id: int, user_id: int) -> List[Ticket]:
-        return [t for t in self._active_tickets.values()
-                if t.guild_id == guild_id and t.user_id == user_id
-                and t.status not in [TicketStatus.CLOSED]]
-
-    def get_ticket_by_channel(self, channel_id: int) -> Optional[Ticket]:
-        ticket_id = self._ticket_channels.get(channel_id)
-        return self._active_tickets.get(ticket_id)
-
-    async def create_ticket_from_modal(self, interaction: discord.Interaction, subject, description, priority):
-        guild = interaction.guild
-        settings = self.get_guild_settings(guild.id)
-        
-        # Determine category
-        category_id = settings.get("category_id")
-        category = guild.get_channel(int(category_id)) if category_id else None
-        
-        # Ticket number
-        stats = dm.get_guild_data(guild.id, "ticket_stats", {"total": 0, "open": 0})
-        stats["total"] += 1
-        stats["open"] += 1
-        dm.update_guild_data(guild.id, "ticket_stats", stats)
-
-        # Create channel
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True)
-        }
-        
-        staff_role_id = settings.get("staff_role_id")
-        if staff_role_id:
-            staff_role = guild.get_role(int(staff_role_id))
-            if staff_role:
-                overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-
-        channel_name = f"ticket-{interaction.user.name}-{stats['total']}"
-        channel = await guild.create_text_channel(channel_name, category=category, overwrites=overwrites)
-        
-        # Create Ticket object
-        ticket_id = f"ticket_{guild.id}_{stats['total']}"
-        ticket = Ticket(
-            id=ticket_id,
-            guild_id=guild.id,
-            channel_id=channel.id,
-            user_id=interaction.user.id,
-            category=TicketCategory.SUPPORT,
-            priority=priority,
-            status=TicketStatus.OPEN,
-            title=subject,
-            messages=[],
-            created_at=time.time(),
-            updated_at=time.time(),
-            assigned_to=None,
-            sentiment_score=0.5,
-            sentiment_label="neutral"
-        )
-        
-        self._active_tickets[ticket_id] = ticket
-        self._ticket_channels[channel.id] = ticket_id
-        self._save_ticket(ticket)
-        
-        # Send initial message
-        embed = discord.Embed(
-            title=f"Ticket #{stats['total']}: {subject}",
-            description=description,
-            color=0x3498db
-        )
-        embed.add_field(name="Opener", value=interaction.user.mention, inline=True)
-        embed.add_field(name="Priority", value=priority.name, inline=True)
-        embed.set_footer(text="Staff will be with you shortly.")
-        
-        view = TicketPersistentView()
-        await channel.send(embed=embed, view=view)
-        
-        if staff_role_id:
-            await channel.send(f"<@&{staff_role_id}> New ticket created!")
-
-        await interaction.followup.send(f"✅ Ticket created! Go to {channel.mention}", ephemeral=True)
-
-    async def handle_claim_ticket(self, interaction: discord.Interaction):
-        ticket = self.get_ticket_by_channel(interaction.channel_id)
-        if not ticket: return
-        
-        ticket.assigned_to = interaction.user.id
-        ticket.status = TicketStatus.IN_PROGRESS
-        self._save_ticket(ticket)
-
-        await interaction.response.send_message(f"✋ Ticket claimed by {interaction.user.mention}.", ephemeral=False)
         try:
-            await interaction.channel.edit(name=f"claimed-{interaction.user.name}")
-        except:
-            pass
+            # Create ticket channel
+            ticket_id = self.generate_ticket_id()
+            channel_name = f"ticket-{ticket_id}"
 
-    async def handle_unclaim_ticket(self, interaction: discord.Interaction):
-        ticket = self.get_ticket_by_channel(interaction.channel_id)
-        if not ticket: return
-        
-        ticket.assigned_to = None
-        ticket.status = TicketStatus.OPEN
-        self._save_ticket(ticket)
-        
-        await interaction.response.send_message("🔁 Ticket unclaimed.", ephemeral=False)
+            # Get ticket category
+            category_id = config.get("ticket_category")
+            category = None
+            if category_id:
+                category = interaction.guild.get_channel(int(category_id))
 
-    async def handle_mark_resolved(self, interaction: discord.Interaction):
-        ticket = self.get_ticket_by_channel(interaction.channel_id)
-        if not ticket: return
+            # Create channel
+            overwrites = {
+                interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+                interaction.guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+            }
 
-        if hasattr(self.bot, 'staff_shift'):
-            await self.bot.staff_shift.track_ticket_resolved(interaction.guild_id, interaction.user.id)
+            # Add staff roles
+            staff_roles = config.get("staff_roles", [])
+            for role_id in staff_roles:
+                try:
+                    role = interaction.guild.get_role(int(role_id))
+                    if role:
+                        overwrites[role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+                except:
+                    pass
 
-        ticket.status = TicketStatus.RESOLVED
-        self._save_ticket(ticket)
-        
-        embed = discord.Embed(
-            title="✅ Ticket Resolved",
-            description="This ticket has been marked as resolved. You can close it or reopen if needed.",
-            color=discord.Color.green()
-        )
-        await interaction.response.send_message(embed=embed)
+            channel = await interaction.guild.create_text_channel(
+                channel_name,
+                category=category,
+                overwrites=overwrites
+            )
 
-    async def handle_reopen(self, interaction: discord.Interaction):
-        ticket = self.get_ticket_by_channel(interaction.channel_id)
-        if not ticket: return
-        
-        ticket.status = TicketStatus.OPEN
-        self._save_ticket(ticket)
-        
-        await interaction.response.send_message("🔓 Ticket reopened.", ephemeral=False)
+            # Store ticket data
+            ticket_data = {
+                "id": ticket_id,
+                "channel_id": channel.id,
+                "user_id": interaction.user.id,
+                "guild_id": interaction.guild.id,
+                "reason": reason or "No reason provided",
+                "created_at": time.time(),
+                "status": "open",
+                "staff_assigned": [],
+                "messages": []
+            }
 
-    async def handle_close_ticket(self, interaction: discord.Interaction):
-        ticket = self.get_ticket_by_channel(interaction.channel_id)
-        if not ticket: return
-        
-        await interaction.response.send_message("🔒 Closing ticket in 10 seconds... Generating transcript.", ephemeral=False)
-        
-        # Generate and send transcript
-        transcript_file = await self.generate_transcript(interaction.channel)
-        
-        settings = self.get_guild_settings(interaction.guild_id)
-        log_channel_id = settings.get("log_channel_id")
-        if log_channel_id:
-            log_channel = interaction.guild.get_channel(int(log_channel_id))
-            if log_channel:
-                embed = discord.Embed(title="📁 Ticket Transcript", description=f"Ticket: {ticket.title}\nUser: <@{ticket.user_id}>", color=0x3498db)
-                await log_channel.send(embed=embed, file=discord.File(transcript_file, filename=f"transcript-{interaction.channel.name}.txt"))
-        
-        # DM opener
-        if settings.get("opener_dm_enabled", True):
+            self.active_tickets[ticket_id] = ticket_data
+            user_tickets[str(interaction.user.id)] = ticket_id
+            dm.update_guild_data(interaction.guild.id, "user_tickets", user_tickets)
+
+            # Send welcome message
+            embed = discord.Embed(
+                title=f"🎫 Ticket #{ticket_id}",
+                description=f"Support ticket created by {interaction.user.mention}",
+                color=discord.Color.blue()
+            )
+
+            if reason:
+                embed.add_field(name="Reason", value=reason, inline=False)
+
+            embed.add_field(
+                name="Staff Controls",
+                value="Use the buttons below to manage this ticket.",
+                inline=False
+            )
+
+            embed.set_footer(text="Click close when the issue is resolved")
+
+            view = TicketControlView(self, ticket_id)
+            await channel.send(embed=embed, view=view)
+
+            # Confirm to user
+            await interaction.followup.send(
+                f"✅ Ticket created! Please check {channel.mention}",
+                ephemeral=True
+            )
+
+            # Log ticket creation
+            logger.info(f"Ticket {ticket_id} created by user {interaction.user.id} in guild {interaction.guild.id}")
+
+        except Exception as e:
+            logger.error(f"Failed to create ticket: {e}")
+            await interaction.followup.send("❌ Failed to create ticket. Please try again.", ephemeral=True)
+
+    async def close_ticket(self, interaction, ticket_id: str):
+        """Close a ticket."""
+        if ticket_id not in self.active_tickets:
+            return await interaction.response.send_message("❌ Ticket not found.", ephemeral=True)
+
+        ticket = self.active_tickets[ticket_id]
+
+        # Check permissions
+        is_staff = self.is_staff_member(interaction.guild, interaction.user)
+        is_owner = ticket["user_id"] == interaction.user.id
+
+        if not (is_staff or is_owner):
+            return await interaction.response.send_message("❌ You don't have permission to close this ticket.", ephemeral=True)
+
+        await interaction.response.defer()
+
+        try:
+            # Generate transcript
+            transcript = await self.generate_transcript(ticket)
+
+            # Send transcript to log channel
+            log_channel_id = dm.get_guild_data(interaction.guild.id, "tickets_config", {}).get("log_channel")
+            if log_channel_id:
+                try:
+                    log_channel = interaction.guild.get_channel(int(log_channel_id))
+                    if log_channel:
+                        await log_channel.send(embed=transcript)
+                except:
+                    pass
+
+            # Close ticket
+            ticket["status"] = "closed"
+            ticket["closed_at"] = time.time()
+            ticket["closed_by"] = interaction.user.id
+
+            # Save to closed tickets
+            closed_tickets = dm.get_guild_data(interaction.guild.id, "closed_tickets", [])
+            closed_tickets.append(ticket)
+            dm.update_guild_data(interaction.guild.id, "closed_tickets", closed_tickets[-100:])  # Keep last 100
+
+            # Clean up active tickets
+            del self.active_tickets[ticket_id]
+            user_tickets = dm.get_guild_data(interaction.guild.id, "user_tickets", {})
+            if str(ticket["user_id"]) in user_tickets:
+                del user_tickets[str(ticket["user_id"])]
+            dm.update_guild_data(interaction.guild.id, "user_tickets", user_tickets)
+
+            # Delete or archive channel
+            channel = interaction.guild.get_channel(ticket["channel_id"])
+            if channel:
+                try:
+                    # Option to delete or rename
+                    config = dm.get_guild_data(interaction.guild.id, "tickets_config", {})
+                    if config.get("delete_closed_tickets", False):
+                        await channel.delete()
+                    else:
+                        await channel.edit(name=f"closed-{ticket_id}")
+                        await channel.send("🔒 **Ticket Closed** - This channel will be deleted in 24 hours.")
+
+                        # Schedule deletion
+                        await asyncio.sleep(86400)  # 24 hours
+                        try:
+                            await channel.delete()
+                        except:
+                            pass
+                except Exception as e:
+                    logger.error(f"Failed to close ticket channel: {e}")
+
+            await interaction.followup.send("✅ Ticket closed successfully!", ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"Failed to close ticket: {e}")
+            await interaction.followup.send("❌ Failed to close ticket.", ephemeral=True)
+
+    async def add_user_to_ticket(self, interaction, ticket_id: str, user: discord.Member):
+        """Add a user to a ticket."""
+        if ticket_id not in self.active_tickets:
+            return await interaction.response.send_message("❌ Ticket not found.", ephemeral=True)
+
+        if not self.is_staff_member(interaction.guild, interaction.user):
+            return await interaction.response.send_message("❌ Only staff can add users to tickets.", ephemeral=True)
+
+        ticket = self.active_tickets[ticket_id]
+        channel = interaction.guild.get_channel(ticket["channel_id"])
+
+        if not channel:
+            return await interaction.response.send_message("❌ Ticket channel not found.", ephemeral=True)
+
+        try:
+            await channel.set_permissions(user, read_messages=True, send_messages=True)
+            await interaction.response.send_message(f"✅ Added {user.mention} to the ticket.", ephemeral=True)
+
+            # Log in ticket channel
+            await channel.send(f"👤 {interaction.user.mention} added {user.mention} to this ticket.")
+
+        except Exception as e:
+            logger.error(f"Failed to add user to ticket: {e}")
+            await interaction.response.send_message("❌ Failed to add user to ticket.", ephemeral=True)
+
+    async def generate_transcript(self, ticket: dict) -> discord.Embed:
+        """Generate a transcript embed for the ticket."""
+        channel = self.bot.get_channel(ticket["channel_id"])
+        if not channel:
+            # Channel deleted, create basic transcript
+            embed = discord.Embed(
+                title=f"🎫 Ticket #{ticket['id']} Transcript",
+                description="Channel was deleted - limited transcript available",
+                color=discord.Color.red()
+            )
+        else:
+            # Fetch messages
+            messages = []
             try:
-                opener = await interaction.guild.fetch_member(ticket.user_id)
-                if opener:
-                    transcript_file.seek(0)
-                    await opener.send(content=f"Your ticket '{ticket.title}' in {interaction.guild.name} has been closed. Here is your transcript:", file=discord.File(transcript_file, filename="transcript.txt"))
+                async for message in channel.history(limit=100, oldest_first=True):
+                    messages.append(message)
             except:
                 pass
-        
-        ticket.status = TicketStatus.CLOSED
-        self._save_ticket(ticket)
-        
-        stats = dm.get_guild_data(interaction.guild_id, "ticket_stats", {"total": 0, "open": 1, "closed": 0})
-        stats["open"] = max(0, stats.get("open", 1) - 1)
-        stats["closed"] = stats.get("closed", 0) + 1
-        dm.update_guild_data(interaction.guild_id, "ticket_stats", stats)
-        
-        await asyncio.sleep(10)
-        await interaction.channel.delete()
 
-    async def handle_transcript(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        file = await self.generate_transcript(interaction.channel)
-        await interaction.followup.send("📋 Transcript generated:", file=discord.File(file, filename="transcript.txt"), ephemeral=True)
+            embed = discord.Embed(
+                title=f"🎫 Ticket #{ticket['id']} Transcript",
+                description=f"Ticket created by <@{ticket['user_id']}>",
+                color=discord.Color.blue()
+            )
 
-    async def generate_transcript(self, channel):
-        messages = []
-        async for msg in channel.history(limit=None, oldest_first=True):
-            ts = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
-            content = msg.clean_content
-            messages.append(f"[{ts}] {msg.author.name}: {content}")
-        
-        transcript_text = "\n".join(messages)
-        return io.BytesIO(transcript_text.encode('utf-8'))
+            if messages:
+                transcript_text = ""
+                for msg in messages[-20:]:  # Last 20 messages
+                    timestamp = msg.created_at.strftime("%H:%M")
+                    author = msg.author.display_name
+                    content = msg.content[:100]  # Truncate long messages
+                    transcript_text += f"[{timestamp}] {author}: {content}\n"
 
-    async def handle_escalate(self, interaction: discord.Interaction):
-        class EscalationSelect(discord.ui.Select):
-            def __init__(self):
-                options = [
-                    discord.SelectOption(label="Technical Issues", value="tech"),
-                    discord.SelectOption(label="Billing Query", value="billing"),
-                    discord.SelectOption(label="Abuse/Report", value="abuse"),
-                    discord.SelectOption(label="Other", value="other")
-                ]
-                super().__init__(placeholder="Reason for escalation...", options=options)
+                embed.add_field(
+                    name="Recent Messages",
+                    value=f"```\n{transcript_text[:1000]}```",
+                    inline=False
+                )
 
-            async def callback(self, it: discord.Interaction):
-                system = getattr(it.client, "tickets", None)
-                if not system: return
-                ticket = system.get_ticket_by_channel(it.channel_id)
-                if not ticket: return
-                ticket.status = TicketStatus.ESCALATED
-                ticket.priority = TicketPriority.URGENT
-                system._save_ticket(ticket)
-                settings = system.get_guild_settings(it.guild_id)
-                senior_role_id = settings.get("senior_staff_role_id")
-                ping = f"<@&{senior_role_id}> " if senior_role_id else ""
-                await it.response.send_message(f"🚨 {ping}**Ticket Escalated!** Reason: {self.values[0]}", ephemeral=False)
+        # Add ticket info
+        embed.add_field(name="Reason", value=ticket.get("reason", "No reason"), inline=True)
+        embed.add_field(name="Created", value=time.strftime("%Y-%m-%d %H:%M", time.localtime(ticket["created_at"])), inline=True)
+        embed.add_field(name="Status", value=ticket.get("status", "unknown"), inline=True)
 
-        view = discord.ui.View()
-        view.add_item(EscalationSelect())
-        await interaction.response.send_message("Please select a reason for escalation:", view=view, ephemeral=True)
+        return embed
 
-    async def setup(self, interaction: discord.Interaction, params: Dict = None):
-        return True
+    def generate_ticket_id(self) -> str:
+        """Generate a unique ticket ID."""
+        import random
+        import string
 
-class _UserIDModal(discord.ui.Modal):
-    def __init__(self, title, action_type):
-        super().__init__(title=title)
-        self.action_type = action_type
-        self.user_input = discord.ui.TextInput(label="User ID or Mention", required=True)
-        self.add_item(self.user_input)
+        while True:
+            ticket_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+            if ticket_id not in self.active_tickets:
+                return ticket_id
+
+    def is_staff_member(self, guild: discord.Guild, user: discord.Member) -> bool:
+        """Check if user is a staff member."""
+        config = dm.get_guild_data(guild.id, "tickets_config", {})
+        staff_roles = config.get("staff_roles", [])
+
+        return any(role.id in [int(r) for r in staff_roles] for role in user.roles) or user.guild_permissions.administrator
+
+    # Config panel
+    def get_config_panel(self, guild_id: int):
+        """Get tickets config panel."""
+        return TicketsConfigPanel(self.bot, guild_id)
+
+    def get_persistent_views(self):
+        """Get persistent views for ticket buttons."""
+        return [TicketControlView(self, "")]  # Ticket ID determined at runtime
+
+class TicketControlView(discord.ui.View):
+    """Control panel for active tickets."""
+
+    def __init__(self, ticket_system, ticket_id: str):
+        super().__init__(timeout=None)
+        self.ticket_system = ticket_system
+        self.ticket_id = ticket_id
+
+    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, emoji="🔒", custom_id="close_ticket")
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.ticket_system.close_ticket(interaction, self.ticket_id)
+
+    @discord.ui.button(label="Add User", style=discord.ButtonStyle.secondary, emoji="👤", custom_id="add_user")
+    async def add_user(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = AddUserModal(self.ticket_system, self.ticket_id)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="Transcript", style=discord.ButtonStyle.primary, emoji="📄", custom_id="transcript")
+    async def transcript(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.ticket_id not in self.ticket_system.active_tickets:
+            return await interaction.response.send_message("❌ Ticket not found.", ephemeral=True)
+
+        ticket = self.ticket_system.active_tickets[self.ticket_id]
+        transcript_embed = await self.ticket_system.generate_transcript(ticket)
+        await interaction.response.send_message(embed=transcript_embed, ephemeral=True)
+
+class AddUserModal(discord.ui.Modal, title="Add User to Ticket"):
+    user_id = discord.ui.TextInput(label="User ID or Mention", placeholder="@user or 123456789")
+
+    def __init__(self, ticket_system, ticket_id):
+        super().__init__()
+        self.ticket_system = ticket_system
+        self.ticket_id = ticket_id
 
     async def on_submit(self, interaction: discord.Interaction):
-        user_id_str = self.user_input.value.strip("<@!>")
         try:
-            user = await interaction.guild.fetch_member(int(user_id_str))
-            if self.action_type == "add":
-                await interaction.channel.set_permissions(user, view_channel=True, send_messages=True)
-                await interaction.response.send_message(f"✅ Added {user.mention} to ticket.", ephemeral=True)
-            else:
-                await interaction.channel.set_permissions(user, overwrite=None)
-                await interaction.response.send_message(f"✅ Removed {user.mention} from ticket.", ephemeral=True)
-        except:
-            await interaction.response.send_message("❌ User not found.", ephemeral=True)
+            user_id = int(self.user_id.value.strip("<@!>"))
+            user = interaction.guild.get_member(user_id)
 
-class _MessageIDModal(discord.ui.Modal):
-    def __init__(self):
-        super().__init__(title="Pin Message")
-        self.message_input = discord.ui.TextInput(label="Message ID", required=True)
-        self.add_item(self.message_input)
+            if not user:
+                return await interaction.response.send_message("❌ User not found in this server.", ephemeral=True)
+
+            await self.ticket_system.add_user_to_ticket(interaction, self.ticket_id, user)
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter a valid user ID or mention.", ephemeral=True)
+
+class TicketsConfigPanel(discord.ui.View):
+    """Config panel for ticket system."""
+
+    def __init__(self, bot, guild_id: int):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.guild_id = guild_id
+        self.tickets = TicketSystem(bot)
+
+    @discord.ui.button(label="Toggle Tickets", style=discord.ButtonStyle.primary, row=0)
+    async def toggle_tickets(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = dm.get_guild_data(self.guild_id, "tickets_config", {})
+        enabled = config.get("enabled", False)
+        config["enabled"] = not enabled
+        dm.update_guild_data(self.guild_id, "tickets_config", config)
+
+        await interaction.response.send_message(
+            f"✅ Ticket system {'enabled' if not enabled else 'disabled'}",
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="Set Ticket Category", style=discord.ButtonStyle.secondary, row=0)
+    async def set_ticket_category(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = SetTicketCategoryModal(self.bot, self.guild_id)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="Add Staff Role", style=discord.ButtonStyle.success, row=1)
+    async def add_staff_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = AddStaffRoleModal(self.bot, self.guild_id)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="Set Log Channel", style=discord.ButtonStyle.secondary, row=1)
+    async def set_log_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = SetLogChannelModal(self.bot, self.guild_id)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="View Active Tickets", style=discord.ButtonStyle.primary, row=2)
+    async def view_active_tickets(self, interaction: discord.Interaction, button: discord.ui.Button):
+        active_count = len(self.tickets.active_tickets)
+        embed = discord.Embed(
+            title="🎫 Active Tickets",
+            description=f"There are currently {active_count} open tickets.",
+            color=discord.Color.blue()
+        )
+
+        if active_count > 0:
+            ticket_list = ""
+            for ticket_id, ticket in list(self.tickets.active_tickets.items())[:10]:
+                try:
+                    user = self.bot.get_user(ticket["user_id"])
+                    name = user.display_name if user else f"User {ticket['user_id']}"
+                    ticket_list += f"• **#{ticket_id}** - {name} - {ticket.get('reason', 'No reason')}\n"
+                except:
+                    pass
+
+            if ticket_list:
+                embed.add_field(name="Open Tickets", value=ticket_list[:1000], inline=False)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+class SetTicketCategoryModal(discord.ui.Modal, title="Set Ticket Category"):
+    category_id = discord.ui.TextInput(label="Category ID", placeholder="123456789")
+
+    def __init__(self, bot, guild_id):
+        super().__init__()
+        self.bot = bot
+        self.guild_id = guild_id
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            msg = await interaction.channel.fetch_message(int(self.message_input.value))
-            await msg.pin()
-            await interaction.response.send_message("📌 Message pinned.", ephemeral=True)
-        except:
-            await interaction.response.send_message("❌ Message not found.", ephemeral=True)
+            category_id = int(self.category_id.value)
+            category = interaction.guild.get_channel(category_id)
 
-from discord import app_commands
+            if not category or not isinstance(category, discord.CategoryChannel):
+                return await interaction.response.send_message("❌ Category not found", ephemeral=True)
+
+            config = dm.get_guild_data(self.guild_id, "tickets_config", {})
+            config["ticket_category"] = str(category_id)
+            dm.update_guild_data(self.guild_id, "tickets_config", config)
+
+            await interaction.response.send_message(f"✅ Ticket category set to {category.name}", ephemeral=True)
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter a valid category ID", ephemeral=True)
+
+class AddStaffRoleModal(discord.ui.Modal, title="Add Staff Role"):
+    role_id = discord.ui.TextInput(label="Role ID", placeholder="123456789")
+
+    def __init__(self, bot, guild_id):
+        super().__init__()
+        self.bot = bot
+        self.guild_id = guild_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            role_id = int(self.role_id.value)
+            role = interaction.guild.get_role(role_id)
+
+            if not role:
+                return await interaction.response.send_message("❌ Role not found", ephemeral=True)
+
+            config = dm.get_guild_data(self.guild_id, "tickets_config", {})
+            staff_roles = config.get("staff_roles", [])
+            if str(role_id) not in staff_roles:
+                staff_roles.append(str(role_id))
+                config["staff_roles"] = staff_roles
+                dm.update_guild_data(self.guild_id, "tickets_config", config)
+
+            await interaction.response.send_message(f"✅ Added {role.name} as staff role", ephemeral=True)
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter a valid role ID", ephemeral=True)
+
+class SetLogChannelModal(discord.ui.Modal, title="Set Ticket Log Channel"):
+    channel_id = discord.ui.TextInput(label="Channel ID", placeholder="123456789")
+
+    def __init__(self, bot, guild_id):
+        super().__init__()
+        self.bot = bot
+        self.guild_id = guild_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            channel_id = int(self.channel_id.value)
+            channel = interaction.guild.get_channel(channel_id)
+
+            if not channel or not isinstance(channel, discord.TextChannel):
+                return await interaction.response.send_message("❌ Text channel not found", ephemeral=True)
+
+            config = dm.get_guild_data(self.guild_id, "tickets_config", {})
+            config["log_channel"] = str(channel_id)
+            dm.update_guild_data(self.guild_id, "tickets_config", config)
+
+            await interaction.response.send_message(f"✅ Ticket log channel set to {channel.mention}", ephemeral=True)
+        except ValueError:
+            await interaction.response.send_message("❌ Please enter a valid channel ID", ephemeral=True)

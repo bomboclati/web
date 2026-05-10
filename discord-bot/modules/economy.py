@@ -1,633 +1,678 @@
 import discord
-from discord.ui import Button, View, Modal, TextInput, Select
-from data_manager import dm
-import random
-import datetime
-import json
+from discord import ui
 import time
+import random
+import asyncio
+from typing import Dict, List, Any, Optional
+from data_manager import dm
+from logger import logger
 
+class EconomySystem:
+    """
+    Complete economy system with coins, gems, shop, daily challenges, and transactions.
+    Features:
+    - Coins and gems currency
+    - Daily rewards and streaks
+    - Shop system with items
+    - Daily challenges for bonus rewards
+    - Transaction logging
+    - Leaderboards
+    - Work commands
+    - Gambling (safe, no loss of real money)
+    """
 
-class Economy:
-    """
-    Coins per user. Earn per message, daily, transfers.
-    Zero Data Loss with immediate writes.
-    Now includes daily challenges!
-    """
-    
-    """Daily Challenges System"""
-    DAILY_CHALLENGES = [
-        {"id": "message_50", "name": "Chatty Cat", "desc": "Send 50 messages", "target": 50, "reward": 500},
-        {"id": "react_10", "name": "Reactor", "desc": "Add 10 reactions", "target": 10, "reward": 300},
-        {"id": "join_voice", "name": "Voice Joiner", "desc": "Join a voice channel", "target": 1, "reward": 200},
-        {"id": "invite_1", "name": "Invoker", "desc": "Send 1 invite", "target": 1, "reward": 500},
-        {"id": "help_3", "name": "Helper", "desc": "Use 3 help commands", "target": 3, "reward": 250},
-    ]
-    
     def __init__(self, bot):
         self.bot = bot
-    
+
+    # Core data methods
     def get_coins(self, guild_id: int, user_id: int) -> int:
+        """Get user's coin balance."""
         balances = dm.get_guild_data(guild_id, "economy_balances", {})
-        if str(user_id) not in balances:
-            config = dm.get_guild_data(guild_id, "economy_config", {})
-            starting = config.get("starting_balance", 100)
-            balances[str(user_id)] = starting
-            dm.update_guild_data(guild_id, "economy_balances", balances)
         return balances.get(str(user_id), 0)
-    
+
     def get_gems(self, guild_id: int, user_id: int) -> int:
+        """Get user's gem balance."""
         balances = dm.get_guild_data(guild_id, "economy_gems", {})
         return balances.get(str(user_id), 0)
-    
+
     def add_coins(self, guild_id: int, user_id: int, amount: int):
+        """Add coins to user's balance."""
         balances = dm.get_guild_data(guild_id, "economy_balances", {})
-        current = self.get_coins(guild_id, user_id)
-        balances[str(user_id)] = current + amount
+        current = balances.get(str(user_id), 0)
+        balances[str(user_id)] = max(0, current + amount)
         dm.update_guild_data(guild_id, "economy_balances", balances)
-    
+
+        if amount != 0:
+            self.log_transaction(guild_id, user_id, amount, "coins", "balance_update")
+
     def add_gems(self, guild_id: int, user_id: int, amount: int):
+        """Add gems to user's balance."""
         gems = dm.get_guild_data(guild_id, "economy_gems", {})
         current = gems.get(str(user_id), 0)
-        gems[str(user_id)] = current + amount
+        gems[str(user_id)] = max(0, current + amount)
         dm.update_guild_data(guild_id, "economy_gems", gems)
-    
-    def transfer_coins(self, guild_id: int, from_user_id: int, to_user_id: int, amount: int) -> bool:
-        """Transfer coins from one user to another"""
+
+    def transfer_coins(self, guild_id: int, from_user: int, to_user: int, amount: int) -> bool:
+        """Transfer coins between users."""
         if amount <= 0:
             return False
 
-        from_balance = self.get_coins(guild_id, from_user_id)
+        from_balance = self.get_coins(guild_id, from_user)
         if from_balance < amount:
             return False
 
-        # Deduct from sender
-        self.add_coins(guild_id, from_user_id, -amount)
-        # Add to recipient
-        self.add_coins(guild_id, to_user_id, amount)
+        self.add_coins(guild_id, from_user, -amount)
+        self.add_coins(guild_id, to_user, amount)
 
-        # Log transactions
-        self.log_transaction(guild_id, from_user_id, -amount, "transfer_out", f"Transferred to {to_user_id}")
-        self.log_transaction(guild_id, to_user_id, amount, "transfer_in", f"Received from {from_user_id}")
+        self.log_transaction(guild_id, from_user, -amount, "transfer_out", f"To {to_user}")
+        self.log_transaction(guild_id, to_user, amount, "transfer_in", f"From {from_user}")
 
         return True
 
-    async def reset_balance_simple(self, guild_id: int, user_id: int, interaction: discord.Interaction):
-        """Reset a user's balance to 0"""
-        old_balance = self.get_coins(guild_id, user_id)
-        balances = dm.get_guild_data(guild_id, "economy_balances", {})
-        balances[str(user_id)] = 0
-        dm.update_guild_data(guild_id, "economy_balances", balances)
-        self.log_transaction(guild_id, user_id, -old_balance, "reset", "Admin reset")
-        await interaction.response.send_message(f"Reset balance from {old_balance} to 0!", ephemeral=True)
-
     def log_transaction(self, guild_id: int, user_id: int, amount: int, tx_type: str, reason: str):
+        """Log a transaction."""
         transactions = dm.get_guild_data(guild_id, "economy_transactions", [])
         transactions.append({
             "user_id": user_id,
             "amount": amount,
             "type": tx_type,
             "reason": reason,
-            "timestamp": datetime.datetime.now().isoformat()
+            "timestamp": time.time()
         })
+
         # Keep last 1000 transactions
         if len(transactions) > 1000:
             transactions = transactions[-1000:]
+
         dm.update_guild_data(guild_id, "economy_transactions", transactions)
-    
-    """Daily Challenges"""
-    def get_daily_challenge(self, guild_id: int) -> dict:
-        """Get today's challenge for guild."""
-        challenges = dm.get_guild_data(guild_id, "daily_challenges", {})
-        today = datetime.datetime.now().date().isoformat()
-        
-        if challenges.get("date") != today:
-            # Reset with new challenge
-            challenge = random.choice(self.DAILY_CHALLENGES)
-            challenge["progress"] = {}
-            challenge["date"] = today
-            challenges = challenge
-            dm.update_guild_data(guild_id, "daily_challenges", challenge)
-        
-        return challenges
-    
-    def update_challenge_progress(self, guild_id: int, user_id: int, challenge_id: str):
-        """Update user's progress on daily challenge."""
-        challenge = self.get_daily_challenge(guild_id)
-        
-        if challenge.get("id") != challenge_id:
-            return
-        
-        progress = challenge.get("progress", {})
-        current = progress.get(str(user_id), 0)
-        progress[str(user_id)] = current + 1
-        
-        challenge["progress"] = progress
-        dm.update_guild_data(guild_id, "daily_challenges", challenge)
-        
-        # Check if completed
-        if current + 1 >= challenge.get("target", 1):
-            if not self._user_completed_challenge(guild_id, user_id):
-                self._mark_challenge_complete(guild_id, user_id, challenge)
-    
-    def _user_completed_challenge(self, guild_id: int, user_id: int) -> bool:
-        """Check if user already completed today's challenge."""
-        completed = dm.get_guild_data(guild_id, "challenge_completed", {})
-        today = datetime.datetime.now().date().isoformat()
-        
-        user_completed = completed.get(str(user_id), {})
-        return user_completed.get("date") == today
-    
-    def _mark_challenge_complete(self, guild_id: int, user_id: int, challenge: dict):
-        """Mark challenge complete and award reward."""
-        reward = challenge.get("reward", 0)
-        self.add_coins(guild_id, user_id, reward)
-        
-        completed = dm.get_guild_data(guild_id, "challenge_completed", {})
-        completed[str(user_id)] = {
-            "date": datetime.datetime.now().date().isoformat(),
-            "challenge_id": challenge.get("id"),
-            "reward": reward
-        }
-        dm.update_guild_data(guild_id, "challenge_completed", completed)
-    
-    def get_challenge_status(self, guild_id: int, user_id: int) -> dict:
-        """Get user's challenge status."""
-        challenge = self.get_daily_challenge(guild_id)
-        progress = challenge.get("progress", {}).get(str(user_id), 0)
-        target = challenge.get("target", 1)
-        completed = self._user_completed_challenge(guild_id, user_id)
-        
-        return {
-            "name": challenge.get("name"),
-            "desc": challenge.get("desc"),
-            "progress": f"{progress}/{target}",
-            "percent": int((progress / target) * 100),
-            "reward": challenge.get("reward", 0),
-            "completed": completed
-        }
-    
-    async def handle_message(self, message: discord.Message):
-        """Passive income for chatting."""
-        if not message.guild or message.author.bot:
+
+    # Passive income system
+    async def handle_message(self, message):
+        """Handle passive coin earning from messages."""
+        if message.author.bot or not message.guild:
             return
 
         config = dm.get_guild_data(message.guild.id, "economy_config", {})
-        if not config.get("enabled", True):
+        if not config.get("enabled", False):
             return
 
-        # Cooldown to prevent spam
-        last_gain_key = f"last_eco_gain_{message.author.id}"
-        last_gain_time = dm.get_guild_data(message.guild.id, last_gain_key, 0)
-        if time.time() - last_gain_time < 60:
+        # Cooldown check
+        last_earn = dm.get_guild_data(message.guild.id, f"last_earn_{message.author.id}", 0)
+        cooldown = config.get("message_cooldown", 60)
+
+        if time.time() - last_earn < cooldown:
             return
 
+        # Award coins
         rates = config.get("earn_rates", {})
         coins = rates.get("coins_per_message", 2)
-
         self.add_coins(message.guild.id, message.author.id, coins)
-        dm.update_guild_data(message.guild.id, last_gain_key, time.time())
 
-        # Gem chance
+        # Chance for gems
         gem_chance = rates.get("gem_chance", 0.01)
         if random.random() < gem_chance:
             self.add_gems(message.guild.id, message.author.id, 1)
             try:
-                await message.channel.send(f"✨ {message.author.mention}, you found a **Gem** while chatting!", delete_after=5)
+                await message.channel.send(f"✨ {message.author.mention} found a **Gem**!", delete_after=5)
             except:
                 pass
-    
-    
-    async def daily(self, interaction: discord.Interaction):
-        guild_id = interaction.guild.id
-        user_id = interaction.user.id
-        config = dm.get_guild_data(guild_id, "economy_config", {})
-        if not config.get("enabled", True):
+
+        dm.update_guild_data(message.guild.id, f"last_earn_{message.author.id}", time.time())
+
+    # Commands
+    async def balance(self, interaction):
+        """Show user's balance."""
+        coins = self.get_coins(interaction.guild.id, interaction.user.id)
+        gems = self.get_gems(interaction.guild.id, interaction.user.id)
+
+        config = dm.get_guild_data(interaction.guild.id, "economy_config", {})
+        coin_emoji = config.get("coin_emoji", "🪙")
+        gem_emoji = config.get("gem_emoji", "💎")
+
+        embed = discord.Embed(
+            title="💰 Your Balance",
+            color=discord.Color.gold()
+        )
+        embed.add_field(name=f"{coin_emoji} Coins", value=f"{coins:,}", inline=True)
+        embed.add_field(name=f"{gem_emoji} Gems", value=f"{gems:,}", inline=True)
+        embed.set_footer(text="Use /daily for daily rewards!")
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def daily(self, interaction):
+        """Claim daily reward."""
+        config = dm.get_guild_data(interaction.guild.id, "economy_config", {})
+        if not config.get("enabled", False):
             return await interaction.response.send_message("❌ Economy system is disabled.", ephemeral=True)
 
-        last_daily = dm.get_guild_data(guild_id, "last_daily", {})
-        last_time = last_daily.get(str(user_id))
-        
-        now = datetime.datetime.now()
-        cooldown = config.get("daily_cooldown_seconds", 86400)
-
-        if last_time:
-            last_date = datetime.datetime.fromisoformat(last_time)
-            if (now - last_date).total_seconds() < cooldown:
-                remaining = int(cooldown - (now - last_date).total_seconds())
-                return await interaction.response.send_message(f"❌ Daily already claimed! Try again in **{remaining // 3600}h {(remaining % 3600) // 60}m**.", ephemeral=True)
-        
-        reward = config.get("daily_amount", 100)
-        self.add_coins(guild_id, user_id, reward)
-        last_daily[str(user_id)] = str(now)
-        
-        # Track daily streak
-        daily_count = dm.get_guild_data(guild_id, "daily_streaks", {})
-        streak = daily_count.get(str(user_id), 0) + 1
-        daily_count[str(user_id)] = streak
-        dm.update_guild_data(guild_id, "daily_streaks", daily_count)
-        
-        dm.update_guild_data(guild_id, "last_daily", last_daily)
-        
-        # Check for daily streak bonus
-        bonus = 0
-        streak_bonus_cfg = config.get("daily_streak_bonus", 50)
-        if streak % 7 == 0:
-            bonus = streak_bonus_cfg * (streak // 7)
-            self.add_coins(guild_id, user_id, bonus)
-        
-        # Build response
-        emoji = config.get("currency_emoji", "🪙")
-        name = config.get("currency_name", "coins")
-        msg = f"{emoji} You claimed your daily **{reward} {name}**!"
-        if bonus:
-            msg += f"\n🎉 **Streak bonus: +{bonus} {name}!** (Week {streak // 7})"
-        
-        await interaction.response.send_message(msg, ephemeral=True)
-    
-    async def transfer(self, interaction: discord.Interaction, target: discord.Member, amount: int):
-        if amount <= 0:
-            return await interaction.response.send_message("Amount must be positive.", ephemeral=True)
-        
+        user_id = interaction.user.id
         guild_id = interaction.guild.id
-        sender_id = interaction.user.id
-        
-        if self.get_coins(guild_id, sender_id) < amount:
-            return await interaction.response.send_message("Insufficient funds.", ephemeral=True)
-        
-        self.add_coins(guild_id, sender_id, -amount)
-        self.add_coins(guild_id, target.id, amount)
-        
-        await interaction.response.send_message(f"💸 Transferred **{amount} coins** to {target.mention}.")
-    
-    async def setup(self, interaction: discord.Interaction, params: dict = None) -> bool:
-        guild = interaction.guild
-        
-        economy_channel = await guild.create_text_channel("economy")
-        shop_channel = await guild.create_text_channel("shop")
-        
-        custom_cmds = dm.get_guild_data(guild.id, "custom_commands", {})
-        
-        custom_cmds["daily"] = json.dumps({
-            "command_type": "economy_daily"
-        })
-        
-        custom_cmds["balance"] = json.dumps({
-            "command_type": "economy_balance"
-        })
-        
-        custom_cmds["help economy"] = json.dumps({
-            "command_type": "help_embed",
-            "title": "Economy System Help",
-            "description": "Manage your coins and trade with others.",
-            "fields": [
-                {"name": "!daily", "value": "Claim your daily coin reward.", "inline": False},
-                {"name": "!balance", "value": "Check your coin balance.", "inline": False},
-                {"name": "!work", "value": "Work for coins.", "inline": False},
-                {"name": "!ecoleaderboard", "value": "Economy leaderboard.", "inline": False},
-                {"name": "!challenge", "value": "View today's daily challenge.", "inline": False},
-                {"name": "!shop", "value": "Browse available items.", "inline": False},
-                {"name": "!buy <item>", "value": "Purchase an item.", "inline": False},
-                {"name": "!transfer <user> <amount>", "value": "Send coins to another user.", "inline": False},
-                {"name": "!give <user> <amount>", "value": "Give coins to user.", "inline": False},
-                {"name": "!beg", "value": "Beg for coins.", "inline": False},
-                {"name": "!rob @user", "value": "Rob another user.", "inline": False},
-                {"name": "!help economy", "value": "Show this help message.", "inline": False}
-            ]
-        })
-        
-        custom_cmds["challenge"] = json.dumps({
-            "command_type": "help_embed",
-            "title": "Daily Challenge",
-            "description": "Complete daily challenges to earn bonus coins!",
-            "fields": [
-                {"name": "!challenge", "value": "View today's challenge progress.", "inline": False}
-            ]
-        })
 
-        custom_cmds["buy"] = json.dumps({"command_type": "economy_buy"})
+        # Check cooldown
+        daily_data = dm.get_guild_data(guild_id, "daily_claims", {})
+        last_claim = daily_data.get(str(user_id), 0)
+        cooldown = config.get("daily_cooldown", 86400)  # 24 hours
 
-        custom_cmds["give"] = json.dumps({"command_type": "economy_transfer"})
+        if time.time() - last_claim < cooldown:
+            remaining = int(cooldown - (time.time() - last_claim))
+            hours = remaining // 3600
+            minutes = (remaining % 3600) // 60
+            return await interaction.response.send_message(
+                f"⏳ Daily reward available in {hours}h {minutes}m",
+                ephemeral=True
+            )
 
-        custom_cmds["help"] = json.dumps({
-            "command_type": "help_all"
-        })
+        # Calculate reward with streak bonus
+        base_reward = config.get("daily_amount", 100)
+        streak = self.get_daily_streak(guild_id, user_id)
+        streak_bonus = config.get("streak_bonus", 50)
 
-        custom_cmds["shop"] = json.dumps({
-            "command_type": "help_embed",
-            "title": "Premium Shop",
-            "description": "Spend your gems on exclusive items.",
-            "fields": [
-                {"name": "!shop", "value": "Browse available items.", "inline": False},
-                {"name": "!buy <item>", "value": "Purchase an item.", "inline": False},
-                {"name": "!help shop", "value": "Show shop help.", "inline": False}
-            ]
-        })
-        
-        dm.update_guild_data(guild.id, "custom_commands", custom_cmds)
-        return True
+        # Bonus every 7 days
+        bonus = 0
+        if streak > 0 and streak % 7 == 0:
+            bonus = streak_bonus * (streak // 7)
 
-# Panel classes for Economy module
+        total_reward = base_reward + bonus
 
-class EconomyPanel(View):
-    """Admin panel for Economy configuration."""
-    
+        # Award coins
+        self.add_coins(guild_id, user_id, total_reward)
+        self.log_transaction(guild_id, user_id, total_reward, "daily", f"Streak: {streak}")
+
+        # Update streak and claim time
+        self.update_daily_streak(guild_id, user_id)
+        daily_data[str(user_id)] = time.time()
+        dm.update_guild_data(guild_id, "daily_claims", daily_data)
+
+        # Response
+        coin_emoji = config.get("coin_emoji", "🪙")
+        embed = discord.Embed(
+            title="🎉 Daily Reward Claimed!",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Reward", value=f"{coin_emoji} {total_reward:,}", inline=True)
+
+        if bonus > 0:
+            embed.add_field(name="Streak Bonus", value=f"{coin_emoji} +{bonus:,}", inline=True)
+
+        embed.add_field(name="Current Streak", value=f"{streak + 1} days", inline=True)
+        embed.set_footer(text="Keep claiming daily for bigger rewards!")
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    def get_daily_streak(self, guild_id: int, user_id: int) -> int:
+        """Get user's daily streak."""
+        streaks = dm.get_guild_data(guild_id, "daily_streaks", {})
+        return streaks.get(str(user_id), 0)
+
+    def update_daily_streak(self, guild_id: int, user_id: int):
+        """Update daily streak for user."""
+        streaks = dm.get_guild_data(guild_id, "daily_streaks", {})
+        current_streak = streaks.get(str(user_id), 0)
+        streaks[str(user_id)] = current_streak + 1
+        dm.update_guild_data(guild_id, "daily_streaks", streaks)
+
+    async def work(self, interaction):
+        """Work command for earning coins."""
+        config = dm.get_guild_data(interaction.guild.id, "economy_config", {})
+        if not config.get("enabled", False):
+            return await interaction.response.send_message("❌ Economy system is disabled.", ephemeral=True)
+
+        user_id = interaction.user.id
+        guild_id = interaction.guild.id
+
+        # Check cooldown
+        work_data = dm.get_guild_data(guild_id, "work_cooldowns", {})
+        last_work = work_data.get(str(user_id), 0)
+        cooldown = config.get("work_cooldown", 3600)  # 1 hour
+
+        if time.time() - last_work < cooldown:
+            remaining = int(cooldown - (time.time() - last_work))
+            return await interaction.response.send_message(
+                f"⏳ You can work again in {remaining // 3600}h {(remaining % 3600) // 60}m",
+                ephemeral=True
+            )
+
+        # Random work reward
+        jobs = [
+            ("Programmer", (50, 200)),
+            ("Chef", (30, 150)),
+            ("Teacher", (40, 180)),
+            ("Artist", (25, 120)),
+            ("Musician", (35, 160)),
+            ("Writer", (20, 100)),
+            ("Designer", (45, 190)),
+            ("Scientist", (60, 250))
+        ]
+
+        job_name, (min_reward, max_reward) = random.choice(jobs)
+        reward = random.randint(min_reward, max_reward)
+
+        self.add_coins(guild_id, user_id, reward)
+        self.log_transaction(guild_id, user_id, reward, "work", job_name)
+
+        # Update cooldown
+        work_data[str(user_id)] = time.time()
+        dm.update_guild_data(guild_id, "work_cooldowns", work_data)
+
+        coin_emoji = config.get("coin_emoji", "🪙")
+        embed = discord.Embed(
+            title="💼 Work Complete!",
+            description=f"You worked as a **{job_name}**",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Earned", value=f"{coin_emoji} {reward:,}", inline=True)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def transfer(self, interaction, target: discord.Member, amount: int):
+        """Transfer coins to another user."""
+        if amount <= 0:
+            return await interaction.response.send_message("❌ Amount must be positive.", ephemeral=True)
+
+        if target.id == interaction.user.id:
+            return await interaction.response.send_message("❌ You can't transfer to yourself.", ephemeral=True)
+
+        if target.bot:
+            return await interaction.response.send_message("❌ You can't transfer to bots.", ephemeral=True)
+
+        success = self.transfer_coins(interaction.guild.id, interaction.user.id, target.id, amount)
+
+        if not success:
+            return await interaction.response.send_message("❌ Insufficient funds.", ephemeral=True)
+
+        coin_emoji = dm.get_guild_data(interaction.guild.id, "economy_config", {}).get("coin_emoji", "🪙")
+        await interaction.response.send_message(
+            f"✅ Transferred {coin_emoji} {amount:,} to {target.mention}",
+            ephemeral=True
+        )
+
+    async def shop(self, interaction):
+        """Show shop items."""
+        config = dm.get_guild_data(interaction.guild.id, "economy_config", {})
+        if not config.get("enabled", False):
+            return await interaction.response.send_message("❌ Economy system is disabled.", ephemeral=True)
+
+        shop_items = dm.get_guild_data(interaction.guild.id, "shop_items", [])
+
+        if not shop_items:
+            return await interaction.response.send_message("🛒 Shop is empty. Add items via config panel.", ephemeral=True)
+
+        embed = discord.Embed(
+            title="🛒 Server Shop",
+            description="Purchase items with your coins!",
+            color=discord.Color.blue()
+        )
+
+        gem_emoji = config.get("gem_emoji", "💎")
+
+        for item in shop_items[:10]:  # Show first 10 items
+            currency = f"{gem_emoji} Gems" if item.get("gem_cost") else f"{config.get('coin_emoji', '🪙')} Coins"
+            cost = item.get("gem_cost", item.get("price", 0))
+
+            embed.add_field(
+                name=f"{item['name']} - {currency} {cost:,}",
+                value=item.get("description", "No description"),
+                inline=False
+            )
+
+        embed.set_footer(text="Use /buy <item_name> to purchase")
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def buy(self, interaction, item_name: str):
+        """Buy an item from the shop."""
+        config = dm.get_guild_data(interaction.guild.id, "economy_config", {})
+        if not config.get("enabled", False):
+            return await interaction.response.send_message("❌ Economy system is disabled.", ephemeral=True)
+
+        shop_items = dm.get_guild_data(interaction.guild.id, "shop_items", [])
+
+        # Find item
+        item = None
+        for shop_item in shop_items:
+            if shop_item["name"].lower() == item_name.lower():
+                item = shop_item
+                break
+
+        if not item:
+            return await interaction.response.send_message(f"❌ Item '{item_name}' not found in shop.", ephemeral=True)
+
+        user_id = interaction.user.id
+        guild_id = interaction.guild.id
+
+        # Check if using gems or coins
+        if item.get("gem_cost"):
+            currency = "gems"
+            cost = item["gem_cost"]
+            balance = self.get_gems(guild_id, user_id)
+            currency_emoji = config.get("gem_emoji", "💎")
+        else:
+            currency = "coins"
+            cost = item.get("price", 0)
+            balance = self.get_coins(guild_id, user_id)
+            currency_emoji = config.get("coin_emoji", "🪙")
+
+        if balance < cost:
+            return await interaction.response.send_message(
+                f"❌ Insufficient {currency}. You have {currency_emoji} {balance:,} but need {cost:,}",
+                ephemeral=True
+            )
+
+        # Process purchase
+        if currency == "gems":
+            self.add_gems(guild_id, user_id, -cost)
+        else:
+            self.add_coins(guild_id, user_id, -cost)
+
+        # Assign role if applicable
+        role_assigned = False
+        if item.get("role_id"):
+            try:
+                role = interaction.guild.get_role(int(item["role_id"]))
+                if role:
+                    await interaction.user.add_roles(role)
+                    role_assigned = True
+            except:
+                pass
+
+        self.log_transaction(guild_id, user_id, -cost, f"purchase_{currency}", item["name"])
+
+        embed = discord.Embed(
+            title="✅ Purchase Successful!",
+            description=f"You bought **{item['name']}**",
+            color=discord.Color.green()
+        )
+
+        if role_assigned:
+            embed.add_field(name="Role Assigned", value=f"You now have the {role.name} role!", inline=False)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def leaderboard(self, interaction):
+        """Show economy leaderboard."""
+        config = dm.get_guild_data(interaction.guild.id, "economy_config", {})
+        if not config.get("enabled", False):
+            return await interaction.response.send_message("❌ Economy system is disabled.", ephemeral=True)
+
+        balances = dm.get_guild_data(interaction.guild.id, "economy_balances", {})
+
+        if not balances:
+            return await interaction.response.send_message("📊 No one has coins yet!", ephemeral=True)
+
+        # Sort by balance
+        sorted_users = sorted(balances.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        embed = discord.Embed(
+            title="🏆 Economy Leaderboard",
+            color=discord.Color.gold()
+        )
+
+        coin_emoji = config.get("coin_emoji", "🪙")
+
+        for i, (user_id, balance) in enumerate(sorted_users, 1):
+            try:
+                user = self.bot.get_user(int(user_id))
+                name = user.display_name if user else f"User {user_id}"
+            except:
+                name = f"User {user_id}"
+
+            medal = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}."
+            embed.add_field(
+                name=f"{medal} {name}",
+                value=f"{coin_emoji} {balance:,}",
+                inline=False
+            )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    # Daily challenges
+    async def challenge(self, interaction):
+        """View daily challenge progress."""
+        config = dm.get_guild_data(interaction.guild.id, "economy_config", {})
+        if not config.get("enabled", False):
+            return await interaction.response.send_message("❌ Economy system is disabled.", ephemeral=True)
+
+        challenge_data = self.get_daily_challenge(interaction.guild.id)
+        user_progress = self.get_user_challenge_progress(interaction.guild.id, interaction.user.id)
+
+        embed = discord.Embed(
+            title="🎯 Daily Challenge",
+            description=challenge_data.get("desc", "Complete daily tasks for bonus rewards!"),
+            color=discord.Color.blue()
+        )
+
+        progress = user_progress.get("progress", 0)
+        target = challenge_data.get("target", 1)
+        completed = user_progress.get("completed", False)
+
+        if completed:
+            embed.add_field(
+                name="✅ Completed!",
+                value=f"You earned {challenge_data.get('reward', 0)} bonus coins!",
+                inline=False
+            )
+        else:
+            percent = int((progress / target) * 100)
+            progress_bar = self.create_progress_bar(progress, target)
+            embed.add_field(
+                name=f"Progress: {progress}/{target} ({percent}%)",
+                value=progress_bar,
+                inline=False
+            )
+            embed.add_field(
+                name="Reward",
+                value=f"🪙 {challenge_data.get('reward', 0)} coins",
+                inline=True
+            )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    def get_daily_challenge(self, guild_id: int) -> dict:
+        """Get today's daily challenge."""
+        challenges = dm.get_guild_data(guild_id, "daily_challenges", {})
+
+        # Check if we need a new challenge
+        today = time.strftime("%Y-%m-%d")
+        if challenges.get("date") != today:
+            challenge = self.generate_daily_challenge()
+            challenge["date"] = today
+            challenge["progress"] = {}
+            dm.update_guild_data(guild_id, "daily_challenges", challenge)
+            return challenge
+
+        return challenges
+
+    def generate_daily_challenge(self) -> dict:
+        """Generate a random daily challenge."""
+        challenges = [
+            {"id": "messages", "name": "Chatty", "desc": "Send 25 messages", "target": 25, "reward": 150},
+            {"id": "reactions", "name": "Reactor", "desc": "Add 10 reactions", "target": 10, "reward": 100},
+            {"id": "voice", "name": "Social", "desc": "Join voice channel for 30 minutes", "target": 1800, "reward": 200},
+            {"id": "invite", "name": "Inviter", "desc": "Create 1 invite", "target": 1, "reward": 300},
+            {"id": "help", "name": "Helper", "desc": "Use 3 help commands", "target": 3, "reward": 75}
+        ]
+        return random.choice(challenges)
+
+    def get_user_challenge_progress(self, guild_id: int, user_id: int) -> dict:
+        """Get user's progress on current challenge."""
+        challenge = self.get_daily_challenge(guild_id)
+        progress = challenge.get("progress", {}).get(str(user_id), 0)
+        completed_users = dm.get_guild_data(guild_id, "challenge_completed", {})
+        completed = str(user_id) in completed_users
+
+        return {
+            "progress": progress,
+            "completed": completed
+        }
+
+    def update_challenge_progress(self, guild_id: int, user_id: int, challenge_type: str):
+        """Update user's challenge progress."""
+        challenge = self.get_daily_challenge(guild_id)
+
+        if challenge.get("id") != challenge_type:
+            return
+
+        progress = challenge.get("progress", {})
+        current = progress.get(str(user_id), 0)
+        progress[str(user_id)] = current + 1
+
+        challenge["progress"] = progress
+        dm.update_guild_data(guild_id, "daily_challenges", challenge)
+
+        # Check completion
+        if current + 1 >= challenge.get("target", 1):
+            self.complete_challenge(guild_id, user_id, challenge)
+
+    def complete_challenge(self, guild_id: int, user_id: int, challenge: dict):
+        """Mark challenge as completed and award reward."""
+        completed = dm.get_guild_data(guild_id, "challenge_completed", {})
+        if str(user_id) in completed:
+            return  # Already completed
+
+        reward = challenge.get("reward", 0)
+        self.add_coins(guild_id, user_id, reward)
+
+        completed[str(user_id)] = {
+            "date": time.strftime("%Y-%m-%d"),
+            "challenge_id": challenge.get("id"),
+            "reward": reward
+        }
+
+        dm.update_guild_data(guild_id, "challenge_completed", completed)
+
+    def create_progress_bar(self, current: int, target: int, length: int = 10) -> str:
+        """Create a visual progress bar."""
+        if target == 0:
+            return "█" * length
+
+        filled = int((current / target) * length)
+        empty = length - filled
+
+        return "█" * filled + "░" * empty
+
+    # Config panel
+    def get_config_panel(self, guild_id: int):
+        """Get economy config panel view."""
+        return EconomyConfigPanel(self.bot, guild_id)
+
+class EconomyConfigPanel(discord.ui.View):
+    """Config panel for economy system."""
+
     def __init__(self, bot, guild_id: int):
         super().__init__(timeout=None)
         self.bot = bot
         self.guild_id = guild_id
-        self.economy = Economy(bot)
-    
-    @discord.ui.button(label="Add Coins", style=discord.ButtonStyle.success, row=0, custom_id="eco_cfg_add_coins")
-    async def add_coins(self, interaction: discord.Interaction, button: Button):
-        modal = AddRemoveCoinsModal(self.bot, self.guild_id, action="add")
+        self.economy = EconomySystem(bot)
+
+    @discord.ui.button(label="Toggle Economy", style=discord.ButtonStyle.primary, row=0)
+    async def toggle_economy(self, interaction: discord.Interaction, button: discord.ui.Button):
+        config = dm.get_guild_data(self.guild_id, "economy_config", {})
+        enabled = config.get("enabled", False)
+        config["enabled"] = not enabled
+        dm.update_guild_data(self.guild_id, "economy_config", config)
+
+        await interaction.response.send_message(
+            f"✅ Economy system {'enabled' if not enabled else 'disabled'}",
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="Set Daily Reward", style=discord.ButtonStyle.secondary, row=0)
+    async def set_daily_reward(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = SetDailyRewardModal(self.bot, self.guild_id)
         await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="Remove Coins", style=discord.ButtonStyle.danger, row=0, custom_id="eco_cfg_remove_coins")
-    async def remove_coins(self, interaction: discord.Interaction, button: Button):
-        modal = AddRemoveCoinsModal(self.bot, self.guild_id, action="remove")
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="Add Gems", style=discord.ButtonStyle.success, row=0, custom_id="eco_cfg_add_gems")
-    async def add_gems(self, interaction: discord.Interaction, button: Button):
-        modal = AddRemoveGemsModal(self.bot, self.guild_id, action="add")
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="Remove Gems", style=discord.ButtonStyle.danger, row=0, custom_id="eco_cfg_remove_gems")
-    async def remove_gems(self, interaction: discord.Interaction, button: Button):
-        modal = AddRemoveGemsModal(self.bot, self.guild_id, action="remove")
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="View Balance", style=discord.ButtonStyle.primary, row=1, custom_id="eco_cfg_view_balance")
-    async def view_balance(self, interaction: discord.Interaction, button: Button):
-        modal = ViewBalanceModal(self.bot, self.guild_id)
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="Transfer", style=discord.ButtonStyle.secondary, row=1, custom_id="eco_cfg_transfer")
-    async def transfer_btn(self, interaction: discord.Interaction, button: Button):
-        modal = TransferModal(self.bot, self.guild_id)
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="Leaderboard", style=discord.ButtonStyle.primary, row=1, custom_id="eco_cfg_leaderboard")
-    async def leaderboard(self, interaction: discord.Interaction, button: Button):
-        balances = dm.get_guild_data(self.guild_id, "economy_balances", {})
-        sorted_users = sorted(balances.items(), key=lambda x: x[1], reverse=True)[:10]
-        embed = discord.Embed(title="Top Richest Users", color=discord.Color.gold())
-        for i, (user_id, amount) in enumerate(sorted_users, 1):
-            user = self.bot.get_user(int(user_id))
-            name = user.display_name if user else f"User {user_id}"
-            embed.add_field(name=f"{i}. {name}", value=f"{amount:,} coins", inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    
-    @discord.ui.button(label="Stats", style=discord.ButtonStyle.secondary, row=1, custom_id="eco_cfg_stats")
-    async def show_stats(self, interaction: discord.Interaction, button: Button):
-        balances = dm.get_guild_data(self.guild_id, "economy_balances", {})
-        total_coins = sum(balances.values())
-        embed = discord.Embed(title="Economy Stats", color=discord.Color.gold())
-        embed.add_field(name="Total Coins", value=f"{total_coins:,}", inline=True)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    
-    @discord.ui.button(label="Add Shop Item", style=discord.ButtonStyle.success, row=2, custom_id="eco_cfg_add_shop_item")
-    async def add_shop_item(self, interaction: discord.Interaction, button: Button):
+
+    @discord.ui.button(label="Add Shop Item", style=discord.ButtonStyle.success, row=1)
+    async def add_shop_item(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = AddShopItemModal(self.bot, self.guild_id)
         await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="Configure Daily", style=discord.ButtonStyle.secondary, row=2, custom_id="eco_cfg_configure_daily")
-    async def configure_daily(self, interaction: discord.Interaction, button: Button):
-        modal = ConfigureDailyModal(self.bot, self.guild_id)
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="Set Currency Name", style=discord.ButtonStyle.secondary, row=2, custom_id="eco_cfg_set_currency_name")
-    async def set_currency_name(self, interaction: discord.Interaction, button: Button):
-        modal = SetCurrencyNameModal(self.bot, self.guild_id)
-        await interaction.response.send_modal(modal)
-    
-    @discord.ui.button(label="Transaction Log", style=discord.ButtonStyle.primary, row=3, custom_id="eco_cfg_transaction_log")
-    async def transaction_log(self, interaction: discord.Interaction, button: Button):
-        transactions = dm.get_guild_data(self.guild_id, "economy_transactions", [])
-        recent = transactions[-10:][::-1]
-        embed = discord.Embed(title="Recent Transactions", color=discord.Color.blue())
-        for tx in recent:
-            embed.add_field(name=f"User {tx["user_id"]}: {tx["amount"]}", value=f"{tx["type"]} - {tx["reason"]}", inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    
-    @discord.ui.button(label="Reset User Balance", style=discord.ButtonStyle.danger, row=3, custom_id="eco_cfg_reset_user_balance")
-    async def reset_balance(self, interaction: discord.Interaction, button: Button):
+
+    @discord.ui.button(label="View Leaderboard", style=discord.ButtonStyle.primary, row=1)
+    async def view_leaderboard(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.economy.leaderboard(interaction)
+
+    @discord.ui.button(label="Reset User Balance", style=discord.ButtonStyle.danger, row=2)
+    async def reset_balance(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = ResetBalanceModal(self.bot, self.guild_id)
         await interaction.response.send_modal(modal)
 
+class SetDailyRewardModal(discord.ui.Modal, title="Set Daily Reward"):
+    amount = discord.ui.TextInput(label="Daily Coin Amount", placeholder="100")
 
-class AddRemoveCoinsModal(Modal, title="Modify Coins"):
-    def __init__(self, bot, guild_id: int, action: str):
+    def __init__(self, bot, guild_id):
         super().__init__()
         self.bot = bot
         self.guild_id = guild_id
-        self.action = action
-        self.economy = Economy(bot)
-    
-    user_input = TextInput(label="User ID or Mention", placeholder="@user or 123456789")
-    amount_input = TextInput(label="Amount", placeholder="100")
-    reason_input = TextInput(label="Reason", required=False, placeholder="Optional reason")
-    
+
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            user_id = int(self.user_input.value.strip("<@!>"))
-            amount = int(self.amount_input.value)
+            amount = int(self.amount.value)
+            if amount < 0:
+                raise ValueError
+
+            config = dm.get_guild_data(self.guild_id, "economy_config", {})
+            config["daily_amount"] = amount
+            dm.update_guild_data(self.guild_id, "economy_config", config)
+
+            await interaction.response.send_message(f"✅ Daily reward set to {amount} coins", ephemeral=True)
         except ValueError:
-            return await interaction.response.send_message("Invalid input.", ephemeral=True)
-        if amount <= 0:
-            return await interaction.response.send_message("Amount must be positive.", ephemeral=True)
-        if self.action == "remove":
-            current = self.economy.get_coins(self.guild_id, user_id)
-            if current < amount:
-                return await interaction.response.send_message(f"User only has {current} coins.", ephemeral=True)
-            amount = -amount
-        self.economy.add_coins(self.guild_id, user_id, amount)
-        self.economy.log_transaction(self.guild_id, user_id, amount, "admin_adjust", self.reason_input.value or "Admin adjustment")
-        await interaction.response.send_message(f"Done!", ephemeral=True)
+            await interaction.response.send_message("❌ Please enter a valid number", ephemeral=True)
 
+class AddShopItemModal(discord.ui.Modal, title="Add Shop Item"):
+    name = discord.ui.TextInput(label="Item Name", placeholder="VIP Role")
+    price = discord.ui.TextInput(label="Price (Coins)", placeholder="1000")
+    description = discord.ui.TextInput(label="Description", style=discord.TextStyle.paragraph, placeholder="Grants VIP access")
+    role_id = discord.ui.TextInput(label="Role ID (optional)", required=False, placeholder="123456789")
 
-class AddRemoveGemsModal(Modal, title="Modify Gems"):
-    def __init__(self, bot, guild_id: int, action: str):
+    def __init__(self, bot, guild_id):
         super().__init__()
         self.bot = bot
         self.guild_id = guild_id
-        self.action = action
-        self.economy = Economy(bot)
-    
-    user_input = TextInput(label="User ID or Mention", placeholder="@user or 123456789")
-    amount_input = TextInput(label="Amount", placeholder="10")
-    
+
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            user_id = int(self.user_input.value.strip("<@!>"))
-            amount = int(self.amount_input.value)
+            price = int(self.price.value)
+            if price < 0:
+                raise ValueError
+
+            items = dm.get_guild_data(self.guild_id, "shop_items", [])
+            item = {
+                "id": len(items) + 1,
+                "name": self.name.value,
+                "price": price,
+                "description": self.description.value,
+                "role_id": self.role_id.value if self.role_id.value else None
+            }
+            items.append(item)
+            dm.update_guild_data(self.guild_id, "shop_items", items)
+
+            await interaction.response.send_message(f"✅ Added '{self.name.value}' to shop", ephemeral=True)
         except ValueError:
-            return await interaction.response.send_message("Invalid input.", ephemeral=True)
-        if amount <= 0:
-            return await interaction.response.send_message("Amount must be positive.", ephemeral=True)
-        if self.action == "remove":
-            current = self.economy.get_gems(self.guild_id, user_id)
-            if current < amount:
-                return await interaction.response.send_message(f"User only has {current} gems.", ephemeral=True)
-            amount = -amount
-        self.economy.add_gems(self.guild_id, user_id, amount)
-        await interaction.response.send_message(f"Done!", ephemeral=True)
+            await interaction.response.send_message("❌ Please enter a valid price", ephemeral=True)
 
+class ResetBalanceModal(discord.ui.Modal, title="Reset User Balance"):
+    user_id = discord.ui.TextInput(label="User ID", placeholder="123456789")
+    confirm = discord.ui.TextInput(label="Type 'RESET' to confirm", placeholder="RESET")
 
-class ViewBalanceModal(Modal, title="View Balance"):
-    def __init__(self, bot, guild_id: int):
+    def __init__(self, bot, guild_id):
         super().__init__()
         self.bot = bot
         self.guild_id = guild_id
-        self.economy = Economy(bot)
-    
-    user_input = TextInput(label="User ID or Mention", placeholder="@user or 123456789")
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            user_id = int(self.user_input.value.strip("<@!>"))
-        except ValueError:
-            return await interaction.response.send_message("Invalid user ID.", ephemeral=True)
-        coins = self.economy.get_coins(self.guild_id, user_id)
-        gems = self.economy.get_gems(self.guild_id, user_id)
-        embed = discord.Embed(title=f"Balance for <@{user_id}>", color=discord.Color.gold())
-        embed.add_field(name="Coins", value=f"{coins:,}", inline=True)
-        embed.add_field(name="Gems", value=f"{gems:,}", inline=True)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        self.economy = EconomySystem(bot)
 
-
-class TransferModal(Modal, title="Transfer Coins"):
-    def __init__(self, bot, guild_id: int):
-        super().__init__()
-        self.bot = bot
-        self.guild_id = guild_id
-        self.economy = Economy(bot)
-    
-    from_user = TextInput(label="From User ID", placeholder="123456789")
-    to_user = TextInput(label="To User ID", placeholder="987654321")
-    amount_input = TextInput(label="Amount", placeholder="100")
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            from_id = int(self.from_user.value)
-            to_id = int(self.to_user.value)
-            amount = int(self.amount_input.value)
-        except ValueError:
-            return await interaction.response.send_message("Invalid input.", ephemeral=True)
-        if amount <= 0:
-            return await interaction.response.send_message("Amount must be positive.", ephemeral=True)
-        current = self.economy.get_coins(self.guild_id, from_id)
-        if current < amount:
-            return await interaction.response.send_message(f"User only has {current} coins.", ephemeral=True)
-        self.economy.add_coins(self.guild_id, from_id, -amount)
-        self.economy.add_coins(self.guild_id, to_id, amount)
-        await interaction.response.send_message(f"Transferred {amount} coins!", ephemeral=True)
-
-
-class AddShopItemModal(Modal, title="Add Shop Item"):
-    def __init__(self, bot, guild_id: int):
-        super().__init__()
-        self.bot = bot
-        self.guild_id = guild_id
-    
-    item_name = TextInput(label="Item Name", placeholder="VIP Role")
-    price = TextInput(label="Price", placeholder="1000")
-    description = TextInput(label="Description", style=discord.TextStyle.long, placeholder="Grants VIP access")
-    role_id = TextInput(label="Role ID (optional)", required=False)
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        items = dm.get_guild_data(self.guild_id, "shop_items", [])
-        item = {"id": len(items) + 1, "name": self.item_name.value, "price": int(self.price.value), "description": self.description.value, "role_id": self.role_id.value if self.role_id.value else None, "stock": -1}
-        items.append(item)
-        dm.update_guild_data(self.guild_id, "shop_items", items)
-        await interaction.response.send_message(f"Added to shop!", ephemeral=True)
-
-
-class ConfigureDailyModal(Modal, title="Configure Daily Reward"):
-    def __init__(self, bot, guild_id: int):
-        super().__init__()
-        self.bot = bot
-        self.guild_id = guild_id
-    
-    amount = TextInput(label="Daily Amount", placeholder="100")
-    cooldown = TextInput(label="Cooldown Hours", placeholder="24")
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        config = dm.get_guild_data(self.guild_id, "economy_config", {})
-        config["daily_amount"] = int(self.amount.value)
-        config["daily_cooldown"] = int(self.cooldown.value)
-        dm.update_guild_data(self.guild_id, "economy_config", config)
-        await interaction.response.send_message(f"Daily configured!", ephemeral=True)
-
-
-class SetCurrencyNameModal(Modal, title="Set Currency Names"):
-    def __init__(self, bot, guild_id: int):
-        super().__init__()
-        self.bot = bot
-        self.guild_id = guild_id
-    
-    coin_name = TextInput(label="Coin Name", placeholder="Coins", default="Coins")
-    gem_name = TextInput(label="Gem Name", placeholder="Gems", default="Gems")
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        config = dm.get_guild_data(self.guild_id, "economy_config", {})
-        config["currency_name"] = self.coin_name.value
-        config["gem_name"] = self.gem_name.value
-        dm.update_guild_data(self.guild_id, "economy_config", config)
-        await interaction.response.send_message("Currency names updated!", ephemeral=True)
-
-
-class ResetBalanceModal(Modal, title="Reset User Balance"):
-    def __init__(self, bot, guild_id: int):
-        super().__init__()
-        self.bot = bot
-        self.guild_id = guild_id
-        self.economy = Economy(bot)
-    
-    user_input = TextInput(label="User ID", placeholder="123456789")
-    confirm = TextInput(label="Type RESET to confirm", placeholder="RESET")
-    
     async def on_submit(self, interaction: discord.Interaction):
         if self.confirm.value.upper() != "RESET":
-            return await interaction.response.send_message("Confirmation failed.", ephemeral=True)
+            return await interaction.response.send_message("❌ Confirmation failed", ephemeral=True)
+
         try:
-            user_id = int(self.user_input.value)
+            user_id = int(self.user_id.value)
+            old_balance = self.economy.get_coins(self.guild_id, user_id)
+
+            balances = dm.get_guild_data(self.guild_id, "economy_balances", {})
+            balances[str(user_id)] = 0
+            dm.update_guild_data(self.guild_id, "economy_balances", balances)
+
+            self.economy.log_transaction(self.guild_id, user_id, -old_balance, "admin_reset", "Admin reset")
+
+            await interaction.response.send_message(f"✅ Reset balance from {old_balance} to 0", ephemeral=True)
         except ValueError:
-            return await interaction.response.send_message("Invalid user ID.", ephemeral=True)
-        balances = dm.get_guild_data(self.guild_id, "economy_balances", {})
-        old_balance = balances.get(str(user_id), 0)
-        balances[str(user_id)] = 0
-        dm.update_guild_data(self.guild_id, "economy_balances", balances)
-        self.economy.log_transaction(self.guild_id, user_id, -old_balance, "reset", "Admin reset")
-        await interaction.response.send_message(f"Reset balance from {old_balance} to 0!", ephemeral=True)
-
-    # Prefix command handlers
-    async def handle_balance(self, message):
-        """Handle !balance prefix command"""
-        from actions import ActionHandler
-        handler = ActionHandler(message.guild._state._get_client())
-        return await handler.handle_economy_balance(message)
-
-    async def handle_daily(self, message):
-        """Handle !daily prefix command"""
-        from actions import ActionHandler
-        handler = ActionHandler(message.guild._state._get_client())
-        return await handler.handle_economy_daily(message)
-
-    async def handle_work(self, message):
-        """Handle !work prefix command"""
-        from actions import ActionHandler
-        handler = ActionHandler(message.guild._state._get_client())
-        return await handler.handle_economy_work(message)
-
-    async def handle_economy_leaderboard(self, message):
-        """Handle !ecoleaderboard prefix command"""
-        from actions import ActionHandler
-        handler = ActionHandler(message.guild._state._get_client())
-        return await handler.handle_economy_leaderboard(message)
-
-    async def buy(self, message, args):
-        """Handle !buy command"""
-        from actions import ActionHandler
-        handler = ActionHandler(message.guild._state._get_client())
-        return await handler.handle_economy_buy(message)
+            await interaction.response.send_message("❌ Invalid user ID", ephemeral=True)
