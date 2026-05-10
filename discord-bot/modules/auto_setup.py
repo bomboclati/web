@@ -506,3 +506,97 @@ class BackButton(discord.ui.Button):
         )
         view = CategorySelectView(self.auto_setup, self.guild_id)
         await interaction.response.edit_message(embed=embed, view=view)
+
+
+# Persistent View Classes for Auto-Setup Buttons
+class VerifyButton(discord.ui.View):
+    """Persistent view for verification button during auto-setup."""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Verify Me", style=discord.ButtonStyle.success, custom_id="verify_button_persistent")
+    async def verify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        if not guild:
+            return
+
+        role_id = dm.get_guild_data(guild.id, "verify_role")
+        role = guild.get_role(role_id) if role_id else discord.utils.get(guild.roles, name="Verified")
+
+        if not role:
+            return await interaction.response.send_message("❌ Verification role not found. Please contact staff.", ephemeral=True)
+
+        if role in interaction.user.roles:
+            return await interaction.response.send_message("✅ You are already verified!", ephemeral=True)
+
+        try:
+            # Handle Unverified role removal if using the modules/verification system
+            unverified = discord.utils.get(guild.roles, name="Unverified")
+            if unverified and unverified in interaction.user.roles:
+                await interaction.user.remove_roles(unverified)
+
+            await interaction.user.add_roles(role)
+            await interaction.response.send_message("✅ You're verified! Enjoy the server!", ephemeral=True)
+            # Log action
+            logger.info(f"User {interaction.user.id} verified in guild {guild.id}")
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ I lack permissions to assign the Verified role. Check my role position!", ephemeral=True)
+
+
+class AcceptRulesButton(discord.ui.View):
+    """Persistent view for accept rules button during auto-setup."""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="I Accept the Rules", style=discord.ButtonStyle.primary, custom_id="accept_rules_persistent")
+    async def accept_rules_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild = interaction.guild
+        if not guild:
+            return
+
+        role_id = dm.get_guild_data(guild.id, "verify_role")
+        role = guild.get_role(role_id) if role_id else discord.utils.get(guild.roles, name="Verified")
+
+        if role and role not in interaction.user.roles:
+            try:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message("✅ Thanks for accepting! You now have full access.", ephemeral=True)
+            except discord.Forbidden:
+                await interaction.response.send_message("✅ Rules accepted (but I couldn't add your role).", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Failed to create ticket thread.", ephemeral=True)
+
+
+class CreateTicketButton(discord.ui.View):
+    """Persistent view for create ticket button during auto-setup."""
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Create Ticket", style=discord.ButtonStyle.secondary, custom_id="create_ticket_persistent")
+    async def create_ticket_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # This would integrate with the ticket system
+        await interaction.response.send_message("🎫 Ticket creation is handled through the ticket system.", ephemeral=True)
+
+
+class SuggestionButton(discord.ui.View):
+    """Persistent view for suggestion button during auto-setup."""
+    def __init__(self, guild_id: int = 0):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+
+    @discord.ui.button(label="Make Suggestion", style=discord.ButtonStyle.secondary, custom_id="suggestion_button_persistent")
+    async def suggestion_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # This would integrate with the suggestions system
+        await interaction.response.send_message("💡 Suggestion creation is handled through the suggestions system.", ephemeral=True)
+
+
+class ApplyStaffButton(discord.ui.View):
+    """Persistent view for apply staff button during auto-setup."""
+    def __init__(self, guild_id: int = 0):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+
+    @discord.ui.button(label="Apply for Staff", style=discord.ButtonStyle.primary, custom_id="apply_staff_persistent")
+    async def apply_staff_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # This would integrate with the applications system
+        await interaction.response.send_message("👥 Staff applications are handled through the applications system.", ephemeral=True)
