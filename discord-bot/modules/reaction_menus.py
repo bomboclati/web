@@ -70,7 +70,7 @@ class ReactionMenuPersistentView(ui.View):
 
         await interaction.followup.send("\n".join(msg) or "No changes made.", ephemeral=True)
 
-class ReactionMenus:
+class ReactionMenuSystem:
     """
     Reaction Roles Menus:
     Distinct from individual reaction roles - organized, styled menus.

@@ -73,7 +73,7 @@ class RoleButtonPersistentView(ui.View):
             logger.error(f"Failed to process role button click: {e}")
             await interaction.response.send_message("❌ An error occurred during role assignment.", ephemeral=True)
 
-class RoleButtons:
+class RoleButtonSystem:
     """
     Role Buttons System:
     Standalone role assignment buttons - simpler than menus.

@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Any, Union
 from data_manager import dm
 from logger import logger
 
-class ModLogging:
+class ModLoggingSystem:
     """
     Moderation Logging System:
     Track staff actions with auto-incrementing case numbers.

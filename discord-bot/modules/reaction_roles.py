@@ -4,7 +4,7 @@ from logger import logger
 import time
 from typing import Dict, Optional, List
 
-class ReactionRoles:
+class ReactionRoleSystem:
     """
     Reaction Roles System:
     - Bind any emoji to any role on any message

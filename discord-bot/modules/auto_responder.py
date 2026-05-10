@@ -7,7 +7,7 @@ import time
 from typing import Optional
 
 
-class AutoResponder:
+class AutoResponderSystem:
     """
     Auto Responder System - Keyword-based automated replies
     Zero Data Loss with immediate writes.
