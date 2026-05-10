@@ -7,6 +7,86 @@ from typing import List, Dict, Optional, Any
 from data_manager import dm
 from logger import logger
 
+class ApplicationSystem:
+    """
+    Complete staff application system with submission, review, and management.
+    Features:
+    - Application submission via modal
+    - Staff review and approval process
+    - Application status tracking
+    - Automatic DM notifications
+    """
+
+    def __init__(self, bot):
+        self.bot = bot
+
+    async def handle_application_submit(self, interaction, application_data):
+        """Handle application submission."""
+        config = dm.get_guild_data(interaction.guild.id, "application_config", {})
+        if not config.get("enabled", False):
+            return await interaction.response.send_message("❌ Applications are currently disabled.", ephemeral=True)
+
+        # Store application
+        applications = dm.get_guild_data(interaction.guild.id, "applications", [])
+        applications.append({
+            "id": int(time.time()),
+            "user_id": interaction.user.id,
+            "data": application_data,
+            "status": "pending",
+            "submitted_at": time.time()
+        })
+        dm.update_guild_data(interaction.guild.id, "applications", applications)
+
+        await interaction.response.send_message("✅ Application submitted! You'll be notified of the decision.", ephemeral=True)
+
+    async def review_application(self, interaction, application_id, action, reason=None):
+        """Review an application (approve/deny)."""
+        applications = dm.get_guild_data(interaction.guild.id, "applications", [])
+        application = next((a for a in applications if a["id"] == application_id), None)
+
+        if not application:
+            return await interaction.response.send_message("❌ Application not found.", ephemeral=True)
+
+        # Check permissions
+        config = dm.get_guild_data(interaction.guild.id, "application_config", {})
+        is_staff = (interaction.user.guild_permissions.administrator or
+                   any(role.id == int(rid) for rid in config.get("staff_roles", []) for role in interaction.user.roles))
+
+        if not is_staff:
+            return await interaction.response.send_message("❌ Only staff can review applications.", ephemeral=True)
+
+        # Update status
+        application["status"] = "approved" if action == "approve" else "denied"
+        application["reviewed_by"] = interaction.user.id
+        application["reviewed_at"] = time.time()
+        if reason:
+            application["review_reason"] = reason
+
+        # Update in storage
+        for i, a in enumerate(applications):
+            if a["id"] == application_id:
+                applications[i] = application
+                break
+        dm.update_guild_data(interaction.guild.id, "applications", applications)
+
+        # Notify applicant
+        try:
+            user = self.bot.get_user(application["user_id"])
+            if user:
+                embed = discord.Embed(
+                    title="📋 Application Update",
+                    description=f"Your application has been **{application['status']}**.",
+                    color=discord.Color.green() if action == "approve" else discord.Color.red()
+                )
+                if reason:
+                    embed.add_field(name="Reason", value=reason, inline=False)
+
+                await user.send(embed=embed)
+        except:
+            pass
+
+        await interaction.response.send_message(f"✅ Application {action}d!", ephemeral=True)
+
 class ApplicationPersistentView(ui.View):
     """Persistent view for the public 'Apply Now' button."""
     def __init__(self):
