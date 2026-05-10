@@ -52,7 +52,7 @@ class UserModerationHistory:
     trust_score: float
 
 
-class ContextualModeration:
+class ModerationSystem:
     def __init__(self, bot):
         self.bot = bot
         self._guild_configs: Dict[int, dict] = {}
