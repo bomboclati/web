@@ -2529,6 +2529,20 @@ class StaffShiftsConfigView(ConfigPanelView):
 
 # --- Registry ---
 
+def get_system_info(system_key: str) -> tuple[str, str]:
+    """Get system emoji and description from help system data."""
+    from modules.help_system import CATEGORIES
+
+    # Normalize the system key like in get_config_panel
+    normalized_key = system_key.lower().replace("_", "").replace(" ", "").replace("system", "")
+
+    for category_data in CATEGORIES.values():
+        if "systems" in category_data:
+            for sys_key, emoji, desc, cmds in category_data["systems"]:
+                if sys_key == normalized_key:
+                    return emoji, desc
+    return "⚙️", f"Configuration for {system_key}"
+
 SPECIALIZED_VIEWS = {
     "verification": "VerificationConfigView",
     "verify": "VerificationConfigView",
@@ -2557,6 +2571,45 @@ SPECIALIZED_VIEWS = {
 
 # Local cache for lazy-loaded view classes
 _view_cache = {}
+
+class SystemOverviewView(ui.View):
+    """View for system overview with configure button."""
+
+    def __init__(self, guild_id: int, system: str):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.system = system
+
+    @ui.button(label="Configure System", emoji="⚙️", style=discord.ButtonStyle.primary, custom_id="configure_system")
+    async def configure_system(self, interaction: Interaction, button: ui.Button):
+        # Check permissions
+        if not interaction.user.guild_permissions.administrator and interaction.user.id != interaction.guild.owner_id:
+            await interaction.response.send_message("❌ Only administrators can configure systems.", ephemeral=True)
+            return
+
+        # Get the config panel
+        view = get_config_panel(self.guild_id, self.system)
+        if not view:
+            await interaction.response.send_message(f"❌ System '{self.system}' not found.", ephemeral=True)
+            return
+
+        # Get custom commands
+        from actions import ActionHandler
+        # Normalize system key for command lookup
+        normalized_system = self.system.lower().replace("_", "").replace(" ", "").replace("system", "")
+        custom_cmds = ActionHandler.get_commands_for_system(normalized_system)
+
+        # Create the config embed
+        embed = view.create_embed(guild_id=self.guild_id, guild=interaction.guild)
+
+        # Add custom commands if available
+        if custom_cmds:
+            cmds_text = "\n".join([f"• `{cmd}`" for cmd in custom_cmds[:20]])
+            embed.add_field(name="Custom Commands", value=cmds_text or "No commands", inline=False)
+
+        embed.set_footer(text="Only you can see this configuration panel.")
+
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 def get_config_panel(guild_id: int, system: str) -> Optional[ui.View]:
     # Lazy import for all systems
@@ -3367,6 +3420,8 @@ class StaffPromoConfigView(ConfigPanelView):
             embed.set_thumbnail(url=guild.icon.url)
         embed.add_field(name="Status", value="✅ Enabled" if c.get("enabled", True) else "❌ Disabled", inline=True)
         embed.add_field(name="Promo Role", value=f"<@&{c.get('promo_role_id')}>" if c.get("promo_role_id") else "_None_", inline=True)
+        embed.add_field(name="Requirements", value=c.get("requirements", "Not set")[:50] + "..." if len(c.get("requirements", "")) > 50 else c.get("requirements", "Not set"), inline=False)
+        embed.add_field(name="Tiers", value=c.get("tiers", "Not set")[:50] + "..." if len(c.get("tiers", "")) > 50 else c.get("tiers", "Not set"), inline=False)
         return embed
 
     @ui.button(label="Disable", emoji="🎖️", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_staffpromo_toggle")
@@ -3377,3 +3432,131 @@ class StaffPromoConfigView(ConfigPanelView):
         await self.save_config(c, interaction.guild_id, interaction.client, interaction)
         self.update_system_toggle_button("cfg_staffpromo_toggle", c["enabled"])
         await interaction.edit_original_response(embed=self.create_embed(interaction.guild_id, interaction.guild), view=self)
+
+    @ui.button(label="Set Promo Role", emoji="👑", style=discord.ButtonStyle.primary, row=0, custom_id="cfg_staffpromo_set_role")
+    async def set_role(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_message("Select Role:", view=_picker_view(_GenericRoleSelect(self, "promo_role_id", "Promo Role")), ephemeral=True)
+
+    @ui.button(label="Set Requirements", emoji="📋", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_staffpromo_set_req")
+    async def set_req(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_modal(_TextModal(self, "requirements", "Promotion Requirements", interaction.guild_id))
+
+    @ui.button(label="Configure Tiers", emoji="🏆", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_staffpromo_tiers")
+    async def config_tiers(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_modal(_TextModal(self, "tiers", "Promotion Tiers (JSON)", interaction.guild_id))
+
+    @ui.button(label="View Status", emoji="📊", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staffpromo_status")
+    async def view_status(self, interaction: Interaction, button: ui.Button):
+        c = self.get_config(interaction.guild_id)
+        status = f"Enabled: {c.get('enabled', True)}\nPromo Role: <@&{c.get('promo_role_id', 0)}>\nRequirements: {c.get('requirements', 'Not set')}\nTiers: {c.get('tiers', 'Not set')}"
+        await interaction.response.send_message(embed=discord.Embed(title="Staff Promo Status", description=status), ephemeral=True)
+
+    @ui.button(label="Set Review Channel", emoji="📣", style=discord.ButtonStyle.primary, row=1, custom_id="cfg_staffpromo_set_channel")
+    async def set_review_channel(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_message("Select Review Channel:", view=_picker_view(_GenericChannelSelect(self, "review_channel_id", "Review Channel")), ephemeral=True)
+
+    @ui.button(label="Toggle DMs", emoji="📩", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staffpromo_toggle_dms")
+    async def toggle_dms(self, interaction: Interaction, button: ui.Button):
+        c = self.get_config(interaction.guild_id)
+        c["send_dms"] = not c.get("send_dms", True)
+        await self.save_config(c, interaction.guild_id, interaction.client, interaction)
+        await interaction.response.send_message(f"DMs {'enabled' if c['send_dms'] else 'disabled'}", ephemeral=True)
+
+    @ui.button(label="View Staff Overview", emoji="👥", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_staffpromo_overview")
+    async def view_overview(self, interaction: Interaction, button: ui.Button):
+        embed = discord.Embed(title="Staff Overview", description="Staff member details and eligibility status.")
+        embed.add_field(name="Total Staff", value="Data not available", inline=True)
+        embed.add_field(name="Eligible for Promotion", value="Data not available", inline=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="View Leaderboard", emoji="🏆", style=discord.ButtonStyle.secondary, row=3, custom_id="cfg_staffpromo_leaderboard")
+    async def view_leaderboard(self, interaction: Interaction, button: ui.Button):
+        embed = discord.Embed(title="Staff Leaderboard", description="Top staff by activity.")
+        embed.add_field(name="No leaderboard data", value="Feature under development", inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="View Promotion History", emoji="📜", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_staffpromo_history")
+    async def view_history(self, interaction: Interaction, button: ui.Button):
+        embed = discord.Embed(title="Promotion History", description="Recent promotions and demotions.")
+        embed.add_field(name="No history available", value="Feature under development", inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @ui.button(label="Promote Staff", emoji="⬆️", style=discord.ButtonStyle.success, row=0, custom_id="cfg_staffpromo_promote")
+    async def promote_staff(self, interaction: Interaction, button: ui.Button):
+        class PromoteModal(ui.Modal, title="Promote Staff Member"):
+            user_id = ui.TextInput(label="User ID", placeholder="123456789")
+            target_role = ui.TextInput(label="Target Role ID", placeholder="987654321")
+            reason = ui.TextInput(label="Reason", style=discord.TextStyle.paragraph)
+            async def on_submit(self, it):
+                # Basic implementation: assign role, log
+                try:
+                    user = it.guild.get_member(int(self.user_id.value))
+                    role = it.guild.get_role(int(self.target_role.value))
+                    if user and role:
+                        await user.add_roles(role)
+                        await it.response.send_message(f"✅ Promoted {user.mention} to {role.name}. Reason: {self.reason.value}", ephemeral=True)
+                    else:
+                        await it.response.send_message("❌ Invalid user or role ID.", ephemeral=True)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid IDs.", ephemeral=True)
+        await interaction.response.send_modal(PromoteModal())
+
+    @ui.button(label="Demote Staff", emoji="⬇️", style=discord.ButtonStyle.danger, row=0, custom_id="cfg_staffpromo_demote")
+    async def demote_staff(self, interaction: Interaction, button: ui.Button):
+        class DemoteModal(ui.Modal, title="Demote Staff Member"):
+            user_id = ui.TextInput(label="User ID")
+            target_role = ui.TextInput(label="Target Role ID")
+            reason = ui.TextInput(label="Reason", style=discord.TextStyle.paragraph)
+            async def on_submit(self, it):
+                try:
+                    user = it.guild.get_member(int(self.user_id.value))
+                    role = it.guild.get_role(int(self.target_role.value))
+                    if user and role:
+                        await user.remove_roles(role)
+                        await it.response.send_message(f"✅ Demoted {user.mention} from {role.name}. Reason: {self.reason.value}", ephemeral=True)
+                    else:
+                        await it.response.send_message("❌ Invalid user or role ID.", ephemeral=True)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid IDs.", ephemeral=True)
+        await interaction.response.send_modal(DemoteModal())
+
+    @ui.button(label="View Staff Profile", emoji="👤", style=discord.ButtonStyle.secondary, row=1, custom_id="cfg_staffpromo_profile")
+    async def view_profile(self, interaction: Interaction, button: ui.Button):
+        class ProfileModal(ui.Modal, title="View Staff Profile"):
+            user_id = ui.TextInput(label="User ID")
+            async def on_submit(self, it):
+                try:
+                    user = it.guild.get_member(int(self.user_id.value))
+                    if user:
+                        embed = discord.Embed(title=f"Profile of {user.display_name}", description=f"ID: {user.id}\nJoined: {user.joined_at}\nRoles: {', '.join([r.name for r in user.roles])}")
+                        await it.response.send_message(embed=embed, ephemeral=True)
+                    else:
+                        await it.response.send_message("❌ User not found.", ephemeral=True)
+                except ValueError:
+                    await it.response.send_message("❌ Invalid user ID.", ephemeral=True)
+        await interaction.response.send_modal(ProfileModal())
+
+    @ui.button(label="Put on Probation", emoji="⏸️", style=discord.ButtonStyle.secondary, row=2, custom_id="cfg_staffpromo_probation")
+    async def put_on_probation(self, interaction: Interaction, button: ui.Button):
+        class ProbationModal(ui.Modal, title="Put on Probation"):
+            user_id = ui.TextInput(label="User ID")
+            duration = ui.TextInput(label="Duration (days)")
+            reason = ui.TextInput(label="Reason")
+            async def on_submit(self, it):
+                await it.response.send_message("Feature under development: Probation management not yet implemented.", ephemeral=True)
+        await interaction.response.send_modal(ProbationModal())
+
+    @ui.button(label="Exclude from Promotions", emoji="🚫", style=discord.ButtonStyle.danger, row=3, custom_id="cfg_staffpromo_exclude")
+    async def exclude_from_promotions(self, interaction: Interaction, button: ui.Button):
+        class ExcludeModal(ui.Modal, title="Exclude from Promotions"):
+            user_id = ui.TextInput(label="User ID")
+            reason = ui.TextInput(label="Reason")
+            async def on_submit(self, it):
+                await it.response.send_message("Feature under development: Exclusion management not yet implemented.", ephemeral=True)
+        await interaction.response.send_modal(ExcludeModal())
+
+    @ui.button(label="View Eligible Staff", emoji="✅", style=discord.ButtonStyle.secondary, row=4, custom_id="cfg_staffpromo_eligible")
+    async def view_eligible(self, interaction: Interaction, button: ui.Button):
+        embed = discord.Embed(title="Eligible Staff", description="Staff members eligible for promotion.")
+        embed.add_field(name="No eligible staff", value="Feature under development", inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)

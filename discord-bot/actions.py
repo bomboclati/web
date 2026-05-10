@@ -262,6 +262,9 @@ class ActionHandler:
         Get custom commands related to a system.
         This is used in !configpanel to show available commands.
         """
+        # Normalize system key like in get_config_panel
+        normalized_system = system.lower().replace("_", "").replace(" ", "").replace("system", "")
+
         system_commands = {
             "verification": ["!setverifychannel", "!configpanel verification"],
             "antiraid": ["!raidstatus", "!configpanel antiraid"],
@@ -292,7 +295,7 @@ class ActionHandler:
             "events": ["!configpanel events"],
             "chatchannels": ["!configpanel chatchannels"],
         }
-        return system_commands.get(system.lower(), [])
+        return system_commands.get(normalized_system, [])
     
     def __init__(self, bot):
         if bot is None:
