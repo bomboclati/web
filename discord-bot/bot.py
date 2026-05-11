@@ -49,7 +49,6 @@ class MiroBot(commands.Bot):
         self.economy = economy.EconomySystem(self)
         self.leveling = leveling.LevelingSystem(self)
 self.verification = verification.VerificationSystem(self)
-        self.welcome_leave = welcome_leave.WelcomeLeaveSystem(self)
         self.tickets = tickets.TicketSystem(self)
         self.suggestions = suggestions.SuggestionSystem(self)
         self.reminders = reminders.ReminderSystem(self)
