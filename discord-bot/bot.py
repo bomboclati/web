@@ -165,9 +165,9 @@ class MiroBot(commands.Bot):
         # Start system monitors (sync methods - no await)
         self.anti_raid.start_monitoring()
 
-        # Start async task-start methods (must await)
-        await self.staff_reviews.start_tasks()
-        await self.staff_shifts.start_tasks()
+        # Start task monitor methods (sync - no await needed)
+        self.staff_reviews.start_tasks()
+        self.staff_shifts.start_tasks()
 
         # Start async monitoring tasks
         asyncio.create_task(self._start_async_monitors())
