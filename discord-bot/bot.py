@@ -252,14 +252,8 @@ class MiroBot(commands.Bot):
 
             for system in systems:
                 config_key = f"{system}_config"
-                try:
-                    data = dm.get_guild_data(guild.id, config_key)
-                    if not isinstance(data, dict):
-                        raise TypeError(f"Expected dict for {config_key}, got {type(data).__name__}")
-                    if not data:
-                        dm.update_guild_data(guild.id, config_key, {"enabled": False})
-                except (TypeError, AttributeError) as e:
-                    logger.warning(f"Corrupted data for {config_key} in guild {guild.id}: {e}")
+                data = dm.get_guild_data(guild.id, config_key)
+                if not data:
                     dm.update_guild_data(guild.id, config_key, {"enabled": False})
 
         logger.info("Guild data initialization complete")

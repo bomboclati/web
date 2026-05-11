@@ -191,12 +191,18 @@ class DataManager:
         """Get data for a specific guild."""
         guild_file = f"guild_{guild_id}"
         data = self.load_json(guild_file, default={})
+        if not isinstance(data, dict):
+            logger.warning(f"Corrupted guild data for {guild_id} (type: {type(data).__name__}), resetting")
+            data = {}
+            self.save_json(guild_file, data)
         return data.get(key, default)
 
     def update_guild_data(self, guild_id: int, key: str, value: Any):
         """Update data for a specific guild."""
         guild_file = f"guild_{guild_id}"
         data = self.load_json(guild_file, default={})
+        if not isinstance(data, dict):
+            data = {}
         data[key] = value
         self.save_json(guild_file, data)
 
@@ -204,6 +210,8 @@ class DataManager:
         """Delete a key from guild data."""
         guild_file = f"guild_{guild_id}"
         data = self.load_json(guild_file, default={})
+        if not isinstance(data, dict):
+            data = {}
         if key in data:
             del data[key]
             self.save_json(guild_file, data)
