@@ -323,4 +323,4 @@ class NoteModal(ui.Modal, title="Add Staff Note"):
         await interaction.response.send_message("Note added.", ephemeral=True)
 
 async def setup(bot):
-    pass
+    bot.modmail = ModmailSystem(bot)

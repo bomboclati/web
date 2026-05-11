@@ -192,12 +192,10 @@ class AntiRaidSystem:
             except: pass
 
     def start_monitoring(self):
-        # We use bot event listeners instead of a loop for real-time response
-        pass
+        logger.info("AntiRaidSystem started - using event listeners for real-time response")
 
     async def handle_member_remove(self, member: discord.Member):
-        # Track member leaves for anti-raid purposes
-        pass
+        logger.info(f"Member left: {member.display_name} ({member.id}) in {member.guild.name}")
 
 async def setup(bot):
     bot.anti_raid = AntiRaidSystem(bot)
