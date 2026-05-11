@@ -48,9 +48,7 @@ class MiroBot(commands.Bot):
         # Initialize all systems
         self.economy = economy.EconomySystem(self)
         self.leveling = leveling.LevelingSystem(self)
-        self.verification = verification.VerificationSystem(self)
-        self.anti_raid = anti_raid.AntiRaidSystem(self)
-        self.guardian = guardian.GuardianSystem(self)
+self.verification = verification.VerificationSystem(self)
         self.welcome_leave = welcome_leave.WelcomeLeaveSystem(self)
         self.tickets = tickets.TicketSystem(self)
         self.suggestions = suggestions.SuggestionSystem(self)
@@ -149,8 +147,10 @@ class MiroBot(commands.Bot):
 
         # Start system monitors (sync methods - no await)
         self.anti_raid.start_monitoring()
-        self.staff_reviews.start_tasks()
-        self.staff_shifts.start_tasks()
+
+        # Start async task-start methods (must await)
+        await self.staff_reviews.start_tasks()
+        await self.staff_shifts.start_tasks()
 
         # Start async monitoring tasks
         asyncio.create_task(self._start_async_monitors())
@@ -320,8 +320,7 @@ class MiroBot(commands.Bot):
             # Anti-raid monitoring
             await self.anti_raid.handle_message(message)
 
-            # Guardian bot token detection
-            await self.guardian.handle_message(message)
+            # Guardian uses Cog event listeners - no wrapper call needed
 
             # Staff shift tracking
             await self.staff_shifts.handle_message(message)

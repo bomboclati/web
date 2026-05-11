@@ -7,6 +7,7 @@ from modules import (
     economy, leveling, verification, tickets, suggestions,
     giveaways, reminders, welcome_leave, auto_setup, config_panels
 )
+from modules.guardian import GuardianSystem
 
 class SlashCommands(commands.Cog):
     """Slash commands for the bot."""
@@ -144,3 +145,4 @@ class SlashCommands(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(SlashCommands(bot))
+    await bot.add_cog(GuardianSystem(bot))
