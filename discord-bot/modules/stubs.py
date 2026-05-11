@@ -334,7 +334,7 @@ class AntiRaidSystem:
         """Get anti-raid config panel."""
         return AntiRaidConfigPanel(self.bot, guild_id)
 
-class GuardianSystem(discord.Cog):
+class GuardianSystem(commands.Cog):
     """
     Guardian system that protects against token leaks, malicious links, and other security threats.
     Features:
@@ -367,7 +367,7 @@ class GuardianSystem(discord.Cog):
         """Called when the cog is loaded."""
         logger.info("Guardian system loaded and monitoring")
 
-    @discord.Cog.listener()
+    @commands.Cog.listener()
     async def on_message(self, message):
         """Monitor messages for security threats."""
         if message.author.bot:
