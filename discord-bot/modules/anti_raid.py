@@ -195,5 +195,9 @@ class AntiRaidSystem:
         # We use bot event listeners instead of a loop for real-time response
         pass
 
+    async def handle_member_remove(self, member: discord.Member):
+        # Track member leaves for anti-raid purposes
+        pass
+
 async def setup(bot):
     bot.anti_raid = AntiRaidSystem(bot)

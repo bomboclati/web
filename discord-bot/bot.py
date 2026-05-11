@@ -164,11 +164,11 @@ class MiroBot(commands.Bot):
 
     async def _start_async_monitors(self):
         """Start all async monitoring tasks."""
-        await self.guardian.start_monitoring()
+        # Guardian is a Cog - uses Discord event listeners, no explicit start needed
         await self.giveaways.start_monitoring()
         await self.reminders.start_monitoring()
         await self.announcements.start_monitoring()
-        self.intelligence.start_monitoring()
+        self.intelligence.start_monitoring()  # sync method
         logger.info("Async monitors started")
 
     async def _restore_scheduled_tasks(self):
@@ -252,7 +252,14 @@ class MiroBot(commands.Bot):
 
             for system in systems:
                 config_key = f"{system}_config"
-                if not dm.get_guild_data(guild.id, config_key):
+                try:
+                    data = dm.get_guild_data(guild.id, config_key)
+                    if not isinstance(data, dict):
+                        raise TypeError(f"Expected dict for {config_key}, got {type(data).__name__}")
+                    if not data:
+                        dm.update_guild_data(guild.id, config_key, {"enabled": False})
+                except (TypeError, AttributeError) as e:
+                    logger.warning(f"Corrupted data for {config_key} in guild {guild.id}: {e}")
                     dm.update_guild_data(guild.id, config_key, {"enabled": False})
 
         logger.info("Guild data initialization complete")
@@ -340,7 +347,7 @@ class MiroBot(commands.Bot):
         try:
             await self.verification.handle_member_join(member)
             await self.welcome_leave.handle_member_join(member)
-            await self.anti_raid.handle_join(member)
+            await self.anti_raid.handle_join(member)  # anti_raid uses handle_join
         except Exception as e:
             logger.error(f"Member join error: {e}")
 
