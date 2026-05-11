@@ -217,6 +217,30 @@ class DataManager:
         if key in data:
             del data[key]
             self.save_json(guild_file, data)
+
+    def get_guild_api_key(self, guild_id: int, provider: str = None) -> Optional[Dict]:
+        """Get API key configuration for a specific guild."""
+        api_keys = self.load_json("guild_api_keys", default={})
+        if not isinstance(api_keys, dict):
+            api_keys = {}
+        guild_data = api_keys.get(str(guild_id), {})
+        if not isinstance(guild_data, dict):
+            guild_data = {}
+        if provider:
+            return guild_data.get("providers", {}).get(provider)
+        return guild_data
+
+    def update_guild_api_key(self, guild_id: int, provider: str, config: Dict):
+        """Update API key configuration for a specific guild and provider."""
+        api_keys = self.load_json("guild_api_keys", default={})
+        if not isinstance(api_keys, dict):
+            api_keys = {}
+        if str(guild_id) not in api_keys:
+            api_keys[str(guild_id)] = {}
+        if "providers" not in api_keys[str(guild_id)]:
+            api_keys[str(guild_id)]["providers"] = {}
+        api_keys[str(guild_id)]["providers"][provider] = config
+        self.save_json("guild_api_keys", api_keys)
             self._cache[guild_file] = data
 
     async def save_exchange(self, guild_id: int, user_id: int, role: str, content: str, importance_score: float = 0.5):
