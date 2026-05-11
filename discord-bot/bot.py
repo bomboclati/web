@@ -24,7 +24,7 @@ from modules import (
     reaction_roles, reaction_menus, role_buttons, moderation, logging_mod,
     mod_logging, warnings, staff_promo, staff_shifts, staff_reviews,
     starboard, ai_chat, applications, appeals, modmail, auto_setup,
-    config_panels
+    config_panels, intelligence
 )
 
 load_dotenv()
