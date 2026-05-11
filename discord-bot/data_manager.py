@@ -195,6 +195,7 @@ class DataManager:
             logger.warning(f"Corrupted guild data for {guild_id} (type: {type(data).__name__}), resetting")
             data = {}
             self.save_json(guild_file, data)
+            self._cache[guild_file] = data
         return data.get(key, default)
 
     def update_guild_data(self, guild_id: int, key: str, value: Any):
@@ -205,6 +206,7 @@ class DataManager:
             data = {}
         data[key] = value
         self.save_json(guild_file, data)
+        self._cache[guild_file] = data
 
     def delete_guild_data(self, guild_id: int, key: str):
         """Delete a key from guild data."""
@@ -215,6 +217,7 @@ class DataManager:
         if key in data:
             del data[key]
             self.save_json(guild_file, data)
+            self._cache[guild_file] = data
 
     async def save_exchange(self, guild_id: int, user_id: int, role: str, content: str, importance_score: float = 0.5):
         """Save conversation exchange to SQLite."""
