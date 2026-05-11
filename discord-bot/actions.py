@@ -8896,11 +8896,10 @@ class ActionHandler:
                 return True
 
             embed = discord.Embed(title="🏆 Tournaments", color=discord.Color.gold())
-            for t_id, t_data in list(tournaments._tournaments.items())[:10]:
-                status = t_data.get("status", "Unknown")
+            for t_id, t in list(tournaments._tournaments.items())[:10]:
                 embed.add_field(
-                    name=t_data.get("name", "Unknown Tournament"),
-                    value=f"ID: `{t_id}`\nStatus: {status}\nParticipants: {len(t_data.get('participants', []))}",
+                    name=t.name,
+                    value=f"ID: `{t_id}`\nStatus: {t.status.value}\nParticipants: {len(t.participants)}",
                     inline=False
                 )
 
@@ -8951,13 +8950,13 @@ class ActionHandler:
             # Add user to tournament
             tournament = tournaments._tournaments[tournament_id]
             user_id = message.author.id
-            if user_id in tournament.get("participants", []):
+            if user_id in tournament.participants:
                 await message.channel.send("❌ You're already in this tournament!")
                 return True
 
-            tournament["participants"].append(user_id)
+            tournament.participants.append(user_id)
             tournaments._save_tournament(tournament)
-            await message.channel.send(f"✅ You joined the tournament! Participants: {len(tournament['participants'])}")
+            await message.channel.send(f"✅ You joined the tournament! Participants: {len(tournament.participants)}")
             return True
         except Exception as e:
             logger.error(f"Error in handle_tournament_join: {e}")
