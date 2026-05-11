@@ -20,6 +20,9 @@ class ApplicationSystem:
     def __init__(self, bot):
         self.bot = bot
 
+    def get_persistent_views(self):
+        return [ApplicationPersistentView(), ApplicationReviewView()]
+
     async def handle_application_submit(self, interaction, application_data):
         """Handle application submission."""
         config = dm.get_guild_data(interaction.guild.id, "application_config", {})

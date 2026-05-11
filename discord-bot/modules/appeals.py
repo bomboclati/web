@@ -343,6 +343,9 @@ class AppealSystem:
     def __init__(self, bot):
         self.bot = bot
 
+    def get_persistent_views(self):
+        return [AppealPersistentView(), AppealReviewView()]
+
     async def setup(self, interaction: Interaction):
         """Standard setup for appeals system."""
         guild = interaction.guild

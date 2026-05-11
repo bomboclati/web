@@ -11,6 +11,9 @@ class ModmailSystem:
     def __init__(self, bot):
         self.bot = bot
 
+    def get_persistent_views(self):
+        return [ModmailThreadView()]
+
     async def handle_dm(self, message: discord.Message):
         """Handle incoming DMs for modmail."""
         user = message.author
