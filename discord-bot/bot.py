@@ -74,6 +74,7 @@ class MiroBot(commands.Bot):
         self.appeals = appeals.AppealSystem(self)
         self.modmail = modmail.ModmailSystem(self)
         self.auto_setup = auto_setup.AutoSetupSystem(self)
+        self.intelligence = intelligence.ServerIntelligence(self)
 
         # Task scheduler for reminders, giveaways, etc.
         self.task_scheduler = TaskScheduler(self)
@@ -146,14 +147,13 @@ class MiroBot(commands.Bot):
         if self._background_tasks_started:
             return
 
-        # Start system monitors
-        await self.anti_raid.start_monitoring()
-        await self.guardian.start_monitoring()
-        await self.giveaways.start_monitoring()
-        await self.reminders.start_monitoring()
-        await self.staff_reviews.start_monitoring()
-        await self.staff_shifts.start_monitoring()
-        await self.announcements.start_monitoring()
+        # Start system monitors (sync methods - no await)
+        self.anti_raid.start_monitoring()
+        self.staff_reviews.start_tasks()
+        self.staff_shifts.start_tasks()
+
+        # Start async monitoring tasks
+        asyncio.create_task(self._start_async_monitors())
 
         # Start cleanup tasks
         asyncio.create_task(self._cleanup_expired_sessions())
@@ -161,6 +161,15 @@ class MiroBot(commands.Bot):
 
         self._background_tasks_started = True
         logger.info("Background tasks started")
+
+    async def _start_async_monitors(self):
+        """Start all async monitoring tasks."""
+        await self.guardian.start_monitoring()
+        await self.giveaways.start_monitoring()
+        await self.reminders.start_monitoring()
+        await self.announcements.start_monitoring()
+        self.intelligence.start_monitoring()
+        logger.info("Async monitors started")
 
     async def _restore_scheduled_tasks(self):
         """Restore reminders, giveaways, and other scheduled tasks from disk."""
@@ -331,7 +340,7 @@ class MiroBot(commands.Bot):
         try:
             await self.verification.handle_member_join(member)
             await self.welcome_leave.handle_member_join(member)
-            await self.anti_raid.handle_member_join(member)
+            await self.anti_raid.handle_join(member)
         except Exception as e:
             logger.error(f"Member join error: {e}")
 
