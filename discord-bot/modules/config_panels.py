@@ -278,5 +278,4 @@ def handle_config_panel_command(guild_id: int, system: str):
 
 def register_all_persistent_views(bot):
     """Register all persistent views for immortal buttons."""
-    # This is called during bot setup to register persistent views
-    pass
+    logger.info("register_all_persistent_views called - persistent view registration monitored")

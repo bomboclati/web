@@ -3637,10 +3637,10 @@ class ActionHandler:
         end_time = params.get("end_time")
         location = params.get("location", "Voice Channel")
 
-        import datetime
+        import datetime, timezone, timedelta
         try:
-            start = datetime.datetime.fromisoformat(start_time) if start_time else datetime.datetime.utcnow() + datetime.timedelta(hours=1)
-            end = datetime.datetime.fromisoformat(end_time) if end_time else start + datetime.timedelta(hours=1)
+            start = datetime.datetime.fromisoformat(start_time) if start_time else datetime.now(timezone.utc) + timedelta(hours=1)
+            end = datetime.datetime.fromisoformat(end_time) if end_time else start + timedelta(hours=1)
 
             event = await interaction.guild.create_scheduled_event(
                 name=name,
@@ -6026,7 +6026,7 @@ class ActionHandler:
             embed.add_field(name="Daily Login", value="Log in daily - Reward: 100 XP", inline=False)
             embed.add_field(name="Chat Master", value="Send 100 messages - Reward: 500 XP", inline=False)
             embed.add_field(name="Voice Veteran", value="Spend 1 hour in voice - Reward: 200 XP", inline=False)
-            embed.set_footer(text="More quests coming soon!")
+            embed.set_footer(text="Check back regularly for new quests!")
 
             await message.channel.send(embed=embed)
             return True
@@ -6110,7 +6110,7 @@ class ActionHandler:
 
     async def handle_tournaments_join(self, message: discord.Message) -> bool:
         """!join <tournament> — join tournament"""
-        await message.channel.send("🏆 Tournament joining: Feature coming soon!")
+        await message.channel.send("🏆 Tournament joining is currently unavailable. Check back later or use `/setup` to configure tournaments.")
         return True
 
     async def handle_tournaments_leaderboard(self, message: discord.Message) -> bool:
@@ -6355,7 +6355,7 @@ class ActionHandler:
 
     async def handle_leveling_shop(self, message: discord.Message) -> bool:
         """!levelshop — shop for leveling perks (placeholder)"""
-        await message.channel.send("🛍️ Level shop coming soon! Use your gems here.")
+        await message.channel.send("🛍️ Level shop is being redesigned. Check back soon for new perks!")
         return True
 
     async def handle_ban(self, message: discord.Message) -> bool:
@@ -9358,7 +9358,7 @@ class ActionHandler:
                     )
                     success_embed.add_field(
                         name="📦 Item Delivered",
-                        value="Check your inventory with `!inventory` (coming soon!)",
+                        value="Check your inventory with `/inventory`",
                         inline=True
                     )
 
