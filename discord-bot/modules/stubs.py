@@ -3300,19 +3300,21 @@ class WarningAppealModal(discord.ui.Modal, title="Warning Appeal"):
 
         await interaction.response.send_message("✅ Appeal submitted! You will be notified of the decision.", ephemeral=True)
 
-class StaffApplicationButton(discord.ui.Button):
+class StaffApplicationButton(discord.ui.View):
     def __init__(self):
-        super().__init__(label="Apply for Staff", style=discord.ButtonStyle.primary, custom_id="staff_application")
+        super().__init__(timeout=None)
 
-    async def callback(self, interaction: discord.Interaction):
+    @discord.ui.button(label="Apply for Staff", style=discord.ButtonStyle.primary, custom_id="staff_application")
+    async def apply_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         app_system = ApplicationSystem(interaction.client)
         await app_system.create_application(interaction)
 
-class WarningAppealButton(discord.ui.Button):
+class WarningAppealButton(discord.ui.View):
     def __init__(self):
-        super().__init__(label="Appeal Warning", style=discord.ButtonStyle.secondary, custom_id="warning_appeal")
+        super().__init__(timeout=None)
 
-    async def callback(self, interaction: discord.Interaction):
+    @discord.ui.button(label="Appeal Warning", style=discord.ButtonStyle.secondary, custom_id="warning_appeal")
+    async def appeal_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         appeal_system = AppealSystem(interaction.client)
         await appeal_system.create_appeal(interaction)
 

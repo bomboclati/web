@@ -147,8 +147,9 @@ class MiroBot(commands.Bot):
         for view in views_to_register:
             if isinstance(view, list):
                 for v in view:
-                    self.add_view(v)
-            else:
+                    if v is not None:
+                        self.add_view(v)
+            elif view is not None:
                 self.add_view(view)
 
         self._persistent_views_registered = True
