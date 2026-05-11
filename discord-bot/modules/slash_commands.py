@@ -7,6 +7,10 @@ from modules import (
     economy, leveling, verification, tickets, suggestions,
     giveaways, reminders, welcome_leave, auto_setup, config_panels
 )
+from modules.stubs import (
+    WarningsSystem, StaffShiftSystem, StarboardSystem,
+    ApplicationSystem, AppealSystem, ModmailSystem
+)
 from modules.guardian import GuardianSystem
 
 class SlashCommands(commands.Cog):
@@ -142,6 +146,63 @@ class SlashCommands(commands.Cog):
     @app_commands.command(name="reminders", description="List your reminders")
     async def reminders(self, interaction: discord.Interaction):
         await self.bot.reminders.list_reminders(interaction)
+
+    # Warning commands
+    @app_commands.command(name="warn", description="Warn a user")
+    @app_commands.checks.has_permissions(manage_messages=True)
+    @app_commands.describe(user="User to warn", reason="Warning reason", severity="Warning severity")
+    @app_commands.choices(severity=[
+        app_commands.Choice(name="Low", value="low"),
+        app_commands.Choice(name="Medium", value="medium"),
+        app_commands.Choice(name="High", value="high")
+    ])
+    async def warn(self, interaction: discord.Interaction, user: discord.Member, reason: str, severity: str = "medium"):
+        warnings_system = WarningsSystem(self.bot)
+        await warnings_system.warn_user(interaction, user, reason, severity)
+
+    @app_commands.command(name="warnings", description="View user warnings")
+    @app_commands.describe(user="User to check (optional)")
+    async def warnings(self, interaction: discord.Interaction, user: discord.Member = None):
+        warnings_system = WarningsSystem(self.bot)
+        await warnings_system.get_user_warnings(interaction, user)
+
+    # Staff shift commands
+    @app_commands.command(name="shift", description="Manage staff shifts")
+    @app_commands.describe(action="Shift action")
+    @app_commands.choices(action=[
+        app_commands.Choice(name="Start", value="start"),
+        app_commands.Choice(name="End", value="end"),
+        app_commands.Choice(name="Break Start", value="break_start"),
+        app_commands.Choice(name="Break End", value="break_end")
+    ])
+    async def shift(self, interaction: discord.Interaction, action: str):
+        shifts_system = StaffShiftSystem(self.bot)
+
+        if action == "start":
+            await shifts_system.start_shift(interaction)
+        elif action == "end":
+            await shifts_system.end_shift(interaction)
+        elif action == "break_start":
+            await shifts_system.start_break(interaction)
+        elif action == "break_end":
+            await shifts_system.end_break(interaction)
+
+    @app_commands.command(name="myshifts", description="View your shift history")
+    async def myshifts(self, interaction: discord.Interaction):
+        shifts_system = StaffShiftSystem(self.bot)
+        await shifts_system.get_my_shifts(interaction)
+
+    # Application commands
+    @app_commands.command(name="apply", description="Apply for staff position")
+    async def apply(self, interaction: discord.Interaction):
+        app_system = ApplicationSystem(self.bot)
+        await app_system.create_application(interaction)
+
+    # Appeal commands
+    @app_commands.command(name="appeal", description="Appeal a warning")
+    async def appeal(self, interaction: discord.Interaction):
+        appeal_system = AppealSystem(self.bot)
+        await appeal_system.create_appeal(interaction)
 
 async def setup(bot):
     await bot.add_cog(SlashCommands(bot))

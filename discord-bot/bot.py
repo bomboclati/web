@@ -109,6 +109,15 @@ class MiroBot(commands.Bot):
         if self._persistent_views_registered:
             return
 
+        # Import additional systems
+        from modules.stubs import (
+            ApplicationSystem, AppealSystem, ModmailSystem,
+            StaffPromotionSystem, StaffShiftSystem, StaffReviewSystem,
+            StarboardSystem, AIChatSystem, AnnouncementSystem,
+            AutoResponderSystem, ReactionRoleSystem, ReactionMenuSystem,
+            RoleButtonSystem, ModerationSystem, LoggingSystem, ModLoggingSystem
+        )
+
         # Register all system persistent views
         views_to_register = [
             # Auto setup buttons
@@ -127,6 +136,11 @@ class MiroBot(commands.Bot):
             self.appeals.get_persistent_views(),
             self.modmail.get_persistent_views(),
             self.welcome_leave.get_persistent_views(),
+
+            # Additional system views
+            ApplicationSystem(self).get_persistent_views(),
+            AppealSystem(self).get_persistent_views(),
+            ModmailSystem(self).get_persistent_views(),
         ]
 
         # Flatten the list and register
